@@ -70,10 +70,10 @@ variable "acme_email" {
   type        = string
 }
 
-variable "budget_amount_usd" {
-  description = "Teto mensal do alerta de orçamento, em dólares."
+variable "budget_amount" {
+  description = "Teto mensal do alerta de orçamento, na moeda da conta de faturamento."
   type        = number
-  default     = 10
+  default     = 60
 }
 
 variable "budget_notification_emails" {
