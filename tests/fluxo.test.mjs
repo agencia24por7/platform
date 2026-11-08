@@ -4,8 +4,10 @@ import { before, describe, it } from 'node:test';
 import { BASE, appIsUp, browse, ensureUser, get, makeOwner, post, signIn, submitForm } from './helpers.mjs';
 
 const query = (sql) =>
-  execFileSync('docker', ['exec', 'tria-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-tAc', sql])
+  execFileSync('docker', ['exec', 'tria-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
     .toString()
+    .trim()
+    .split('\n')[0]
     .trim();
 
 const reset = () =>
@@ -136,59 +138,67 @@ describe('cadastro de cliente e contas', { concurrency: false }, () => {
     assert.equal(query('select count(*) from core.clients'), '2');
   });
 
-  it('vincula a conta de anúncios criando a autorização', async () => {
+  it('oferece apenas as contas que a plataforma liberou', async () => {
+    const conexao = query(
+      `INSERT INTO integrations.connections
+         (organization_id, platform, grant_type, label, external_id, scopes, credential_ref)
+       VALUES ((select id from core.organizations limit 1), 'meta', 'oauth_user', 'Meta de teste', 'grant-teste',
+               ARRAY['ads_read'], 'n8n:credential:meta')
+       RETURNING id`,
+    );
+
+    query(
+      `INSERT INTO integrations.connection_accounts
+         (organization_id, connection_id, platform, external_id, name, currency, timezone, inactive)
+       VALUES ((select id from core.organizations limit 1), '${conexao}', 'meta', 'act_1234567890',
+               'Meta — Cliente de Teste', 'BRL', 'America/Sao_Paulo', false)`,
+    );
+
+    const html = await browse(`/clientes/${clientId}/contas/nova`).then((r) => r.text());
+    assert.match(html, /Meta — Cliente de Teste/);
+    assert.match(html, /act_1234567890/);
+    assert.ok(!html.includes('name="externalId"'), 'não pode haver campo de digitação do id');
+    assert.ok(!html.includes('name="credentialRef"'), 'não pode haver campo de credencial');
+  });
+
+  it('vincula a conta escolhida entre as descobertas', async () => {
+    const descoberta = query(
+      `select id from integrations.connection_accounts where state = 'discovered' limit 1`,
+    );
+
     const result = await submitForm(`/clientes/${clientId}/contas/nova`, {
       clientId,
-      platform: 'meta',
-      connectionId: 'new',
-      connectionLabel: 'Business Manager de teste',
-      grantType: 'system_user',
-      connectionExternalId: '1094887233',
-      credentialRef: 'n8n:credential:meta',
-      scopes: ['ads_read', 'ads_management'],
-      externalId: '1234567890',
-      name: 'Meta — Cliente de Teste',
-      accountGroup: 'Principal',
-      currency: 'BRL',
-      timezone: 'America/Sao_Paulo',
-      syncEnabled: 'on',
+      descobertaId: descoberta,
+      coletar: 'on',
     });
+
     assert.equal(result.status, 303);
     accountId = query('select id from integrations.ad_accounts limit 1');
-    assert.equal(query("select external_id from integrations.ad_accounts"), 'act_1234567890');
+    assert.equal(query('select external_id from integrations.ad_accounts'), 'act_1234567890');
+    assert.equal(
+      query(`select state from integrations.connection_accounts where id = '${descoberta}'`),
+      'linked',
+    );
   });
 
-  it('recusa a mesma conta duas vezes', async () => {
+  it('recusa uma descoberta que não é desta organização', async () => {
+    query(
+      `INSERT INTO integrations.connection_accounts
+         (organization_id, connection_id, platform, external_id, name, currency, timezone, inactive)
+       VALUES ((select id from core.organizations limit 1),
+               (select id from integrations.connections limit 1),
+               'meta', 'act_9999999999', 'Outra conta', 'BRL', 'America/Sao_Paulo', false)`,
+    );
+
     const result = await submitForm(`/clientes/${clientId}/contas/nova`, {
       clientId,
-      platform: 'meta',
-      connectionId: query('select id from integrations.connections limit 1'),
-      externalId: 'act_1234567890',
-      name: 'Duplicada',
-      accountGroup: 'Principal',
-      currency: 'BRL',
-      timezone: 'America/Sao_Paulo',
-      syncEnabled: 'on',
+      descobertaId: '00000000-0000-4000-8000-000000000000',
+      coletar: 'on',
     });
     assert.match(result.location ?? '', /erro=/);
     assert.equal(query('select count(*) from integrations.ad_accounts'), '1');
   });
 
-  it('recusa id de conta no formato da outra plataforma', async () => {
-    const result = await submitForm(`/clientes/${clientId}/contas/nova`, {
-      clientId,
-      platform: 'google',
-      connectionId: query('select id from integrations.connections limit 1'),
-      externalId: '123-456-7890',
-      name: 'Plataforma trocada',
-      accountGroup: 'Principal',
-      currency: 'BRL',
-      timezone: 'America/Sao_Paulo',
-      syncEnabled: 'on',
-    });
-    assert.match(result.location ?? '', /erro=/);
-    assert.equal(query('select count(*) from integrations.ad_accounts'), '1');
-  });
 
   it('a conta entra na fila de coleta com janela de rejanela e sem segredo', async () => {
     const queue = await get('/api/v0/sync/queue').then((r) => r.json());
@@ -211,7 +221,7 @@ describe('cadastro de cliente e contas', { concurrency: false }, () => {
     const actions = query(
       "select string_agg(distinct action, ',' order by action) from audit.audit_log where actor_type = 'user'",
     );
-    assert.equal(actions, 'ad_account.link,client.create,connection.create,identity.became_owner,organization.create');
+    assert.equal(actions, 'ad_account.link,client.create,identity.became_owner,organization.create');
   });
 
   it('não grava segredo na auditoria', async () => {

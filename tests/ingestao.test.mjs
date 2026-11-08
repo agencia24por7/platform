@@ -4,8 +4,10 @@ import { before, describe, it } from 'node:test';
 import { appIsUp, browse, ensureUser, get, post, signIn, submitForm } from './helpers.mjs';
 
 const query = (sql) =>
-  execFileSync('docker', ['exec', 'tria-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-tAc', sql])
+  execFileSync('docker', ['exec', 'tria-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
     .toString()
+    .trim()
+    .split('\n')[0]
     .trim();
 
 const WINDOW = { start: '2026-11-01', end: '2026-11-05' };
