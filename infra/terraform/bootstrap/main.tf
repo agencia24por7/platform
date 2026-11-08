@@ -155,7 +155,7 @@ resource "google_project_iam_member" "deployer" {
   for_each = toset([
     "roles/artifactregistry.writer",
     "roles/iap.tunnelResourceAccessor",
-    "roles/compute.osLogin",
+    "roles/compute.osAdminLogin",
     "roles/compute.viewer",
   ])
 
