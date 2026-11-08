@@ -131,3 +131,44 @@ describe('passagem para a automação', { concurrency: false }, () => {
     assert.ok(gastas >= 1, 'a passagem gasta precisa ficar registrada');
   });
 });
+
+describe('acesso à automação por papel', { concurrency: false }, () => {
+  before(async () => {
+    if (!(await appIsUp())) throw new Error('App não está no ar');
+  });
+
+  it('quem não administra não recebe a sessão do n8n', async () => {
+    const organizacao = query('select id from core.organizations limit 1');
+    const leitor = ensureUser('leitor@tria.local');
+
+    query(
+      `INSERT INTO core.members (organization_id, user_id, role)
+       VALUES ('${organizacao}', '${leitor}', 'viewer')
+       ON CONFLICT (organization_id, user_id) DO UPDATE SET role = 'viewer'`,
+    );
+
+    signIn(leitor);
+    const resposta = await browse('/api/portaria/emitir');
+    const destino = resposta.headers.get('location') ?? '';
+
+    assert.ok(!destino.includes('/api/portaria/receber'), 'leitor não pode receber passagem');
+    assert.match(destino, /n8n_sem_permissao/);
+  });
+
+  it('quem administra recebe a passagem', async () => {
+    const organizacao = query('select id from core.organizations limit 1');
+    const administrador = ensureUser('admin@tria.local');
+
+    query(
+      `INSERT INTO core.members (organization_id, user_id, role)
+       VALUES ('${organizacao}', '${administrador}', 'admin')
+       ON CONFLICT (organization_id, user_id) DO UPDATE SET role = 'admin'`,
+    );
+
+    signIn(administrador);
+    const resposta = await browse('/api/portaria/emitir');
+    const destino = resposta.headers.get('location') ?? '';
+
+    assert.match(destino, /\/api\/portaria\/receber/);
+  });
+});
