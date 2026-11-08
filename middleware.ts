@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { SESSION_COOKIE } from '@/modules/identity/domain/sessionCookie';
 
-const ROTAS_ABERTAS = ['/entrar', '/api/auth', '/api/health', '/api/v0'];
+const ROTAS_ABERTAS = ['/entrar', '/api/auth', '/api/health', '/api/v0', '/api/portaria'];
 
 export function middleware(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;

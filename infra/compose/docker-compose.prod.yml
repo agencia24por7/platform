@@ -69,6 +69,7 @@ services:
       META_LOGIN_CONFIG_ID: ${META_LOGIN_CONFIG_ID:-}
       N8N_API_URL: ${N8N_API_URL:-}
       N8N_API_KEY: ${N8N_API_KEY:-}
+      N8N_PUBLIC_URL: ${N8N_PUBLIC_URL:-}
     networks: [interna]
     mem_limit: 220m
     read_only: true

@@ -31,6 +31,7 @@ const schema = z.object({
   META_APP_SECRET: opcional(z.string().min(10)),
   META_LOGIN_CONFIG_ID: opcional(z.string().min(5)),
   N8N_API_URL: opcional(z.string().url()),
+  N8N_PUBLIC_URL: opcional(z.string().url()),
   N8N_API_KEY: opcional(z.string().min(20)),
 });
 

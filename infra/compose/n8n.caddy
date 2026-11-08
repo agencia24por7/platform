@@ -2,11 +2,23 @@
 	import seguranca
 	encode zstd gzip
 
-	basic_auth {
-		{$PROXY_BASIC_AUTH}
+	@portaria path /api/portaria/receber*
+
+	handle @portaria {
+		reverse_proxy app:3000 {
+			header_up X-Forwarded-Proto https
+		}
 	}
 
-	reverse_proxy n8n:5678 {
-		header_up X-Forwarded-Proto https
+	handle {
+		forward_auth app:3000 {
+			uri /api/portaria
+			header_up X-Original-URI {uri}
+			header_up X-Forwarded-Proto https
+		}
+
+		reverse_proxy n8n:5678 {
+			header_up X-Forwarded-Proto https
+		}
 	}
 }
