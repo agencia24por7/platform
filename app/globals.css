@@ -301,3 +301,8 @@ table { border-collapse: collapse; width: 100%; }
 .com-marca { display: inline-flex; align-items: center; gap: 6px; }
 .com-marca img { object-fit: contain; }
 .alert--warn { background: var(--c-warn-bg); border: 1px solid #ecdcc0; color: var(--c-warn); }
+
+.triagem { display: grid; gap: 8px; }
+.triagem__item { font-size: var(--fs-sm); color: var(--fg-muted); line-height: var(--lh-base); }
+.triagem__item strong { color: var(--fg); font-variant-numeric: tabular-nums;
+  display: inline-block; min-width: 1.4em; }

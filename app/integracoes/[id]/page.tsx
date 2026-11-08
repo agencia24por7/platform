@@ -47,6 +47,13 @@ export default async function DetalheAutorizacao({ params }: { params: Promise<{
   const faltando = missingScopes(conexao.platform, conexao.scopes);
   const plataforma = PLATAFORMA[conexao.platform];
   const autorizacao = eventos.find((evento) => evento.action === 'connection.authorize');
+  const varredura = (autorizacao?.metadata?.['varredura'] ?? null) as {
+    raizes?: number;
+    brutas?: number;
+    administradoras?: number;
+    recusadas?: number;
+  } | null;
+  const recusa = (autorizacao?.metadata?.['discoveryFailure'] ?? null) as string | null;
   const porExternalId = new Map(vinculadas.map((conta) => [conta.externalId, conta]));
 
   return (
@@ -189,6 +196,27 @@ export default async function DetalheAutorizacao({ params }: { params: Promise<{
               : `${liberadas.length} conta(s) devolvida(s) pela plataforma`}
           </span>
         </div>
+
+        {varredura ? (
+          <div className="card__body">
+            <div className="triagem">
+              <span className="triagem__item">
+                <strong>{varredura.raizes ?? 0}</strong> conta(s) alcançável(is) pela autorização
+              </span>
+              <span className="triagem__item">
+                <strong>{varredura.administradoras ?? 0}</strong> administradora(s) — MCC não veicula
+                campanha, então não entra como conta de anúncio
+              </span>
+              <span className="triagem__item">
+                <strong>{varredura.recusadas ?? 0}</strong> recusada(s) pela plataforma
+                {recusa ? <span className="mono subtle"> · {recusa}</span> : null}
+              </span>
+              <span className="triagem__item">
+                <strong>{liberadas.length}</strong> conta(s) de anúncio utilizável(is)
+              </span>
+            </div>
+          </div>
+        ) : null}
 
         {liberadas.length === 0 ? (
           <div className="empty">

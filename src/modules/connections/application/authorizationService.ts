@@ -196,6 +196,7 @@ export function createAuthorizationService(
           grantedScopes: granted.grantedScopes,
           discoveredAccounts: stored,
           discoveryFailure: discovery.lastFailure(),
+          varredura: discovery.lastSweep(),
           credencialAnterior: descarte,
           vaultAvailable: vault.available,
           organizationCreated,

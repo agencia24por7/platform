@@ -41,6 +41,29 @@ type GoogleRow = {
   };
 };
 
+export type TriagemGoogle = {
+  readonly contas: readonly DiscoveredAccount[];
+  readonly administradoras: number;
+  readonly linhas: number;
+};
+
+export function triarClientesGoogle(payload: unknown, managerId: string | null): TriagemGoogle {
+  if (payload === null || typeof payload !== 'object') return { contas: [], administradoras: 0, linhas: 0 };
+
+  const results = (payload as { results?: unknown }).results;
+  if (!Array.isArray(results)) return { contas: [], administradoras: 0, linhas: 0 };
+
+  const clientes = results
+    .map((row) => (row as GoogleRow).customerClient)
+    .filter((client): client is NonNullable<GoogleRow['customerClient']> => Boolean(client?.id));
+
+  return {
+    linhas: clientes.length,
+    administradoras: clientes.filter((client) => client.manager === true).length,
+    contas: parseGoogleCustomerClients(payload, managerId),
+  };
+}
+
 export function parseGoogleCustomerClients(payload: unknown, managerId: string | null): readonly DiscoveredAccount[] {
   if (payload === null || typeof payload !== 'object') return [];
   const results = (payload as { results?: unknown }).results;

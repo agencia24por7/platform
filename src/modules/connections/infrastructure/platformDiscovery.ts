@@ -3,13 +3,13 @@ import { redactText } from '@/shared/logging/redact';
 import {
   dedupe,
   parseAccessibleCustomers,
-  parseGoogleCustomerClients,
+  triarClientesGoogle,
   parseMetaAdAccounts,
   sortForSelection,
   type DiscoveredAccount,
 } from '@/modules/connections/domain/discovery';
 import type { Platform } from '@/modules/connections/domain/connection';
-import type { PlatformDiscovery } from '@/modules/connections/application/platformDiscoveryPort';
+import type { PlatformDiscovery, Varredura } from '@/modules/connections/application/platformDiscoveryPort';
 import { GOOGLE_ADS_VERSION } from '@/modules/connections/domain/googleAdsVersion';
 import { resumirFalha } from '@/modules/connections/domain/falhaDescoberta';
 
@@ -20,15 +20,17 @@ const TIMEOUT_MS = 15_000;
 const CLIENT_QUERY = [
   'SELECT customer_client.id, customer_client.descriptive_name, customer_client.currency_code,',
   'customer_client.time_zone, customer_client.manager, customer_client.status',
-  'FROM customer_client WHERE customer_client.level <= 2',
+  'FROM customer_client WHERE customer_client.level <= 5',
 ].join(' ');
 
 const MOTIVO_MAX = 1200;
 
 let falhas: string[] = [];
+let varredura: Varredura = { raizes: 0, brutas: 0, administradoras: 0, recusadas: 0 };
 
 function esquecerFalhas(): void {
   falhas = [];
+  varredura = { raizes: 0, brutas: 0, administradoras: 0, recusadas: 0 };
 }
 
 async function fetchJson(url: string, init: RequestInit): Promise<unknown> {
@@ -69,6 +71,8 @@ export function createPlatformDiscovery(): PlatformDiscovery {
       );
 
       const discovered: DiscoveredAccount[] = [];
+      let administradoras = 0;
+      let recusadas = 0;
 
       for (const customerId of accessible) {
         const payload = await fetchJson(`${GOOGLE_API}/customers/${customerId}/googleAds:search`, {
@@ -77,14 +81,32 @@ export function createPlatformDiscovery(): PlatformDiscovery {
           body: JSON.stringify({ query: CLIENT_QUERY }),
         });
 
-        discovered.push(...parseGoogleCustomerClients(payload, customerId));
+        const triagem = triarClientesGoogle(payload, customerId);
+        if (payload === null) recusadas += 1;
+        administradoras += triagem.administradoras;
+        discovered.push(...triagem.contas);
+
+        logger.info('discovery.google.raiz', {
+          raiz: customerId,
+          linhas: triagem.linhas,
+          administradoras: triagem.administradoras,
+          contas: triagem.contas.length,
+        });
       }
 
       const unicas = sortForSelection(dedupe(discovered));
+      varredura = {
+        raizes: accessible.length,
+        brutas: discovered.length,
+        administradoras,
+        recusadas,
+      };
+
       logger.info('discovery.google.done', {
         roots: accessible.length,
         brutas: discovered.length,
         accounts: unicas.length,
+        administradoras,
         falhas: falhas.length,
       });
 
@@ -93,6 +115,10 @@ export function createPlatformDiscovery(): PlatformDiscovery {
 
     lastFailure() {
       return falhas.length === 0 ? null : falhas.join(' · ');
+    },
+
+    lastSweep() {
+      return varredura;
     },
 
     async identify(platform, accessToken) {
