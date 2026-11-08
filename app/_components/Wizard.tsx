@@ -17,8 +17,8 @@ export function Wizard({ current, children }: Props) {
     <div className="wizard">
       <aside className="wizard__rail">
         <div className="wizard__brand">
-          <span className="mark">T</span>
-          tria
+          <span className="mark">õ</span>
+          orla
         </div>
 
         <div>

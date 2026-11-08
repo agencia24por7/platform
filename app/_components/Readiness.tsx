@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { TilPensando } from '@/../app/_components/Til';
 import { connectionReadiness } from '@/modules/organizations/domain/organization';
 
 type Props = {
@@ -30,6 +31,7 @@ export function Readiness({ connections, linkedAccounts }: Props) {
 
   return (
     <div className="alert alert--info">
+      <TilPensando />
       <div>
         <div className="strong">{copy.title}</div>
         <div>{copy.body}</div>
