@@ -21,7 +21,7 @@ apt-get install -y ca-certificates curl gnupg
 
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/debian/gpg -o /tmp/docker.asc
-gpg --dearmor -o /etc/apt/keyrings/docker.gpg /tmp/docker.asc
+gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg /tmp/docker.asc
 rm -f /tmp/docker.asc
 chmod a+r /etc/apt/keyrings/docker.gpg
 
@@ -32,11 +32,14 @@ echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] https://download.d
 apt-get update
 apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
-fallocate -l 2G /swapfile
-chmod 600 /swapfile
-mkswap /swapfile
-swapon /swapfile
-echo "/swapfile none swap sw 0 0" >> /etc/fstab
+if ! swapon --show=NAME --noheadings | grep -qx /swapfile; then
+  rm -f /swapfile
+  fallocate -l 2G /swapfile
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+fi
+grep -qxF "/swapfile none swap sw 0 0" /etc/fstab || echo "/swapfile none swap sw 0 0" >> /etc/fstab
 sysctl -w vm.swappiness=10
 echo "vm.swappiness=10" > /etc/sysctl.d/99-tria.conf
 
