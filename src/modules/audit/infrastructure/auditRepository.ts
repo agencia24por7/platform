@@ -3,6 +3,7 @@ import { withTenant, withoutTenant } from '@/shared/db/tenant';
 import { redact } from '@/shared/logging/redact';
 import type { AuditFilter, AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import type { AuditEntry, AuditEvent } from '@/modules/audit/domain/auditEvent';
+import { normalizeMetadata } from '@/modules/audit/domain/metadata';
 
 type Row = {
   id: string;
@@ -15,7 +16,7 @@ type Row = {
   target_id: string | null;
   request_id: string | null;
   source_ip: string | null;
-  metadata: Record<string, unknown>;
+  metadata: unknown;
 };
 
 function toEntry(row: Row): AuditEntry {
@@ -30,14 +31,14 @@ function toEntry(row: Row): AuditEntry {
     targetId: row.target_id ?? undefined,
     requestId: row.request_id ?? undefined,
     sourceIp: row.source_ip,
-    metadata: row.metadata,
+    metadata: normalizeMetadata(row.metadata),
   };
 }
 
 export function createAuditRepository(): AuditRecorder {
   return {
     async record(event: AuditEvent): Promise<void> {
-      const metadata = JSON.stringify(redact(event.metadata ?? {}));
+      const metadata = JSON.parse(JSON.stringify(redact(event.metadata ?? {})));
       const insert = async (tx: ReturnType<typeof sql>) => {
         await tx`
           INSERT INTO audit.audit_log
@@ -45,7 +46,7 @@ export function createAuditRepository(): AuditRecorder {
           VALUES (
             ${event.organizationId}, ${event.actorType}, ${event.actorId}, ${event.action},
             ${event.targetType ?? null}, ${event.targetId ?? null}, ${event.requestId ?? null},
-            ${event.sourceIp ?? null}, ${metadata}::jsonb
+            ${event.sourceIp ?? null}, ${tx.json(metadata)}
           )`;
       };
 
