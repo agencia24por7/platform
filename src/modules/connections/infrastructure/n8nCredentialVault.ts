@@ -1,0 +1,59 @@
+import { env } from '@/shared/config/env';
+import { logger } from '@/shared/logging/logger';
+import type { CredentialVault, VaultSecret } from '@/modules/connections/application/credentialVault';
+
+const CREDENTIAL_TYPE = {
+  google: 'googleOAuth2Api',
+  meta: 'facebookGraphApi',
+} as const;
+
+export function createN8nCredentialVault(): CredentialVault {
+  const config = env();
+  const available = Boolean(config.N8N_API_URL && config.N8N_API_KEY);
+
+  return {
+    available,
+
+    async store(secret: VaultSecret): Promise<string> {
+      if (!available) throw new Error('Cofre de credenciais não configurado.');
+
+      const body =
+        secret.platform === 'google'
+          ? {
+              name: secret.label,
+              type: CREDENTIAL_TYPE.google,
+              data: {
+                clientId: secret.clientId,
+                clientSecret: secret.clientSecret,
+                oauthTokenData: {
+                  access_token: secret.accessToken,
+                  refresh_token: secret.refreshToken,
+                },
+              },
+            }
+          : {
+              name: secret.label,
+              type: CREDENTIAL_TYPE.meta,
+              data: { accessToken: secret.accessToken },
+            };
+
+      const response = await fetch(new URL('/api/v1/credentials', config.N8N_API_URL).toString(), {
+        method: 'POST',
+        headers: { 'X-N8N-API-KEY': config.N8N_API_KEY!, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(10_000),
+      });
+
+      if (!response.ok) {
+        logger.error('vault.store.failed', { platform: secret.platform, status: response.status });
+        throw new Error('Não foi possível guardar a credencial no cofre.');
+      }
+
+      const created = (await response.json()) as { id?: string };
+      if (!created.id) throw new Error('Cofre não devolveu identificador da credencial.');
+
+      logger.info('vault.store.ok', { platform: secret.platform, credentialId: created.id });
+      return `n8n:credential:${created.id}`;
+    },
+  };
+}

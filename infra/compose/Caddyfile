@@ -1,0 +1,31 @@
+{
+	email {$ACME_EMAIL}
+	admin off
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+(seguranca) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+}
+
+{$APP_HOST} {
+	import seguranca
+	encode zstd gzip
+
+	basic_auth {
+		{$PROXY_BASIC_AUTH}
+	}
+
+	reverse_proxy app:3000 {
+		header_up X-Forwarded-Proto https
+	}
+}
+
+import /etc/caddy/conf.d/*.caddy

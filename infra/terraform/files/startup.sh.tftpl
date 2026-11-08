@@ -1,0 +1,78 @@
+#!/bin/bash
+set -euo pipefail
+
+exec > >(tee /var/log/tria-startup.log) 2>&1
+
+readonly PROJECT_ID="${project_id}"
+readonly PREFIX="${prefix}"
+readonly APP_HOST="${app_hostname}"
+readonly N8N_HOST="${n8n_hostname}"
+readonly ACME_EMAIL="${acme_email}"
+readonly STACK=/opt/tria
+
+if [ -f /var/lib/tria-provisioned ]; then
+  echo "Ja provisionado. Subindo a pilha."
+  cd "$STACK" && docker compose up -d
+  exit 0
+fi
+
+apt-get update
+apt-get install -y ca-certificates curl gnupg
+
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/debian/gpg -o /tmp/docker.asc
+gpg --dearmor -o /etc/apt/keyrings/docker.gpg /tmp/docker.asc
+rm -f /tmp/docker.asc
+chmod a+r /etc/apt/keyrings/docker.gpg
+
+ARCH=$(dpkg --print-architecture)
+CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
+echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $CODENAME stable" > /etc/apt/sources.list.d/docker.list
+
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+
+fallocate -l 2G /swapfile
+chmod 600 /swapfile
+mkswap /swapfile
+swapon /swapfile
+echo "/swapfile none swap sw 0 0" >> /etc/fstab
+sysctl -w vm.swappiness=10
+echo "vm.swappiness=10" > /etc/sysctl.d/99-tria.conf
+
+read_secret() {
+  gcloud secrets versions access latest --secret="$PREFIX-$1" --project="$PROJECT_ID"
+}
+
+read_optional_secret() {
+  gcloud secrets versions access latest --secret="$PREFIX-$1" --project="$PROJECT_ID" 2>/dev/null || true
+}
+
+mkdir -p "$STACK"
+cd "$STACK"
+
+umask 077
+{
+  echo "POSTGRES_PASSWORD=$(read_secret postgres-password)"
+  echo "DATABASE_URL=$(read_secret database-url)"
+  echo "TRIA_WORKER_TOKEN=$(read_secret worker-token)"
+  echo "N8N_ENCRYPTION_KEY=$(read_secret n8n-encryption-key)"
+  echo "N8N_DB_PASSWORD=$(read_secret n8n-db-password)"
+  echo "PROXY_BASIC_AUTH=$(read_secret proxy-basic-auth)"
+  echo "TRIA_APP_BASE_URL=https://$APP_HOST"
+  echo "APP_HOST=$APP_HOST"
+  echo "N8N_HOST=$N8N_HOST"
+  echo "N8N_PROTOCOL=$(test -n "$N8N_HOST" && echo https || echo http)"
+  echo "N8N_SECURE_COOKIE=$(test -n "$N8N_HOST" && echo true || echo false)"
+  echo "N8N_WEBHOOK_URL=$(test -n "$N8N_HOST" && echo "https://$N8N_HOST/" || echo "http://localhost:5678/")"
+  echo "ACME_EMAIL=$ACME_EMAIL"
+  echo "GOOGLE_OAUTH_CLIENT_ID=$(read_optional_secret google-oauth-client-id)"
+  echo "GOOGLE_OAUTH_CLIENT_SECRET=$(read_optional_secret google-oauth-client-secret)"
+  echo "META_APP_ID=$(read_optional_secret meta-app-id)"
+  echo "META_APP_SECRET=$(read_optional_secret meta-app-secret)"
+  echo "META_LOGIN_CONFIG_ID=$(read_optional_secret meta-login-config-id)"
+} > .env
+chmod 600 .env
+
+touch /var/lib/tria-provisioned
+echo "Base pronta. O compose e o Caddyfile chegam pelo deploy."

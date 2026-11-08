@@ -1,0 +1,333 @@
+{
+  "id": "triaColetaMetricas",
+  "name": "tria · coleta de métricas",
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "timezone": "America/Sao_Paulo"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 6,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "Diário 06:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -420,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "Execução manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -420,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:3000/api/v0/sync/queue",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "limit",
+              "value": "50"
+            },
+            {
+              "name": "rewindowDays",
+              "value": "28"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "a1000000-0000-4000-8000-000000000003",
+      "name": "Ler fila de coleta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -200,
+        90
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "triaWorkerAuth",
+          "name": "tria · worker token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "accounts",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000004",
+      "name": "Uma conta por item",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        20,
+        90
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000005",
+      "name": "Processar em série",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        240,
+        90
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/v0/sync/runs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ adAccountId: $json.adAccountId, workflow: 'coleta-metricas', triggerSource: $execution.mode, idempotencyKey: `${$json.adAccountId}:${$json.window.start}:${$json.window.end}:${$execution.id}`, window: $json.window, apiVersion: $json.platform === 'meta' ? 'graph-v21.0' : 'google-ads-v22', n8nExecutionId: String($execution.id) }) }}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "a1000000-0000-4000-8000-000000000006",
+      "name": "Abrir execução",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        90
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "triaWorkerAuth",
+          "name": "tria · worker token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const account = $('Processar em série').item.json;\nconst run = $json;\nconst start = new Date(`${account.window.start}T00:00:00Z`);\nconst end = new Date(`${account.window.end}T00:00:00Z`);\n\nconst hasCredential = typeof account.credentialRef === 'string' && account.credentialRef.length > 0;\nconst rows = [];\n\nif (hasCredential) {\n  const campaigns = [\n    { id: `${account.externalId}-c1`, name: 'Aquisição' },\n    { id: `${account.externalId}-c2`, name: 'Remarketing' },\n  ];\n  for (let day = new Date(start); day <= end; day.setUTCDate(day.getUTCDate() + 1)) {\n    const metricDate = day.toISOString().slice(0, 10);\n    const seed = Number(metricDate.replaceAll('-', '')) % 97;\n    campaigns.forEach((campaign, index) => {\n      const impressions = 4200 + seed * 37 + index * 510;\n      const clicks = Math.round(impressions * (0.012 + index * 0.004));\n      const conversions = Math.round(clicks * (0.03 + index * 0.02));\n      rows.push({\n        externalCampaignId: campaign.id,\n        campaignName: campaign.name,\n        metricDate,\n        spend: Number((impressions / 1000 * (22 + index * 4)).toFixed(2)),\n        impressions,\n        clicks,\n        conversions,\n        revenue: Number((conversions * 180).toFixed(2)),\n        currency: account.currency || 'BRL',\n      });\n    });\n  }\n}\n\nreturn { json: { runId: run.id, adAccountId: account.adAccountId, platform: account.platform, hasCredential, requestCount: hasCredential ? rows.length / 2 : 0, rows } };"
+      },
+      "id": "a1000000-0000-4000-8000-000000000007",
+      "name": "Coletar métricas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        90
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/v0/sync/metrics",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ runId: $json.runId, rows: $json.rows }) }}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "a1000000-0000-4000-8000-000000000008",
+      "name": "Gravar métricas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        90
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "triaWorkerAuth",
+          "name": "tria · worker token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/v0/sync/runs/close",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ runId: $('Coletar métricas').item.json.runId, status: $('Coletar métricas').item.json.hasCredential ? 'success' : 'partial', requestCount: $('Coletar métricas').item.json.requestCount, apiVersion: $('Coletar métricas').item.json.platform === 'meta' ? 'graph-v21.0' : 'google-ads-v22', errorCode: $('Coletar métricas').item.json.hasCredential ? null : 'credential_missing', errorMessage: $('Coletar métricas').item.json.hasCredential ? null : 'Conta sem credencial vinculada no n8n: nenhuma chamada foi feita à plataforma.' }) }}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "a1000000-0000-4000-8000-000000000009",
+      "name": "Encerrar execução",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        90
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "triaWorkerAuth",
+          "name": "tria · worker token"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Diário 06:00": {
+      "main": [
+        [
+          {
+            "node": "Ler fila de coleta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execução manual": {
+      "main": [
+        [
+          {
+            "node": "Ler fila de coleta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler fila de coleta": {
+      "main": [
+        [
+          {
+            "node": "Uma conta por item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Uma conta por item": {
+      "main": [
+        [
+          {
+            "node": "Processar em série",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar em série": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Abrir execução",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Abrir execução": {
+      "main": [
+        [
+          {
+            "node": "Coletar métricas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Coletar métricas": {
+      "main": [
+        [
+          {
+            "node": "Gravar métricas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gravar métricas": {
+      "main": [
+        [
+          {
+            "node": "Encerrar execução",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Encerrar execução": {
+      "main": [
+        [
+          {
+            "node": "Processar em série",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

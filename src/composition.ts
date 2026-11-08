@@ -1,0 +1,56 @@
+import { createAuditRepository } from '@/modules/audit/infrastructure/auditRepository';
+import { createClientService } from '@/modules/clients/application/clientService';
+import { createClientRepository } from '@/modules/clients/infrastructure/clientRepository';
+import { createAuthorizationService } from '@/modules/connections/application/authorizationService';
+import { createConnectionService } from '@/modules/connections/application/connectionService';
+import { createAdAccountRepository } from '@/modules/connections/infrastructure/adAccountRepository';
+import { createConnectionRepository } from '@/modules/connections/infrastructure/connectionRepository';
+import { createDiscoveredAccountRepository } from '@/modules/connections/infrastructure/discoveredAccountRepository';
+import { createN8nCredentialVault } from '@/modules/connections/infrastructure/n8nCredentialVault';
+import { createPlatformDiscovery } from '@/modules/connections/infrastructure/platformDiscovery';
+import { createIngestionService } from '@/modules/ingestion/application/ingestionService';
+import { createMetricsRepository } from '@/modules/ingestion/infrastructure/metricsRepository';
+import { createSyncRunRepository } from '@/modules/ingestion/infrastructure/syncRunRepository';
+import { createOrganizationService } from '@/modules/organizations/application/organizationService';
+import { createOrganizationRepository } from '@/modules/organizations/infrastructure/organizationRepository';
+
+function build() {
+  const audit = createAuditRepository();
+  const adAccounts = createAdAccountRepository();
+  const connectionRepository = createConnectionRepository();
+  const discoveredAccounts = createDiscoveredAccountRepository();
+  const organizations = createOrganizationService(createOrganizationRepository(), audit);
+
+  return {
+    audit,
+    discoveredAccounts,
+    organizations,
+    clients: createClientService(createClientRepository(), audit),
+    connections: createConnectionService(connectionRepository, adAccounts, audit),
+    authorization: createAuthorizationService(
+      organizations,
+      connectionRepository,
+      discoveredAccounts,
+      createPlatformDiscovery(),
+      createN8nCredentialVault(),
+      audit,
+    ),
+    ingestion: createIngestionService(
+      createSyncRunRepository(),
+      createMetricsRepository(),
+      adAccounts,
+      audit,
+    ),
+  };
+}
+
+export type Modules = ReturnType<typeof build>;
+
+declare global {
+  var __triaModules: Modules | undefined;
+}
+
+export function modules(): Modules {
+  globalThis.__triaModules ??= build();
+  return globalThis.__triaModules;
+}

@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+.env
+.env.*
+prototipo
+infra
+db
+n8n
+tests
+scripts
+docs
+*.md

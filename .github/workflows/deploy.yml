@@ -1,0 +1,83 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["infra/terraform/**", "**.md", "prototipo/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: producao
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.DEPLOYER_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Autenticar no Artifact Registry
+        run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Construir e publicar a imagem
+        env:
+          IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/tria/app
+        run: |
+          docker build -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" .
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"
+
+      - name: Enviar configuração da pilha
+        env:
+          VM: tria-${{ vars.ENVIRONMENT }}-vm
+          ZONE: ${{ vars.GCP_ZONE }}
+        run: |
+          gcloud compute scp --recurse infra/compose/* "$VM:/tmp/compose" \
+            --zone "$ZONE" --tunnel-through-iap --quiet
+          gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet \
+            --command "sudo rsync -a --delete /tmp/compose/ /opt/tria/ && rm -rf /tmp/compose"
+
+      - name: Subir a nova versão
+        env:
+          VM: tria-${{ vars.ENVIRONMENT }}-vm
+          ZONE: ${{ vars.GCP_ZONE }}
+          IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/tria/app
+        run: |
+          gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "
+            set -euo pipefail
+            cd /opt/tria
+            sudo sed -i '/^APP_IMAGE=/d' .env
+            echo 'APP_IMAGE=$IMAGE:${{ github.sha }}' | sudo tee -a .env > /dev/null
+            sudo gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+            sudo docker compose -f docker-compose.prod.yml pull
+            sudo docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            sudo docker image prune -f
+          "
+
+      - name: Conferir saúde
+        env:
+          HOST: ${{ vars.APP_HOSTNAME }}
+        run: |
+          for tentativa in $(seq 1 20); do
+            if curl -sf -u "${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASSWORD }}" "https://$HOST/api/health" > /dev/null; then
+              echo "aplicação respondendo"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "a aplicação não respondeu depois do deploy"
+          exit 1

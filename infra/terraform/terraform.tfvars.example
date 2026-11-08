@@ -1,0 +1,19 @@
+project_id         = "tria-teste"
+billing_account_id = "000000-000000-000000"
+
+region = "us-central1"
+zone   = "us-central1-a"
+
+machine_type = "e2-micro"
+environment  = "teste"
+
+app_hostname = "tria.suaempresa.com.br"
+n8n_hostname = ""
+
+dns_zone_name    = ""
+dns_zone_project = ""
+
+acme_email = "voce@suaempresa.com.br"
+
+budget_amount_usd          = 10
+budget_notification_emails = ["voce@suaempresa.com.br"]

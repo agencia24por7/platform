@@ -1,0 +1,9 @@
+ALTER TABLE audit.audit_log FORCE ROW LEVEL SECURITY;
+ALTER TABLE automation.sync_runs FORCE ROW LEVEL SECURITY;
+ALTER TABLE core.clients FORCE ROW LEVEL SECURITY;
+ALTER TABLE core.organizations FORCE ROW LEVEL SECURITY;
+ALTER TABLE integrations.ad_accounts FORCE ROW LEVEL SECURITY;
+ALTER TABLE integrations.connection_accounts FORCE ROW LEVEL SECURITY;
+ALTER TABLE integrations.connections FORCE ROW LEVEL SECURITY;
+ALTER TABLE metrics.metrics_daily FORCE ROW LEVEL SECURITY;
+ALTER TABLE metrics.metrics_restatements FORCE ROW LEVEL SECURITY;

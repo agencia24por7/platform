@@ -1,0 +1,12 @@
+{$N8N_HOST} {
+	import seguranca
+	encode zstd gzip
+
+	basic_auth {
+		{$PROXY_BASIC_AUTH}
+	}
+
+	reverse_proxy n8n:5678 {
+		header_up X-Forwarded-Proto https
+	}
+}
