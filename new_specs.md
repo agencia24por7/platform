@@ -1,4 +1,4 @@
-# tria — AI-Native AdTech Platform
+# AI-Native AdTech Platform
 
 > Visão de produto. Combina a gestão operacional multi-conta do Optmyzr com a capacidade de
 > análise e otimização por IA do Albert.ai — e vai além dos dois.
