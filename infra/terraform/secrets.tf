@@ -65,3 +65,9 @@ resource "google_service_account_iam_member" "deployer_acts_as_vm" {
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:tria-deployer@${var.project_id}.iam.gserviceaccount.com"
 }
+
+resource "google_project_iam_member" "vm_pull_image" {
+  project = var.project_id
+  role    = "roles/artifactregistry.reader"
+  member  = "serviceAccount:${google_service_account.vm.email}"
+}
