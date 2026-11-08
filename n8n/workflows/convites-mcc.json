@@ -1,0 +1,224 @@
+{
+  "id": "triaConvitesMcc",
+  "name": "tria · convites para a MCC",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "timezone": "America/Sao_Paulo"
+  },
+  "nodes": [
+    {
+      "id": "gatilho-minuto",
+      "name": "A cada 5 minutos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -640,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "gatilho-manual",
+      "name": "Execução manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -640,
+        180
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "ler-fila",
+      "name": "Ler fila de convites",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -420,
+        80
+      ],
+      "parameters": {
+        "url": "=http://app:3000/api/v0/tasks/queue?limit=10",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "triaWorkerAuth",
+          "name": "tria · token do worker"
+        }
+      }
+    },
+    {
+      "id": "uma-tarefa",
+      "name": "Uma tarefa por item",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -200,
+        80
+      ],
+      "parameters": {
+        "fieldToSplitOut": "tasks",
+        "options": {}
+      }
+    },
+    {
+      "id": "em-serie",
+      "name": "Processar em série",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        20,
+        80
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "convidar",
+      "name": "Convidar conta na MCC",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        180
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const tarefa = $json;\nconst versao = 'v26';\nconst administradora = String(tarefa.managerExternalId || '').replace(/\\D/g, '');\nconst convidada = String(tarefa.targetExternalId || '').replace(/\\D/g, '');\n\nif (!administradora || !convidada) {\n  return [{ json: { taskId: tarefa.taskId, sucesso: false, outcome: 'identificadores ausentes na tarefa' } }];\n}\n\nconst url = `https://googleads.googleapis.com/${versao}/customers/${administradora}/customerClientLinks:mutate`;\n\nconst corpo = {\n  operations: [\n    {\n      create: {\n        clientCustomer: `customers/${convidada}`,\n        status: 'PENDING',\n      },\n    },\n  ],\n};\n\nlet resposta;\ntry {\n  resposta = await this.helpers.httpRequestWithAuthentication.call(this, 'googleOAuth2Api', {\n    method: 'POST',\n    url,\n    headers: { 'login-customer-id': administradora, 'Content-Type': 'application/json' },\n    body: corpo,\n    json: true,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  });\n} catch (erro) {\n  return [{ json: { taskId: tarefa.taskId, sucesso: false, outcome: `falha de rede: ${erro.message}`.slice(0, 500) } }];\n}\n\nconst status = resposta.statusCode;\nconst dados = resposta.body;\n\nif (status >= 200 && status < 300) {\n  const recurso = dados?.results?.[0]?.resourceName ?? 'convite criado';\n  return [{ json: { taskId: tarefa.taskId, sucesso: true, outcome: `convite pendente · ${recurso}` } }];\n}\n\nconst erroGoogle = dados?.error?.details?.[0]?.errors?.[0];\nconst codigo = erroGoogle ? Object.values(erroGoogle.errorCode || {})[0] : null;\nconst mensagem = erroGoogle?.message || dados?.error?.message || 'recusado sem mensagem';\n\nreturn [{\n  json: {\n    taskId: tarefa.taskId,\n    sucesso: false,\n    outcome: `${codigo ? codigo + ' · ' : ''}${mensagem} (HTTP ${status})`.slice(0, 500),\n  },\n}];"
+      },
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "triaGoogleAds",
+          "name": "tria · Google Ads da agência"
+        }
+      }
+    },
+    {
+      "id": "reportar",
+      "name": "Reportar resultado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        180
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=http://app:3000/api/v0/tasks/result",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ taskId: $json.taskId, sucesso: $json.sucesso, outcome: $json.outcome }) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "triaWorkerAuth",
+          "name": "tria · token do worker"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "A cada 5 minutos": {
+      "main": [
+        [
+          {
+            "node": "Ler fila de convites",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execução manual": {
+      "main": [
+        [
+          {
+            "node": "Ler fila de convites",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler fila de convites": {
+      "main": [
+        [
+          {
+            "node": "Uma tarefa por item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Uma tarefa por item": {
+      "main": [
+        [
+          {
+            "node": "Processar em série",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar em série": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Convidar conta na MCC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convidar conta na MCC": {
+      "main": [
+        [
+          {
+            "node": "Reportar resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reportar resultado": {
+      "main": [
+        [
+          {
+            "node": "Processar em série",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
