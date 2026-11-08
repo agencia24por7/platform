@@ -3,7 +3,7 @@ import { err, ok, type Result } from '@/shared/result/result';
 import { logger } from '@/shared/logging/logger';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import type { CredentialVault } from '@/modules/connections/application/credentialVault';
-import type { Platform } from '@/modules/connections/domain/connection';
+import { CREDENCIAL_SEM_COFRE, type Platform } from '@/modules/connections/domain/connection';
 import {
   PROVIDERS,
   hasRequiredScopes,
@@ -134,7 +134,7 @@ export function createAuthorizationService(
       if (!organization.ok) return err(organization.error);
       const organizationId = organization.value.id;
 
-      let credentialRef = 'pendente:cofre-indisponivel';
+      let credentialRef: string = CREDENCIAL_SEM_COFRE;
       if (vault.available) {
         credentialRef = await vault.store({
           label: `tria · ${provider.label} · ${organization.value.slug}`,
@@ -159,6 +159,7 @@ export function createAuthorizationService(
           externalId,
           scopes: granted.grantedScopes,
           credentialRef,
+          status: vault.available ? 'active' : 'degraded',
           expiresAt: granted.expiresInSeconds
             ? new Date(Date.now() + granted.expiresInSeconds * 1000)
             : null,
@@ -169,7 +170,7 @@ export function createAuthorizationService(
       await audit.record({
         organizationId,
         actorType: 'user',
-        actorId: null,
+        actorId: input.actorId,
         action: 'connection.authorize',
         targetType: 'connection',
         targetId: connection.id,

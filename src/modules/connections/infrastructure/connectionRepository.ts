@@ -42,9 +42,9 @@ export function createConnectionRepository(): ConnectionRepository {
       return withTenant(input.organizationId, async (tx) => {
         const rows = (await tx`
           INSERT INTO integrations.connections
-            (organization_id, platform, grant_type, label, external_id, scopes, credential_ref, expires_at)
+            (organization_id, platform, grant_type, label, external_id, scopes, credential_ref, expires_at, status)
           VALUES (${input.organizationId}, ${input.platform}, ${input.grantType}, ${input.label},
-                  ${input.externalId}, ${tx.array(input.scopes as string[])}, ${input.credentialRef}, ${input.expiresAt})
+                  ${input.externalId}, ${tx.array(input.scopes as string[])}, ${input.credentialRef}, ${input.expiresAt}, ${input.status ?? 'active'})
           RETURNING *`) as unknown as Row[];
         return toConnection(rows[0]!);
       });

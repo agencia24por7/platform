@@ -3,6 +3,7 @@ import { Readiness } from '@/../app/_components/Readiness';
 import { Shell } from '@/../app/_components/Shell';
 import { modules } from '@/composition';
 import { currentOrganization } from '@/shared/http/currentOrganization';
+import { readinessOf } from '@/modules/connections/domain/connection';
 
 export const dynamic = 'force-dynamic';
 
@@ -80,7 +81,9 @@ export default async function IntegrationsPage() {
                         </span>
                       ))}
                     </td>
-                    <td className="mono">{connection.credentialRef}</td>
+                    <td className="mono">
+                      {readinessOf(connection).collectable ? 'cofre · ok' : 'sem credencial'}
+                    </td>
                     <td>
                       <span className={`pill ${statusTone[connection.status] ?? ''}`}>
                         <span className="dot" />
