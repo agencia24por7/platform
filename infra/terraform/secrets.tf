@@ -7,6 +7,7 @@ locals {
     "app-db-password",
     "worker-db-password",
     "n8n-encryption-key",
+    "n8n-api-key",
     "n8n-db-password",
     "proxy-basic-auth",
   ]
