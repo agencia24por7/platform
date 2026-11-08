@@ -9,8 +9,11 @@ import {
   type DiscoveredAccount,
 } from '@/modules/connections/domain/discovery';
 import type { Platform } from '@/modules/connections/domain/connection';
+import type { PlatformDiscovery } from '@/modules/connections/application/platformDiscoveryPort';
+import { GOOGLE_ADS_VERSION } from '@/modules/connections/domain/googleAdsVersion';
+import { resumirFalha } from '@/modules/connections/domain/falhaDescoberta';
 
-const GOOGLE_API = 'https://googleads.googleapis.com/v22';
+const GOOGLE_API = `https://googleads.googleapis.com/${GOOGLE_ADS_VERSION}`;
 const GRAPH_API = 'https://graph.facebook.com/v21.0';
 const TIMEOUT_MS = 15_000;
 
@@ -20,28 +23,26 @@ const CLIENT_QUERY = [
   'FROM customer_client WHERE customer_client.level <= 2',
 ].join(' ');
 
-export type PlatformDiscovery = {
-  google(accessToken: string): Promise<readonly DiscoveredAccount[]>;
-  meta(accessToken: string): Promise<readonly DiscoveredAccount[]>;
-  identify(platform: Platform, accessToken: string): Promise<GrantingAccount | null>;
-};
+const MOTIVO_MAX = 1200;
 
-export type GrantingAccount = { readonly id: string; readonly email: string | null };
-
-const MOTIVO_MAX = 400;
+let ultimaFalha: string | null = null;
 
 async function fetchJson(url: string, init: RequestInit): Promise<unknown> {
   const response = await fetch(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
 
   if (!response.ok) {
+    const motivo = await reasonOf(response);
+    ultimaFalha = resumirFalha(response.status, motivo);
+
     logger.warn('discovery.request.failed', {
       url: new URL(url).pathname,
       status: response.status,
-      motivo: await reasonOf(response),
+      motivo,
     });
     return null;
   }
 
+  ultimaFalha = null;
   return response.json();
 }
 
@@ -76,6 +77,10 @@ export function createPlatformDiscovery(): PlatformDiscovery {
 
       logger.info('discovery.google.done', { roots: accessible.length, accounts: discovered.length });
       return sortForSelection(dedupe(discovered));
+    },
+
+    lastFailure() {
+      return ultimaFalha;
     },
 
     async identify(platform, accessToken) {

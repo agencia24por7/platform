@@ -13,7 +13,7 @@ import {
 } from '@/modules/connections/domain/oauth';
 import type { ConnectionRepository } from '@/modules/connections/infrastructure/connectionRepository';
 import type { DiscoveredAccountRepository } from '@/modules/connections/infrastructure/discoveredAccountRepository';
-import type { PlatformDiscovery } from '@/modules/connections/infrastructure/platformDiscovery';
+import type { PlatformDiscovery } from '@/modules/connections/application/platformDiscoveryPort';
 import type { OrganizationService } from '@/modules/organizations/application/organizationService';
 
 export type AuthorizationInput = {
@@ -192,6 +192,7 @@ export function createAuthorizationService(
           tenantBinding: organizationCreated ? 'criada-no-fluxo' : 'vinda-do-inicio',
           grantedScopes: granted.grantedScopes,
           discoveredAccounts: stored,
+          discoveryFailure: discovery.lastFailure(),
           vaultAvailable: vault.available,
           organizationCreated,
           refreshTokenReceived: granted.refreshToken !== null,
