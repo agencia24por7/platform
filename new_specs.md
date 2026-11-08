@@ -402,6 +402,18 @@ trabalham em conjunto.
 | **Portfolio Intelligence Agent** | Analisa várias contas simultaneamente e identifica padrões entre clientes e carteiras, respeitando o isolamento dos dados |
 | **Policy & Execution Engine** | Valida permissões, limites e aprovações, e executa as ações permitidas |
 
+> **Dois princípios de interface, cross-agente.** Referência observada (Reportei Assistant,
+> nov/2026):
+> 1. **Mostrar as ferramentas usadas, não só a resposta final.** Cada resposta do agente
+>    expõe a lista de chamadas que fez (ex.: `list_projects`, `list_integrations`) de forma
+>    expansível — traço de execução visível na conversa, complementar à auditoria em banco
+>    (seção 11.8), não substituto dela.
+> 2. **Faltou dado, o agente para e oferece o próximo passo — nunca inventa.** Quando a
+>    conta não tem integração conectada, o agente não tenta gerar relatório vazio: explica o
+>    motivo e oferece botões concretos ("ver como conectar", "escolher outro projeto",
+>    "cancelar"). É a mesma lógica de "ainda não há dado suficiente" da seção 11.4, só que
+>    desenhada como interação, não só como regra de negócio.
+
 ### O que cada agente faz
 
 **1. Market Research Agent** — recebe o contexto de um cliente e pesquisa concorrentes,
@@ -626,6 +638,49 @@ responde **"a iniciativa de Black Friday da Loja Flora está entregando 62% da m
 com três campanhas no Meta acima do CPA alvo e duas do Google abaixo"** — que é a pergunta
 que o cliente realmente faz, e é a unidade pela qual a agência cobra e presta contas.
 
+### 6.7.5. O catálogo de ferramentas: a mesma função, chamada por botão, agenda ou agente
+
+Antes de desenhar Blueprints (abaixo) e antes de desenhar o MCP (seção 9), falta decidir uma
+coisa mais fundamental: **o que exatamente o agente pode chamar**. Referência observada
+(Optmyzr, abrindo o seletor de ferramenta dentro de um Blueprint, nov/2026): não é uma IA que
+decide "livre" o que fazer numa conta. É uma IA que escolhe, entre um catálogo de **~80
+funções nomeadas e categorizadas**, qual chamar — e o catálogo é o mesmo usado por botão de
+UI, por agendamento e por Blueprint.
+
+```
+Account Audits (1) · Shopping Feed Audits (1) · Analyze Account Performance (16)
+Reporting And Alerts (6) · Manage Search Queries And Keywords (15)
+Manage Bids For Manual Bidding (9) · Optimize Targets For Automated Bidding (4)
+Track And Optimize Budgets (6) · Optimize Placements (3) · Manage Ads (7)
+Manage Shopping Campaigns (10) · Rule Engine (1) · Others (5)
+```
+
+Cada entrada do catálogo é **uma função com nome estável, escopo de plataforma e schema de
+parâmetros** — ex.: `google_ads.optimize_target_roas_for_ad_groups`,
+`meta_ads.reallocate_budget_to_converting_campaigns`. A mesma função:
+
+- Aparece como botão clicável na UI (seção 2, módulo Campaign Operations).
+- Pode ser agendada (cron) dentro de um Blueprint (6.8) ou de uma automação (12.3).
+- É a mesma que o Campaign Agent (seção 5) chama via ferramenta estruturada, e a mesma que um
+  MCP — nosso ou de terceiro (seção 9) — expõe para fora.
+- Passa pelo Policy & Execution Engine (12.5) de forma idêntica nos três casos — o guardrail
+  não sabe se quem chamou foi um clique, um cron ou o agente.
+
+> **Não desenhar "o agente" como caixa-preta que decide tudo.** Desenhar o catálogo de
+> funções primeiro — nomeado, categorizado, com schema de entrada — e o agente é quem escolhe
+> *qual* função chamar e com quais parâmetros, igual ao seletor "Describe your goal — we'll
+> find the right tool" do Optmyzr faz com busca em linguagem natural sobre esse mesmo
+> catálogo. Isso é literalmente o inventário de `tools` que o Agent Service (seção 9) expõe
+> ao MCP: cada linha da tabela acima é uma categoria de tool, cada item dela é uma tool.
+
+```
+agent.tools
+  id · name (ex.: optimize_target_roas_for_ad_groups) · category
+  platform (google|meta|microsoft|amazon) · input_schema (json) · output_schema (json)
+  invocation_modes[] (ui_button|scheduled|blueprint|agent|mcp)
+  policy_category (budget|bid|target|keyword|ad|account_wide) → seção 12.5
+```
+
 ### 6.8. Blueprints: o playbook que a agência repete, não a iniciativa que ela executa uma vez
 
 O Kanban (6.2) resolve o fluxo de **uma** iniciativa específica. Falta a camada de cima: o
@@ -645,7 +700,10 @@ partir de um objetivo em texto, com tarefas atribuídas a pessoas e papéis pró
   gerado por IA a partir de uma frase de objetivo — a mesma lógica de `origin = agent|manual`
   da seção 6.3, aplicada ao nível de processo, não de iniciativa.
 - `agent.blueprints` · `agent.blueprint_tasks` — tarefas com dono, prazo e papel, distintas de
-  `pipeline_events` (que é histórico de transição de agente, não checklist humano).
+  `pipeline_events` (que é histórico de transição de agente, não checklist humano). Cada
+  `blueprint_task` referencia opcionalmente um `agent.tools.id` (6.7.5) — é assim que uma
+  tarefa de blueprint vira uma chamada de função real, não só um lembrete; sem referência,
+  é uma tarefa livre, atribuída a uma pessoa, sem automação por trás.
 
 ### 6.9. Produção de criativo e aprovação externa — o Kanban que falta antes do Kanban
 
@@ -763,6 +821,12 @@ O cliente visualiza somente suas próprias informações:
 O cliente também pode ter acesso ao agente, mas com permissões limitadas e sem acesso à
 operação interna da agência.
 
+> **White-label de verdade, não só tema.** Referência observada (mLabs "Portal da Marca",
+> nov/2026): a área do cliente roda em **domínio próprio da agência** (`dashboard.agencia/
+> cliente`), com logo e cores dela — o cliente final nunca vê o nome da tria. Não é só cor de
+> botão: é subdomínio configurável por organização, servido com o certificado e o branding
+> da agência, porque quem vende o resultado pro cliente final é a agência, não nós.
+
 ---
 
 ## 9. Arquitetura técnica
@@ -835,7 +899,12 @@ Prioridade inicial:
 3. Google Analytics 4
 4. Google Tag Manager
 5. Google Merchant Center
-6. Integrações de CRM e vendas, posteriormente
+6. Integrações de CRM e vendas, posteriormente — nomeadamente **RD Station Marketing**
+   (CRM/automação dominante no mercado brasileiro, alimenta o closed-loop da seção 11.6) e
+   **Hotmart** (plataforma de infoproduto/afiliados, vertical relevante pro Brasil que não
+   aparece em nenhum concorrente americano). Referência: Reportei e mLabs já priorizam as
+   duas nomeadas, não um conector genérico de "CRM" — vale decidir cedo se entram como
+   integração própria ou via Zapier/Make no MVP.
 
 > É importante separar a autorização do usuário para **entrar na plataforma** da autorização
 > para **acessar contas de publicidade**. São credenciais e permissões diferentes.
@@ -864,6 +933,14 @@ aguardando minha aprovação?" sem abrir a ferramenta.
 - Isso não substitui o agente próprio (seção 5) — é um segundo ponto de entrada pro mesmo
   sistema de permissões e políticas, pensado para quem já vive dentro de um assistente de IA
   e não quer trocar de aba pra cada pergunta operacional.
+
+> **MCP também de fora pra dentro, não só de dentro pra fora.** Referência observada
+> (Reportei Assistant conectando "Meta Ads MCP", nov/2026): além de nos expormos como
+> servidor MCP (acima), o Campaign Agent (seção 5) pode ser **cliente** de servidores MCP que
+> as próprias plataformas de mídia expuserem — criar campanha, ajustar orçamento, montar
+> público, tudo via chamada MCP nativa da Meta, como alternativa ou complemento à API de
+> Marketing tradicional (seção 10.3). O mesmo Policy & Execution Engine intercepta antes de
+> aplicar, venha a ação da API oficial ou de um MCP de terceiro.
 
 ---
 
@@ -971,6 +1048,39 @@ Vale para qualquer plataforma e qualquer tipo de organização:
 > justamente por isso: uma autorização descobre dezenas de contas, e cada conta pode ter o
 > próprio destino dentro da plataforma.
 
+> **Testado ao vivo (Reportei, nov/2026): o passo 1 não é um protocolo só, são cinco
+> variações, e a camada de UX é o que fica igual.** Conectei Instagram Business, Facebook,
+> Google Ads, Google Analytics 4, TikTok, RD Station e Hotmart na mesma tela de integrações
+> pra ver se existe um padrão único por trás do "Integrar". Não existe um protocolo único —
+> existem pelo menos cinco variações técnicas, mas a **camada de experiência é consistente**
+> em todas:
+>
+> | Variação observada | Exemplo | O que a UI faz por cima |
+> | --- | --- | --- |
+> | OAuth com sessão já concedida | Google Ads, GA4 | Pula direto pro passo 3 (Selecionar) — nenhuma tela de consentimento nova, porque o escopo já foi pedido no login inicial (ver nota abaixo) |
+> | OAuth com redirecionamento novo | TikTok | Vai pra tela de login nativa da plataforma, sem sessão prévia |
+> | OAuth com instrução prévia sobre a própria tela do provedor | Facebook/Instagram | Antes de redirecionar, mostra um passo a passo numerado de **o que clicar na tela da Meta** ("selecione 'aceitar em todas as páginas atuais e futuras'") — porque essa tela é ambígua e errar ali quebra a integração |
+> | Credencial manual, sem OAuth | Hotmart | Sem redirecionamento — pede Client ID/Secret, com tutorial embutido de onde achar cada chave dentro do painel do próprio provedor |
+> | Aviso de limitação de dado antes de conectar | RD Station | Antes do botão final, avisa que dado histórico de lead/conversão **não vem retroativo** — gerencia expectativa em vez de deixar o gestor descobrir depois |
+>
+> **O que isso valida do nosso desenho (seção 10.3/10.4):** a tabela de caminhos por
+> plataforma já prevê que cada uma tem seu próprio mecanismo. **O que falta explicitar:**
+> nosso passo 1 "Autorizar" precisa aceitar três formas de entrada — OAuth, credencial manual
+> — e nosso passo 4 "Validar" precisa incluir uma sub-etapa de **disclosure de limitação de
+> dado** (o que não vem, o que não é retroativo) antes de confirmar a conexão, não só depois
+> que já está quebrado.
+>
+> **Achado do usuário, direto no teste:** o Reportei já lista as contas do Google Ads e do
+> GA4 sem pedir consentimento de novo — porque o escopo de Ads/Analytics já estava embutido
+> na tela de login inicial com "Selecionar tudo" marcado (a mesma tela do print da seção
+> 10.5). Isso contraria nosso princípio de "nunca pedir escopo além do necessário" (10.5): é
+> mais rápido pro usuário, mas pede permissão ampla cedo demais, antes de saber se vai usar.
+> **Recomendação:** empacotar no login inicial só o escopo de **descoberta/leitura**
+> (`adwords` leitura, `analytics.readonly`) — suficiente pra já mostrar as contas disponíveis
+> sem segunda tela — e manter separado, pedido só quando a pessoa ativar gestão de verdade,
+> o escopo de **escrita** (criar/editar campanha). Ganha a velocidade do Reportei sem herdar
+> o excesso de escopo que a seção 10.5 já criticou no console dele.
+
 ### 10.5. Escopos pedidos
 
 O pedido é o mínimo necessário para operar de verdade — e não mais que isso.
@@ -981,6 +1091,8 @@ O pedido é o mínimo necessário para operar de verdade — e não mais que iss
 | Google | `datamanager` | Público semelhante e conversão offline (closed-loop da seção 10) |
 | Google | `analytics.readonly` | GA4 como fonte confirmada de conversão |
 | Google | `content` | Merchant Center — saúde do feed para Shopping e PMax |
+| Google | `webmasters.readonly` | Search Console — cliques, impressões e posição orgânica, para o relatório não depender só de mídia paga |
+| Google | `business.manage` (variante readonly) | Perfil da Empresa no Google — avaliações e visibilidade local, quando o cliente tem unidade física |
 | Meta | `ads_read` | Ler campanhas, conjuntos, anúncios e insights |
 | Meta | `ads_management` | Criar e alterar campanhas, orçamentos e criativos |
 | Meta | `business_management` | Enxergar os ativos do Business Manager e a estrutura |
@@ -988,6 +1100,14 @@ O pedido é o mínimo necessário para operar de verdade — e não mais que iss
 
 Nunca são pedidos escopos de faturamento, de cobrança ou de leitura de dados pessoais além
 do necessário para as audiências autorizadas pelo cliente.
+
+> **GA4 já estava coberto; Search Console e Perfil da Empresa são a lacuna real.** Comparação
+> observada (consentimento OAuth do Reportei, nov/2026): ele pede GA4, Search Console,
+> Perfil da Empresa e YouTube Analytics — mas pede **escopo de escrita completo** ("ver,
+> editar, criar e excluir") em Ads e no Perfil da Empresa, sendo uma ferramenta só de
+> relatório. Não repetir esse excesso: Search Console e Perfil da Empresa entram como
+> `readonly` — write nunca é pedido só para gerar relatório. YouTube Analytics fica de fora
+> até existir cliente com vertical de vídeo/canal próprio; não é escopo mínimo hoje.
 
 > **GA4 e GTM não usam o mesmo consentimento.** Dependem de uma conta de serviço adicionada
 > à propriedade pelo próprio cliente. É um passo extra e explícito no onboarding, com o
@@ -1164,6 +1284,13 @@ barata costuma trazer o lead que não fecha.
 > Por isso o CRM **sobe** na fila de integrações: o diferencial declarado é "IA que entende a
 > finalidade comercial", e sem closed-loop esse diferencial não se sustenta.
 
+> **WhatsApp não é só canal de aprovação (6.9) — é onde o lead brasileiro fecha.** Várias
+> ferramentas do mercado (mLabs inclui "Engajar → WhatsApp" e um Inbox unificado de DMs/
+> comentários como módulo de primeira classe, não acessório) já tratam WhatsApp como canal de
+> engajamento e fechamento, não só de notificação. Para o vertical de leads (decisão 15.4),
+> isso é parte do closed-loop: o status "respondeu no WhatsApp → qualificou → fechou" é tão
+> fonte da verdade quanto o CRM, e pode chegar antes dele.
+
 ### 11.7. Avaliação do próprio agente
 
 O documento diz que a autonomia Assistida é liberada "depois de validar a qualidade das
@@ -1269,6 +1396,7 @@ aplicada na conta**, venha ela de pessoa ou de agente. Referência observada fun
 | Metas (tCPA/tROAS) | Teto e piso de CPA/ROAS alvo; variação máxima por edição |
 | Palavras-chave | Termos bloqueados; tipos de correspondência permitidos; domínio de destino permitido; limite de inclusões por dia |
 | Anúncios e criativos | Palavras bloqueadas no texto (alimentado pelo perfil de contexto, seção 5.6); idioma obrigatório; proibição de remover o último anúncio ativo de um grupo |
+| Posicionamento (brand safety) | Excluir posicionamento infantil, de jogos ou categorias sensíveis por padrão em toda a conta; exclusão automática em rede de display/apps de baixa qualidade |
 | Conta como um todo | Limiar de operação em massa; aviso em remoção permanente; limite de mudanças por dia |
 
 - **Enforcement tem dois níveis**: `block` (impede a execução) e `warning` (executa, mas

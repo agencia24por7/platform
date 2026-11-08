@@ -176,6 +176,18 @@ resource "google_storage_bucket_iam_member" "planner_state" {
   member = "serviceAccount:${google_service_account.planner.email}"
 }
 
+resource "google_storage_bucket_iam_member" "planner_lock" {
+  bucket = google_storage_bucket.state.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.planner.email}"
+
+  condition {
+    title       = "apenas arquivos de lock"
+    description = "O plano de pull request precisa escrever o lock do Terraform, e nada alem disso."
+    expression  = "resource.name.endsWith(\".tflock\")"
+  }
+}
+
 resource "google_service_account_iam_member" "terraform_wif" {
   service_account_id = google_service_account.terraform.name
   role               = "roles/iam.workloadIdentityUser"
