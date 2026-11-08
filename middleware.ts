@@ -1,6 +1,13 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { SESSION_COOKIE } from '@/modules/identity/domain/sessionCookie';
 
+function enderecoPublico(): string {
+  const configurado = process.env['TRIA_APP_BASE_URL'];
+  if (!configurado) throw new Error('TRIA_APP_BASE_URL ausente: o app não sabe o próprio endereço.');
+
+  return configurado;
+}
+
 const ROTAS_ABERTAS = ['/entrar', '/api/auth', '/api/health', '/api/v0', '/api/portaria'];
 
 export function middleware(request: NextRequest): NextResponse {
@@ -12,9 +19,9 @@ export function middleware(request: NextRequest): NextResponse {
 
   if (request.cookies.get(SESSION_COOKIE)?.value) return NextResponse.next();
 
-  const destino = request.nextUrl.clone();
-  destino.pathname = '/api/auth/google/start';
-  destino.search = pathname === '/' ? '' : `?returnTo=${encodeURIComponent(pathname)}`;
+  const destino = new URL('/api/auth/google/start', enderecoPublico());
+  if (pathname !== '/') destino.searchParams.set('returnTo', pathname);
+
   return NextResponse.redirect(destino);
 }
 

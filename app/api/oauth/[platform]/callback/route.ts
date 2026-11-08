@@ -19,8 +19,12 @@ function clear(response: NextResponse): NextResponse {
   return response;
 }
 
-function backTo(request: NextRequest, reason: string): NextResponse {
-  return clear(NextResponse.redirect(new URL(`/comecar?passo=conectar&erro=${reason}`, request.url)));
+function backTo(_request: NextRequest, reason: string): NextResponse {
+  return clear(
+    NextResponse.redirect(
+      new URL(`/comecar?passo=conectar&erro=${reason}`, env().TRIA_APP_BASE_URL),
+    ),
+  );
 }
 
 function credentialsFor(platform: Platform) {

@@ -35,13 +35,13 @@ export async function GET(
 ): Promise<NextResponse> {
   const { platform } = await context.params;
   if (platform !== 'google' && platform !== 'meta') {
-    return NextResponse.redirect(new URL('/comecar?erro=plataforma_desconhecida', request.url));
+    return NextResponse.redirect(new URL('/comecar?erro=plataforma_desconhecida', env().TRIA_APP_BASE_URL));
   }
 
   const credentials = credentialsFor(platform);
   if (!isConfigured(credentials, platform)) {
     logger.info('oauth.start.not_configured', { platform });
-    return NextResponse.redirect(new URL(`/comecar?passo=conectar&indisponivel=${platform}`, request.url));
+    return NextResponse.redirect(new URL(`/comecar?passo=conectar&indisponivel=${platform}`, env().TRIA_APP_BASE_URL));
   }
 
   const returnTo = request.nextUrl.searchParams.get('returnTo') ?? '/comecar?passo=contas';
