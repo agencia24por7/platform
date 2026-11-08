@@ -23,8 +23,10 @@ const CLIENT_QUERY = [
 export type PlatformDiscovery = {
   google(accessToken: string): Promise<readonly DiscoveredAccount[]>;
   meta(accessToken: string): Promise<readonly DiscoveredAccount[]>;
-  identify(platform: Platform, accessToken: string): Promise<string | null>;
+  identify(platform: Platform, accessToken: string): Promise<GrantingAccount | null>;
 };
+
+export type GrantingAccount = { readonly id: string; readonly email: string | null };
 
 const MOTIVO_MAX = 400;
 
@@ -80,7 +82,7 @@ export function createPlatformDiscovery(): PlatformDiscovery {
       const url =
         platform === 'google'
           ? 'https://www.googleapis.com/oauth2/v3/userinfo'
-          : `${GRAPH_API}/me?fields=id`;
+          : `${GRAPH_API}/me?fields=id,email`;
 
       const payload = await fetchJson(url, {
         method: 'GET',
@@ -89,8 +91,15 @@ export function createPlatformDiscovery(): PlatformDiscovery {
 
       if (typeof payload !== 'object' || payload === null) return null;
 
-      const identificador = (payload as Record<string, unknown>)[platform === 'google' ? 'sub' : 'id'];
-      return typeof identificador === 'string' && identificador.length > 0 ? identificador : null;
+      const dados = payload as Record<string, unknown>;
+      const identificador = dados[platform === 'google' ? 'sub' : 'id'];
+      if (typeof identificador !== 'string' || identificador.length === 0) return null;
+
+      const email = dados['email'];
+      return {
+        id: identificador,
+        email: typeof email === 'string' && email.includes('@') ? email : null,
+      };
     },
 
     async meta(accessToken) {

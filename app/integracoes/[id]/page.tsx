@@ -91,6 +91,10 @@ export default async function DetalheAutorizacao({ params }: { params: Promise<{
             </div>
             <div className="dupla">
               <span>Conta que concedeu</span>
+              <span>{conexao.accountEmail ?? <span className="subtle">não informado</span>}</span>
+            </div>
+            <div className="dupla">
+              <span>Id na plataforma</span>
               <span className="mono">{conexao.externalId}</span>
             </div>
             <div className="dupla">

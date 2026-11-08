@@ -154,7 +154,7 @@ export function createAuthorizationService(
         );
       }
 
-      const externalId = identidade;
+      const externalId = identidade.id;
       const already = await connections.findByExternalId(organizationId, input.platform, externalId);
 
       const proposta = {
@@ -163,6 +163,7 @@ export function createAuthorizationService(
         grantType: GRANT_BY_PLATFORM[input.platform],
         label: `${provider.label} · ${organization.value.name}`,
         externalId,
+        accountEmail: identidade.email,
         scopes: granted.grantedScopes,
         credentialRef,
         status: (vault.available ? 'active' : 'degraded') as Connection['status'],

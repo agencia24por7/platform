@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { Readiness } from '@/../app/_components/Readiness';
 import { Shell } from '@/../app/_components/Shell';
 import { modules } from '@/composition';
+import { encurtarEscopo } from '@/modules/audit/domain/auditView';
 import { currentOrganization } from '@/shared/http/currentOrganization';
 import { readinessOf } from '@/modules/connections/domain/connection';
 
@@ -60,6 +61,8 @@ export default async function IntegrationsPage() {
                 <tr>
                   <th>Autorização</th>
                   <th>Plataforma</th>
+                  <th>Conta que concedeu</th>
+                  <th>Concedida em</th>
                   <th>Caminho</th>
                   <th>Escopos</th>
                   <th>Credencial</th>
@@ -76,13 +79,24 @@ export default async function IntegrationsPage() {
                       <div className="mono subtle">{connection.externalId}</div>
                     </td>
                     <td>{connection.platform === 'meta' ? 'Meta Ads' : 'Google Ads'}</td>
+                    <td>
+                      {connection.accountEmail ?? <span className="subtle">não informado</span>}
+                    </td>
+                    <td className="nowrap">
+                      <div>{connection.authorizedAt.toLocaleDateString('pt-BR')}</div>
+                      <div className="subtle">
+                        {connection.authorizedAt.toLocaleTimeString('pt-BR')}
+                      </div>
+                    </td>
                     <td className="muted">{grantLabel[connection.grantType]}</td>
                     <td>
-                      {connection.scopes.map((scope) => (
-                        <span key={scope} className="pill" style={{ marginRight: 4 }}>
-                          {scope}
-                        </span>
-                      ))}
+                      <div className="fichas">
+                        {connection.scopes.map((scope) => (
+                          <span key={scope} className="ficha" title={scope}>
+                            {encurtarEscopo(scope)}
+                          </span>
+                        ))}
+                      </div>
                     </td>
                     <td className="mono">
                       {readinessOf(connection).collectable ? 'cofre · ok' : 'sem credencial'}

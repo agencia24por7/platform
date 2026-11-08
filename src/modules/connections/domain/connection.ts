@@ -18,6 +18,7 @@ export type Connection = {
   readonly grantType: GrantType;
   readonly label: string;
   readonly externalId: string;
+  readonly accountEmail: string | null;
   readonly scopes: readonly string[];
   readonly credentialRef: string;
   readonly status: ConnectionStatus;

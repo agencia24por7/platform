@@ -8,6 +8,7 @@ type Row = {
   grant_type: Connection['grantType'];
   label: string;
   external_id: string;
+  account_email: string | null;
   scopes: string[];
   credential_ref: string;
   status: Connection['status'];
@@ -22,6 +23,7 @@ const toConnection = (row: Row): Connection => ({
   grantType: row.grant_type,
   label: row.label,
   externalId: row.external_id,
+  accountEmail: row.account_email,
   scopes: row.scopes,
   credentialRef: row.credential_ref,
   status: row.status,
@@ -43,9 +45,9 @@ export function createConnectionRepository(): ConnectionRepository {
       return withTenant(input.organizationId, async (tx) => {
         const rows = (await tx`
           INSERT INTO integrations.connections
-            (organization_id, platform, grant_type, label, external_id, scopes, credential_ref, expires_at, status)
+            (organization_id, platform, grant_type, label, external_id, account_email, scopes, credential_ref, expires_at, status)
           VALUES (${input.organizationId}, ${input.platform}, ${input.grantType}, ${input.label},
-                  ${input.externalId}, ${tx.array(input.scopes as string[])}, ${input.credentialRef}, ${input.expiresAt}, ${input.status ?? 'active'})
+                  ${input.externalId}, ${input.accountEmail ?? null}, ${tx.array(input.scopes as string[])}, ${input.credentialRef}, ${input.expiresAt}, ${input.status ?? 'active'})
           RETURNING *`) as unknown as Row[];
         return toConnection(rows[0]!);
       });
@@ -56,6 +58,7 @@ export function createConnectionRepository(): ConnectionRepository {
         const rows = (await tx`
           UPDATE integrations.connections
           SET label          = ${input.label},
+              account_email  = ${input.accountEmail ?? null},
               scopes         = ${tx.array(input.scopes as string[])},
               credential_ref = ${input.credentialRef},
               status         = ${input.status ?? 'active'},
