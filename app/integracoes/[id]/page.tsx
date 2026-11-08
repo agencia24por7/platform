@@ -285,7 +285,7 @@ export default async function DetalheAutorizacao({
                 inputMode="numeric"
               />
               <span className="field__hint">
-                A tria não cria contas de anúncio. Ela apenas convida uma conta que já existe.
+                A Orla não cria contas de anúncio. Ela apenas convida uma conta que já existe.
               </span>
             </div>
             <div className="page__actions">

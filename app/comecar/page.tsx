@@ -62,7 +62,7 @@ export default async function StartPage({
         <div className="wizard__eyebrow">Passo 1 de 3 · Conectar</div>
         <h1 className="wizard__heading">Conecte sua primeira conta de anúncios</h1>
         <p className="wizard__sub">
-          A autorização acontece no site da própria plataforma. A tria recebe permissão de leitura e gestão,
+          A autorização acontece no site da própria plataforma. A Orla recebe permissão de leitura e gestão,
           nunca a sua senha, e você revoga quando quiser.
         </p>
       </div>
@@ -80,7 +80,7 @@ export default async function StartPage({
         <div className="alert alert--error">
           <div>
             <div className="strong">
-              O aplicativo da tria para {unavailable === 'google' ? 'Google Ads' : 'Meta Ads'} ainda não está
+              O aplicativo da Orla para {unavailable === 'google' ? 'Google Ads' : 'Meta Ads'} ainda não está
               habilitado neste ambiente.
             </div>
             <div>

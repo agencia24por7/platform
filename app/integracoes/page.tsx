@@ -130,7 +130,7 @@ export default async function IntegrationsPage() {
 
         {caminhos.length === 0 ? (
           <div className="empty">
-            Nenhuma conta ainda. Autorize uma plataforma para a tria enxergar o que você administra.
+            Nenhuma conta ainda. Autorize uma plataforma para a Orla enxergar o que você administra.
           </div>
         ) : (
           caminhos.map((caminho) => (

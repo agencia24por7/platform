@@ -97,7 +97,7 @@ export default async function VincularConta({
         <div className="vazio">
           <p className="vazio__titulo">Nenhuma conta disponível ainda</p>
           <p className="vazio__texto">
-            As contas aparecem aqui depois que você autoriza a plataforma. A tria só enxerga o que o
+            As contas aparecem aqui depois que você autoriza a plataforma. A Orla só enxerga o que o
             Google ou a Meta devolvem na autorização.
           </p>
           <Link className="btn btn--primary btn--pill" href="/comecar?passo=conectar">

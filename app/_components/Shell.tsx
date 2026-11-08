@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { ThemeToggle } from '@/../app/_components/ThemeToggle';
 import type { Organization } from '@/modules/organizations/domain/organization';
 import { currentUser } from '@/shared/http/currentUser';
 
@@ -30,12 +31,15 @@ export async function Shell({ title, organization, active, children }: Props) {
 
   return (
     <div className="shell">
+      <a className="pular-link" href="#conteudo">
+        Pular para o conteúdo
+      </a>
       <aside className="side">
         <div className="side__brand">
-          <span className="mark">T</span>
+          <span className="mark">õ</span>
           <span className="brand">
-            tria
-            <small>AI-Native AdTech</small>
+            orla
+            <small>Um oceano azul para seus anúncios</small>
           </span>
         </div>
         <nav className="side__nav">
@@ -59,7 +63,7 @@ export async function Shell({ title, organization, active, children }: Props) {
         <div className="side__foot">
           {organization ? (
             <>
-              <div className="strong small" style={{ color: 'var(--sidebar-fg-strong)' }}>
+              <div className="strong small" style={{ color: 'var(--rail-fg-strong)' }}>
                 {organization.name}
               </div>
               <div>{organization.type === 'agency' ? 'Opera contas de clientes' : 'Opera as próprias contas'}</div>
@@ -72,18 +76,23 @@ export async function Shell({ title, organization, active, children }: Props) {
       <main className="main">
         <header className="topbar">
           <span className="strong">{title}</span>
-          {session ? (
-            <div className="sessao">
-              <span className="sessao__quem">{session.user.email}</span>
-              <form action="/api/auth/sair" method="post">
-                <button className="sessao__sair" type="submit">
-                  Sair
-                </button>
-              </form>
-            </div>
-          ) : null}
+          <div className="sessao">
+            <ThemeToggle />
+            {session ? (
+              <>
+                <span className="sessao__quem">{session.user.email}</span>
+                <form action="/api/auth/sair" method="post">
+                  <button className="sessao__sair" type="submit">
+                    Sair
+                  </button>
+                </form>
+              </>
+            ) : null}
+          </div>
         </header>
-        <div className="page">{children}</div>
+        <div className="page" id="conteudo">
+          {children}
+        </div>
       </main>
     </div>
   );

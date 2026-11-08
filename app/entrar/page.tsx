@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { ThemeToggle } from '@/../app/_components/ThemeToggle';
 import { env } from '@/shared/config/env';
 import { currentUser } from '@/shared/http/currentUser';
 
@@ -47,23 +48,26 @@ export default async function Entrar({ searchParams }: Props) {
 
   return (
     <div className="portao">
+      <div className="portao__tema">
+        <ThemeToggle />
+      </div>
+
       <section className="portao__vitrine">
         <div className="malha" aria-hidden="true">
+          <span className="malha__azulejo" />
           <span className="malha__traco malha__traco--um" />
           <span className="malha__traco malha__traco--dois" />
         </div>
 
         <div className="portao__marca">
-          <span className="portao__simbolo">T</span>
-          <span className="portao__nome">tria</span>
+          <span className="portao__simbolo">õ</span>
+          <span className="portao__nome">orla</span>
         </div>
 
         <h1 className="portao__chamada">
-          A operação de mídia
+          Um oceano azul
           <br />
-          de todos os seus clientes,
-          <br />
-          <em>num lugar só.</em>
+          para seus <em>anúncios.</em>
         </h1>
 
         <p className="portao__rodape">Nenhuma senha sua é armazenada aqui.</p>
