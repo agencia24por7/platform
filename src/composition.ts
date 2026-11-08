@@ -21,12 +21,14 @@ function build() {
   const discoveredAccounts = createDiscoveredAccountRepository();
   const organizations = createOrganizationService(createOrganizationRepository(), audit);
 
+  const clientRepository = createClientRepository();
+
   return {
     audit,
     discoveredAccounts,
     organizations,
-    clients: createClientService(createClientRepository(), audit),
-    connections: createConnectionService(connectionRepository, adAccounts, audit),
+    clients: createClientService(clientRepository, audit),
+    connections: createConnectionService(connectionRepository, adAccounts, audit, clientRepository),
     authorization: createAuthorizationService(
       organizations,
       connectionRepository,

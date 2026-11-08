@@ -21,10 +21,15 @@ export type ConnectionService = {
   listAccounts(organizationId: string): Promise<readonly (AdAccount & { clientName: string })[]>;
 };
 
+export type ClientOwnership = {
+  findById(organizationId: string, id: string): Promise<{ readonly id: string } | null>;
+};
+
 export function createConnectionService(
   connections: ConnectionRepository,
   accounts: AdAccountRepository,
   audit: AuditRecorder,
+  clients: ClientOwnership,
 ): ConnectionService {
   return {
     async createConnection(input, requestId) {
@@ -63,6 +68,10 @@ export function createConnectionService(
     },
 
     async linkAccount(input, requestId) {
+      if (!(await clients.findById(input.organizationId, input.clientId))) {
+        return err(failure('validation', 'Cliente não encontrado nesta organização.'));
+      }
+
       const connection = await connections.findById(input.organizationId, input.connectionId);
       if (!connection) return err(failure('validation', 'Autorização não encontrada nesta organização.'));
       if (connection.platform !== input.platform) {
