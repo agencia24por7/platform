@@ -18,6 +18,7 @@ import type { OrganizationService } from '@/modules/organizations/application/or
 
 export type AuthorizationInput = {
   readonly organizationId: string | null;
+  readonly actorId: string;
   readonly platform: Platform;
   readonly code: string;
   readonly codeVerifier: string | null;
@@ -125,6 +126,7 @@ export function createAuthorizationService(
               businessManagerId: input.platform === 'meta' ? (accounts[0]?.managerExternalId ?? null) : null,
               developerTokenRef: null,
             },
+            input.actorId,
             input.requestId,
           )
         : await organizations.byId(input.organizationId!);

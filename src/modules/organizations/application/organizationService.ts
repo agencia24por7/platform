@@ -9,7 +9,7 @@ import {
 import type { OrganizationRepository } from '@/modules/organizations/infrastructure/organizationRepository';
 
 export type OrganizationService = {
-  create(input: NewOrganization, requestId: string): Promise<Result<Organization, Failure>>;
+  create(input: NewOrganization, actorId: string, requestId: string): Promise<Result<Organization, Failure>>;
   byId(id: string): Promise<Result<Organization, Failure>>;
   list(): Promise<readonly Organization[]>;
 };
@@ -19,7 +19,7 @@ export function createOrganizationService(
   audit: AuditRecorder,
 ): OrganizationService {
   return {
-    async create(input, requestId) {
+    async create(input, actorId, requestId) {
       const slug = slugify(input.name);
       if (slug.length < 3) {
         return err(failure('validation', 'Nome curto demais para gerar identificador.'));
@@ -34,7 +34,7 @@ export function createOrganizationService(
       await audit.record({
         organizationId: organization.id,
         actorType: 'user',
-        actorId: null,
+        actorId,
         action: 'organization.create',
         targetType: 'organization',
         targetId: organization.id,

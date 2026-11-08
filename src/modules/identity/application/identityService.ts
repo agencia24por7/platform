@@ -35,16 +35,19 @@ export function createIdentityService(users: UserRepository, audit: AuditRecorde
       const user = await users.upsertFromProvider(identity);
       const memberships = await users.membershipsOf(user.id);
 
-      for (const membership of memberships) {
+      const alcance: readonly (string | null)[] =
+        memberships.length > 0 ? memberships.map((m) => m.organizationId) : [null];
+
+      for (const organizationId of alcance) {
         await audit.record({
-          organizationId: membership.organizationId,
+          organizationId,
           actorType: 'user',
           actorId: user.id,
           action: 'identity.signed_in',
           targetType: 'user',
           targetId: user.id,
           requestId,
-          metadata: { email: user.email },
+          metadata: { email: user.email, primeiroAcesso: memberships.length === 0 },
         });
       }
 

@@ -17,6 +17,7 @@ async function createOrganization(formData: FormData): Promise<void> {
   if (sessao.memberships.length > 0) redirect('/clientes');
 
   const type: OrganizationType = text(formData, 'type') === 'advertiser' ? 'advertiser' : 'agency';
+  const pedido = requestId();
   const result = await modules().organizations.create(
     {
       name: text(formData, 'name'),
@@ -25,7 +26,8 @@ async function createOrganization(formData: FormData): Promise<void> {
       businessManagerId: optionalText(formData, 'businessManagerId'),
       developerTokenRef: null,
     },
-    requestId(),
+    sessao.user.id,
+    pedido,
   );
 
   if (!result.ok) {
@@ -33,7 +35,7 @@ async function createOrganization(formData: FormData): Promise<void> {
     redirect(`/organizacoes/nova?tipo=${type}&erro=${encodeURIComponent(message)}`);
   }
 
-  const vinculo = await modules().identity.joinAsOwner(result.value.id, sessao.user.id, requestId());
+  const vinculo = await modules().identity.joinAsOwner(result.value.id, sessao.user.id, pedido);
   if (!vinculo.ok) {
     const message = toActionState(vinculo.error).error ?? '';
     redirect(`/organizacoes/nova?tipo=${type}&erro=${encodeURIComponent(message)}`);
