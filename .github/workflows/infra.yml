@@ -51,6 +51,7 @@ jobs:
       - name: Plan
         run: terraform -chdir=$WORKDIR plan -input=false -lock=false -out=plano.tfplan
         env:
+          TF_VAR_environment: ${{ vars.ENVIRONMENT }}
           TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
           TF_VAR_billing_account_id: ${{ secrets.GCP_BILLING_ACCOUNT }}
           TF_VAR_app_hostname: ${{ vars.APP_HOSTNAME }}
@@ -87,6 +88,7 @@ jobs:
       - name: Apply
         run: terraform -chdir=$WORKDIR apply -input=false -auto-approve -lock-timeout=120s
         env:
+          TF_VAR_environment: ${{ vars.ENVIRONMENT }}
           TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
           TF_VAR_billing_account_id: ${{ secrets.GCP_BILLING_ACCOUNT }}
           TF_VAR_app_hostname: ${{ vars.APP_HOSTNAME }}
