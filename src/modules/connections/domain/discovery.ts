@@ -122,14 +122,23 @@ export function parseMetaAdAccounts(payload: unknown): readonly DiscoveredAccoun
     });
 }
 
+function acessadaPorAdministradora(account: DiscoveredAccount): boolean {
+  return account.managerExternalId !== null && account.managerExternalId !== account.externalId;
+}
+
 export function dedupe(accounts: readonly DiscoveredAccount[]): readonly DiscoveredAccount[] {
-  const seen = new Set<string>();
-  return accounts.filter((account) => {
-    const key = `${account.platform}:${account.externalId}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const melhor = new Map<string, DiscoveredAccount>();
+
+  for (const account of accounts) {
+    const chave = `${account.platform}:${account.externalId}`;
+    const atual = melhor.get(chave);
+
+    if (!atual || (!acessadaPorAdministradora(atual) && acessadaPorAdministradora(account))) {
+      melhor.set(chave, account);
+    }
+  }
+
+  return [...melhor.values()];
 }
 
 export function sortForSelection(accounts: readonly DiscoveredAccount[]): readonly DiscoveredAccount[] {

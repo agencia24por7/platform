@@ -9,6 +9,7 @@ export type QueueEntry = {
   readonly clientName: string;
   readonly platform: 'meta' | 'google';
   readonly externalId: string;
+  readonly loginCustomerId: string | null;
   readonly accountName: string;
   readonly currency: string;
   readonly timezone: string;

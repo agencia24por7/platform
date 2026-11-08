@@ -9,6 +9,7 @@ type QueueRow = {
   client_name: string;
   platform: QueueEntry['platform'];
   external_id: string;
+  login_customer_id: string | null;
   account_name: string;
   currency: string;
   timezone: string;
@@ -88,6 +89,7 @@ export function createSyncRunRepository(): SyncRunRepository {
         clientName: row.client_name,
         platform: row.platform,
         externalId: row.external_id,
+        loginCustomerId: row.login_customer_id,
         accountName: row.account_name,
         currency: row.currency,
         timezone: row.timezone,

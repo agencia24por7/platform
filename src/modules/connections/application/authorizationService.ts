@@ -12,6 +12,7 @@ import {
   tokenExchangeRequest,
 } from '@/modules/connections/domain/oauth';
 import type { ConnectionRepository } from '@/modules/connections/infrastructure/connectionRepository';
+import type { DiscoveredAccount } from '@/modules/connections/domain/discovery';
 import type { DiscoveredAccountRepository } from '@/modules/connections/infrastructure/discoveredAccountRepository';
 import type { PlatformDiscovery } from '@/modules/connections/application/platformDiscoveryPort';
 import type { OrganizationService } from '@/modules/organizations/application/organizationService';
@@ -35,6 +36,14 @@ export type AuthorizationOutcome = {
   readonly discovered: number;
   readonly organizationCreated: boolean;
 };
+
+function administradoraDe(accounts: readonly DiscoveredAccount[]): string | null {
+  const gerenciada = accounts.find(
+    (account) => account.managerExternalId !== null && account.managerExternalId !== account.externalId,
+  );
+
+  return gerenciada?.managerExternalId ?? null;
+}
 
 export type AuthorizationService = {
   complete(input: AuthorizationInput): Promise<Result<AuthorizationOutcome, Failure>>;
@@ -122,8 +131,8 @@ export function createAuthorizationService(
             {
               name: accounts[0]?.name ?? provider.label,
               type: accounts.length > 1 ? 'agency' : 'advertiser',
-              managerAccountId: accounts[0]?.managerExternalId ?? null,
-              businessManagerId: input.platform === 'meta' ? (accounts[0]?.managerExternalId ?? null) : null,
+              managerAccountId: administradoraDe(accounts),
+              businessManagerId: input.platform === 'meta' ? administradoraDe(accounts) : null,
               developerTokenRef: null,
             },
             { userId: input.actorId, requestId: input.requestId, sourceIp: input.sourceIp },
