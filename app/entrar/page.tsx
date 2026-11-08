@@ -35,13 +35,6 @@ const GOOGLE_G = (
   </svg>
 );
 
-const CALOR = [
-  0, 0, 0, 0, 1, 0, 2, 4,
-  0, 0, 0, 1, 0, 3, 5, 6,
-  0, 0, 1, 0, 2, 4, 6, 7,
-  0, 1, 0, 2, 3, 5, 7, 7,
-] as const;
-
 type Props = { readonly searchParams: Promise<Record<string, string | undefined>> };
 
 export default async function Entrar({ searchParams }: Props) {
@@ -58,11 +51,6 @@ export default async function Entrar({ searchParams }: Props) {
         <div className="malha" aria-hidden="true">
           <span className="malha__traco malha__traco--um" />
           <span className="malha__traco malha__traco--dois" />
-          <div className="malha__mapa">
-            {CALOR.map((nivel, indice) => (
-              <span key={indice} className="malha__celula" data-nivel={nivel} />
-            ))}
-          </div>
         </div>
 
         <div className="portao__marca">
@@ -77,12 +65,6 @@ export default async function Entrar({ searchParams }: Props) {
           <br />
           <em>num lugar só.</em>
         </h1>
-
-        <ul className="portao__pontos">
-          <li>Conecte Google Ads e Meta pelo consentimento oficial</li>
-          <li>Coleta diária com metadados e auditoria completa</li>
-          <li>Agentes acompanham cada campanha num kanban</li>
-        </ul>
 
         <p className="portao__rodape">Nenhuma senha sua é armazenada aqui.</p>
       </section>
@@ -112,9 +94,6 @@ export default async function Entrar({ searchParams }: Props) {
             </p>
           )}
 
-          <p className="portao__nota">
-            A primeira pessoa a entrar cria a organização e se torna responsável por ela.
-          </p>
         </div>
       </main>
     </div>
