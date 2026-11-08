@@ -8,7 +8,8 @@ import { agruparPorAdministradora } from '@/modules/connections/domain/carteira'
 import { Feedback } from '@/../app/_components/Feedback';
 import { text } from '@/shared/http/actions';
 import { atorAtual } from '@/shared/http/ator';
-import { currentOrganization } from '@/shared/http/currentOrganization';
+import { currentOrganization, requireContext } from '@/shared/http/currentOrganization';
+import { canAdminister } from '@/modules/identity/domain/user';
 import { readinessOf } from '@/modules/connections/domain/connection';
 
 export const dynamic = 'force-dynamic';
@@ -32,16 +33,19 @@ const grantLabel: Record<string, string> = {
 async function aceitarConvite(formData: FormData): Promise<void> {
   'use server';
 
-  const organization = await currentOrganization();
-  if (!organization) redirect('/organizacoes/nova');
-
+  const contexto = await requireContext();
+  const organization = contexto.organization;
   const ator = await atorAtual();
   const voltar = (aviso: string): never =>
     redirect(`/integracoes?aviso=${encodeURIComponent(aviso)}`);
 
+  if (!canAdminister(contexto.role)) {
+    voltar('Só quem administra a organização pode alterar vínculos de conta.');
+    return;
+  }
+
   const conexaoDaConta = text(formData, 'conexaoDaConta');
-  const administradora = text(formData, 'administradora');
-  const conta = text(formData, 'conta');
+  const conviteId = text(formData, 'conviteId');
 
   const conexoes = await modules().connections.listConnections(organization.id);
   if (!conexoes.some((item) => item.id === conexaoDaConta)) {
@@ -49,12 +53,22 @@ async function aceitarConvite(formData: FormData): Promise<void> {
     return;
   }
 
+  const pendentes = await modules().tasks.listRecentes(organization.id);
+  const convite = pendentes.find(
+    (tarefa) => tarefa.id === conviteId && tarefa.kind === 'mcc_invite' && tarefa.status === 'done',
+  );
+
+  if (!convite) {
+    voltar('Convite não encontrado ou ainda não chegou ao Google.');
+    return;
+  }
+
   await modules().tasks.request({
     organizationId: organization.id,
     connectionId: conexaoDaConta,
     kind: 'mcc_accept',
-    managerExternalId: administradora,
-    targetExternalId: conta,
+    managerExternalId: convite.managerExternalId,
+    targetExternalId: convite.targetExternalId,
     requestedBy: ator.userId,
   });
 
@@ -67,7 +81,11 @@ async function aceitarConvite(formData: FormData): Promise<void> {
     targetId: conexaoDaConta,
     requestId: ator.requestId,
     sourceIp: ator.sourceIp,
-    metadata: { administradora, conta },
+    metadata: {
+      administradora: convite.managerExternalId,
+      conta: convite.targetExternalId,
+      conviteId: convite.id,
+    },
   });
 
   voltar('Aceite enfileirado. Ele usa a credencial da conta convidada, como o Google exige.');
@@ -87,7 +105,7 @@ export default async function IntegrationsPage({
     modules().connections.listConnections(organization.id),
     modules().connections.listAccounts(organization.id),
     modules().discoveredAccounts.listAll(organization.id),
-    modules().tasks.listPendentes(organization.id),
+    modules().tasks.listRecentes(organization.id),
   ]);
 
   const convitesEnviados = tarefas.filter((tarefa) => tarefa.kind === 'mcc_invite');
@@ -163,8 +181,7 @@ export default async function IntegrationsPage({
                           <span className="subtle">aceite enfileirado</span>
                         ) : podeAceitar ? (
                           <form action={aceitarConvite} className="row">
-                            <input type="hidden" name="administradora" value={convite.managerExternalId} />
-                            <input type="hidden" name="conta" value={convite.targetExternalId} />
+                            <input type="hidden" name="conviteId" value={convite.id} />
                             <select className="select" name="conexaoDaConta" required>
                               <option value="">autorização da conta convidada…</option>
                               {connections.map((conexao) => (

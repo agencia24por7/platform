@@ -10,6 +10,7 @@ import {
   makeOwner,
   sessionCookie,
   signIn,
+  submitForm,
   signOut,
 } from './helpers.mjs';
 
@@ -211,5 +212,86 @@ describe('a ponte para o n8n não pode virar laço', { concurrency: false }, () 
     });
 
     assert.equal(resposta.status, 204, 'a guarda precisa liberar durante a pausa');
+  });
+});
+
+describe('vínculos de conta exigem papel e não confiam no formulário', { concurrency: false }, () => {
+  let organizacao = '';
+  let conexao = '';
+  let convite = '';
+
+  before(async () => {
+    if (!(await appIsUp())) throw new Error('App não está no ar');
+
+    organizacao = query(
+      `INSERT INTO core.organizations (name, slug, type)
+       VALUES ('Agência do teste de papel', 'papel-teste', 'agency')
+       ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
+       RETURNING id`,
+    );
+
+    conexao = query(
+      `INSERT INTO integrations.connections
+         (organization_id, platform, grant_type, label, external_id, scopes, credential_ref)
+       VALUES ('${organizacao}', 'google', 'oauth_user', 'Teste de papel', 'papel-teste',
+               ARRAY['adwords'], 'n8n:credential:teste')
+       ON CONFLICT (organization_id, platform, external_id) DO UPDATE SET label = EXCLUDED.label
+       RETURNING id`,
+    );
+
+    convite = query(
+      `INSERT INTO automation.account_tasks
+         (organization_id, connection_id, kind, manager_external_id, target_external_id, status)
+       VALUES ('${organizacao}', '${conexao}', 'mcc_invite', '602-780-1803', '111-111-1111', 'done')
+       ON CONFLICT (connection_id, kind, target_external_id) DO UPDATE SET status = 'done'
+       RETURNING id`,
+    );
+  });
+
+  it('a tela de conexões não carrega a administradora em campo oculto', async () => {
+    const dono = ensureUser('dono-papel@tria.local');
+    makeOwner(dono, organizacao);
+    signIn(dono);
+
+    const html = await browse('/integracoes').then((r) => r.text());
+
+    assert.match(html, /name="conviteId"/, 'o convite precisa ser identificado por id');
+    assert.ok(
+      !html.includes('name="administradora"'),
+      'a administradora não pode vir do formulário: permitiria vincular a uma MCC arbitrária',
+    );
+  });
+
+  it('leitor não consegue pedir aceite, mesmo forjando o envio', async () => {
+    const leitor = ensureUser('leitor-papel@tria.local');
+    query(
+      `INSERT INTO core.members (organization_id, user_id, role)
+       VALUES ('${organizacao}', '${leitor}', 'viewer')
+       ON CONFLICT (organization_id, user_id) DO UPDATE SET role = 'viewer'`,
+    );
+
+    const antes = query("select count(*) from automation.account_tasks where kind = 'mcc_accept'");
+
+    signIn(leitor);
+    await submitForm('/integracoes', { conexaoDaConta: conexao, conviteId: convite });
+
+    const depois = query("select count(*) from automation.account_tasks where kind = 'mcc_accept'");
+    assert.equal(depois, antes, 'leitor não pode enfileirar alteração de vínculo');
+  });
+
+  it('convite inexistente é recusado mesmo para quem administra', async () => {
+    const dono = ensureUser('dono-papel@tria.local');
+    makeOwner(dono, organizacao);
+    signIn(dono);
+
+    const antes = query("select count(*) from automation.account_tasks where kind = 'mcc_accept'");
+
+    await submitForm('/integracoes', {
+      conexaoDaConta: conexao,
+      conviteId: '00000000-0000-4000-8000-000000000999',
+    });
+
+    const depois = query("select count(*) from automation.account_tasks where kind = 'mcc_accept'");
+    assert.equal(depois, antes, 'convite inexistente não pode virar aceite');
   });
 });

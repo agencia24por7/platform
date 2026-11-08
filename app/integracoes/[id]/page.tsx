@@ -8,7 +8,8 @@ import { Feedback } from '@/../app/_components/Feedback';
 import { MOTIVO_DO_CONVITE, decidirConvite } from '@/modules/connections/domain/convite';
 import { text } from '@/shared/http/actions';
 import { atorAtual } from '@/shared/http/ator';
-import { currentOrganization } from '@/shared/http/currentOrganization';
+import { currentOrganization, requireContext } from '@/shared/http/currentOrganization';
+import { canAdminister } from '@/modules/identity/domain/user';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,13 +36,17 @@ const ESTADO_CONTA: Record<string, { rotulo: string; tom: string }> = {
 async function convidarConta(formData: FormData): Promise<void> {
   'use server';
 
-  const organization = await currentOrganization();
-  if (!organization) redirect('/organizacoes/nova');
-
+  const contexto = await requireContext();
+  const organization = contexto.organization;
   const ator = await atorAtual();
   const connectionId = text(formData, 'connectionId');
   const voltar = (aviso: string): never =>
     redirect(`/integracoes/${connectionId}?aviso=${encodeURIComponent(aviso)}`);
+
+  if (!canAdminister(contexto.role)) {
+    voltar('Só quem administra a organização pode convidar contas para a MCC.');
+    return;
+  }
 
   const alcancaveis = await modules().discoveredAccounts.listByConnection(
     organization.id,

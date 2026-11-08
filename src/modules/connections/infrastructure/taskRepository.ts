@@ -52,7 +52,7 @@ export type TaskRepository = {
     readonly targetExternalId: string;
     readonly requestedBy: string | null;
   }): Promise<AccountTask>;
-  listPendentes(organizationId: string): Promise<readonly (AccountTask & { connectionId: string })[]>;
+  listRecentes(organizationId: string): Promise<readonly (AccountTask & { connectionId: string })[]>;
   listByConnection(organizationId: string, connectionId: string): Promise<readonly AccountTask[]>;
   claim(limit: number): Promise<readonly ClaimedTask[]>;
   report(taskId: string, sucesso: boolean, outcome: string): Promise<string | null>;
@@ -74,11 +74,10 @@ export function createTaskRepository(): TaskRepository {
       });
     },
 
-    async listPendentes(organizationId) {
+    async listRecentes(organizationId) {
       return withTenant(organizationId, async (tx) => {
         const rows = (await tx`
           SELECT *, connection_id FROM automation.account_tasks
-          WHERE status IN ('pending', 'running', 'failed')
           ORDER BY created_at DESC
           LIMIT 50`) as unknown as (Row & { connection_id: string })[];
         return rows.map((row) => ({ ...toTask(row), connectionId: row.connection_id }));
