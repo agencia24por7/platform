@@ -35,6 +35,13 @@ const GOOGLE_G = (
   </svg>
 );
 
+const CALOR = [
+  0, 0, 0, 0, 1, 0, 2, 4,
+  0, 0, 0, 1, 0, 3, 5, 6,
+  0, 0, 1, 0, 2, 4, 6, 7,
+  0, 1, 0, 2, 3, 5, 7, 7,
+] as const;
+
 type Props = { readonly searchParams: Promise<Record<string, string | undefined>> };
 
 export default async function Entrar({ searchParams }: Props) {
@@ -48,6 +55,16 @@ export default async function Entrar({ searchParams }: Props) {
   return (
     <div className="portao">
       <section className="portao__vitrine">
+        <div className="malha" aria-hidden="true">
+          <span className="malha__traco malha__traco--um" />
+          <span className="malha__traco malha__traco--dois" />
+          <div className="malha__mapa">
+            {CALOR.map((nivel, indice) => (
+              <span key={indice} className="malha__celula" data-nivel={nivel} />
+            ))}
+          </div>
+        </div>
+
         <div className="portao__marca">
           <span className="portao__simbolo">T</span>
           <span className="portao__nome">tria</span>

@@ -8,6 +8,7 @@ import {
   isSafeReturnPath,
   longLivedExchangeUrl,
   parseTokenResponse,
+  requestCameFromBase,
   sameOrigin,
   tokenExchangeRequest,
 } from './oauth.ts';
@@ -119,20 +120,7 @@ describe('sameOrigin', () => {
     assert.ok(!sameOrigin(new URL('https://localhost:3000/x'), 'http://localhost:3000'));
   });
 
-  it('aceita o esquema que o proxy declara, nao o que chega no container', () => {
-    const base = 'https://platform.agencia24por7.com';
-    const chegada = new URL('http://platform.agencia24por7.com/api/auth/google/callback');
 
-    assert.ok(!sameOrigin(chegada, base), 'sem o cabecalho, http nao casa com https');
-    assert.ok(sameOrigin(chegada, base, 'https'), 'com o cabecalho do proxy, casa');
-    assert.ok(sameOrigin(chegada, base, 'https, http'), 'usa o primeiro da lista');
-  });
-
-  it('o cabecalho do proxy nao autoriza outro host', () => {
-    assert.ok(
-      !sameOrigin(new URL('http://evil.com/x'), 'https://platform.agencia24por7.com', 'https'),
-    );
-  });
 
   it('recusa base inválida', () => {
     assert.ok(!sameOrigin(new URL('http://localhost:3000/x'), 'nao-e-url'));
@@ -201,5 +189,60 @@ describe('hasRequiredScopes', () => {
   it('exige ao menos ads_read no Meta', () => {
     assert.ok(!hasRequiredScopes('meta', ['public_profile']));
     assert.ok(hasRequiredScopes('meta', ['ads_read']));
+  });
+});
+
+describe('requestCameFromBase', () => {
+  const base = 'https://platform.agencia24por7.com';
+
+  it('aceita o que o proxy encaminhou, mesmo o Next vendo localhost', () => {
+    assert.ok(
+      requestCameFromBase(
+        { host: 'platform.agencia24por7.com', forwardedProtocol: 'https' },
+        base,
+      ),
+    );
+  });
+
+  it('recusa quando o proxy nao declara https', () => {
+    assert.ok(!requestCameFromBase({ host: 'platform.agencia24por7.com' }, base));
+    assert.ok(
+      !requestCameFromBase(
+        { host: 'platform.agencia24por7.com', forwardedProtocol: 'http' },
+        base,
+      ),
+    );
+  });
+
+  it('recusa outro host mesmo com https declarado', () => {
+    assert.ok(!requestCameFromBase({ host: 'evil.com', forwardedProtocol: 'https' }, base));
+    assert.ok(!requestCameFromBase({ host: null, forwardedProtocol: 'https' }, base));
+  });
+
+  it('usa o primeiro valor quando a cadeia tem varios', () => {
+    assert.ok(
+      requestCameFromBase(
+        {
+          host: 'app:3000',
+          forwardedHost: 'platform.agencia24por7.com, interno',
+          forwardedProtocol: 'https, http',
+        },
+        base,
+      ),
+    );
+  });
+
+  it('nao se confunde com caixa alta no host', () => {
+    assert.ok(
+      requestCameFromBase(
+        { host: 'Platform.Agencia24Por7.com', forwardedProtocol: 'HTTPS' },
+        base,
+      ),
+    );
+  });
+
+  it('em desenvolvimento, sem proxy, http e o esperado', () => {
+    assert.ok(requestCameFromBase({ host: 'localhost:3000' }, 'http://localhost:3000'));
+    assert.ok(!requestCameFromBase({ host: 'localhost:4000' }, 'http://localhost:3000'));
   });
 });

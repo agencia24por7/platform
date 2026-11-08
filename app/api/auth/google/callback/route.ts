@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { modules } from '@/composition';
-import { isSafeReturnPath, sameOrigin } from '@/modules/connections/domain/oauth';
+import { isSafeReturnPath, requestCameFromBase } from '@/modules/connections/domain/oauth';
 import {
   GOOGLE_TOKEN_URL,
   decodeIdTokenClaims,
@@ -34,7 +34,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return clearTransientCookies(NextResponse.redirect(new URL(`/entrar?erro=${reason}`, base)));
   };
 
-  if (!sameOrigin(request.nextUrl, base, request.headers.get('x-forwarded-proto'))) return deny('origem');
+  const origem = {
+    host: request.headers.get('host'),
+    forwardedHost: request.headers.get('x-forwarded-host'),
+    forwardedProtocol: request.headers.get('x-forwarded-proto'),
+  };
+  if (!requestCameFromBase(origem, base)) {
+    logger.warn('auth.callback.origem', { requestId, ...origem });
+    return deny('origem');
+  }
   if (!configuration.GOOGLE_OAUTH_CLIENT_ID || !configuration.GOOGLE_OAUTH_CLIENT_SECRET) {
     return deny('indisponivel');
   }

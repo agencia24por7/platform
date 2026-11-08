@@ -160,16 +160,34 @@ export function isSafeReturnPath(path: string): boolean {
   }
 }
 
-export function sameOrigin(candidate: URL, base: string, forwardedProtocol?: string | null): boolean {
+export function sameOrigin(candidate: URL, base: string): boolean {
+  try {
+    return candidate.origin === new URL(base).origin;
+  } catch {
+    return false;
+  }
+}
+
+const primeiro = (valor: string | null | undefined): string | null =>
+  valor ? (valor.split(',')[0]?.trim() ?? null) : null;
+
+export type PublicRequestOrigin = {
+  readonly host: string | null;
+  readonly forwardedHost?: string | null;
+  readonly forwardedProtocol?: string | null;
+};
+
+export function requestCameFromBase(origin: PublicRequestOrigin, base: string): boolean {
   try {
     const esperado = new URL(base);
-    if (candidate.host !== esperado.host) return false;
 
-    const protocolo = forwardedProtocol
-      ? `${forwardedProtocol.split(',')[0]?.trim()}:`
-      : candidate.protocol;
+    const host = primeiro(origin.forwardedHost) ?? primeiro(origin.host);
+    if (!host || host.toLowerCase() !== esperado.host.toLowerCase()) return false;
 
-    return protocolo === esperado.protocol;
+    const protocolo = primeiro(origin.forwardedProtocol);
+    if (!protocolo) return esperado.protocol === 'http:';
+
+    return `${protocolo.toLowerCase()}:` === esperado.protocol;
   } catch {
     return false;
   }
