@@ -5,6 +5,9 @@ import { Shell } from '@/../app/_components/Shell';
 import { modules } from '@/composition';
 import { encurtarEscopo } from '@/modules/audit/domain/auditView';
 import { agruparPorAdministradora } from '@/modules/connections/domain/carteira';
+import { Feedback } from '@/../app/_components/Feedback';
+import { text } from '@/shared/http/actions';
+import { atorAtual } from '@/shared/http/ator';
 import { currentOrganization } from '@/shared/http/currentOrganization';
 import { readinessOf } from '@/modules/connections/domain/connection';
 
@@ -25,15 +28,72 @@ const grantLabel: Record<string, string> = {
   oauth_user: 'OAuth direto',
 };
 
-export default async function IntegrationsPage() {
+
+async function aceitarConvite(formData: FormData): Promise<void> {
+  'use server';
+
   const organization = await currentOrganization();
   if (!organization) redirect('/organizacoes/nova');
 
-  const [connections, accounts, alcancaveis] = await Promise.all([
+  const ator = await atorAtual();
+  const voltar = (aviso: string): never =>
+    redirect(`/integracoes?aviso=${encodeURIComponent(aviso)}`);
+
+  const conexaoDaConta = text(formData, 'conexaoDaConta');
+  const administradora = text(formData, 'administradora');
+  const conta = text(formData, 'conta');
+
+  const conexoes = await modules().connections.listConnections(organization.id);
+  if (!conexoes.some((item) => item.id === conexaoDaConta)) {
+    voltar('Autorização não encontrada nesta organização.');
+    return;
+  }
+
+  await modules().tasks.request({
+    organizationId: organization.id,
+    connectionId: conexaoDaConta,
+    kind: 'mcc_accept',
+    managerExternalId: administradora,
+    targetExternalId: conta,
+    requestedBy: ator.userId,
+  });
+
+  await modules().audit.record({
+    organizationId: organization.id,
+    actorType: 'user',
+    actorId: ator.userId,
+    action: 'mcc.accept_requested',
+    targetType: 'connection',
+    targetId: conexaoDaConta,
+    requestId: ator.requestId,
+    sourceIp: ator.sourceIp,
+    metadata: { administradora, conta },
+  });
+
+  voltar('Aceite enfileirado. Ele usa a credencial da conta convidada, como o Google exige.');
+}
+
+export default async function IntegrationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ aviso?: string }>;
+}) {
+  const organization = await currentOrganization();
+  if (!organization) redirect('/organizacoes/nova');
+
+  const { aviso } = await searchParams;
+
+  const [connections, accounts, alcancaveis, tarefas] = await Promise.all([
     modules().connections.listConnections(organization.id),
     modules().connections.listAccounts(organization.id),
     modules().discoveredAccounts.listAll(organization.id),
+    modules().tasks.listPendentes(organization.id),
   ]);
+
+  const convitesEnviados = tarefas.filter((tarefa) => tarefa.kind === 'mcc_invite');
+  const aceitesPedidos = new Set(
+    tarefas.filter((tarefa) => tarefa.kind === 'mcc_accept').map((tarefa) => tarefa.targetExternalId),
+  );
 
   const caminhos = agruparPorAdministradora(alcancaveis);
   const porExternalId = new Map(accounts.map((conta) => [conta.externalId, conta]));
@@ -51,6 +111,89 @@ export default async function IntegrationsPage() {
       </div>
 
       <Readiness connections={connections.length} linkedAccounts={accounts.length} />
+
+
+      <Feedback message={aviso} tone="info" />
+
+      {convitesEnviados.length > 0 ? (
+        <div className="card">
+          <div className="card__head">
+            <span className="card__title">Convites enviados pela sua MCC</span>
+            <span className="card__sub">
+              O Google exige que o aceite venha da conta convidada, não da administradora
+            </span>
+          </div>
+
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Conta convidada</th>
+                  <th>Administradora</th>
+                  <th>Estado do convite</th>
+                  <th>Resultado</th>
+                  <th>Aceitar pela tria</th>
+                </tr>
+              </thead>
+              <tbody>
+                {convitesEnviados.map((convite) => {
+                  const jaPedido = aceitesPedidos.has(convite.targetExternalId);
+                  const podeAceitar = convite.status === 'done' && !jaPedido;
+
+                  return (
+                    <tr key={convite.id}>
+                      <td className="mono">{convite.targetExternalId}</td>
+                      <td className="mono subtle">{convite.managerExternalId}</td>
+                      <td>
+                        <span
+                          className={`pill ${
+                            convite.status === 'done'
+                              ? 'pill--ok'
+                              : convite.status === 'failed'
+                                ? 'pill--danger'
+                                : 'pill--info'
+                          }`}
+                        >
+                          {convite.status === 'done' ? 'aguardando aceite' : convite.status}
+                        </span>
+                      </td>
+                      <td className="subtle">{convite.outcome ?? '—'}</td>
+                      <td>
+                        {jaPedido ? (
+                          <span className="subtle">aceite enfileirado</span>
+                        ) : podeAceitar ? (
+                          <form action={aceitarConvite} className="row">
+                            <input type="hidden" name="administradora" value={convite.managerExternalId} />
+                            <input type="hidden" name="conta" value={convite.targetExternalId} />
+                            <select className="select" name="conexaoDaConta" required>
+                              <option value="">autorização da conta convidada…</option>
+                              {connections.map((conexao) => (
+                                <option key={conexao.id} value={conexao.id}>
+                                  {conexao.accountEmail ?? conexao.externalId}
+                                </option>
+                              ))}
+                            </select>
+                            <button className="btn btn--primary btn--pill" type="submit">
+                              Aceitar
+                            </button>
+                          </form>
+                        ) : (
+                          <span className="subtle">o convite precisa chegar ao Google primeiro</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="card__foot">
+            Só aparece aqui a conta cujo dono já autorizou a tria. Sem essa autorização, o aceite
+            precisa ser feito no Google Ads dele.
+          </div>
+        </div>
+      ) : null}
 
       <div className="card">
         <div className="card__head">

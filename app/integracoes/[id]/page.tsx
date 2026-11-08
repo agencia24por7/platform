@@ -67,6 +67,7 @@ async function convidarConta(formData: FormData): Promise<void> {
   await modules().tasks.request({
     organizationId: organization.id,
     connectionId,
+    kind: 'mcc_invite',
     managerExternalId: administradora!,
     targetExternalId: decisao.alvo,
     requestedBy: ator.userId,

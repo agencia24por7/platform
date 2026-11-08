@@ -1,6 +1,6 @@
 {
   "id": "triaConvitesMcc",
-  "name": "tria · convites para a MCC",
+  "name": "tria · vínculos com a MCC",
   "active": false,
   "settings": {
     "executionOrder": "v1",
@@ -94,7 +94,7 @@
     },
     {
       "id": "convidar",
-      "name": "Convidar conta na MCC",
+      "name": "Convidar ou aceitar na MCC",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -103,7 +103,7 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const tarefa = $json;\nconst versao = 'v26';\nconst administradora = String(tarefa.managerExternalId || '').replace(/\\D/g, '');\nconst convidada = String(tarefa.targetExternalId || '').replace(/\\D/g, '');\n\nif (!administradora || !convidada) {\n  return [{ json: { taskId: tarefa.taskId, sucesso: false, outcome: 'identificadores ausentes na tarefa' } }];\n}\n\nconst url = `https://googleads.googleapis.com/${versao}/customers/${administradora}/customerClientLinks:mutate`;\n\nconst corpo = {\n  operations: [\n    {\n      create: {\n        clientCustomer: `customers/${convidada}`,\n        status: 'PENDING',\n      },\n    },\n  ],\n};\n\nlet resposta;\ntry {\n  resposta = await this.helpers.httpRequestWithAuthentication.call(this, 'googleOAuth2Api', {\n    method: 'POST',\n    url,\n    headers: { 'login-customer-id': administradora, 'Content-Type': 'application/json' },\n    body: corpo,\n    json: true,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  });\n} catch (erro) {\n  return [{ json: { taskId: tarefa.taskId, sucesso: false, outcome: `falha de rede: ${erro.message}`.slice(0, 500) } }];\n}\n\nconst status = resposta.statusCode;\nconst dados = resposta.body;\n\nif (status >= 200 && status < 300) {\n  const recurso = dados?.results?.[0]?.resourceName ?? 'convite criado';\n  return [{ json: { taskId: tarefa.taskId, sucesso: true, outcome: `convite pendente · ${recurso}` } }];\n}\n\nconst erroGoogle = dados?.error?.details?.[0]?.errors?.[0];\nconst codigo = erroGoogle ? Object.values(erroGoogle.errorCode || {})[0] : null;\nconst mensagem = erroGoogle?.message || dados?.error?.message || 'recusado sem mensagem';\n\nreturn [{\n  json: {\n    taskId: tarefa.taskId,\n    sucesso: false,\n    outcome: `${codigo ? codigo + ' · ' : ''}${mensagem} (HTTP ${status})`.slice(0, 500),\n  },\n}];"
+        "jsCode": "const tarefa = $json;\nconst versao = 'v26';\nconst administradora = String(tarefa.managerExternalId || '').replace(/\\D/g, '');\nconst convidada = String(tarefa.targetExternalId || '').replace(/\\D/g, '');\n\nconst recusar = (motivo) => [{ json: { taskId: tarefa.taskId, sucesso: false, outcome: String(motivo).slice(0, 500) } }];\n\nif (!administradora || !convidada) return recusar('identificadores ausentes na tarefa');\n\nasync function chamar(url, corpo, loginCustomerId) {\n  return this.helpers.httpRequestWithAuthentication.call(this, 'googleOAuth2Api', {\n    method: 'POST',\n    url,\n    headers: { 'login-customer-id': loginCustomerId, 'Content-Type': 'application/json' },\n    body: corpo,\n    json: true,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  });\n}\n\nlet resposta;\n\ntry {\n  if (tarefa.kind === 'mcc_invite') {\n    resposta = await chamar.call(\n      this,\n      `https://googleads.googleapis.com/${versao}/customers/${administradora}/customerClientLinks:mutate`,\n      { operations: [{ create: { clientCustomer: `customers/${convidada}`, status: 'PENDING' } }] },\n      administradora,\n    );\n  } else if (tarefa.kind === 'mcc_accept') {\n    const pendentes = await this.helpers.httpRequestWithAuthentication.call(this, 'googleOAuth2Api', {\n      method: 'POST',\n      url: `https://googleads.googleapis.com/${versao}/customers/${convidada}/googleAds:search`,\n      headers: { 'login-customer-id': convidada, 'Content-Type': 'application/json' },\n      body: {\n        query: `SELECT customer_manager_link.resource_name, customer_manager_link.manager_customer, customer_manager_link.status FROM customer_manager_link WHERE customer_manager_link.status = 'PENDING'`,\n      },\n      json: true,\n      returnFullResponse: true,\n      ignoreHttpStatusErrors: true,\n    });\n\n    if (pendentes.statusCode < 200 || pendentes.statusCode >= 300) {\n      return recusar(`não foi possível listar convites pendentes (HTTP ${pendentes.statusCode})`);\n    }\n\n    const vinculo = (pendentes.body?.results || []).find(\n      (linha) => String(linha?.customerManagerLink?.managerCustomer || '').endsWith(`/${administradora}`),\n    );\n\n    if (!vinculo) return recusar('nenhum convite pendente desta administradora nesta conta');\n\n    resposta = await chamar.call(\n      this,\n      `https://googleads.googleapis.com/${versao}/customers/${convidada}/customerManagerLinks:mutate`,\n      {\n        operations: [\n          { update: { resourceName: vinculo.customerManagerLink.resourceName, status: 'ACTIVE' }, updateMask: 'status' },\n        ],\n      },\n      convidada,\n    );\n  } else {\n    return recusar(`tipo de tarefa desconhecido: ${tarefa.kind}`);\n  }\n} catch (erro) {\n  return recusar(`falha de rede: ${erro.message}`);\n}\n\nif (resposta.statusCode >= 200 && resposta.statusCode < 300) {\n  const recurso = resposta.body?.results?.[0]?.resourceName ?? 'concluído';\n  const rotulo = tarefa.kind === 'mcc_invite' ? 'convite pendente' : 'vínculo ativo';\n  return [{ json: { taskId: tarefa.taskId, sucesso: true, outcome: `${rotulo} · ${recurso}` } }];\n}\n\nconst falha = resposta.body?.error?.details?.[0]?.errors?.[0];\nconst codigo = falha ? Object.values(falha.errorCode || {})[0] : null;\nconst mensagem = falha?.message || resposta.body?.error?.message || 'recusado sem mensagem';\n\nreturn recusar(`${codigo ? codigo + ' · ' : ''}${mensagem} (HTTP ${resposta.statusCode})`);"
       },
       "credentials": {
         "googleOAuth2Api": {
@@ -191,18 +191,7 @@
         [],
         [
           {
-            "node": "Convidar conta na MCC",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Convidar conta na MCC": {
-      "main": [
-        [
-          {
-            "node": "Reportar resultado",
+            "node": "Convidar ou aceitar na MCC",
             "type": "main",
             "index": 0
           }
@@ -214,6 +203,17 @@
         [
           {
             "node": "Processar em série",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convidar ou aceitar na MCC": {
+      "main": [
+        [
+          {
+            "node": "Reportar resultado",
             "type": "main",
             "index": 0
           }

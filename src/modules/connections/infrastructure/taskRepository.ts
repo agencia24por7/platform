@@ -2,7 +2,7 @@ import { withTenant, withoutTenant } from '@/shared/db/tenant';
 
 export type AccountTask = {
   readonly id: string;
-  readonly kind: 'mcc_invite';
+  readonly kind: 'mcc_invite' | 'mcc_accept';
   readonly managerExternalId: string;
   readonly targetExternalId: string;
   readonly status: 'pending' | 'running' | 'done' | 'failed';
@@ -47,10 +47,12 @@ export type TaskRepository = {
   request(input: {
     readonly organizationId: string;
     readonly connectionId: string;
+    readonly kind: AccountTask['kind'];
     readonly managerExternalId: string;
     readonly targetExternalId: string;
     readonly requestedBy: string | null;
   }): Promise<AccountTask>;
+  listPendentes(organizationId: string): Promise<readonly (AccountTask & { connectionId: string })[]>;
   listByConnection(organizationId: string, connectionId: string): Promise<readonly AccountTask[]>;
   claim(limit: number): Promise<readonly ClaimedTask[]>;
   report(taskId: string, sucesso: boolean, outcome: string): Promise<string | null>;
@@ -63,12 +65,23 @@ export function createTaskRepository(): TaskRepository {
         const rows = (await tx`
           INSERT INTO automation.account_tasks
             (organization_id, connection_id, kind, manager_external_id, target_external_id, requested_by)
-          VALUES (${input.organizationId}, ${input.connectionId}, 'mcc_invite',
+          VALUES (${input.organizationId}, ${input.connectionId}, ${input.kind},
                   ${input.managerExternalId}, ${input.targetExternalId}, ${input.requestedBy})
           ON CONFLICT (connection_id, kind, target_external_id) DO UPDATE
             SET status = 'pending', attempts = 0, outcome = NULL
           RETURNING *`) as unknown as Row[];
         return toTask(rows[0]!);
+      });
+    },
+
+    async listPendentes(organizationId) {
+      return withTenant(organizationId, async (tx) => {
+        const rows = (await tx`
+          SELECT *, connection_id FROM automation.account_tasks
+          WHERE status IN ('pending', 'running', 'failed')
+          ORDER BY created_at DESC
+          LIMIT 50`) as unknown as (Row & { connection_id: string })[];
+        return rows.map((row) => ({ ...toTask(row), connectionId: row.connection_id }));
       });
     },
 
