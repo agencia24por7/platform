@@ -58,7 +58,7 @@ export async function Shell({ title, organization, active, children }: Props) {
         <div className="side__foot">
           {organization ? (
             <>
-              <div className="strong small" style={{ color: 'var(--fg)' }}>
+              <div className="strong small" style={{ color: 'var(--sidebar-fg-strong)' }}>
                 {organization.name}
               </div>
               <div>{organization.type === 'agency' ? 'Opera contas de clientes' : 'Opera as próprias contas'}</div>
