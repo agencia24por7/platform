@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Readiness } from '@/../app/_components/Readiness';
 import { Shell } from '@/../app/_components/Shell';
@@ -69,7 +70,9 @@ export default async function IntegrationsPage() {
                 {connections.map((connection) => (
                   <tr key={connection.id}>
                     <td>
-                      <div className="strong">{connection.label}</div>
+                      <Link className="strong" href={`/integracoes/${connection.id}`}>
+                        {connection.label}
+                      </Link>
                       <div className="mono subtle">{connection.externalId}</div>
                     </td>
                     <td>{connection.platform === 'meta' ? 'Meta Ads' : 'Google Ads'}</td>

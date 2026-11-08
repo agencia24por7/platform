@@ -5,6 +5,7 @@ export type AuditFilter = {
   readonly family?: string | null;
   readonly actorType?: string | null;
   readonly since?: Date | null;
+  readonly targetId?: string | null;
   readonly limit: number;
 };
 

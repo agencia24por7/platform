@@ -65,6 +65,7 @@ export function createAuditRepository(): AuditRecorder {
             AND (${filtro.family ?? null}::text IS NULL OR split_part(action, '.', 1) = ${filtro.family ?? null})
             AND (${filtro.actorType ?? null}::text IS NULL OR actor_type::text = ${filtro.actorType ?? null})
             AND (${filtro.since ?? null}::timestamptz IS NULL OR occurred_at >= ${filtro.since ?? null})
+            AND (${filtro.targetId ?? null}::text IS NULL OR target_id = ${filtro.targetId ?? null})
           ORDER BY occurred_at DESC
           LIMIT ${filtro.limit}`) as unknown as Row[];
         return rows.map(toEntry);

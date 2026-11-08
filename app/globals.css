@@ -292,3 +292,12 @@ table { border-collapse: collapse; width: 100%; }
 .fichas { display: flex; flex-wrap: wrap; gap: 4px; max-width: 320px; }
 .ficha { font-family: var(--font-mono); font-size: 11px; padding: 1px 6px; border-radius: 4px;
   background: var(--bg-sunken); border: 1px solid var(--border); color: var(--fg-muted); }
+
+.dupla { display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  font-size: var(--fs-sm); padding: 7px 0; border-bottom: 1px solid var(--border); }
+.dupla:last-of-type { border-bottom: 0; }
+.dupla > span:first-child { color: var(--fg-subtle); flex: none; }
+.dupla > span:last-child { text-align: right; color: var(--fg); font-weight: 560; }
+.com-marca { display: inline-flex; align-items: center; gap: 6px; }
+.com-marca img { object-fit: contain; }
+.alert--warn { background: var(--c-warn-bg); border: 1px solid #ecdcc0; color: var(--c-warn); }

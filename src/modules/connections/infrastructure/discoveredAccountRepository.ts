@@ -42,6 +42,7 @@ export type DiscoveredAccountRepository = {
     accounts: readonly DiscoveredAccount[],
   ): Promise<number>;
   listPending(organizationId: string): Promise<readonly StoredDiscovery[]>;
+  listByConnection(organizationId: string, connectionId: string): Promise<readonly StoredDiscovery[]>;
   markLinked(organizationId: string, id: string, adAccountId: string): Promise<void>;
   markIgnored(organizationId: string, id: string): Promise<void>;
 };
@@ -84,6 +85,16 @@ export function createDiscoveredAccountRepository(): DiscoveredAccountRepository
           SELECT * FROM integrations.connection_accounts
           WHERE state = 'discovered'
           ORDER BY inactive, name`) as unknown as Row[];
+        return rows.map(toStored);
+      });
+    },
+
+    async listByConnection(organizationId, connectionId) {
+      return withTenant(organizationId, async (tx) => {
+        const rows = (await tx`
+          SELECT * FROM integrations.connection_accounts
+          WHERE connection_id = ${connectionId}
+          ORDER BY inactive, state, name`) as unknown as Row[];
         return rows.map(toStored);
       });
     },
