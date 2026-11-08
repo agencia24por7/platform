@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { createHandoffRepository } from '@/modules/identity/infrastructure/handoffRepository';
+import { abrirSessaoNaAutomacao } from '@/modules/identity/infrastructure/n8nSession';
 import { isSafeReturnPath } from '@/modules/connections/domain/oauth';
 import { HANDOFF_COOKIE, readHandoff } from '@/modules/identity/domain/handoff';
 import { SESSION_MAX_AGE_SECONDS, issueSession } from '@/modules/identity/domain/session';
@@ -45,6 +46,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     },
   );
 
-  logger.info('portaria.aceita', { userId: passagem.userId });
+  const automacaoAberta = await abrirSessaoNaAutomacao();
+  if (automacaoAberta.tipo === 'aberta') {
+    for (const cookie of automacaoAberta.cookies) response.headers.append('set-cookie', cookie);
+  }
+
+  logger.info('portaria.aceita', { userId: passagem.userId, automacao: automacaoAberta.tipo });
   return response;
 }

@@ -9,7 +9,12 @@ export function GET(request: NextRequest): NextResponse {
   const configuration = env();
   const token = request.cookies.get(HANDOFF_COOKIE)?.value ?? '';
 
-  if (readSession(token, configuration.TRIA_SESSION_SECRET, Date.now())) {
+  const temSessaoDaTria = Boolean(readSession(token, configuration.TRIA_SESSION_SECRET, Date.now()));
+  const temSessaoDaAutomacao = request.cookies
+    .getAll()
+    .some((cookie) => cookie.name.startsWith('n8n-auth') && cookie.value.length > 0);
+
+  if (temSessaoDaTria && temSessaoDaAutomacao) {
     return new NextResponse(null, { status: 204 });
   }
 

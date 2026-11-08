@@ -4,6 +4,10 @@ import { Shell } from '@/../app/_components/Shell';
 import { modules } from '@/composition';
 import { encurtarEscopo } from '@/modules/audit/domain/auditView';
 import { missingScopes, readinessOf } from '@/modules/connections/domain/connection';
+import { Feedback } from '@/../app/_components/Feedback';
+import { MOTIVO_DO_CONVITE, decidirConvite } from '@/modules/connections/domain/convite';
+import { text } from '@/shared/http/actions';
+import { atorAtual } from '@/shared/http/ator';
 import { currentOrganization } from '@/shared/http/currentOrganization';
 
 export const dynamic = 'force-dynamic';
@@ -27,21 +31,89 @@ const ESTADO_CONTA: Record<string, { rotulo: string; tom: string }> = {
   lost: { rotulo: 'sumiu da plataforma', tom: 'pill--warn' },
 };
 
-export default async function DetalheAutorizacao({ params }: { params: Promise<{ id: string }> }) {
+
+async function convidarConta(formData: FormData): Promise<void> {
+  'use server';
+
+  const organization = await currentOrganization();
+  if (!organization) redirect('/organizacoes/nova');
+
+  const ator = await atorAtual();
+  const connectionId = text(formData, 'connectionId');
+  const voltar = (aviso: string): never =>
+    redirect(`/integracoes/${connectionId}?aviso=${encodeURIComponent(aviso)}`);
+
+  const alcancaveis = await modules().discoveredAccounts.listByConnection(
+    organization.id,
+    connectionId,
+  );
+
+  const administradora =
+    alcancaveis.find(
+      (conta) => conta.managerExternalId && conta.managerExternalId !== conta.externalId,
+    )?.managerExternalId ?? null;
+
+  const decisao = decidirConvite({
+    bruto: text(formData, 'conta'),
+    administradora,
+    jaAlcancadas: alcancaveis.map((conta) => conta.externalId),
+  });
+
+  if (!decisao.ok) {
+    voltar(MOTIVO_DO_CONVITE[decisao.motivo]);
+    return;
+  }
+
+  await modules().tasks.request({
+    organizationId: organization.id,
+    connectionId,
+    managerExternalId: administradora!,
+    targetExternalId: decisao.alvo,
+    requestedBy: ator.userId,
+  });
+
+  await modules().audit.record({
+    organizationId: organization.id,
+    actorType: 'user',
+    actorId: ator.userId,
+    action: 'mcc.invite_requested',
+    targetType: 'connection',
+    targetId: connectionId,
+    requestId: ator.requestId,
+    sourceIp: ator.sourceIp,
+    metadata: { administradora, conta: decisao.alvo },
+  });
+
+  redirect(`/integracoes/${connectionId}?aviso=${encodeURIComponent('Convite enviado para a fila.')}`);
+}
+
+export default async function DetalheAutorizacao({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ aviso?: string }>;
+}) {
   const organization = await currentOrganization();
   if (!organization) redirect('/organizacoes/nova');
 
   const { id } = await params;
+  const { aviso } = await searchParams;
 
   const conexoes = await modules().connections.listConnections(organization.id);
   const conexao = conexoes.find((item) => item.id === id);
   if (!conexao) notFound();
 
-  const [liberadas, vinculadas, eventos] = await Promise.all([
+  const [liberadas, vinculadas, eventos, tarefas] = await Promise.all([
     modules().discoveredAccounts.listByConnection(organization.id, conexao.id),
     modules().connections.listAccounts(organization.id),
     modules().audit.search(organization.id, { targetId: conexao.id, limit: 20 }),
+    modules().tasks.listByConnection(organization.id, conexao.id),
   ]);
+
+  const administradora =
+    liberadas.find((conta) => conta.managerExternalId && conta.managerExternalId !== conta.externalId)
+      ?.managerExternalId ?? null;
 
   const prontidao = readinessOf(conexao);
   const faltando = missingScopes(conexao.platform, conexao.scopes);
@@ -186,6 +258,83 @@ export default async function DetalheAutorizacao({ params }: { params: Promise<{
           </div>
         </div>
       </div>
+
+
+      <Feedback message={aviso} tone="info" />
+
+      {administradora ? (
+        <div className="card">
+          <div className="card__head">
+            <span className="card__title">Convidar conta para a MCC {administradora}</span>
+            <span className="card__sub">
+              O convite sai da sua administradora; o dono da conta precisa aceitar no Google Ads dele
+            </span>
+          </div>
+          <form action={convidarConta} className="card__body">
+            <input type="hidden" name="connectionId" value={conexao.id} />
+            <div className="field">
+              <label className="field__label" htmlFor="conta">
+                Identificador da conta
+              </label>
+              <input
+                className="input"
+                id="conta"
+                name="conta"
+                placeholder="123-456-7890"
+                required
+                inputMode="numeric"
+              />
+              <span className="field__hint">
+                A tria não cria contas de anúncio. Ela apenas convida uma conta que já existe.
+              </span>
+            </div>
+            <div className="page__actions">
+              <button className="btn btn--primary btn--pill" type="submit">
+                Enviar convite
+              </button>
+            </div>
+          </form>
+
+          {tarefas.length > 0 ? (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Conta convidada</th>
+                    <th>Pedido em</th>
+                    <th>Tentativas</th>
+                    <th>Estado</th>
+                    <th>Resultado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tarefas.map((tarefa) => (
+                    <tr key={tarefa.id}>
+                      <td className="mono">{tarefa.targetExternalId}</td>
+                      <td className="muted">{tarefa.createdAt.toLocaleString('pt-BR')}</td>
+                      <td className="num">{tarefa.attempts}</td>
+                      <td>
+                        <span
+                          className={`pill ${
+                            tarefa.status === 'done'
+                              ? 'pill--ok'
+                              : tarefa.status === 'failed'
+                                ? 'pill--danger'
+                                : 'pill--info'
+                          }`}
+                        >
+                          {tarefa.status}
+                        </span>
+                      </td>
+                      <td className="subtle">{tarefa.outcome ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="card">
         <div className="card__head">

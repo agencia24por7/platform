@@ -70,6 +70,8 @@ services:
       N8N_API_URL: ${N8N_API_URL:-}
       N8N_API_KEY: ${N8N_API_KEY:-}
       N8N_PUBLIC_URL: ${N8N_PUBLIC_URL:-}
+      N8N_OWNER_EMAIL: ${N8N_OWNER_EMAIL:-}
+      N8N_OWNER_PASSWORD: ${N8N_OWNER_PASSWORD:-}
     networks: [interna]
     mem_limit: 220m
     read_only: true

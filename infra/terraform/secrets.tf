@@ -8,6 +8,8 @@ locals {
     "worker-db-password",
     "n8n-encryption-key",
     "n8n-api-key",
+    "n8n-owner-email",
+    "n8n-owner-password",
     "n8n-db-password",
     "proxy-basic-auth",
   ]

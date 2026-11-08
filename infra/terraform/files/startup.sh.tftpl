@@ -36,6 +36,8 @@ umask 077
   echo "N8N_API_URL=http://n8n:5678"
   echo "N8N_PUBLIC_URL=$(test -n "$N8N_HOST" && echo "https://$N8N_HOST" || echo "")"
   echo "N8N_API_KEY=$(read_optional_secret n8n-api-key)"
+  echo "N8N_OWNER_EMAIL=$(read_optional_secret n8n-owner-email)"
+  echo "N8N_OWNER_PASSWORD=$(read_optional_secret n8n-owner-password)"
   echo "N8N_DB_PASSWORD=$(read_secret n8n-db-password)"
   echo "PROXY_BASIC_AUTH=$(read_secret proxy-basic-auth | sed 's/\$/$$/g')"
   echo "TRIA_APP_BASE_URL=https://$APP_HOST"

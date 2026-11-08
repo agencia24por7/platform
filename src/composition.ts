@@ -6,6 +6,7 @@ import { createConnectionService } from '@/modules/connections/application/conne
 import { createAdAccountRepository } from '@/modules/connections/infrastructure/adAccountRepository';
 import { createConnectionRepository } from '@/modules/connections/infrastructure/connectionRepository';
 import { createDiscoveredAccountRepository } from '@/modules/connections/infrastructure/discoveredAccountRepository';
+import { createTaskRepository } from '@/modules/connections/infrastructure/taskRepository';
 import { createN8nCredentialVault } from '@/modules/connections/infrastructure/n8nCredentialVault';
 import { createPlatformDiscovery } from '@/modules/connections/infrastructure/platformDiscovery';
 import { createIdentityService } from '@/modules/identity/application/identityService';
@@ -28,6 +29,7 @@ function build() {
   return {
     audit,
     discoveredAccounts,
+    tasks: createTaskRepository(),
     organizations,
     identity: createIdentityService(createUserRepository(), audit),
     clients: createClientService(clientRepository, audit),
