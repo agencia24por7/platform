@@ -49,7 +49,7 @@ jobs:
           gcloud compute scp --recurse infra/compose/* "$VM:/tmp/compose" \
             --zone "$ZONE" --tunnel-through-iap --quiet
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet \
-            --command "sudo rsync -a --delete /tmp/compose/ /opt/tria/ && rm -rf /tmp/compose"
+            --command "sudo sh -c 'find /opt/tria -mindepth 1 -maxdepth 1 ! -name .env -exec rm -rf {} +' && sudo cp -a /tmp/compose/. /opt/tria/ && rm -rf /tmp/compose"
 
       - name: Subir a nova versão
         env:
