@@ -43,7 +43,7 @@ jobs:
         run: terraform -chdir=$WORKDIR fmt -check -recursive
 
       - name: Init
-        run: terraform -chdir=$WORKDIR init -input=false -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"
+        run: terraform -chdir=$WORKDIR init -input=false -lock=false -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"
 
       - name: Validate
         run: terraform -chdir=$WORKDIR validate
