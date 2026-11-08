@@ -110,7 +110,7 @@ jobs:
           HOST: ${{ vars.APP_HOSTNAME }}
         run: |
           for tentativa in $(seq 1 20); do
-            if curl -sf -u "${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASSWORD }}" "https://$HOST/api/health" > /dev/null; then
+            if curl -sf "https://$HOST/api/health" > /dev/null; then
               echo "aplicação respondendo"
               exit 0
             fi

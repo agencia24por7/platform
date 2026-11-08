@@ -17,13 +17,27 @@ describe('porta de entrada', { concurrency: false }, () => {
     if (!(await appIsUp())) throw new Error('App não está no ar');
   });
 
-  it('visitante sem sessão é levado para a entrada', async () => {
+  it('visitante sem sessão vai direto para o login do Google', async () => {
     signOut();
     for (const rota of PROTEGIDAS) {
       const response = await browse(rota);
       assert.equal(response.status, 307, `${rota} deveria redirecionar`);
-      assert.match(response.headers.get('location') ?? '', /\/entrar/, `${rota} deveria ir para /entrar`);
+      assert.match(
+        response.headers.get('location') ?? '',
+        /\/api\/auth\/google\/start/,
+        `${rota} deveria ir direto para o login do Google`,
+      );
     }
+  });
+
+  it('o login sem credencial configurada cai na entrada com o motivo', async () => {
+    signOut();
+    const response = await browse('/api/auth/google/start');
+    const destino = response.headers.get('location') ?? '';
+    assert.ok(
+      destino.includes('accounts.google.com') || destino.includes('/entrar?erro=indisponivel'),
+      `destino inesperado: ${destino}`,
+    );
   });
 
   it('a entrada fica aberta e oferece o Google', async () => {

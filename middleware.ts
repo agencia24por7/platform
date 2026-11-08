@@ -13,7 +13,7 @@ export function middleware(request: NextRequest): NextResponse {
   if (request.cookies.get(SESSION_COOKIE)?.value) return NextResponse.next();
 
   const destino = request.nextUrl.clone();
-  destino.pathname = '/entrar';
+  destino.pathname = '/api/auth/google/start';
   destino.search = pathname === '/' ? '' : `?returnTo=${encodeURIComponent(pathname)}`;
   return NextResponse.redirect(destino);
 }

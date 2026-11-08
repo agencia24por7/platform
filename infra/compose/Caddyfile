@@ -19,10 +19,6 @@
 	import seguranca
 	encode zstd gzip
 
-	basic_auth {
-		{$PROXY_BASIC_AUTH}
-	}
-
 	reverse_proxy app:3000 {
 		header_up X-Forwarded-Proto https
 	}
