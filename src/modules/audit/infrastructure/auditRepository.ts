@@ -1,7 +1,7 @@
 import { sql } from '@/shared/db/client';
 import { withTenant, withoutTenant } from '@/shared/db/tenant';
 import { redact } from '@/shared/logging/redact';
-import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
+import type { AuditFilter, AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import type { AuditEntry, AuditEvent } from '@/modules/audit/domain/auditEvent';
 
 type Row = {
@@ -51,6 +51,23 @@ export function createAuditRepository(): AuditRecorder {
 
       if (event.organizationId) await withTenant(event.organizationId, insert);
       else await withoutTenant(insert);
+    },
+
+    async search(organizationId: string, filtro: AuditFilter): Promise<readonly AuditEntry[]> {
+      return withTenant(organizationId, async (tx) => {
+        const rows = (await tx`
+          SELECT id, organization_id, occurred_at, actor_type, actor_id, action,
+                 target_type, target_id, request_id, host(source_ip) AS source_ip, metadata
+          FROM audit.audit_log
+          WHERE organization_id = ${organizationId}
+            AND (${filtro.action ?? null}::text IS NULL OR action = ${filtro.action ?? null})
+            AND (${filtro.family ?? null}::text IS NULL OR split_part(action, '.', 1) = ${filtro.family ?? null})
+            AND (${filtro.actorType ?? null}::text IS NULL OR actor_type::text = ${filtro.actorType ?? null})
+            AND (${filtro.since ?? null}::timestamptz IS NULL OR occurred_at >= ${filtro.since ?? null})
+          ORDER BY occurred_at DESC
+          LIMIT ${filtro.limit}`) as unknown as Row[];
+        return rows.map(toEntry);
+      });
     },
 
     async list(organizationId: string, limit: number): Promise<readonly AuditEntry[]> {

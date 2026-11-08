@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Shell } from '@/../app/_components/Shell';
 import { modules } from '@/composition';
@@ -16,16 +17,13 @@ export default async function AutomationsPage() {
   const organization = await currentOrganization();
   if (!organization) redirect('/organizacoes/nova');
 
-  const [runs, audit] = await Promise.all([
-    modules().ingestion.recentRuns(organization.id, 25),
-    modules().audit.list(organization.id, 40),
-  ]);
+  const runs = await modules().ingestion.recentRuns(organization.id, 25);
 
   return (
-    <Shell title="Coletas e auditoria" organization={organization} active="/automacoes">
+    <Shell title="Coletas" organization={organization} active="/automacoes">
       <div className="page__head">
         <div>
-          <div className="page__title">Coletas e auditoria</div>
+          <h1 className="page__title">Coletas</h1>
           <div className="page__sub">
             Cada execução registra janela, versão da API, número de chamadas, linhas recebidas, gravadas e
             reafirmadas. Nada entra sem deixar rastro.
@@ -88,46 +86,11 @@ export default async function AutomationsPage() {
         )}
       </div>
 
-      <div className="card">
-        <div className="card__head">
-          <span className="card__title">Trilha de auditoria</span>
-          <span className="card__sub">Append-only — o app não tem permissão de UPDATE nem DELETE aqui</span>
-        </div>
-        {audit.length === 0 ? (
-          <div className="empty">Sem eventos.</div>
-        ) : (
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Quando</th>
-                  <th>Autor</th>
-                  <th>Evento</th>
-                  <th>Alvo</th>
-                  <th>Metadados</th>
-                </tr>
-              </thead>
-              <tbody>
-                {audit.map((entry) => (
-                  <tr key={entry.id}>
-                    <td className="muted">{entry.occurredAt.toLocaleString('pt-BR')}</td>
-                    <td>
-                      <span className="pill">{entry.actorType}</span>
-                      {entry.actorId ? <div className="mono subtle">{entry.actorId}</div> : null}
-                    </td>
-                    <td className="mono">{entry.action}</td>
-                    <td className="muted">
-                      {entry.targetType ?? '—'}
-                      {entry.targetId ? <div className="mono subtle">{entry.targetId.slice(0, 8)}</div> : null}
-                    </td>
-                    <td className="mono">{JSON.stringify(entry.metadata)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      <p className="quiet-link">
+        Os eventos de auditoria ganharam tela própria, com filtros e cada metadado em coluna:{' '}
+        <Link href="/auditoria">ver a trilha completa →</Link>
+      </p>
+
     </Shell>
   );
 }

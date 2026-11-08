@@ -3,7 +3,7 @@ import { err, ok, type Result } from '@/shared/result/result';
 import { logger } from '@/shared/logging/logger';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import type { CredentialVault } from '@/modules/connections/application/credentialVault';
-import { CREDENCIAL_SEM_COFRE, type Platform } from '@/modules/connections/domain/connection';
+import { CREDENCIAL_SEM_COFRE, type Connection, type Platform } from '@/modules/connections/domain/connection';
 import {
   PROVIDERS,
   hasRequiredScopes,
@@ -146,24 +146,34 @@ export function createAuthorizationService(
         });
       }
 
-      const externalId = accounts[0]?.managerExternalId ?? `grant-${Date.now()}`;
+      const identidade = await discovery.identify(input.platform, granted.accessToken);
+      if (!identidade) {
+        logger.warn('oauth.authorize.sem_identidade', { platform: input.platform });
+        return err(
+          failure('unavailable', 'A plataforma não informou qual conta concedeu o acesso.'),
+        );
+      }
+
+      const externalId = identidade;
       const already = await connections.findByExternalId(organizationId, input.platform, externalId);
 
-      const connection =
-        already ??
-        (await connections.insert({
-          organizationId,
-          platform: input.platform,
-          grantType: GRANT_BY_PLATFORM[input.platform],
-          label: `${provider.label} · ${organization.value.name}`,
-          externalId,
-          scopes: granted.grantedScopes,
-          credentialRef,
-          status: vault.available ? 'active' : 'degraded',
-          expiresAt: granted.expiresInSeconds
-            ? new Date(Date.now() + granted.expiresInSeconds * 1000)
-            : null,
-        }));
+      const proposta = {
+        organizationId,
+        platform: input.platform,
+        grantType: GRANT_BY_PLATFORM[input.platform],
+        label: `${provider.label} · ${organization.value.name}`,
+        externalId,
+        scopes: granted.grantedScopes,
+        credentialRef,
+        status: (vault.available ? 'active' : 'degraded') as Connection['status'],
+        expiresAt: granted.expiresInSeconds
+          ? new Date(Date.now() + granted.expiresInSeconds * 1000)
+          : null,
+      };
+
+      const connection = already
+        ? await connections.renew({ ...proposta, id: already.id })
+        : await connections.insert(proposta);
 
       const stored = await discovered.replace(organizationId, connection.id, accounts);
 

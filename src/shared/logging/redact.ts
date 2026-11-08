@@ -11,3 +11,18 @@ export function redact(input: unknown): unknown {
     }),
   );
 }
+
+const SECRET_SHAPES = [
+  /"(access_token|refresh_token|id_token|client_secret|developer[-_]token)"\s*:\s*"[^"]*"/gi,
+  /\b(ya29|1\/\/|GOCSPX-|EAA)[A-Za-z0-9._\-/+]{10,}/g,
+];
+
+export function redactText(input: string): string {
+  return SECRET_SHAPES.reduce(
+    (texto, forma) =>
+      texto.replace(forma, (trecho) =>
+        trecho.includes('"') ? trecho.replace(/:\s*"[^"]*"/, ': "[redigido]"') : '[redigido]',
+      ),
+    input,
+  );
+}

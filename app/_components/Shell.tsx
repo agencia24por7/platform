@@ -13,7 +13,8 @@ function navFor(organization: Organization | null): readonly NavEntry[] {
     { href: '/clientes', label: clientsLabel },
     { href: '/integracoes', label: 'Contas e conexões' },
     { group: 'Dados' },
-    { href: '/automacoes', label: 'Coletas e auditoria' },
+    { href: '/automacoes', label: 'Coletas' },
+    { href: '/auditoria', label: 'Auditoria' },
   ];
 }
 

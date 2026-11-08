@@ -1,4 +1,5 @@
 import { logger } from '@/shared/logging/logger';
+import { redactText } from '@/shared/logging/redact';
 import {
   dedupe,
   parseAccessibleCustomers,
@@ -7,6 +8,7 @@ import {
   sortForSelection,
   type DiscoveredAccount,
 } from '@/modules/connections/domain/discovery';
+import type { Platform } from '@/modules/connections/domain/connection';
 
 const GOOGLE_API = 'https://googleads.googleapis.com/v22';
 const GRAPH_API = 'https://graph.facebook.com/v21.0';
@@ -21,15 +23,32 @@ const CLIENT_QUERY = [
 export type PlatformDiscovery = {
   google(accessToken: string): Promise<readonly DiscoveredAccount[]>;
   meta(accessToken: string): Promise<readonly DiscoveredAccount[]>;
+  identify(platform: Platform, accessToken: string): Promise<string | null>;
 };
+
+const MOTIVO_MAX = 400;
 
 async function fetchJson(url: string, init: RequestInit): Promise<unknown> {
   const response = await fetch(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
+
   if (!response.ok) {
-    logger.warn('discovery.request.failed', { url: new URL(url).pathname, status: response.status });
+    logger.warn('discovery.request.failed', {
+      url: new URL(url).pathname,
+      status: response.status,
+      motivo: await reasonOf(response),
+    });
     return null;
   }
+
   return response.json();
+}
+
+async function reasonOf(response: Response): Promise<string> {
+  try {
+    return redactText((await response.text()).slice(0, MOTIVO_MAX));
+  } catch {
+    return 'corpo ilegível';
+  }
 }
 
 export function createPlatformDiscovery(): PlatformDiscovery {
@@ -55,6 +74,23 @@ export function createPlatformDiscovery(): PlatformDiscovery {
 
       logger.info('discovery.google.done', { roots: accessible.length, accounts: discovered.length });
       return sortForSelection(dedupe(discovered));
+    },
+
+    async identify(platform, accessToken) {
+      const url =
+        platform === 'google'
+          ? 'https://www.googleapis.com/oauth2/v3/userinfo'
+          : `${GRAPH_API}/me?fields=id`;
+
+      const payload = await fetchJson(url, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (typeof payload !== 'object' || payload === null) return null;
+
+      const identificador = (payload as Record<string, unknown>)[platform === 'google' ? 'sub' : 'id'];
+      return typeof identificador === 'string' && identificador.length > 0 ? identificador : null;
     },
 
     async meta(accessToken) {

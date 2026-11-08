@@ -33,6 +33,7 @@ export type ConnectionRepository = {
   insert(input: NewConnection): Promise<Connection>;
   findById(organizationId: string, id: string): Promise<Connection | null>;
   findByExternalId(organizationId: string, platform: string, externalId: string): Promise<Connection | null>;
+  renew(input: NewConnection & { readonly id: string }): Promise<Connection>;
   list(organizationId: string): Promise<readonly Connection[]>;
 };
 
@@ -45,6 +46,22 @@ export function createConnectionRepository(): ConnectionRepository {
             (organization_id, platform, grant_type, label, external_id, scopes, credential_ref, expires_at, status)
           VALUES (${input.organizationId}, ${input.platform}, ${input.grantType}, ${input.label},
                   ${input.externalId}, ${tx.array(input.scopes as string[])}, ${input.credentialRef}, ${input.expiresAt}, ${input.status ?? 'active'})
+          RETURNING *`) as unknown as Row[];
+        return toConnection(rows[0]!);
+      });
+    },
+
+    async renew(input) {
+      return withTenant(input.organizationId, async (tx) => {
+        const rows = (await tx`
+          UPDATE integrations.connections
+          SET label          = ${input.label},
+              scopes         = ${tx.array(input.scopes as string[])},
+              credential_ref = ${input.credentialRef},
+              status         = ${input.status ?? 'active'},
+              expires_at     = ${input.expiresAt},
+              authorized_at  = now()
+          WHERE id = ${input.id}
           RETURNING *`) as unknown as Row[];
         return toConnection(rows[0]!);
       });
