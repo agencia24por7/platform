@@ -1,3 +1,4 @@
+import type { Ator } from '@/modules/audit/domain/actor';
 import { failure, type Failure } from '@/shared/result/failure';
 import { err, ok, type Result } from '@/shared/result/result';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
@@ -9,7 +10,7 @@ import {
 import type { OrganizationRepository } from '@/modules/organizations/infrastructure/organizationRepository';
 
 export type OrganizationService = {
-  create(input: NewOrganization, actorId: string, requestId: string): Promise<Result<Organization, Failure>>;
+  create(input: NewOrganization, ator: Ator): Promise<Result<Organization, Failure>>;
   byId(id: string): Promise<Result<Organization, Failure>>;
   list(): Promise<readonly Organization[]>;
 };
@@ -19,7 +20,7 @@ export function createOrganizationService(
   audit: AuditRecorder,
 ): OrganizationService {
   return {
-    async create(input, actorId, requestId) {
+    async create(input, ator) {
       const slug = slugify(input.name);
       if (slug.length < 3) {
         return err(failure('validation', 'Nome curto demais para gerar identificador.'));
@@ -34,11 +35,12 @@ export function createOrganizationService(
       await audit.record({
         organizationId: organization.id,
         actorType: 'user',
-        actorId,
+        actorId: ator.userId,
         action: 'organization.create',
         targetType: 'organization',
         targetId: organization.id,
-        requestId,
+        requestId: ator.requestId,
+        sourceIp: ator.sourceIp,
         metadata: { type: organization.type, hasManagerAccount: Boolean(organization.managerAccountId) },
       });
 

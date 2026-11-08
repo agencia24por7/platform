@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { Feedback } from '@/../app/_components/Feedback';
 import { Wizard } from '@/../app/_components/Wizard';
 import { modules } from '@/composition';
+import { atorAtual } from '@/shared/http/ator';
 import { currentUser } from '@/shared/http/currentUser';
 import type { OrganizationType } from '@/modules/organizations/domain/organization';
 import { optionalText, requestId, text, toActionState } from '@/shared/http/actions';
@@ -14,10 +15,12 @@ async function createOrganization(formData: FormData): Promise<void> {
 
   const sessao = await currentUser();
   if (!sessao) redirect('/entrar');
+
+  const ator = await atorAtual();
   if (sessao.memberships.length > 0) redirect('/clientes');
 
   const type: OrganizationType = text(formData, 'type') === 'advertiser' ? 'advertiser' : 'agency';
-  const pedido = requestId();
+  const pedido = ator;
   const result = await modules().organizations.create(
     {
       name: text(formData, 'name'),
@@ -26,8 +29,7 @@ async function createOrganization(formData: FormData): Promise<void> {
       businessManagerId: optionalText(formData, 'businessManagerId'),
       developerTokenRef: null,
     },
-    sessao.user.id,
-    pedido,
+    ator,
   );
 
   if (!result.ok) {
@@ -35,7 +37,7 @@ async function createOrganization(formData: FormData): Promise<void> {
     redirect(`/organizacoes/nova?tipo=${type}&erro=${encodeURIComponent(message)}`);
   }
 
-  const vinculo = await modules().identity.joinAsOwner(result.value.id, sessao.user.id, pedido);
+  const vinculo = await modules().identity.joinAsOwner(result.value.id, ator);
   if (!vinculo.ok) {
     const message = toActionState(vinculo.error).error ?? '';
     redirect(`/organizacoes/nova?tipo=${type}&erro=${encodeURIComponent(message)}`);

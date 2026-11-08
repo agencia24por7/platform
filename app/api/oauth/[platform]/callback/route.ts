@@ -85,11 +85,11 @@ export async function GET(
   }
 
   if (outcome.value.organizationCreated) {
-    const posse = await modules().identity.joinAsOwner(
-      outcome.value.organizationId,
-      sessao.user.id,
+    const posse = await modules().identity.joinAsOwner(outcome.value.organizationId, {
+      userId: sessao.user.id,
       requestId,
-    );
+      sourceIp: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+    });
     if (!posse.ok) {
       logger.warn('oauth.callback.ownership_failed', { platform, code: posse.error.code });
     }

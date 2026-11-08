@@ -25,14 +25,19 @@ const CLIENT_QUERY = [
 
 const MOTIVO_MAX = 1200;
 
-let ultimaFalha: string | null = null;
+let falhas: string[] = [];
+
+function esquecerFalhas(): void {
+  falhas = [];
+}
 
 async function fetchJson(url: string, init: RequestInit): Promise<unknown> {
   const response = await fetch(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
 
   if (!response.ok) {
     const motivo = await reasonOf(response);
-    ultimaFalha = resumirFalha(response.status, motivo);
+    const resumo = resumirFalha(response.status, motivo);
+    if (!falhas.includes(resumo)) falhas.push(resumo);
 
     logger.warn('discovery.request.failed', {
       url: new URL(url).pathname,
@@ -42,7 +47,6 @@ async function fetchJson(url: string, init: RequestInit): Promise<unknown> {
     return null;
   }
 
-  ultimaFalha = null;
   return response.json();
 }
 
@@ -57,6 +61,7 @@ async function reasonOf(response: Response): Promise<string> {
 export function createPlatformDiscovery(): PlatformDiscovery {
   return {
     async google(accessToken) {
+      esquecerFalhas();
       const headers = { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
 
       const accessible = parseAccessibleCustomers(
@@ -75,12 +80,19 @@ export function createPlatformDiscovery(): PlatformDiscovery {
         discovered.push(...parseGoogleCustomerClients(payload, customerId));
       }
 
-      logger.info('discovery.google.done', { roots: accessible.length, accounts: discovered.length });
-      return sortForSelection(dedupe(discovered));
+      const unicas = sortForSelection(dedupe(discovered));
+      logger.info('discovery.google.done', {
+        roots: accessible.length,
+        brutas: discovered.length,
+        accounts: unicas.length,
+        falhas: falhas.length,
+      });
+
+      return unicas;
     },
 
     lastFailure() {
-      return ultimaFalha;
+      return falhas.length === 0 ? null : falhas.join(' · ');
     },
 
     async identify(platform, accessToken) {
@@ -108,6 +120,7 @@ export function createPlatformDiscovery(): PlatformDiscovery {
     },
 
     async meta(accessToken) {
+      esquecerFalhas();
       const fields = 'id,name,currency,timezone_name,account_status,amount_spent,business';
       const owned = await fetchJson(
         `${GRAPH_API}/me/adaccounts?fields=${fields}&limit=200`,

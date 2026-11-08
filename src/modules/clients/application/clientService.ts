@@ -1,3 +1,4 @@
+import type { Ator } from '@/modules/audit/domain/actor';
 import { failure, type Failure } from '@/shared/result/failure';
 import { err, ok, type Result } from '@/shared/result/result';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
@@ -5,14 +6,14 @@ import type { Client, ClientWithAccounts, NewClient } from '@/modules/clients/do
 import type { ClientRepository } from '@/modules/clients/infrastructure/clientRepository';
 
 export type ClientService = {
-  create(input: NewClient, requestId: string): Promise<Result<Client, Failure>>;
+  create(input: NewClient, ator: Ator): Promise<Result<Client, Failure>>;
   byId(organizationId: string, id: string): Promise<Result<Client, Failure>>;
   list(organizationId: string): Promise<readonly ClientWithAccounts[]>;
 };
 
 export function createClientService(repository: ClientRepository, audit: AuditRecorder): ClientService {
   return {
-    async create(input, requestId) {
+    async create(input, ator) {
       if (await repository.findByName(input.organizationId, input.name)) {
         return err(failure('conflict', 'Já existe um cliente com esse nome nesta organização.'));
       }
@@ -30,11 +31,12 @@ export function createClientService(repository: ClientRepository, audit: AuditRe
       await audit.record({
         organizationId: client.organizationId,
         actorType: 'user',
-        actorId: null,
+        actorId: ator.userId,
         action: 'client.create',
         targetType: 'client',
         targetId: client.id,
-        requestId,
+        requestId: ator.requestId,
+        sourceIp: ator.sourceIp,
         metadata: { businessModel: client.businessModel, isBranch: Boolean(client.parentClientId) },
       });
 

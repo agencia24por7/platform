@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { Feedback } from '@/../app/_components/Feedback';
 import { Shell } from '@/../app/_components/Shell';
 import { modules } from '@/composition';
+import { atorAtual } from '@/shared/http/ator';
 import { optionalText, requestId, text, toActionState } from '@/shared/http/actions';
 import { currentOrganization } from '@/shared/http/currentOrganization';
 
@@ -13,6 +14,8 @@ async function createClient(formData: FormData): Promise<void> {
   const organization = await currentOrganization();
   if (!organization) redirect('/organizacoes/nova');
 
+  const ator = await atorAtual();
+
   const model = text(formData, 'businessModel');
   const result = await modules().clients.create(
     {
@@ -22,7 +25,7 @@ async function createClient(formData: FormData): Promise<void> {
       segment: optionalText(formData, 'segment'),
       businessModel: model === 'ecommerce' ? 'ecommerce' : 'leads',
     },
-    requestId(),
+    ator,
   );
 
   if (!result.ok) {

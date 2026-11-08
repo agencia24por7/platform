@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Wizard } from '@/../app/_components/Wizard';
 import { modules } from '@/composition';
+import { atorAtual } from '@/shared/http/ator';
 import { list, requestId, text } from '@/shared/http/actions';
 import { currentOrganization } from '@/shared/http/currentOrganization';
 
@@ -12,6 +13,8 @@ async function linkSelected(formData: FormData): Promise<void> {
 
   const organization = await currentOrganization();
   if (!organization) redirect('/comecar');
+
+  const ator = await atorAtual();
 
   const selected = list(formData, 'selecionadas');
   const clientName = text(formData, 'clientName') || organization.name;
@@ -29,7 +32,7 @@ async function linkSelected(formData: FormData): Promise<void> {
       segment: null,
       businessModel: 'leads',
     },
-    requestId(),
+    ator,
   );
 
   const clientId = client.ok
@@ -52,7 +55,7 @@ async function linkSelected(formData: FormData): Promise<void> {
         timezone: account.timezone,
         syncEnabled: true,
       },
-      requestId(),
+      ator,
     );
 
     if (linked.ok) {

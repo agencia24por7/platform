@@ -9,6 +9,7 @@ import {
 import { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, issueSession } from '@/modules/identity/domain/session';
 import { env } from '@/shared/config/env';
 import { logger } from '@/shared/logging/logger';
+import { primeiroEndereco } from '@/modules/audit/domain/actor';
 import { newRequestId, secureCompare } from '@/shared/security/tokens';
 
 export const dynamic = 'force-dynamic';
@@ -88,7 +89,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const identity = identityFromClaims(claims, configuration.GOOGLE_OAUTH_CLIENT_ID, Date.now());
   if (!identity) return deny('identidade_invalida');
 
-  const signedIn = await modules().identity.signIn(identity, requestId);
+  const signedIn = await modules().identity.signIn(identity, {
+    userId: null,
+    requestId,
+    sourceIp: primeiroEndereco(request.headers.get('x-forwarded-for')),
+  });
   if (!signedIn.ok) return deny('sem_acesso');
 
   const destination = signedIn.value.memberships.length > 0 ? returnTo : '/organizacoes/nova';

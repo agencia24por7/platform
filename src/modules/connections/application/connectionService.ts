@@ -1,3 +1,4 @@
+import type { Ator } from '@/modules/audit/domain/actor';
 import { failure, type Failure } from '@/shared/result/failure';
 import { err, ok, type Result } from '@/shared/result/result';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
@@ -14,8 +15,8 @@ export type LinkAccountInput = Omit<NewAdAccount, 'organizationId'> & {
 };
 
 export type ConnectionService = {
-  createConnection(input: NewConnection, requestId: string): Promise<Result<Connection, Failure>>;
-  linkAccount(input: LinkAccountInput, requestId: string): Promise<Result<AdAccount, Failure>>;
+  createConnection(input: NewConnection, ator: Ator): Promise<Result<Connection, Failure>>;
+  linkAccount(input: LinkAccountInput, ator: Ator): Promise<Result<AdAccount, Failure>>;
   listConnections(organizationId: string): Promise<readonly Connection[]>;
   listAccountsByClient(organizationId: string, clientId: string): Promise<readonly AdAccount[]>;
   listAccounts(organizationId: string): Promise<readonly (AdAccount & { clientName: string })[]>;
@@ -32,7 +33,7 @@ export function createConnectionService(
   clients: ClientOwnership,
 ): ConnectionService {
   return {
-    async createConnection(input, requestId) {
+    async createConnection(input, ator) {
       if (!grantTypesFor(input.platform).includes(input.grantType)) {
         return err(failure('validation', 'Caminho de autorização incompatível com a plataforma.'));
       }
@@ -51,11 +52,12 @@ export function createConnectionService(
       await audit.record({
         organizationId: connection.organizationId,
         actorType: 'user',
-        actorId: null,
+        actorId: ator.userId,
         action: 'connection.create',
         targetType: 'connection',
         targetId: connection.id,
-        requestId,
+        requestId: ator.requestId,
+        sourceIp: ator.sourceIp,
         metadata: {
           platform: connection.platform,
           grantType: connection.grantType,
@@ -67,7 +69,7 @@ export function createConnectionService(
       return ok(connection);
     },
 
-    async linkAccount(input, requestId) {
+    async linkAccount(input, ator) {
       if (!(await clients.findById(input.organizationId, input.clientId))) {
         return err(failure('validation', 'Cliente não encontrado nesta organização.'));
       }
@@ -102,11 +104,12 @@ export function createConnectionService(
       await audit.record({
         organizationId: account.organizationId,
         actorType: 'user',
-        actorId: null,
+        actorId: ator.userId,
         action: 'ad_account.link',
         targetType: 'ad_account',
         targetId: account.id,
-        requestId,
+        requestId: ator.requestId,
+        sourceIp: ator.sourceIp,
         metadata: {
           platform: account.platform,
           externalId: account.externalId,

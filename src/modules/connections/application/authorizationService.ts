@@ -126,8 +126,7 @@ export function createAuthorizationService(
               businessManagerId: input.platform === 'meta' ? (accounts[0]?.managerExternalId ?? null) : null,
               developerTokenRef: null,
             },
-            input.actorId,
-            input.requestId,
+            { userId: input.actorId, requestId: input.requestId, sourceIp: input.sourceIp },
           )
         : await organizations.byId(input.organizationId!);
 
@@ -176,6 +175,10 @@ export function createAuthorizationService(
         ? await connections.renew({ ...proposta, id: already.id })
         : await connections.insert(proposta);
 
+      const credencialTrocada =
+        already && already.credentialRef !== credentialRef ? already.credentialRef : null;
+      const descarte = credencialTrocada ? await vault.discard(credencialTrocada) : null;
+
       const stored = await discovered.replace(organizationId, connection.id, accounts);
 
       await audit.record({
@@ -193,6 +196,7 @@ export function createAuthorizationService(
           grantedScopes: granted.grantedScopes,
           discoveredAccounts: stored,
           discoveryFailure: discovery.lastFailure(),
+          credencialAnterior: descarte,
           vaultAvailable: vault.available,
           organizationCreated,
           refreshTokenReceived: granted.refreshToken !== null,

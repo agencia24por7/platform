@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { Feedback } from '@/../app/_components/Feedback';
 import { Shell } from '@/../app/_components/Shell';
 import { modules } from '@/composition';
+import { atorAtual } from '@/shared/http/ator';
 import { checkbox, requestId, text, toActionState } from '@/shared/http/actions';
 import { currentOrganization } from '@/shared/http/currentOrganization';
 
@@ -18,6 +19,8 @@ async function vincularConta(formData: FormData): Promise<void> {
 
   const organization = await currentOrganization();
   if (!organization) redirect('/organizacoes/nova');
+
+  const ator = await atorAtual();
 
   const clientId = text(formData, 'clientId');
   const descobertaId = text(formData, 'descobertaId');
@@ -44,7 +47,7 @@ async function vincularConta(formData: FormData): Promise<void> {
       timezone: escolhida.timezone,
       syncEnabled: checkbox(formData, 'coletar'),
     },
-    requestId(),
+    ator,
   );
 
   if (!vinculada.ok) {

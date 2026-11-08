@@ -1,3 +1,4 @@
+import type { Ator } from '@/modules/audit/domain/actor';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import type { FederatedIdentity, MemberRole, Membership, User } from '@/modules/identity/domain/user';
 import type { UserRepository } from '@/modules/identity/infrastructure/userRepository';
@@ -10,15 +11,10 @@ export type SignedInUser = {
 };
 
 export type IdentityService = {
-  signIn(identity: FederatedIdentity, requestId: string): Promise<Result<SignedInUser, Failure>>;
+  signIn(identity: FederatedIdentity, ator: Ator): Promise<Result<SignedInUser, Failure>>;
   resolve(userId: string): Promise<SignedInUser | null>;
-  joinAsOwner(organizationId: string, userId: string, requestId: string): Promise<Result<void, Failure>>;
-  grantMembership(
-    organizationId: string,
-    userId: string,
-    role: MemberRole,
-    requestId: string,
-  ): Promise<Result<void, Failure>>;
+  joinAsOwner(organizationId: string, ator: Ator): Promise<Result<void, Failure>>;
+  grantMembership(organizationId: string, userId: string, role: MemberRole, ator: Ator): Promise<Result<void, Failure>>;
 };
 
 export function createIdentityService(users: UserRepository, audit: AuditRecorder): IdentityService {
@@ -27,7 +23,7 @@ export function createIdentityService(users: UserRepository, audit: AuditRecorde
   }
 
   return {
-    async signIn(identity, requestId) {
+    async signIn(identity, ator) {
       if (!identity.emailVerified) {
         return err(failure('forbidden', 'O provedor não confirmou este e-mail.'));
       }
@@ -46,7 +42,8 @@ export function createIdentityService(users: UserRepository, audit: AuditRecorde
           action: 'identity.signed_in',
           targetType: 'user',
           targetId: user.id,
-          requestId,
+          requestId: ator.requestId,
+          sourceIp: ator.sourceIp,
           metadata: { email: user.email, primeiroAcesso: memberships.length === 0 },
         });
       }
@@ -59,7 +56,10 @@ export function createIdentityService(users: UserRepository, audit: AuditRecorde
       return user ? withMemberships(user) : null;
     },
 
-    async joinAsOwner(organizationId, userId, requestId) {
+    async joinAsOwner(organizationId, ator) {
+      const userId = ator.userId;
+      if (!userId) return err(failure('unauthorized', 'Sem sessão para assumir a organização.'));
+
       if ((await users.countMembers(organizationId)) > 0) {
         return err(failure('forbidden', 'Esta organização já tem responsável.'));
       }
@@ -72,23 +72,25 @@ export function createIdentityService(users: UserRepository, audit: AuditRecorde
         action: 'identity.became_owner',
         targetType: 'member',
         targetId: userId,
-        requestId,
+        requestId: ator.requestId,
+        sourceIp: ator.sourceIp,
         metadata: { role: 'owner' },
       });
 
       return ok(undefined);
     },
 
-    async grantMembership(organizationId, userId, role, requestId) {
+    async grantMembership(organizationId, userId, role, ator) {
       await users.addMember(organizationId, userId, role);
       await audit.record({
         organizationId,
         actorType: 'user',
-        actorId: userId,
+        actorId: ator.userId,
         action: 'identity.membership_granted',
         targetType: 'member',
         targetId: userId,
-        requestId,
+        requestId: ator.requestId,
+        sourceIp: ator.sourceIp,
         metadata: { role },
       });
 
