@@ -59,3 +59,9 @@ resource "google_project_iam_member" "vm_monitoring" {
   role    = "roles/monitoring.metricWriter"
   member  = "serviceAccount:${google_service_account.vm.email}"
 }
+
+resource "google_service_account_iam_member" "deployer_acts_as_vm" {
+  service_account_id = google_service_account.vm.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:tria-deployer@${var.project_id}.iam.gserviceaccount.com"
+}
