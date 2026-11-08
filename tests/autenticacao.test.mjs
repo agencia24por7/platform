@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
-import { BASE, appIsUp, browse, ensureUser, handoffToken, makeOwner, signIn, signOut } from './helpers.mjs';
+import {
+  BASE,
+  appIsUp,
+  browse,
+  ensureUser,
+  handoffToken,
+  makeOwner,
+  sessionCookie,
+  signIn,
+  signOut,
+} from './helpers.mjs';
 
 const query = (sql) =>
   execFileSync('docker', ['exec', 'tria-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
@@ -170,5 +180,36 @@ describe('acesso à automação por papel', { concurrency: false }, () => {
     const destino = resposta.headers.get('location') ?? '';
 
     assert.match(destino, /\/api\/portaria\/receber/);
+  });
+});
+
+describe('a ponte para o n8n não pode virar laço', { concurrency: false }, () => {
+  before(async () => {
+    if (!(await appIsUp())) throw new Error('App não está no ar');
+  });
+
+  it('sem credencial do n8n, a troca marca a pausa em vez de insistir', async () => {
+    const usuario = ensureUser('laco@tria.local');
+    const passagem = handoffToken(usuario);
+
+    const resposta = await fetch(`${BASE}/api/portaria/receber?t=${encodeURIComponent(passagem)}`, {
+      redirect: 'manual',
+    });
+
+    const cookies = resposta.headers.get('set-cookie') ?? '';
+    assert.match(cookies, /tria_portaria=/, 'a passagem precisa virar sessão');
+    assert.match(cookies, /tria_portaria_sem_n8n=/, 'a pausa precisa ser marcada');
+  });
+
+  it('com a pausa marcada, a guarda deixa passar em vez de redirecionar', async () => {
+    const usuario = ensureUser('laco@tria.local');
+    const sessao = sessionCookie(usuario);
+
+    const resposta = await fetch(`${BASE}/api/portaria`, {
+      headers: { Cookie: `tria_portaria=${sessao.split('=')[1]}; tria_portaria_sem_n8n=1` },
+      redirect: 'manual',
+    });
+
+    assert.equal(resposta.status, 204, 'a guarda precisa liberar durante a pausa');
   });
 });

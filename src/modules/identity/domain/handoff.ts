@@ -1,6 +1,8 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
 export const HANDOFF_COOKIE = 'tria_portaria';
+export const SEM_AUTOMACAO_COOKIE = 'tria_portaria_sem_n8n';
+export const SEM_AUTOMACAO_SEGUNDOS = 120;
 export const HANDOFF_TTL_SECONDS = 60;
 export const HANDOFF_AUDIENCE = 'n8n';
 

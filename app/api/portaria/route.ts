@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server';
-import { HANDOFF_COOKIE } from '@/modules/identity/domain/handoff';
+import { HANDOFF_COOKIE, SEM_AUTOMACAO_COOKIE } from '@/modules/identity/domain/handoff';
 import { readSession } from '@/modules/identity/domain/session';
 import { env } from '@/shared/config/env';
 
@@ -13,8 +13,9 @@ export function GET(request: NextRequest): NextResponse {
   const temSessaoDaAutomacao = request.cookies
     .getAll()
     .some((cookie) => cookie.name.startsWith('n8n-auth') && cookie.value.length > 0);
+  const pontePausada = Boolean(request.cookies.get(SEM_AUTOMACAO_COOKIE)?.value);
 
-  if (temSessaoDaTria && temSessaoDaAutomacao) {
+  if (temSessaoDaTria && (temSessaoDaAutomacao || pontePausada)) {
     return new NextResponse(null, { status: 204 });
   }
 
