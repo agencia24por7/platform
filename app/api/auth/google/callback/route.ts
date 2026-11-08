@@ -34,7 +34,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return clearTransientCookies(NextResponse.redirect(new URL(`/entrar?erro=${reason}`, base)));
   };
 
-  if (!sameOrigin(request.nextUrl, base)) return deny('origem');
+  if (!sameOrigin(request.nextUrl, base, request.headers.get('x-forwarded-proto'))) return deny('origem');
   if (!configuration.GOOGLE_OAUTH_CLIENT_ID || !configuration.GOOGLE_OAUTH_CLIENT_SECRET) {
     return deny('indisponivel');
   }

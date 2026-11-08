@@ -160,9 +160,16 @@ export function isSafeReturnPath(path: string): boolean {
   }
 }
 
-export function sameOrigin(candidate: URL, base: string): boolean {
+export function sameOrigin(candidate: URL, base: string, forwardedProtocol?: string | null): boolean {
   try {
-    return candidate.origin === new URL(base).origin;
+    const esperado = new URL(base);
+    if (candidate.host !== esperado.host) return false;
+
+    const protocolo = forwardedProtocol
+      ? `${forwardedProtocol.split(',')[0]?.trim()}:`
+      : candidate.protocol;
+
+    return protocolo === esperado.protocol;
   } catch {
     return false;
   }

@@ -119,6 +119,21 @@ describe('sameOrigin', () => {
     assert.ok(!sameOrigin(new URL('https://localhost:3000/x'), 'http://localhost:3000'));
   });
 
+  it('aceita o esquema que o proxy declara, nao o que chega no container', () => {
+    const base = 'https://platform.agencia24por7.com';
+    const chegada = new URL('http://platform.agencia24por7.com/api/auth/google/callback');
+
+    assert.ok(!sameOrigin(chegada, base), 'sem o cabecalho, http nao casa com https');
+    assert.ok(sameOrigin(chegada, base, 'https'), 'com o cabecalho do proxy, casa');
+    assert.ok(sameOrigin(chegada, base, 'https, http'), 'usa o primeiro da lista');
+  });
+
+  it('o cabecalho do proxy nao autoriza outro host', () => {
+    assert.ok(
+      !sameOrigin(new URL('http://evil.com/x'), 'https://platform.agencia24por7.com', 'https'),
+    );
+  });
+
   it('recusa base inválida', () => {
     assert.ok(!sameOrigin(new URL('http://localhost:3000/x'), 'nao-e-url'));
   });

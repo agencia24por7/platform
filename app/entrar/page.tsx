@@ -5,10 +5,10 @@ import { currentUser } from '@/shared/http/currentUser';
 export const dynamic = 'force-dynamic';
 
 const MOTIVOS: Record<string, string> = {
-  indisponivel: 'O login com Google ainda não está configurado nesta instalação.',
+  indisponivel: 'Esta instalação ainda não tem credencial de login configurada.',
   recusado: 'Você cancelou a autorização no Google.',
   origem: 'A resposta não veio do endereço esperado.',
-  estado: 'A sessão de login expirou. Tente novamente.',
+  estado: 'A sessão de login expirou. Tente de novo.',
   codigo: 'A resposta do Google veio incompleta.',
   troca: 'O Google recusou a troca do código de autorização.',
   sem_identidade: 'O Google não devolveu uma identidade.',
@@ -17,41 +17,89 @@ const MOTIVOS: Record<string, string> = {
   sem_acesso: 'Esta conta não tem acesso liberado.',
 };
 
+const GOOGLE_G = (
+  <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+    <path
+      fill="#4285F4"
+      d="M45.1 24.5c0-1.6-.1-3.2-.4-4.7H24v8.9h11.8c-.5 2.8-2 5.1-4.4 6.7v5.5h7.1c4.2-3.8 6.6-9.5 6.6-16.4z"
+    />
+    <path
+      fill="#34A853"
+      d="M24 46c6 0 11-2 14.6-5.4l-7.1-5.5c-2 1.3-4.5 2.1-7.5 2.1-5.7 0-10.6-3.9-12.3-9.1H4.3v5.7C7.9 41.1 15.4 46 24 46z"
+    />
+    <path fill="#FBBC05" d="M11.7 28.1a13.2 13.2 0 0 1 0-8.2v-5.7H4.3a22 22 0 0 0 0 19.6l7.4-5.7z" />
+    <path
+      fill="#EA4335"
+      d="M24 9.5c3.2 0 6.1 1.1 8.4 3.3l6.3-6.3C34.9 2.9 30 1 24 1 15.4 1 7.9 5.9 4.3 13.1l7.4 5.7C13.4 13.4 18.3 9.5 24 9.5z"
+    />
+  </svg>
+);
+
 type Props = { readonly searchParams: Promise<Record<string, string | undefined>> };
 
 export default async function Entrar({ searchParams }: Props) {
   if (await currentUser()) redirect('/');
 
   const params = await searchParams;
-  const motivo = params['erro'] ? MOTIVOS[params['erro']] : null;
   const disponivel = Boolean(env().GOOGLE_OAUTH_CLIENT_ID);
+  const codigo = params['erro'];
+  const motivo = codigo && !(codigo === 'indisponivel' && disponivel) ? MOTIVOS[codigo] : null;
 
   return (
-    <main className="entrada">
-      <div className="entrada__cartao">
-        <p className="entrada__marca">tria</p>
-        <h1 className="entrada__titulo">Entrar na plataforma</h1>
-        <p className="entrada__apoio">
-          Use a mesma conta Google com que você administra as contas de anúncio.
-        </p>
+    <div className="portao">
+      <section className="portao__vitrine">
+        <div className="portao__marca">
+          <span className="portao__simbolo">T</span>
+          <span className="portao__nome">tria</span>
+        </div>
 
-        {motivo ? <p className="entrada__erro">{motivo}</p> : null}
+        <h1 className="portao__chamada">
+          A operação de mídia
+          <br />
+          de todos os seus clientes,
+          <br />
+          <em>num lugar só.</em>
+        </h1>
 
-        {disponivel ? (
-          <a className="btn btn--primary btn--pill entrada__acao" href="/api/auth/google/start">
-            Entrar com Google
-          </a>
-        ) : (
-          <p className="entrada__erro">
-            Esta instalação ainda não tem credencial de login. Configure o segredo
-            <code> google-oauth-client-id </code> antes de liberar o acesso.
+        <ul className="portao__pontos">
+          <li>Conecte Google Ads e Meta pelo consentimento oficial</li>
+          <li>Coleta diária com metadados e auditoria completa</li>
+          <li>Agentes acompanham cada campanha num kanban</li>
+        </ul>
+
+        <p className="portao__rodape">Nenhuma senha sua é armazenada aqui.</p>
+      </section>
+
+      <main className="portao__acesso">
+        <div className="portao__caixa">
+          <h2 className="portao__titulo">Entrar</h2>
+          <p className="portao__apoio">
+            Use a conta Google com que você já administra as contas de anúncio.
           </p>
-        )}
 
-        <p className="entrada__rodape">
-          A tria não guarda sua senha. A autenticação acontece no Google.
-        </p>
-      </div>
-    </main>
+          {motivo ? (
+            <p className="portao__aviso" role="alert">
+              {motivo}
+            </p>
+          ) : null}
+
+          {disponivel ? (
+            <a className="portao__botao" href="/api/auth/google/start">
+              <span className="portao__g">{GOOGLE_G}</span>
+              Continuar com Google
+            </a>
+          ) : (
+            <p className="portao__aviso" role="alert">
+              Falta a credencial de login. Configure o segredo{' '}
+              <code>google-oauth-client-id</code> antes de liberar o acesso.
+            </p>
+          )}
+
+          <p className="portao__nota">
+            A primeira pessoa a entrar cria a organização e se torna responsável por ela.
+          </p>
+        </div>
+      </main>
+    </div>
   );
 }

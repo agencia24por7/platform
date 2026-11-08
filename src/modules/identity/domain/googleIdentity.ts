@@ -87,6 +87,7 @@ export function buildSigninUrl(input: {
   url.searchParams.set('nonce', input.nonce);
   url.searchParams.set('code_challenge', input.challenge);
   url.searchParams.set('code_challenge_method', 'S256');
+  url.searchParams.set('include_granted_scopes', 'true');
   url.searchParams.set('prompt', 'select_account');
   return url.toString();
 }
