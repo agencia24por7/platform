@@ -36,11 +36,11 @@ resource "google_compute_firewall" "web" {
 resource "google_compute_firewall" "iap_ssh" {
   name        = "${local.prefix}-allow-iap-ssh"
   network     = google_compute_network.main.name
-  description = "SSH e túneis apenas pelo range do IAP. Não há SSH aberto para a internet."
+  description = "SSH apenas pelo range do IAP. Nenhum serviço da pilha publica porta no host: o acesso passa pelo proxy, que exige sessão."
 
   allow {
     protocol = "tcp"
-    ports    = ["22", "3000", "5432", "5678"]
+    ports    = ["22"]
   }
 
   source_ranges = ["35.235.240.0/20"]

@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
@@ -72,6 +72,19 @@ let cookieAtual = '';
 export function signIn(userId) {
   cookieAtual = sessionCookie(userId);
   return cookieAtual;
+}
+
+export function handoffToken(userId) {
+  const corpo = Buffer.from(
+    JSON.stringify({
+      userId,
+      audience: 'n8n',
+      expiresAt: Date.now() + 50_000,
+      jti: randomUUID(),
+    }),
+  ).toString('base64url');
+  const assinatura = createHmac('sha256', env().TRIA_SESSION_SECRET).update(corpo).digest('base64url');
+  return `${corpo}.${assinatura}`;
 }
 
 export function signOut() {

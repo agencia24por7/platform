@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server';
+import { createHandoffRepository } from '@/modules/identity/infrastructure/handoffRepository';
 import { isSafeReturnPath } from '@/modules/connections/domain/oauth';
 import { HANDOFF_COOKIE, readHandoff } from '@/modules/identity/domain/handoff';
 import { SESSION_MAX_AGE_SECONDS, issueSession } from '@/modules/identity/domain/session';
@@ -7,7 +8,7 @@ import { logger } from '@/shared/logging/logger';
 
 export const dynamic = 'force-dynamic';
 
-export function GET(request: NextRequest): NextResponse {
+export async function GET(request: NextRequest): Promise<NextResponse> {
   const configuration = env();
   const automacao = configuration.N8N_PUBLIC_URL;
 
@@ -16,10 +17,15 @@ export function GET(request: NextRequest): NextResponse {
   }
 
   const token = request.nextUrl.searchParams.get('t') ?? '';
-  const userId = readHandoff(token, configuration.TRIA_SESSION_SECRET, Date.now());
+  const passagem = readHandoff(token, configuration.TRIA_SESSION_SECRET, Date.now());
 
-  if (!userId) {
-    logger.warn('portaria.recusada', {});
+  if (!passagem) {
+    logger.warn('portaria.recusada', { motivo: 'assinatura' });
+    return NextResponse.redirect(new URL('/entrar?erro=estado', configuration.TRIA_APP_BASE_URL));
+  }
+
+  if (!(await createHandoffRepository().consume(passagem.jti, passagem.expiresAt))) {
+    logger.warn('portaria.recusada', { motivo: 'reuso', userId: passagem.userId });
     return NextResponse.redirect(new URL('/entrar?erro=estado', configuration.TRIA_APP_BASE_URL));
   }
 
@@ -29,7 +35,7 @@ export function GET(request: NextRequest): NextResponse {
   const response = NextResponse.redirect(destino);
   response.cookies.set(
     HANDOFF_COOKIE,
-    issueSession(userId, configuration.TRIA_SESSION_SECRET, Date.now()),
+    issueSession(passagem.userId, configuration.TRIA_SESSION_SECRET, Date.now()),
     {
       httpOnly: true,
       sameSite: 'lax',
@@ -39,6 +45,6 @@ export function GET(request: NextRequest): NextResponse {
     },
   );
 
-  logger.info('portaria.aceita', { userId });
+  logger.info('portaria.aceita', { userId: passagem.userId });
   return response;
 }

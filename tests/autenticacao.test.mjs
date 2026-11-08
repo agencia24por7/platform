@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
-import { BASE, appIsUp, browse, ensureUser, makeOwner, signIn, signOut } from './helpers.mjs';
+import { BASE, appIsUp, browse, ensureUser, handoffToken, makeOwner, signIn, signOut } from './helpers.mjs';
 
 const query = (sql) =>
   execFileSync('docker', ['exec', 'tria-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
@@ -100,5 +100,34 @@ describe('isolamento entre organizações', { concurrency: false }, () => {
       `SELECT count(*) FROM core.members WHERE organization_id = '${organizacaoA}' AND role = 'owner'`,
     );
     assert.equal(total, '1');
+  });
+});
+
+describe('passagem para a automação', { concurrency: false }, () => {
+  before(async () => {
+    if (!(await appIsUp())) throw new Error('App não está no ar');
+  });
+
+  it('a troca da passagem é recusada na segunda vez', async () => {
+    const usuario = ensureUser('portaria@tria.local');
+    const passagem = handoffToken(usuario);
+
+    const primeira = await fetch(`${BASE}/api/portaria/receber?t=${encodeURIComponent(passagem)}`, {
+      redirect: 'manual',
+    });
+    const segunda = await fetch(`${BASE}/api/portaria/receber?t=${encodeURIComponent(passagem)}`, {
+      redirect: 'manual',
+    });
+
+    const emitiuCookie = (resposta) => (resposta.headers.get('set-cookie') ?? '').includes('tria_portaria=ey');
+
+    assert.ok(emitiuCookie(primeira), 'a primeira troca deveria emitir o cookie');
+    assert.ok(!emitiuCookie(segunda), 'a segunda troca não pode emitir cookie');
+    assert.match(segunda.headers.get('location') ?? '', /\/entrar/);
+  });
+
+  it('a passagem some do banco depois de gasta apenas quando expira', async () => {
+    const gastas = Number(query('select count(*) from core.handoff_consumed'));
+    assert.ok(gastas >= 1, 'a passagem gasta precisa ficar registrada');
   });
 });
