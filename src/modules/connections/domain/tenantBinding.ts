@@ -1,17 +1,42 @@
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
 export type StateCookie = {
   readonly state: string;
   readonly returnTo: string;
   readonly organizationId: string | null;
 };
 
-export function encodeStateCookie(binding: StateCookie): string {
-  return [binding.state, binding.returnTo, binding.organizationId ?? ''].join('|');
+function sign(body: string, secret: string): string {
+  return createHmac('sha256', secret).update(body).digest('base64url');
 }
 
-export function decodeStateCookie(raw: string): StateCookie | null {
+function signatureMatches(received: string, expected: string): boolean {
+  const a = Buffer.from(received);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+export function encodeStateCookie(binding: StateCookie, secret: string): string {
+  const body = [binding.state, binding.returnTo, binding.organizationId ?? ''].join('|');
+  return `${Buffer.from(body).toString('base64url')}.${sign(body, secret)}`;
+}
+
+export function decodeStateCookie(raw: string, secret: string): StateCookie | null {
   if (!raw) return null;
 
-  const [state = '', returnTo = '', organizationId = ''] = raw.split('|');
+  const separator = raw.lastIndexOf('.');
+  if (separator < 1) return null;
+
+  let body: string;
+  try {
+    body = Buffer.from(raw.slice(0, separator), 'base64url').toString('utf8');
+  } catch {
+    return null;
+  }
+
+  if (!signatureMatches(raw.slice(separator + 1), sign(body, secret))) return null;
+
+  const [state = '', returnTo = '', organizationId = ''] = body.split('|');
   if (state.length === 0) return null;
 
   return {

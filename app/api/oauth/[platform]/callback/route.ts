@@ -37,7 +37,7 @@ export async function GET(
   if (platform !== 'google' && platform !== 'meta') return backTo(request, 'plataforma_desconhecida');
 
   const query = request.nextUrl.searchParams;
-  const binding = decodeStateCookie(request.cookies.get(STATE_COOKIE)?.value ?? '');
+  const binding = decodeStateCookie(request.cookies.get(STATE_COOKIE)?.value ?? '', env().TRIA_SESSION_SECRET);
   const expectedState = binding?.state ?? '';
   const returnTo = binding?.returnTo ?? '/comecar?passo=contas';
 

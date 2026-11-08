@@ -31,6 +31,7 @@ umask 077
   echo "WORKER_DB_PASSWORD=$(read_secret worker-db-password)"
   echo "DATABASE_URL=$(read_secret database-url)"
   echo "TRIA_WORKER_TOKEN=$(read_secret worker-token)"
+  echo "TRIA_SESSION_SECRET=$(read_secret session-secret)"
   echo "N8N_ENCRYPTION_KEY=$(read_secret n8n-encryption-key)"
   echo "N8N_DB_PASSWORD=$(read_secret n8n-db-password)"
   echo "PROXY_BASIC_AUTH=$(read_secret proxy-basic-auth | sed 's/\$/$$/g')"

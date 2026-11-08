@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
-import { BASE, appIsUp, get, post, submitForm } from './helpers.mjs';
+import { BASE, appIsUp, browse, ensureUser, get, makeOwner, post, signIn, submitForm } from './helpers.mjs';
 
 const query = (sql) =>
   execFileSync('docker', ['exec', 'tria-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-tAc', sql])
@@ -20,16 +20,17 @@ describe('cadastro de cliente e contas', { concurrency: false }, () => {
   before(async () => {
     if (!(await appIsUp())) throw new Error('App não está no ar');
     reset();
+    signIn(ensureUser());
   });
 
   it('a raiz leva ao assistente de início', async () => {
-    const response = await fetch(`${BASE}/`, { redirect: 'manual' });
+    const response = await browse(`/`);
     assert.equal(response.status, 307);
     assert.match(response.headers.get('location') ?? '', /\/comecar/);
   });
 
   it('oferece caminhos distintos, descritos por quem opera o quê', async () => {
-    const html = await fetch(`${BASE}/organizacoes/nova`).then((r) => r.text());
+    const html = await browse(`/organizacoes/nova`).then((r) => r.text());
     assert.match(html, /tipo=agency/);
     assert.match(html, /tipo=advertiser/);
     assert.match(html, /Opero contas de clientes/);
@@ -42,7 +43,7 @@ describe('cadastro de cliente e contas', { concurrency: false }, () => {
     const obsoletos = [/developer token/i, /é só informar/i, /conta administradora gratuita/i];
 
     for (const tela of telas) {
-      const html = await fetch(`${BASE}${tela}`).then((r) => r.text());
+      const html = await browse(`${tela}`).then((r) => r.text());
       for (const padrao of obsoletos) {
         assert.ok(!padrao.test(html), `${tela} ainda traz ${padrao}`);
       }
@@ -50,14 +51,14 @@ describe('cadastro de cliente e contas', { concurrency: false }, () => {
   });
 
   it('o formulário da agência pede só o nome, com estrutura opcional', async () => {
-    const html = await fetch(`${BASE}/organizacoes/nova?tipo=agency`).then((r) => r.text());
+    const html = await browse(`/organizacoes/nova?tipo=agency`).then((r) => r.text());
     assert.match(html, /Nome da agência/);
     assert.match(html, /Já tenho conta administradora ou Business Manager/);
     assert.ok(!/name="developerTokenRef"/.test(html), 'não deve mais coletar referência de token');
   });
 
   it('o formulário da empresa diz que nada precisa estar pronto', async () => {
-    const html = await fetch(`${BASE}/organizacoes/nova?tipo=advertiser`).then((r) => r.text());
+    const html = await browse(`/organizacoes/nova?tipo=advertiser`).then((r) => r.text());
     assert.match(html, /Nome da empresa/);
     assert.match(html, /Nada precisa estar pronto/);
     assert.match(html, /conecta direto/);
@@ -76,14 +77,14 @@ describe('cadastro de cliente e contas', { concurrency: false }, () => {
   });
 
   it('bloqueia uma segunda organização enquanto não há login', async () => {
-    const page = await fetch(`${BASE}/organizacoes/nova?tipo=agency`, { redirect: 'manual' });
+    const page = await browse(`/organizacoes/nova?tipo=agency`);
     assert.equal(page.status, 307);
     assert.equal(page.headers.get('location'), '/clientes');
     assert.equal(query('select count(*) from core.organizations'), '1');
   });
 
   it('o assistente para de aparecer depois da organização criada', async () => {
-    const page = await fetch(`${BASE}/comecar`, { redirect: 'manual' });
+    const page = await browse(`/comecar`);
     assert.equal(page.headers.get('location'), '/clientes');
   });
 
@@ -210,7 +211,7 @@ describe('cadastro de cliente e contas', { concurrency: false }, () => {
     const actions = query(
       "select string_agg(distinct action, ',' order by action) from audit.audit_log where actor_type = 'user'",
     );
-    assert.equal(actions, 'ad_account.link,client.create,connection.create,organization.create');
+    assert.equal(actions, 'ad_account.link,client.create,connection.create,identity.became_owner,organization.create');
   });
 
   it('não grava segredo na auditoria', async () => {

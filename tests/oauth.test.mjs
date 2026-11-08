@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
-import { BASE, appIsUp } from './helpers.mjs';
+import { BASE, appIsUp, browse, ensureUser, signIn } from './helpers.mjs';
 
-const follow = (path) => fetch(`${BASE}${path}`, { redirect: 'manual' });
+const follow = (path) => browse(path);
 
 const resetToFirstRun = () =>
   execFileSync('docker', [
@@ -15,6 +15,7 @@ describe('tela de conexão e fluxo OAuth', { concurrency: false }, () => {
   before(async () => {
     if (!(await appIsUp())) throw new Error('App não está no ar');
     resetToFirstRun();
+    signIn(ensureUser());
   });
 
   it('a raiz leva ao assistente quando não há organização', async () => {
@@ -23,7 +24,7 @@ describe('tela de conexão e fluxo OAuth', { concurrency: false }, () => {
   });
 
   it('a tela mostra as duas plataformas e o botão de conectar', async () => {
-    const html = await fetch(`${BASE}/comecar?passo=conectar`).then((r) => r.text());
+    const html = await browse(`/comecar?passo=conectar`).then((r) => r.text());
     assert.match(html, /Google Ads/);
     assert.match(html, /Meta Ads/);
     assert.match(html, /Conectar/);
@@ -32,13 +33,13 @@ describe('tela de conexão e fluxo OAuth', { concurrency: false }, () => {
   });
 
   it('não pede nenhum segredo na tela', async () => {
-    const html = await fetch(`${BASE}/comecar?passo=conectar`).then((r) => r.text());
+    const html = await browse(`/comecar?passo=conectar`).then((r) => r.text());
     assert.ok(!/type="password"/.test(html));
     assert.ok(!/client_secret|developer.?token/i.test(html.replace(/token fica cifrado/gi, '')));
   });
 
   it('oferece saída para quem não tem acesso agora', async () => {
-    const html = await fetch(`${BASE}/comecar?passo=conectar`).then((r) => r.text());
+    const html = await browse(`/comecar?passo=conectar`).then((r) => r.text());
     assert.match(html, /Cadastrar manualmente|Ir para o painel/);
   });
 
@@ -51,7 +52,7 @@ describe('tela de conexão e fluxo OAuth', { concurrency: false }, () => {
   });
 
   it('a seleção de contas existe e trata ausência de descoberta', async () => {
-    const response = await fetch(`${BASE}/comecar/contas`, { redirect: 'manual' });
+    const response = await browse(`/comecar/contas`);
     assert.ok([200, 307].includes(response.status), `status inesperado ${response.status}`);
   });
 

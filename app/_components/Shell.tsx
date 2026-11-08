@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import type { Organization } from '@/modules/organizations/domain/organization';
+import { currentUser } from '@/shared/http/currentUser';
 
 type NavEntry = { group: string } | { href: string; label: string };
 
@@ -23,7 +24,9 @@ type Props = {
   readonly children: ReactNode;
 };
 
-export function Shell({ title, organization, active, children }: Props) {
+export async function Shell({ title, organization, active, children }: Props) {
+  const session = await currentUser();
+
   return (
     <div className="shell">
       <aside className="side">
@@ -68,6 +71,16 @@ export function Shell({ title, organization, active, children }: Props) {
       <main className="main">
         <header className="topbar">
           <span className="strong">{title}</span>
+          {session ? (
+            <div className="sessao">
+              <span className="sessao__quem">{session.user.email}</span>
+              <form action="/api/auth/sair" method="post">
+                <button className="sessao__sair" type="submit">
+                  Sair
+                </button>
+              </form>
+            </div>
+          ) : null}
         </header>
         <div className="page">{children}</div>
       </main>

@@ -260,6 +260,12 @@ Elas são independentes e não devem ser confundidas:
 > Revogar o login de alguém não derruba a conexão das contas. Revogar uma conta de anúncios
 > não tira o acesso de ninguém à plataforma. São eventos diferentes, com auditoria separada.
 
+> **A tria não autentica ninguém — delega inteiro pro Google.** Não existe senha própria, não
+> existe tabela de credencial de login, não existe "esqueci minha senha" pra manter. O login é
+> 100% Google OAuth (Auth.js); a tria só guarda a identidade resultante e a sessão. Isso é
+> diferente da autorização de conta de anúncio (seção 10), que também é OAuth, mas é um grant
+> separado, de outro escopo, pra outro fim — nunca confundir os dois.
+
 ### A relação é N:N
 
 Um usuário gerencia **N contas**. Uma conta é gerenciada por **N usuários**. Quem sustenta
@@ -476,6 +482,56 @@ independentes, cada um alimentando o agente de um jeito diferente.
   conta podem fazer a mesma pergunta e receber a mesma informação em formatos diferentes —
   um em tabela densa, outro em resumo de três linhas — porque o perfil de cada um registra
   essa preferência junto com o nível de experiência.
+
+### 5.7. Crítico Sênior e Judge: duas camadas antes de qualquer saída
+
+Nenhum agente responde direto. Toda saída — vire ação ou vire resposta — passa por duas
+camadas de auditoria antes de sair:
+
+1. **Crítico Sênior** — revisa a saída do agente contra o Conhecimento Contextualizado
+   (5.8): evidência suficiente? tom adequado? alguma afirmação sem fonte?
+2. **Judge** — decide o destino: aprova como ação (segue pro Policy & Execution Engine,
+   seção 12.5), aprova como resposta (volta pra Interface), ou reprova (volta pro
+   AI Orchestrator pra refazer).
+
+> **Teto de reprovação.** Depois de duas reprovações seguidas na mesma iniciativa, o Judge
+> não insiste sozinho — o AI Orchestrator aciona alerta ao gestor responsável, visível na
+> Interface. Reprovação sem teto vira fila crescendo sozinha, não segurança.
+
+> **O Judge também é auditado.** O painel de qualidade (11.7) mede se a ação do agente deu
+> certo — não mede se o veredito do Judge estava certo. Por isso o Judge tem métrica própria:
+> taxa de falso-positivo (aprovou o que devia reprovar) e falso-negativo (reprovou o que devia
+> aprovar), separada da taxa de acerto do agente. Sem isso, um Judge mal calibrado fica
+> invisível até virar prejuízo.
+
+> **Custo e latência são explícitos, não escondidos.** Cada decisão paga, no mínimo, duas
+> chamadas de modelo a mais (Crítico + Judge). Isso tem orçamento próprio dentro do teto de
+> custo (12.4) — e nunca é a primeira coisa cortada quando o sistema degrada sob pressão de
+> custo. Degradar significa reduzir frequência de análise ou profundidade de pesquisa; nunca
+> pular a auditoria.
+
+```
+agent.critic_judge_events
+  id · marketing_campaign_id · agent_source
+  critic_verdict (ok|flag) · critic_notes
+  judge_verdict (approved_action|approved_answer|rejected)
+  rejection_count · escalated_to_user_id · escalated_at
+  at · model_critic · model_judge · tokens_used
+```
+
+### 5.8. Conhecimento: o que alimenta Crítico e Judge
+
+Dois componentes, mais uma síntese:
+
+| Componente | O que é | Fonte |
+| --- | --- | --- |
+| **Market Research Tool** | Contexto do negócio do cliente | Perfil de contexto (5.6) + dado público capturado + dado da própria conta do cliente |
+| **Base de Conhecimento** | Docs oficiais das plataformas + conteúdo público de referência, sempre sincronizada | Fonte pública — não depende de curadoria manual pra existir. Decisão: optamos por esse caminho agora; depositar expertise tácita de agência fica pra depois |
+| **Conhecimento Contextualizado** | Base de Conhecimento **+** o contexto que o Market Research Tool trouxe daquele cliente específico | É contra isso que o Crítico e o Judge checam a saída de cada agente — nunca contra o senso comum de mercado sozinho |
+
+> **Cache, não busca ao vivo.** O Market Research Tool guarda o dado público com TTL. Buscar
+> de novo a cada execução, pra cada conta, não escala — é tráfego, é risco de rate-limit do
+> provedor de origem, e pode esbarrar em termo de uso.
 
 ---
 
@@ -1341,6 +1397,77 @@ Não é preciso gerar arte. Basta estruturar o que funciona.
 - O dado agregado da carteira ao longo do tempo é o **ativo proprietário** da plataforma:
   benchmark por vertical, por ticket e por região. É o que nenhum concorrente consegue copiar.
 
+### 11.11. Auditoria de tracking — a condição antes de qualquer decisão
+
+Dado ruim entrando é decisão ruim saindo, com ou sem Crítico/Judge (5.7) por trás. Antes de
+qualquer agente confiar no dado de uma conta, um módulo próprio inspeciona se o dado é real.
+
+**O que o módulo audita, por conta:**
+
+| Camada | O que verifica |
+| --- | --- |
+| Pixel / tag de conversão | Meta Pixel disparando os eventos certos (PageView, Lead, Purchase); tag de conversão do Google Ads instalada; Enhanced Conversions ativo |
+| Server-side | Conversions API (Meta) configurada e deduplicando com o pixel client-side; perda de sinal por bloqueador de anúncio medida, não ignorada |
+| GA4 | Measurement ID correto, eventos de conversão configurados, vinculado à conta certa — não o ID de outro cliente por engano, erro comum na prática |
+| Google Tag Manager | Container publicado (não preso em modo preview), sem tag duplicada ou conflitante |
+| UTM | Consistência entre o que a campanha gera e o que a landing page recebe — UTM que se perde no redirect é fonte clássica de atribuição errada |
+| IDs de plataforma | Pixel ID, Ads Account ID, Conversion ID, GA4 Property ID todos vinculados à conta certa |
+| Landing page | HTTPS válido, formulário realmente disparando o evento de conversão, tempo de carregamento, redirecionamento quebrado |
+
+> **Isso não é feature opcional — é pré-condição.** Tracking maduro e closed-loop (11.6)
+> precisam estar garantidos **desde o onboarding** (seção 10.4), não descobertos três meses
+> depois quando o cliente pergunta por que o CPL não bate com a realidade. Se a conta não
+> passa nessa auditoria, ela **entra na plataforma mesmo assim** — mas com **nota de
+> configuração baixa**, que o ICP Service (11.12) usa pra travar o nível de autonomia em
+> Consultivo até corrigir.
+
+```
+tracking.audit_runs
+  id · ad_account_id · run_at · trigger (onboarding|scheduled|manual)
+  checks[]            lista de itens acima, cada um com status (ok|warning|fail) e detalhe
+  score               0–100, calculado a partir dos checks
+  critical_fails[]    itens que travam autonomia (ex.: pixel não dispara, UTM se perde)
+
+tracking.audit_checks
+  id · run_id · category (pixel|server_side|ga4|gtm|utm|platform_ids|landing_page)
+  status · detail · fix_hint          o que fazer pra corrigir, em linguagem simples
+```
+
+Roda no onboarding (parte do passo "Validar", seção 10.4) e depois em **cadência periódica**
+— tag some, LP é redesenhada e perde o pixel, cliente troca de Tag Manager sem avisar. Dado de
+tracking não é validado uma vez; é monitorado.
+
+### 11.12. ICP Service: a nota de prontidão da conta
+
+A auditoria de tracking é um insumo, não a resposta inteira. O **ICP Service** combina os
+sinais que determinam se uma conta tem condição real de ter sucesso com a tria — e devolve
+uma nota, não um "sim ou não" binário.
+
+| Sinal | Peso na nota | Fonte |
+| --- | --- | --- |
+| Score de tracking | Alto | Auditoria de tracking (11.11) |
+| Closed-loop conectado | Alto | CRM ou WhatsApp com status de lead atualizável (11.6) |
+| Verba mínima pro vertical | Médio | Perfil de contexto (5.6) × volume mínimo de conversão (11.4) |
+| Volume histórico de dado | Médio | Métricas já sincronizadas (11.2) |
+| Vertical dentro do escopo | Baixo | Leads ou e-commerce (decisão 15.4) |
+
+> **A nota não bloqueia a conta — bloqueia a autonomia.** Conta com nota baixa entra
+> normalmente, mas fica travada em **Consultivo** (seção 7) até os sinais melhorarem. A tria
+> nunca promete resultado pra uma conta que não reúne condição de gerar o dado necessário pra
+> aprender — ela é honesta sobre isso desde o primeiro dia, não três meses depois.
+
+```
+icp.account_readiness
+  id · ad_account_id · computed_at
+  tracking_score · closed_loop_connected (bool) · budget_tier · historical_volume_tier
+  vertical_match (bool) · readiness_score (0–100) · readiness_tier (baixa|média|alta)
+  autonomy_ceiling → seção 7   nível máximo de autonomia permitido por essa nota
+```
+
+> **O ICP vira hipótese testável, não suposição de pitch de venda.** Com o tempo, o benchmark
+> interno (11.10) cruza `readiness_score` com resultado real por vertical — e isso refina os
+> pesos da tabela acima, em vez de ficar fixo pra sempre.
+
 ---
 
 ## 12. Execução segura e limites operacionais
@@ -1427,6 +1554,25 @@ automation.policy_violations
   resource_type · resource_id · action_payload
   enforcement_applied (blocked|warned) · at
 ```
+
+### 12.6. Riscos de escala — revisão antes de crescer
+
+Lista fechada em revisão sênior (nov/2026), pensando no produto operando centenas de contas
+simultâneas, não dezenas. Nenhum destes é blocker pro MVP — são o que precisa estar resolvido
+**antes** de sair de dezenas pra centenas de contas ao mesmo tempo (fase de escala, seção 14).
+
+| # | Risco | Recomendação |
+| --- | --- | --- |
+| 1 | Crítico + Judge (5.7) multiplicam custo e latência por decisão | Orçamento próprio dentro do teto de custo (12.4); nunca é a primeira coisa cortada sob pressão |
+| 2 | Reprovação do Judge sem teto vira fila crescendo sozinha | Máximo 2 reprovações seguidas → escalona pro gestor via Interface (5.7) |
+| 3 | AI Orchestrator como hub único | N instâncias stateless, isoladas por organização via RLS (seção 4) — nunca um singleton lógico |
+| 4 | `schema agent` como ponto de escrita compartilhado entre todos os clientes | Particionar por `organization_id`/`client_id` desde o schema inicial; tratar como log, não como linha mutável |
+| 5 | Market Research Tool (5.8) buscando dado público ao vivo | Cache com TTL; atualização em cadência, não por execução |
+| 6 | Observabilidade e2e "de tudo, pra sempre" | Amostragem e retenção definidas — trace completo pra decisões com ação real, não pra toda leitura |
+| 7 | Ninguém audita o Judge | Métrica própria de falso-positivo/falso-negativo do Judge, separada da taxa de acerto do agente (5.7) |
+| 8 | MCP nos dois sentidos (seção 9) é dependência externa nova | Servidor: escopo por sessão/organização, nunca um token geral. Cliente: fallback pra API oficial se o MCP de terceiro cair ou mudar contrato |
+| 9 | Loop de feedback do Portfolio Intelligence Agent parece tempo real | É limitado pela janela de sync de cada plataforma (11.2) — nunca desenhar alerta como se fosse live |
+| 10 | Idempotência (12.1) só definida na execução | Estender a mesma chave até Crítico/Judge — retry não pode reauditar nem perder decisão em trânsito |
 
 ## 13. Diferencial competitivo
 

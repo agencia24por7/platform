@@ -1,3 +1,5 @@
+import { createHmac } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 export const BASE = 'http://localhost:3000';
@@ -27,6 +29,59 @@ export async function appIsUp() {
   }
 }
 
+const SESSION_COOKIE = 'tria_sessao';
+
+function psql(sql) {
+  return execFileSync(
+    'docker',
+    ['exec', '-i', 'tria-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql],
+    { encoding: 'utf8' },
+  )
+    .trim()
+    .split('\n')[0]
+    .trim();
+}
+
+export function ensureUser(email = 'teste@tria.local') {
+  psql(
+    `INSERT INTO core.users (email, name) VALUES ('${email}', 'Teste')
+     ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name`,
+  );
+  return psql(`SELECT id FROM core.users WHERE email = '${email}'`);
+}
+
+export function makeOwner(userId, organizationId) {
+  psql(
+    `INSERT INTO core.members (organization_id, user_id, role)
+     VALUES ('${organizationId}', '${userId}', 'owner')
+     ON CONFLICT (organization_id, user_id) DO NOTHING`,
+  );
+}
+
+export function sessionCookie(userId) {
+  const now = Date.now();
+  const body = Buffer.from(
+    JSON.stringify({ userId, issuedAt: now, expiresAt: now + 3600_000 }),
+  ).toString('base64url');
+  const signature = createHmac('sha256', env().TRIA_SESSION_SECRET).update(body).digest('base64url');
+  return `${SESSION_COOKIE}=${body}.${signature}`;
+}
+
+let cookieAtual = '';
+
+export function signIn(userId) {
+  cookieAtual = sessionCookie(userId);
+  return cookieAtual;
+}
+
+export function signOut() {
+  cookieAtual = '';
+}
+
+function authHeaders(extra = {}) {
+  return cookieAtual ? { ...extra, Cookie: cookieAtual } : extra;
+}
+
 function actionId(html) {
   const match = html.match(/name="\$ACTION_ID_([a-f0-9]+)"/);
   if (!match) throw new Error('A página não renderizou nenhuma server action.');
@@ -34,7 +89,7 @@ function actionId(html) {
 }
 
 export async function submitForm(path, fields) {
-  const html = await fetch(`${BASE}${path}`).then((response) => response.text());
+  const html = await fetch(`${BASE}${path}`, { headers: authHeaders() }).then((response) => response.text());
   const id = actionId(html);
 
   const body = new FormData();
@@ -46,7 +101,7 @@ export async function submitForm(path, fields) {
 
   const response = await fetch(`${BASE}${path}`, {
     method: 'POST',
-    headers: { Origin: BASE, Referer: `${BASE}${path}` },
+    headers: authHeaders({ Origin: BASE, Referer: `${BASE}${path}` }),
     body,
     redirect: 'manual',
   });
@@ -64,3 +119,5 @@ export const post = (path, body) =>
   fetch(`${BASE}${path}`, { method: 'POST', headers: workerHeaders(), body: JSON.stringify(body) });
 
 export const get = (path) => fetch(`${BASE}${path}`, { headers: workerHeaders() });
+
+export const browse = (path) => fetch(`${BASE}${path}`, { headers: authHeaders(), redirect: 'manual' });

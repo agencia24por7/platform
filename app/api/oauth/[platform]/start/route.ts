@@ -72,7 +72,10 @@ export async function GET(
   const organization = await currentOrganization();
   response.cookies.set(
     STATE_COOKIE,
-    encodeStateCookie({ state, returnTo: safeReturn, organizationId: organization?.id ?? null }),
+    encodeStateCookie(
+      { state, returnTo: safeReturn, organizationId: organization?.id ?? null },
+      env().TRIA_SESSION_SECRET,
+    ),
     options,
   );
   if (provider.usesPkce) response.cookies.set(VERIFIER_COOKIE, verifier, options);

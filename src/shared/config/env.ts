@@ -20,6 +20,7 @@ const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL: z.string().url().startsWith('postgres'),
   TRIA_WORKER_TOKEN: strongSecret,
+  TRIA_SESSION_SECRET: strongSecret,
   TRIA_APP_BASE_URL: z.string().url(),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   DATABASE_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(50).default(10),

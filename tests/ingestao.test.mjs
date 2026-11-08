@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
-import { appIsUp, get, post, submitForm } from './helpers.mjs';
+import { appIsUp, browse, ensureUser, get, post, signIn, submitForm } from './helpers.mjs';
 
 const query = (sql) =>
   execFileSync('docker', ['exec', 'tria-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-tAc', sql])
@@ -70,6 +70,7 @@ describe('coleta com metadados e auditoria', { concurrency: false }, () => {
 
   before(async () => {
     if (!(await appIsUp())) throw new Error('App não está no ar');
+    signIn(ensureUser());
     accountId = await ensureAccount();
     assert.match(accountId, /^[a-f0-9-]{36}$/);
   });

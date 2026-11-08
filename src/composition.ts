@@ -8,6 +8,8 @@ import { createConnectionRepository } from '@/modules/connections/infrastructure
 import { createDiscoveredAccountRepository } from '@/modules/connections/infrastructure/discoveredAccountRepository';
 import { createN8nCredentialVault } from '@/modules/connections/infrastructure/n8nCredentialVault';
 import { createPlatformDiscovery } from '@/modules/connections/infrastructure/platformDiscovery';
+import { createIdentityService } from '@/modules/identity/application/identityService';
+import { createUserRepository } from '@/modules/identity/infrastructure/userRepository';
 import { createIngestionService } from '@/modules/ingestion/application/ingestionService';
 import { createMetricsRepository } from '@/modules/ingestion/infrastructure/metricsRepository';
 import { createSyncRunRepository } from '@/modules/ingestion/infrastructure/syncRunRepository';
@@ -27,6 +29,7 @@ function build() {
     audit,
     discoveredAccounts,
     organizations,
+    identity: createIdentityService(createUserRepository(), audit),
     clients: createClientService(clientRepository, audit),
     connections: createConnectionService(connectionRepository, adAccounts, audit, clientRepository),
     authorization: createAuthorizationService(

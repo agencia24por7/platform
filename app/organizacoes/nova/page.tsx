@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { Feedback } from '@/../app/_components/Feedback';
 import { Wizard } from '@/../app/_components/Wizard';
 import { modules } from '@/composition';
-import { currentOrganization } from '@/shared/http/currentOrganization';
+import { currentUser } from '@/shared/http/currentUser';
 import type { OrganizationType } from '@/modules/organizations/domain/organization';
 import { optionalText, requestId, text, toActionState } from '@/shared/http/actions';
 
@@ -12,7 +12,9 @@ export const dynamic = 'force-dynamic';
 async function createOrganization(formData: FormData): Promise<void> {
   'use server';
 
-  if (await currentOrganization()) redirect('/clientes');
+  const sessao = await currentUser();
+  if (!sessao) redirect('/entrar');
+  if (sessao.memberships.length > 0) redirect('/clientes');
 
   const type: OrganizationType = text(formData, 'type') === 'advertiser' ? 'advertiser' : 'agency';
   const result = await modules().organizations.create(
@@ -28,6 +30,12 @@ async function createOrganization(formData: FormData): Promise<void> {
 
   if (!result.ok) {
     const message = toActionState(result.error).error ?? '';
+    redirect(`/organizacoes/nova?tipo=${type}&erro=${encodeURIComponent(message)}`);
+  }
+
+  const vinculo = await modules().identity.joinAsOwner(result.value.id, sessao.user.id, requestId());
+  if (!vinculo.ok) {
+    const message = toActionState(vinculo.error).error ?? '';
     redirect(`/organizacoes/nova?tipo=${type}&erro=${encodeURIComponent(message)}`);
   }
 
@@ -176,7 +184,9 @@ export default async function NewOrganizationPage({
 }: {
   searchParams: Promise<{ tipo?: string; erro?: string }>;
 }) {
-  if (await currentOrganization()) redirect('/clientes');
+  const sessao = await currentUser();
+  if (!sessao) redirect('/entrar');
+  if (sessao.memberships.length > 0) redirect('/clientes');
 
   const params = await searchParams;
   const type: OrganizationType | null =

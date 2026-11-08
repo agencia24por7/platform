@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
-import { BASE, appIsUp, get, post } from './helpers.mjs';
+import { BASE, appIsUp, browse, ensureUser, get, post, signIn } from './helpers.mjs';
 
 describe('borda do worker', { concurrency: false }, () => {
   before(async () => {
@@ -65,10 +65,11 @@ describe('borda do worker', { concurrency: false }, () => {
 describe('cabeçalhos de segurança', () => {
   before(async () => {
     if (!(await appIsUp())) throw new Error('App não está no ar');
+    signIn(ensureUser());
   });
 
   it('envia os cabeçalhos obrigatórios', async () => {
-    const response = await fetch(`${BASE}/clientes`);
+    const response = await browse('/clientes');
     for (const header of [
       'content-security-policy',
       'x-frame-options',
@@ -81,12 +82,12 @@ describe('cabeçalhos de segurança', () => {
   });
 
   it('não revela a tecnologia', async () => {
-    const response = await fetch(`${BASE}/clientes`);
+    const response = await browse('/clientes');
     assert.equal(response.headers.get('x-powered-by'), null);
   });
 
   it('não libera eval fora de desenvolvimento', async () => {
-    const response = await fetch(`${BASE}/clientes`);
+    const response = await browse('/clientes');
     const csp = response.headers.get('content-security-policy') ?? '';
     const { readFileSync } = await import('node:fs');
     const config = readFileSync('next.config.mjs', 'utf8');
@@ -103,7 +104,7 @@ describe('cabeçalhos de segurança', () => {
   });
 
   it('proíbe enquadramento em iframe', async () => {
-    const response = await fetch(`${BASE}/clientes`);
+    const response = await browse('/clientes');
     assert.equal(response.headers.get('x-frame-options'), 'DENY');
     assert.match(response.headers.get('content-security-policy') ?? '', /frame-ancestors 'none'/);
   });

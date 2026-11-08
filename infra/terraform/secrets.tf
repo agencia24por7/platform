@@ -2,6 +2,7 @@ locals {
   app_secret_names = [
     "database-url",
     "worker-token",
+    "session-secret",
     "postgres-password",
     "app-db-password",
     "worker-db-password",
