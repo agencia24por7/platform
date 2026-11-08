@@ -306,3 +306,9 @@ table { border-collapse: collapse; width: 100%; }
 .triagem__item { font-size: var(--fs-sm); color: var(--fg-muted); line-height: var(--lh-base); }
 .triagem__item strong { color: var(--fg); font-variant-numeric: tabular-nums;
   display: inline-block; min-width: 1.4em; }
+
+.caminho { border-top: 1px solid var(--border); }
+.caminho:first-of-type { border-top: 0; }
+.caminho__topo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 14px 16px; background: var(--bg-sunken); font-size: var(--fs-sm); }
+.caminho__contagem { margin-left: auto; color: var(--fg-subtle); font-size: var(--fs-xs); }

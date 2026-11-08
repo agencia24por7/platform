@@ -4,6 +4,7 @@ import { Readiness } from '@/../app/_components/Readiness';
 import { Shell } from '@/../app/_components/Shell';
 import { modules } from '@/composition';
 import { encurtarEscopo } from '@/modules/audit/domain/auditView';
+import { agruparPorAdministradora } from '@/modules/connections/domain/carteira';
 import { currentOrganization } from '@/shared/http/currentOrganization';
 import { readinessOf } from '@/modules/connections/domain/connection';
 
@@ -28,10 +29,14 @@ export default async function IntegrationsPage() {
   const organization = await currentOrganization();
   if (!organization) redirect('/organizacoes/nova');
 
-  const [connections, accounts] = await Promise.all([
+  const [connections, accounts, alcancaveis] = await Promise.all([
     modules().connections.listConnections(organization.id),
     modules().connections.listAccounts(organization.id),
+    modules().discoveredAccounts.listAll(organization.id),
   ]);
+
+  const caminhos = agruparPorAdministradora(alcancaveis);
+  const porExternalId = new Map(accounts.map((conta) => [conta.externalId, conta]));
 
   return (
     <Shell title="Contas e conexões" organization={organization} active="/integracoes">
@@ -112,6 +117,95 @@ export default async function IntegrationsPage() {
               </tbody>
             </table>
           </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="card__head">
+          <span className="card__title">Contas que você alcança</span>
+          <span className="card__sub">
+            {alcancaveis.length} conta(s) em {caminhos.length} caminho(s) de acesso
+          </span>
+        </div>
+
+        {caminhos.length === 0 ? (
+          <div className="empty">
+            Nenhuma conta ainda. Autorize uma plataforma para a tria enxergar o que você administra.
+          </div>
+        ) : (
+          caminhos.map((caminho) => (
+            <div key={caminho.administradora ?? 'direto'} className="caminho">
+              <div className="caminho__topo">
+                {caminho.administradora ? (
+                  <>
+                    <span className="pill pill--info">MCC</span>
+                    <span className="mono strong">{caminho.administradora}</span>
+                    <span className="subtle">administradora — não veicula campanha</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="pill">direto</span>
+                    <span className="subtle">contas suas, sem administradora no caminho</span>
+                  </>
+                )}
+                <span className="caminho__contagem">
+                  {caminho.vinculadas} vinculada(s) · {caminho.disponiveis} disponível(is)
+                </span>
+              </div>
+
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Conta</th>
+                      <th>Identificador</th>
+                      <th>Moeda</th>
+                      <th>Cliente</th>
+                      <th>Estado</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {caminho.contas.map((conta) => {
+                      const vinculada = porExternalId.get(conta.externalId);
+
+                      return (
+                        <tr key={conta.id}>
+                          <td>
+                            <div className="strong">{conta.name}</div>
+                            {conta.inactive ? (
+                              <span className="pill pill--warn">inativa na plataforma</span>
+                            ) : null}
+                          </td>
+                          <td className="mono">{conta.externalId}</td>
+                          <td>{conta.currency}</td>
+                          <td>
+                            {vinculada ? (
+                              vinculada.clientName
+                            ) : (
+                              <span className="subtle">nenhum cliente</span>
+                            )}
+                          </td>
+                          <td>
+                            <span className={`pill ${conta.state === 'linked' ? 'pill--ok' : ''}`}>
+                              {conta.state === 'linked' ? 'vinculada' : 'disponível'}
+                            </span>
+                          </td>
+                          <td>
+                            {conta.state !== 'linked' && !conta.inactive ? (
+                              <Link className="btn btn--pill" href="/clientes">
+                                Vincular a um cliente →
+                              </Link>
+                            ) : null}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))
         )}
       </div>
 
