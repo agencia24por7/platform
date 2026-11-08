@@ -54,6 +54,8 @@ cd "$STACK"
 umask 077
 {
   echo "POSTGRES_PASSWORD=$(read_secret postgres-password)"
+  echo "APP_DB_PASSWORD=$(read_secret app-db-password)"
+  echo "WORKER_DB_PASSWORD=$(read_secret worker-db-password)"
   echo "DATABASE_URL=$(read_secret database-url)"
   echo "TRIA_WORKER_TOKEN=$(read_secret worker-token)"
   echo "N8N_ENCRYPTION_KEY=$(read_secret n8n-encryption-key)"
