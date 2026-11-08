@@ -91,6 +91,62 @@ async function aceitarConvite(formData: FormData): Promise<void> {
   voltar('Aceite enfileirado. Ele usa a credencial da conta convidada, como o Google exige.');
 }
 
+
+async function convidarParaMcc(formData: FormData): Promise<void> {
+  'use server';
+
+  const contexto = await requireContext();
+  const ator = await atorAtual();
+  const voltar = (aviso: string): never =>
+    redirect(`/integracoes?aviso=${encodeURIComponent(aviso)}`);
+
+  if (!canAdminister(contexto.role)) {
+    voltar('Só quem administra a organização pode convidar contas para a MCC.');
+    return;
+  }
+
+  const administradora = text(formData, 'administradora');
+  const alcancaveis = await modules().discoveredAccounts.listAll(contexto.organization.id);
+
+  const conta = alcancaveis.find((item) => item.id === text(formData, 'contaId'));
+  if (!conta) {
+    voltar('Conta não encontrada nesta organização.');
+    return;
+  }
+
+  const conexaoDaMcc = alcancaveis.find(
+    (item) => item.managerExternalId === administradora && item.externalId !== administradora,
+  )?.connectionId;
+
+  if (!conexaoDaMcc) {
+    voltar('Não há autorização que alcance essa administradora.');
+    return;
+  }
+
+  await modules().tasks.request({
+    organizationId: contexto.organization.id,
+    connectionId: conexaoDaMcc,
+    kind: 'mcc_invite',
+    managerExternalId: administradora,
+    targetExternalId: conta.externalId,
+    requestedBy: ator.userId,
+  });
+
+  await modules().audit.record({
+    organizationId: contexto.organization.id,
+    actorType: 'user',
+    actorId: ator.userId,
+    action: 'mcc.invite_requested',
+    targetType: 'connection',
+    targetId: conexaoDaMcc,
+    requestId: ator.requestId,
+    sourceIp: ator.sourceIp,
+    metadata: { administradora, conta: conta.externalId },
+  });
+
+  voltar(`Convite enviado para ${conta.externalId}. O dono precisa aceitar.`);
+}
+
 export default async function IntegrationsPage({
   searchParams,
 }: {
@@ -114,6 +170,10 @@ export default async function IntegrationsPage({
   );
 
   const caminhos = agruparPorAdministradora(alcancaveis);
+  const administradoras = caminhos.filter((caminho) => caminho.administradora !== null);
+  const foraDeMcc = new Set(
+    administradoras.flatMap((caminho) => caminho.contas.map((conta) => conta.externalId)),
+  );
   const porExternalId = new Map(accounts.map((conta) => [conta.externalId, conta]));
 
   return (
@@ -282,90 +342,130 @@ export default async function IntegrationsPage({
 
       <div className="card">
         <div className="card__head">
-          <span className="card__title">Contas que você alcança</span>
+          <span className="card__title">Administradoras conectadas</span>
           <span className="card__sub">
-            {alcancaveis.length} conta(s) em {caminhos.length} caminho(s) de acesso
+            {administradoras.length === 0
+              ? 'nenhuma MCC no caminho das suas autorizações'
+              : `${administradoras.length} MCC · não veiculam campanha, abrem acesso`}
           </span>
         </div>
 
-        {caminhos.length === 0 ? (
+        {administradoras.length === 0 ? (
+          <div className="empty">
+            Nenhuma administradora. Autorize com a conta que administra sua MCC para enxergá-la aqui.
+          </div>
+        ) : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Administradora</th>
+                  <th className="num">Contas sob ela</th>
+                  <th className="num">Vinculadas a cliente</th>
+                  <th>Autorização que alcança</th>
+                </tr>
+              </thead>
+              <tbody>
+                {administradoras.map((caminho) => {
+                  const primeira = caminho.contas[0];
+                  const conexao = connections.find((item) => item.id === primeira?.connectionId);
+
+                  return (
+                    <tr key={caminho.administradora}>
+                      <td>
+                        <span className="pill pill--info">MCC</span>
+                        <div className="mono strong">{caminho.administradora}</div>
+                      </td>
+                      <td className="num">{caminho.contas.length}</td>
+                      <td className="num">{caminho.vinculadas}</td>
+                      <td className="subtle">
+                        {conexao?.accountEmail ?? conexao?.externalId ?? '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="card__head">
+          <span className="card__title">Contas que você alcança</span>
+          <span className="card__sub">
+            {alcancaveis.length} conta(s) · {foraDeMcc.size} sob administradora
+          </span>
+        </div>
+
+        {alcancaveis.length === 0 ? (
           <div className="empty">
             Nenhuma conta ainda. Autorize uma plataforma para a Orla enxergar o que você administra.
           </div>
         ) : (
-          caminhos.map((caminho) => (
-            <div key={caminho.administradora ?? 'direto'} className="caminho">
-              <div className="caminho__topo">
-                {caminho.administradora ? (
-                  <>
-                    <span className="pill pill--info">MCC</span>
-                    <span className="mono strong">{caminho.administradora}</span>
-                    <span className="subtle">administradora — não veicula campanha</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="pill">direto</span>
-                    <span className="subtle">contas suas, sem administradora no caminho</span>
-                  </>
-                )}
-                <span className="caminho__contagem">
-                  {caminho.vinculadas} vinculada(s) · {caminho.disponiveis} disponível(is)
-                </span>
-              </div>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Conta</th>
+                  <th>Identificador</th>
+                  <th>Moeda</th>
+                  <th>Cliente</th>
+                  <th>Administradora</th>
+                </tr>
+              </thead>
+              <tbody>
+                {alcancaveis.map((conta) => {
+                  const vinculada = porExternalId.get(conta.externalId);
+                  const sobMcc =
+                    conta.managerExternalId && conta.managerExternalId !== conta.externalId
+                      ? conta.managerExternalId
+                      : null;
+                  const mccDisponivel = administradoras[0]?.administradora ?? null;
+                  const convitePedido = convitesEnviados.some(
+                    (convite) => convite.targetExternalId === conta.externalId,
+                  );
 
-              <div className="table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Conta</th>
-                      <th>Identificador</th>
-                      <th>Moeda</th>
-                      <th>Cliente</th>
-                      <th>Estado</th>
-                      <th />
+                  return (
+                    <tr key={conta.id}>
+                      <td>
+                        <div className="strong">{conta.name}</div>
+                        {conta.inactive ? (
+                          <span className="pill pill--warn">inativa na plataforma</span>
+                        ) : null}
+                      </td>
+                      <td className="mono">{conta.externalId}</td>
+                      <td>{conta.currency}</td>
+                      <td>
+                        {vinculada ? (
+                          vinculada.clientName
+                        ) : (
+                          <span className="subtle">nenhum cliente</span>
+                        )}
+                      </td>
+                      <td>
+                        {sobMcc ? (
+                          <span className="mono">{sobMcc}</span>
+                        ) : convitePedido ? (
+                          <span className="subtle">convite enviado</span>
+                        ) : mccDisponivel ? (
+                          <form action={convidarParaMcc}>
+                            <input type="hidden" name="contaId" value={conta.id} />
+                            <input type="hidden" name="administradora" value={mccDisponivel} />
+                            <button className="btn btn--pill" type="submit">
+                              Convidar para a MCC
+                            </button>
+                          </form>
+                        ) : (
+                          <span className="subtle">acesso direto</span>
+                        )}
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {caminho.contas.map((conta) => {
-                      const vinculada = porExternalId.get(conta.externalId);
-
-                      return (
-                        <tr key={conta.id}>
-                          <td>
-                            <div className="strong">{conta.name}</div>
-                            {conta.inactive ? (
-                              <span className="pill pill--warn">inativa na plataforma</span>
-                            ) : null}
-                          </td>
-                          <td className="mono">{conta.externalId}</td>
-                          <td>{conta.currency}</td>
-                          <td>
-                            {vinculada ? (
-                              vinculada.clientName
-                            ) : (
-                              <span className="subtle">nenhum cliente</span>
-                            )}
-                          </td>
-                          <td>
-                            <span className={`pill ${conta.state === 'linked' ? 'pill--ok' : ''}`}>
-                              {conta.state === 'linked' ? 'vinculada' : 'disponível'}
-                            </span>
-                          </td>
-                          <td>
-                            {conta.state !== 'linked' && !conta.inactive ? (
-                              <Link className="btn btn--pill" href="/clientes">
-                                Vincular a um cliente →
-                              </Link>
-                            ) : null}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ))
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

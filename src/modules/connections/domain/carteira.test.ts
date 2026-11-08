@@ -9,6 +9,7 @@ const conta = (
   inactive = false,
 ): ContaAlcancavel => ({
   id: `id-${externalId}`,
+  connectionId: 'conexao-1',
   platform: 'google',
   externalId,
   name: `Conta ${externalId}`,

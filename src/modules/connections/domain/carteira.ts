@@ -2,6 +2,7 @@ import type { DiscoveredAccount } from '@/modules/connections/domain/discovery';
 
 export type ContaAlcancavel = DiscoveredAccount & {
   readonly id: string;
+  readonly connectionId: string;
   readonly state: 'discovered' | 'linked' | 'ignored' | 'lost';
 };
 

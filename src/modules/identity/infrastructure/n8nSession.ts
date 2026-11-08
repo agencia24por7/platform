@@ -20,7 +20,7 @@ export async function abrirSessaoNaAutomacao(): Promise<SessaoAutomacao> {
   try {
     const resposta = await fetch(new URL('/rest/login', endereco).toString(), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'browser-id': 'tria-portaria' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ emailOrLdapLoginId: email, password: senha }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
