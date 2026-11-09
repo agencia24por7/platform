@@ -5,7 +5,7 @@ import { canAdminister } from '@/modules/identity/domain/user';
 import { env } from '@/shared/config/env';
 import { logger } from '@/shared/logging/logger';
 import { currentUser } from '@/shared/http/currentUser';
-import { activeContext } from '@/shared/http/currentOrganization';
+import { ORGANIZACAO_INTEIRA, escopoDeCliente } from '@/shared/db/escopo';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,19 +29,28 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.redirect(entrada);
   }
 
-  const contexto = await activeContext();
-  if (!contexto) {
+  if (sessao.memberships.length === 0) {
     return NextResponse.redirect(new URL('/organizacoes/nova', base));
   }
 
-  if (contexto.clientIds !== null) {
-    logger.warn('portaria.recusada_recorte', { userId: sessao.user.id });
-    return NextResponse.redirect(new URL('/clientes', base));
+  const vinculoFraco = sessao.memberships.find((vinculo) => !canAdminister(vinculo.role));
+  if (vinculoFraco) {
+    logger.warn('portaria.papel_insuficiente', {
+      userId: sessao.user.id,
+      papel: vinculoFraco.role,
+      organizationId: vinculoFraco.organizationId,
+    });
+    return NextResponse.redirect(new URL('/automacoes?erro=n8n_sem_permissao', base));
   }
 
-  if (!canAdminister(contexto.role)) {
-    logger.warn('portaria.papel_insuficiente', { userId: sessao.user.id, papel: contexto.role });
-    return NextResponse.redirect(new URL('/automacoes?erro=n8n_sem_permissao', base));
+  for (const vinculo of sessao.memberships) {
+    if ((await escopoDeCliente(vinculo.organizationId)) !== ORGANIZACAO_INTEIRA) {
+      logger.warn('portaria.recusada_recorte', {
+        userId: sessao.user.id,
+        organizationId: vinculo.organizationId,
+      });
+      return NextResponse.redirect(new URL('/clientes', base));
+    }
   }
 
   const destino = new URL('/api/portaria/receber', automacao);

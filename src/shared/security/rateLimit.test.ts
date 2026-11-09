@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { describe, it, test } from 'node:test';
 import { consume, forget } from './rateLimit.ts';
 
 describe('consume', () => {
@@ -39,4 +39,9 @@ describe('consume', () => {
     assert.equal(consume(key, 5, 60_000).remaining, 3);
     forget(key);
   });
+});
+
+test('o mapa de baldes não cresce sem teto', () => {
+  for (let i = 0; i < 10_050; i++) consume(`inunda:${i}`, 1, 60_000);
+  assert.ok(consume('inunda:novo', 1, 60_000).allowed, 'balde novo precisa caber mesmo sob inundação');
 });

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
-import { primeiroEndereco } from './actor.ts';
+import { describe, it, test } from 'node:test';
+import { enderecoConfiavel, primeiroEndereco } from './actor.ts';
 
 describe('origem da requisição', () => {
   it('usa o primeiro endereço da cadeia, que é o cliente', () => {
@@ -29,4 +29,11 @@ describe('origem da requisição', () => {
   it('recusa valor absurdamente longo', () => {
     assert.equal(primeiroEndereco('9'.repeat(60)), null);
   });
+});
+
+test('o endereço confiável é o salto do nosso proxy, não o que o cliente alegou', () => {
+  assert.equal(enderecoConfiavel('1.2.3.4, 10.0.0.9, 203.0.113.7'), '203.0.113.7');
+  assert.equal(enderecoConfiavel('invasor-forjou-isto, 203.0.113.7'), '203.0.113.7');
+  assert.equal(enderecoConfiavel(null), null);
+  assert.equal(enderecoConfiavel('lixo!!!'), null);
 });
