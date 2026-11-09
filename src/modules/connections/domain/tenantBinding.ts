@@ -4,6 +4,7 @@ export type StateCookie = {
   readonly state: string;
   readonly returnTo: string;
   readonly organizationId: string | null;
+  readonly userId: string | null;
 };
 
 function sign(body: string, secret: string): string {
@@ -17,7 +18,12 @@ function signatureMatches(received: string, expected: string): boolean {
 }
 
 export function encodeStateCookie(binding: StateCookie, secret: string): string {
-  const body = [binding.state, binding.returnTo, binding.organizationId ?? ''].join('|');
+  const body = [
+    binding.state,
+    binding.returnTo,
+    binding.organizationId ?? '',
+    binding.userId ?? '',
+  ].join('|');
   return `${Buffer.from(body).toString('base64url')}.${sign(body, secret)}`;
 }
 
@@ -36,13 +42,14 @@ export function decodeStateCookie(raw: string, secret: string): StateCookie | nu
 
   if (!signatureMatches(raw.slice(separator + 1), sign(body, secret))) return null;
 
-  const [state = '', returnTo = '', organizationId = ''] = body.split('|');
+  const [state = '', returnTo = '', organizationId = '', userId = ''] = body.split('|');
   if (state.length === 0) return null;
 
   return {
     state,
     returnTo: returnTo.length > 0 ? returnTo : '/comecar?passo=contas',
     organizationId: organizationId.length > 0 ? organizationId : null,
+    userId: userId.length > 0 ? userId : null,
   };
 }
 

@@ -91,10 +91,20 @@ export async function GET(
   const sessao = await currentUser();
   if (!sessao) return backTo(request, 'sessao_expirada');
 
+  if (!binding?.userId || binding.userId !== sessao.user.id) {
+    logger.warn('oauth.callback.sessao_trocada', { platform });
+    return backTo(request, 'sessao_trocada');
+  }
+
+  const papelNaOrganizacao = binding.organizationId
+    ? (sessao.memberships.find((m) => m.organizationId === binding.organizationId)?.role ?? null)
+    : null;
+
   const requestId = request.headers.get('x-request-id') ?? newRequestId();
 
   const outcome = await modules().authorization.complete({
-    organizationId: binding?.organizationId ?? null,
+    organizationId: binding.organizationId,
+    papelNaOrganizacao,
     actorId: sessao.user.id,
     platform: plataforma,
     code,

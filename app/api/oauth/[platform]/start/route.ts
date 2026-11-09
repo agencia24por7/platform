@@ -1,7 +1,9 @@
 import { randomBytes, createHash } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/shared/config/env';
-import { currentOrganization } from '@/shared/http/currentOrganization';
+import { activeContext } from '@/shared/http/currentOrganization';
+import { currentUser } from '@/shared/http/currentUser';
+import { canAdminister } from '@/modules/identity/domain/user';
 import { encodeStateCookie } from '@/modules/connections/domain/tenantBinding';
 import { logger } from '@/shared/logging/logger';
 import {
@@ -56,6 +58,26 @@ export async function GET(
     return NextResponse.redirect(new URL('/comecar?erro=plataforma_desconhecida', env().TRIA_APP_BASE_URL));
   }
 
+  const sessao = await currentUser();
+  if (!sessao) {
+    return NextResponse.redirect(new URL('/entrar', env().TRIA_APP_BASE_URL));
+  }
+
+  const contexto = await activeContext();
+  if (contexto) {
+    if (contexto.clientIds !== null) {
+      logger.warn('oauth.start.recusado_recorte', { platform, userId: sessao.user.id });
+      return NextResponse.redirect(new URL('/clientes', env().TRIA_APP_BASE_URL));
+    }
+    if (!canAdminister(contexto.role)) {
+      logger.warn('oauth.start.recusado_papel', { platform, userId: sessao.user.id, role: contexto.role });
+      return NextResponse.redirect(
+        new URL('/integracoes?aviso=' + encodeURIComponent('Só quem administra a organização pode autorizar plataformas.'), env().TRIA_APP_BASE_URL),
+      );
+    }
+  }
+
+
   const credentials = credentialsFor(platform as PlataformaOauth);
   if (!isConfigured(credentials, platform as Platform)) {
     logger.info('oauth.start.not_configured', { platform });
@@ -87,11 +109,15 @@ export async function GET(
     path: '/',
     maxAge: COOKIE_MAX_AGE,
   };
-  const organization = await currentOrganization();
   response.cookies.set(
     STATE_COOKIE,
     encodeStateCookie(
-      { state, returnTo: safeReturn, organizationId: organization?.id ?? null },
+      {
+        state,
+        returnTo: safeReturn,
+        organizationId: contexto?.organization.id ?? null,
+        userId: sessao.user.id,
+      },
       env().TRIA_SESSION_SECRET,
     ),
     options,

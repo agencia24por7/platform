@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
-import { BASE, appIsUp, browse, ensureUser, signIn } from './helpers.mjs';
+import { BASE, appIsUp, browse, ensureUser, signIn, signOut } from './helpers.mjs';
 
 const follow = (path) => browse(path);
 
@@ -102,5 +102,87 @@ describe('tela de conexão e fluxo OAuth', { concurrency: false }, () => {
     const response = await follow('/api/oauth/google/callback?state=x&code=y&returnTo=https://evil.com');
     const location = response.headers.get('location') ?? '';
     assert.ok(location.startsWith(BASE), `redirecionou para ${location}`);
+  });
+});
+
+describe('autorizar plataforma exige administrar a organização', { concurrency: false }, () => {
+  let organizacao = '';
+
+  const query = (sql) =>
+    execFileSync('docker', ['exec', '-i', 'tria-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
+      encoding: 'utf8',
+    })
+      .trim()
+      .split('\n')[0]
+      .trim();
+
+  before(async () => {
+    if (!(await appIsUp())) throw new Error('App não está no ar');
+    organizacao = query(
+      `INSERT INTO core.organizations (name, slug, type)
+       VALUES ('Guarda do OAuth', 'guarda-oauth', 'agency')
+       ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name RETURNING id`,
+    );
+  });
+
+  const entrarComo = (papel) => {
+    const usuario = ensureUser(`${papel}.guarda@tria.local`);
+    query(
+      `INSERT INTO core.members (organization_id, user_id, role)
+       VALUES ('${organizacao}', '${usuario}', '${papel}')
+       ON CONFLICT (organization_id, user_id) DO UPDATE SET role = '${papel}', revoked_at = NULL
+       RETURNING id`,
+    );
+    signIn(usuario);
+    return usuario;
+  };
+
+  it('quem enxerga ou opera não inicia autorização', async () => {
+    for (const papel of ['viewer', 'operator']) {
+      entrarComo(papel);
+      const resposta = await browse('/api/oauth/google/start');
+      const destino = resposta.headers.get('location') ?? '';
+      assert.ok(
+        !destino.includes('accounts.google.com') && !destino.includes('indisponivel'),
+        `${papel} não podia passar do portão: foi para ${destino}`,
+      );
+      assert.match(destino, /integracoes\?aviso=/, `${papel} devia voltar com o aviso`);
+    }
+  });
+
+  it('quem administra passa do portão', async () => {
+    entrarComo('admin');
+    const resposta = await browse('/api/oauth/google/start');
+    const destino = resposta.headers.get('location') ?? '';
+    assert.ok(
+      destino.includes('accounts.google.com') || destino.includes('indisponivel=google'),
+      `admin devia seguir para o provedor ou esbarrar só na configuração: foi para ${destino}`,
+    );
+  });
+
+  it('acesso recortado não inicia autorização', async () => {
+    const usuario = ensureUser('recortada.guarda@tria.local');
+    const membro = query(
+      `INSERT INTO core.members (organization_id, user_id, role)
+       VALUES ('${organizacao}', '${usuario}', 'admin')
+       ON CONFLICT (organization_id, user_id) DO UPDATE SET role = 'admin', revoked_at = NULL
+       RETURNING id`,
+    );
+    const cliente = query(
+      `INSERT INTO core.clients (organization_id, name, business_model)
+       VALUES ('${organizacao}', 'Cliente da Guarda', 'leads')
+       ON CONFLICT (organization_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id`,
+    );
+    query(
+      `INSERT INTO core.member_clients (member_id, client_id) VALUES ('${membro}', '${cliente}')
+       ON CONFLICT (member_id, client_id) DO UPDATE SET revoked_at = NULL`,
+    );
+
+    signIn(usuario);
+    const resposta = await browse('/api/oauth/google/start');
+    assert.match(resposta.headers.get('location') ?? '', /\/clientes/, 'o recorte devia ser barrado');
+
+    query(`UPDATE core.member_clients SET revoked_at = now() WHERE member_id = '${membro}'`);
+    signOut();
   });
 });

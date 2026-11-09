@@ -23,9 +23,11 @@ import type { DiscoveredAccount } from '@/modules/connections/domain/discovery';
 import type { DiscoveredAccountRepository } from '@/modules/connections/infrastructure/discoveredAccountRepository';
 import type { PlatformDiscovery } from '@/modules/connections/application/platformDiscoveryPort';
 import type { OrganizationService } from '@/modules/organizations/application/organizationService';
+import { canAdminister, type MemberRole } from '@/modules/identity/domain/user';
 
 export type AuthorizationInput = {
   readonly organizationId: string | null;
+  readonly papelNaOrganizacao: MemberRole | null;
   readonly actorId: string;
   readonly platform: PlataformaOauth;
   readonly code: string;
@@ -73,6 +75,18 @@ export function createAuthorizationService(
 ): AuthorizationService {
   return {
     async complete(input) {
+      if (input.organizationId !== null) {
+        if (!input.papelNaOrganizacao || !canAdminister(input.papelNaOrganizacao)) {
+          logger.warn('oauth.authorize.papel_insuficiente', {
+            platform: input.platform,
+            role: input.papelNaOrganizacao,
+          });
+          return err(
+            failure('forbidden', 'Só quem administra a organização pode autorizar plataformas.'),
+          );
+        }
+      }
+
       const provider = PROVIDERS[input.platform];
 
       const exchange = tokenExchangeRequest(provider, {
