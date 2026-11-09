@@ -1,13 +1,13 @@
 # Marca
 
-Originais da marca Orla, em alta resolução e fundo branco. É daqui que saíram os
-vetores em `public/orla/`, que são os arquivos que a aplicação realmente serve.
+Originais da marca Orla, em alta resolução e fundo branco.
 
 | Arquivo | Para quê |
 |---|---|
-| `orla-logo.png` | Assinatura completa. Origem de `public/orla/logo.svg` e `logo-reversa.svg`. |
-| `orla-icone.png` | Símbolo isolado. Origem de `public/orla/icone.svg` e `icone-reversa.svg`. |
+| `orla-logo.png` | Assinatura completa, 2800×1440. |
+| `orla-icone.png` | Símbolo isolado. |
 
-Estes PNGs não são servidos pela aplicação — ficam fora de `public/` de propósito.
-Quem precisa da marca numa tela usa o SVG; quem precisa dela num material usa
-daqui.
+O que a aplicação serve fica em `public/orla/`, nas versões já recortadas para
+tela e com a variante reversa para fundo escuro. Estes aqui são o material de
+origem: quem precisa da marca num documento, numa apresentação ou para gerar uma
+variante nova parte daqui, não do arquivo que a aplicação serve.
