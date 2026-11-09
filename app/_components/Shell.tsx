@@ -7,7 +7,9 @@ import { modules } from '@/composition';
 import { ORGANIZACAO_INTEIRA, escopoDeCliente } from '@/shared/db/escopo';
 import { currentUser } from '@/shared/http/currentUser';
 
-type NavEntry = { group: string } | { href: string; label: string; icone: ComponentType<{ className?: string }> };
+type NavEntry =
+  | { group: string }
+  | { href: string; label: string; icone?: ComponentType<{ className?: string }> };
 
 function navFor(organization: Organization | null, recortado: boolean): readonly NavEntry[] {
   const clientsLabel = organization?.type === 'advertiser' ? 'Negócios' : 'Clientes';
@@ -15,9 +17,9 @@ function navFor(organization: Organization | null, recortado: boolean): readonly
   if (recortado) {
     return [
       { group: 'Operação' },
-      { href: '/clientes', label: clientsLabel },
+      { href: '/clientes', label: clientsLabel, icone: IconeClientes },
       { group: 'Dados' },
-      { href: '/automacoes', label: 'Coletas' },
+      { href: '/automacoes', label: 'Coletas', icone: IconeColetas },
     ];
   }
 
@@ -66,7 +68,7 @@ export async function Shell({ title, organization, active, children }: Props) {
                 className="nav__item"
                 aria-current={active === entry.href ? 'page' : undefined}
               >
-                <entry.icone className="nav__icone" />
+                {entry.icone ? <entry.icone className="nav__icone" /> : null}
                 {entry.label}
               </Link>
             ),
