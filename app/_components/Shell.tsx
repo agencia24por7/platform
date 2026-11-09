@@ -52,7 +52,7 @@ export async function Shell({ title, organization, active, children }: Props) {
       </a>
       <aside className="side">
         <div className="side__brand">
-          <img className="side__logo" src="/orla/logo.svg" alt="orla" />
+          <img className="side__logo" src="/orla/logo.png" alt="orla" />
         </div>
         <nav className="side__nav">
           {navFor(organization, recortado).map((entry) =>
