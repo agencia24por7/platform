@@ -12,6 +12,7 @@ import {
   type ProviderCredentials,
 } from '@/modules/connections/domain/oauth';
 import { decodeStateCookie } from '@/modules/connections/domain/tenantBinding';
+import { ORGANIZACAO_INTEIRA, escopoDeCliente } from '@/shared/db/escopo';
 import type { Platform } from '@/modules/connections/domain/connection';
 
 export const dynamic = 'force-dynamic';
@@ -99,6 +100,14 @@ export async function GET(
   const papelNaOrganizacao = binding.organizationId
     ? (sessao.memberships.find((m) => m.organizationId === binding.organizationId)?.role ?? null)
     : null;
+
+  if (binding.organizationId) {
+    const escopo = await escopoDeCliente(binding.organizationId);
+    if (escopo !== ORGANIZACAO_INTEIRA) {
+      logger.warn('oauth.callback.recusado_recorte', { platform, userId: sessao.user.id });
+      return backTo(request, 'autorizacao_recusada');
+    }
+  }
 
   const requestId = request.headers.get('x-request-id') ?? newRequestId();
 

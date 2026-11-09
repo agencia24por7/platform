@@ -5,13 +5,19 @@ import { modules } from '@/composition';
 import { atorAtual } from '@/shared/http/ator';
 import { optionalText, requestId, text, toActionState } from '@/shared/http/actions';
 import { requireContext } from '@/shared/http/currentOrganization';
+import { canOperate } from '@/modules/identity/domain/user';
 
 export const dynamic = 'force-dynamic';
 
 async function createClient(formData: FormData): Promise<void> {
   'use server';
 
-  const organization = (await requireContext()).organization;
+  const ctx = await requireContext();
+  if (ctx.clientIds !== null) redirect('/clientes');
+  if (!canOperate(ctx.role)) {
+    redirect(`/clientes/novo?erro=${encodeURIComponent('Seu papel não permite cadastrar clientes.')}`);
+  }
+  const organization = ctx.organization;
 
   const ator = await atorAtual();
 

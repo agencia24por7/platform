@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { currentUser } from '@/shared/http/currentUser';
+import { consume } from '@/shared/security/rateLimit';
+import { primeiroEndereco } from '@/modules/audit/domain/actor';
 import { logger } from '@/shared/logging/logger';
 import { redactText } from '@/shared/logging/redact';
 
@@ -57,7 +59,14 @@ function caminhoDaOrigem(referer: string | null): string | null {
   }
 }
 
+const RELATOS_POR_MINUTO = 10;
+
 export async function POST(request: Request): Promise<NextResponse> {
+  const origem = primeiroEndereco(request.headers.get('x-forwarded-for')) ?? 'desconhecida';
+  if (!consume(`erros:${origem}`, RELATOS_POR_MINUTO, 60_000).allowed) {
+    return new NextResponse(null, { status: 429 });
+  }
+
   const bruto = await corpoAteOLimite(request);
   if (bruto === null) return new NextResponse(null, { status: 413 });
 

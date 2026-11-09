@@ -32,16 +32,36 @@ describe('cookie de estado', () => {
     assert.equal(decoded?.userId, 'user-7');
   });
 
-  it('cookie antigo, sem usuário, decodifica com userId nulo — e o callback recusa', () => {
-    const corpo = Buffer.from('s|/x|org-1').toString('base64url');
+  it('cookie sem usuário decodifica com userId nulo — e o callback recusa', () => {
     const assinado = encodeStateCookie({ state: 's', returnTo: '/x', organizationId: 'org-1', userId: null }, SEGREDO);
     assert.equal(decodeStateCookie(assinado, SEGREDO)?.userId, null);
-    void corpo;
+  });
+
+  it('returnTo com separador não contamina os outros campos', () => {
+    const binding = {
+      state: 's',
+      returnTo: '/x|org-intrusa|user-intruso',
+      organizationId: 'org-1',
+      userId: 'user-1',
+    };
+    const decoded = decodeStateCookie(encodeStateCookie(binding, SEGREDO), SEGREDO);
+    assert.equal(decoded?.organizationId, 'org-1');
+    assert.equal(decoded?.userId, 'user-1');
+    assert.equal(decoded?.returnTo, '/x|org-intrusa|user-intruso');
+  });
+
+  it('corpo que não é objeto é recusado mesmo com assinatura válida de outro contexto', () => {
+    const corpo = Buffer.from(JSON.stringify('uma string')).toString('base64url');
+    assert.equal(decodeStateCookie(`${corpo}.assinatura-errada`, SEGREDO), null);
   });
 
   it('recusa cookie vazio ou sem estado', () => {
     assert.equal(decodeStateCookie('', SEGREDO), null);
-    assert.equal(decodeStateCookie('|/x|org-1', SEGREDO), null);
+    const semEstado = encodeStateCookie(
+      { state: '', returnTo: '/x', organizationId: 'org-1', userId: 'u' },
+      SEGREDO,
+    );
+    assert.equal(decodeStateCookie(semEstado, SEGREDO), null);
   });
 
   it('recusa cookie adulterado', () => {
@@ -49,7 +69,9 @@ describe('cookie de estado', () => {
       { state: 's', returnTo: '/x', organizationId: 'org-1', userId: 'user-1' },
       SEGREDO,
     );
-    const corpo = Buffer.from('s|/x|org-invasora|user-1').toString('base64url');
+    const corpo = Buffer.from(
+      JSON.stringify({ state: 's', returnTo: '/x', organizationId: 'org-invasora', userId: 'user-1' }),
+    ).toString('base64url');
     const forjado = `${corpo}.${valido.slice(valido.lastIndexOf('.') + 1)}`;
     assert.equal(decodeStateCookie(forjado, SEGREDO), null);
   });
@@ -59,7 +81,9 @@ describe('cookie de estado', () => {
       { state: 's', returnTo: '/x', organizationId: 'org-1', userId: 'user-1' },
       SEGREDO,
     );
-    const corpo = Buffer.from('s|/x|org-1|user-intruso').toString('base64url');
+    const corpo = Buffer.from(
+      JSON.stringify({ state: 's', returnTo: '/x', organizationId: 'org-1', userId: 'user-intruso' }),
+    ).toString('base64url');
     const forjado = `${corpo}.${valido.slice(valido.lastIndexOf('.') + 1)}`;
     assert.equal(decodeStateCookie(forjado, SEGREDO), null);
   });

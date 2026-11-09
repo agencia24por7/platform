@@ -4,15 +4,20 @@ import { Wizard } from '@/../app/_components/Wizard';
 import { modules } from '@/composition';
 import { atorAtual } from '@/shared/http/ator';
 import { list, requestId, text } from '@/shared/http/actions';
-import { currentOrganization } from '@/shared/http/currentOrganization';
+import { currentOrganization, requireContext } from '@/shared/http/currentOrganization';
+import { canOperate } from '@/modules/identity/domain/user';
 
 export const dynamic = 'force-dynamic';
 
 async function linkSelected(formData: FormData): Promise<void> {
   'use server';
 
-  const organization = await currentOrganization();
-  if (!organization) redirect('/comecar');
+  const ctx = await requireContext();
+  if (ctx.clientIds !== null) redirect('/clientes');
+  if (!canOperate(ctx.role)) {
+    redirect(`/comecar/contas?erro=${encodeURIComponent('Seu papel não permite vincular contas.')}`);
+  }
+  const organization = ctx.organization;
 
   const ator = await atorAtual();
 

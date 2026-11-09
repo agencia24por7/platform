@@ -294,6 +294,44 @@ describe('vínculos de conta exigem papel e não confiam no formulário', { conc
     assert.equal(depois, antes, 'leitor não pode enfileirar alteração de vínculo');
   });
 
+  it('leitor não vincula conta por nenhum dos dois caminhos', async () => {
+    const cliente = query(
+      `INSERT INTO core.clients (organization_id, name, business_model)
+       VALUES ('${organizacao}', 'Cliente do papel', 'leads')
+       ON CONFLICT (organization_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id`,
+    );
+    const leitor = ensureUser('leitor-papel@tria.local');
+    query(
+      `INSERT INTO core.members (organization_id, user_id, role)
+       VALUES ('${organizacao}', '${leitor}', 'viewer')
+       ON CONFLICT (organization_id, user_id) DO UPDATE SET role = 'viewer', revoked_at = NULL`,
+    );
+
+    const antes = query('select count(*) from integrations.ad_accounts');
+
+    signIn(leitor);
+    const pelaFicha = await acaoComCampo(`/clientes/${cliente}/contas/nova`, 'descobertaId').catch(() => null);
+    if (pelaFicha) {
+      const pendente = query(
+        `select id from integrations.connection_accounts where organization_id = '${organizacao}' limit 1`,
+      );
+      await submitAction(`/clientes/${cliente}/contas/nova`, pelaFicha, {
+        clientId: cliente,
+        descobertaId: pendente,
+        coletar: 'on',
+      });
+    }
+
+    const peloPainel = await acaoComCampo('/integracoes', 'contaId').catch(() => null);
+    assert.equal(peloPainel, null, 'a tela de conexões nem devia abrir para o leitor chegar na ação');
+
+    assert.equal(
+      query('select count(*) from integrations.ad_accounts'),
+      antes,
+      'leitor não pode vincular conta',
+    );
+  });
+
   it('convite inexistente é recusado mesmo para quem administra', async () => {
     const dono = ensureUser('dono-papel@tria.local');
     makeOwner(dono, organizacao);

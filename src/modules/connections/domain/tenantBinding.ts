@@ -18,12 +18,12 @@ function signatureMatches(received: string, expected: string): boolean {
 }
 
 export function encodeStateCookie(binding: StateCookie, secret: string): string {
-  const body = [
-    binding.state,
-    binding.returnTo,
-    binding.organizationId ?? '',
-    binding.userId ?? '',
-  ].join('|');
+  const body = JSON.stringify({
+    state: binding.state,
+    returnTo: binding.returnTo,
+    organizationId: binding.organizationId,
+    userId: binding.userId,
+  });
   return `${Buffer.from(body).toString('base64url')}.${sign(body, secret)}`;
 }
 
@@ -42,14 +42,30 @@ export function decodeStateCookie(raw: string, secret: string): StateCookie | nu
 
   if (!signatureMatches(raw.slice(separator + 1), sign(body, secret))) return null;
 
-  const [state = '', returnTo = '', organizationId = '', userId = ''] = body.split('|');
-  if (state.length === 0) return null;
+  let bruto: unknown;
+  try {
+    bruto = JSON.parse(body);
+  } catch {
+    return null;
+  }
+
+  if (typeof bruto !== 'object' || bruto === null) return null;
+  const campos = bruto as Record<string, unknown>;
+
+  const state = campos['state'];
+  if (typeof state !== 'string' || state.length === 0) return null;
+
+  const returnTo = campos['returnTo'];
+  const organizationId = campos['organizationId'];
+  const userId = campos['userId'];
+  if (organizationId !== null && typeof organizationId !== 'string') return null;
+  if (userId !== null && typeof userId !== 'string') return null;
 
   return {
     state,
-    returnTo: returnTo.length > 0 ? returnTo : '/comecar?passo=contas',
-    organizationId: organizationId.length > 0 ? organizationId : null,
-    userId: userId.length > 0 ? userId : null,
+    returnTo: typeof returnTo === 'string' && returnTo.length > 0 ? returnTo : '/comecar?passo=contas',
+    organizationId: organizationId || null,
+    userId: userId || null,
   };
 }
 

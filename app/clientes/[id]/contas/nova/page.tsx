@@ -9,19 +9,24 @@ import {
 } from '@/modules/connections/domain/connection';
 import { atorAtual } from '@/shared/http/ator';
 import { checkbox, requestId, text, toActionState } from '@/shared/http/actions';
-import { currentOrganization } from '@/shared/http/currentOrganization';
+import { currentOrganization, requireContext } from '@/shared/http/currentOrganization';
+import { canOperate } from '@/modules/identity/domain/user';
 
 export const dynamic = 'force-dynamic';
 
 async function vincularConta(formData: FormData): Promise<void> {
   'use server';
 
-  const organization = await currentOrganization();
-  if (!organization) redirect('/organizacoes/nova');
+  const ctx = await requireContext();
+  if (ctx.clientIds !== null) redirect('/clientes');
+  const organization = ctx.organization;
 
   const ator = await atorAtual();
 
   const clientId = text(formData, 'clientId');
+  if (!canOperate(ctx.role)) {
+    redirect(`/clientes/${clientId}/contas/nova?erro=${encodeURIComponent('Seu papel não permite vincular contas.')}`);
+  }
   const descobertaId = text(formData, 'descobertaId');
   const voltar = (mensagem: string): never =>
     redirect(`/clientes/${clientId}/contas/nova?erro=${encodeURIComponent(mensagem)}`);

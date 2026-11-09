@@ -5,6 +5,7 @@ import { canAdminister } from '@/modules/identity/domain/user';
 import { env } from '@/shared/config/env';
 import { logger } from '@/shared/logging/logger';
 import { currentUser } from '@/shared/http/currentUser';
+import { activeContext } from '@/shared/http/currentOrganization';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,13 +29,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.redirect(entrada);
   }
 
-  const vinculo = sessao.memberships[0];
-  if (!vinculo) {
+  const contexto = await activeContext();
+  if (!contexto) {
     return NextResponse.redirect(new URL('/organizacoes/nova', base));
   }
 
-  if (!canAdminister(vinculo.role)) {
-    logger.warn('portaria.papel_insuficiente', { userId: sessao.user.id, papel: vinculo.role });
+  if (contexto.clientIds !== null) {
+    logger.warn('portaria.recusada_recorte', { userId: sessao.user.id });
+    return NextResponse.redirect(new URL('/clientes', base));
+  }
+
+  if (!canAdminister(contexto.role)) {
+    logger.warn('portaria.papel_insuficiente', { userId: sessao.user.id, papel: contexto.role });
     return NextResponse.redirect(new URL('/automacoes?erro=n8n_sem_permissao', base));
   }
 
