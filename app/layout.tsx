@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import { Bricolage_Grotesque, Inter, Sora } from 'next/font/google';
 import type { ReactNode } from 'react';
-import { env } from '@/shared/config/env';
 import './globals.css';
 
 const inter = Inter({
@@ -24,9 +23,18 @@ const sora = Sora({
 });
 
 const DESCRICAO = 'Um oceano azul para seus anúncios.';
+const ENDERECO_PADRAO = 'http://localhost:3000';
+
+function enderecoPublico(): URL {
+  try {
+    return new URL(process.env['TRIA_APP_BASE_URL'] ?? ENDERECO_PADRAO);
+  } catch {
+    return new URL(ENDERECO_PADRAO);
+  }
+}
 
 export function generateMetadata(): Metadata {
-  const base = new URL(env().TRIA_APP_BASE_URL);
+  const base = enderecoPublico();
 
   return {
     metadataBase: base,
