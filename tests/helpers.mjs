@@ -111,6 +111,20 @@ export async function acoesDe(path) {
   return actionIds(html);
 }
 
+export async function acaoComCampo(path, campo) {
+  const html = await fetch(`${BASE}${path}`, { headers: authHeaders() }).then((response) => response.text());
+
+  for (const pedaco of html.split('<form').slice(1)) {
+    const formulario = pedaco.slice(0, pedaco.indexOf('</form>'));
+    if (!formulario.includes(`name="${campo}"`)) continue;
+
+    const id = formulario.match(/name="\$ACTION_ID_([a-f0-9]+)"/)?.[1];
+    if (id) return id;
+  }
+
+  throw new Error(`Nenhuma server action com o campo "${campo}" em ${path}.`);
+}
+
 export async function submitAction(path, actionIdEscolhido, fields) {
   const body = new FormData();
   body.set(`$ACTION_ID_${actionIdEscolhido}`, '');

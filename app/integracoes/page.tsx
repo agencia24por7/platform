@@ -6,20 +6,21 @@ import { modules } from '@/composition';
 import { encurtarEscopo } from '@/modules/audit/domain/auditView';
 import { agruparPorAdministradora } from '@/modules/connections/domain/carteira';
 import { Feedback } from '@/../app/_components/Feedback';
-import { text } from '@/shared/http/actions';
+import { text, toActionState } from '@/shared/http/actions';
 import { atorAtual } from '@/shared/http/ator';
 import { requireContext } from '@/shared/http/currentOrganization';
-import { canAdminister } from '@/modules/identity/domain/user';
+import { canAdminister, canOperate } from '@/modules/identity/domain/user';
 import { readinessOf } from '@/modules/connections/domain/connection';
+import { checkbox } from '@/shared/http/actions';
 
 export const dynamic = 'force-dynamic';
 
-const statusTone: Record<string, string> = {
-  active: 'pill--ok',
-  expiring: 'pill--warn',
-  degraded: 'pill--warn',
-  revoked: 'pill--danger',
-  reauth_pending: 'pill--warn',
+const pontoDoEstado: Record<string, string> = {
+  active: 'dot--ok',
+  expiring: 'dot--warn',
+  degraded: 'dot--warn',
+  revoked: 'dot--danger',
+  reauth_pending: 'dot--warn',
 };
 
 const grantLabel: Record<string, string> = {
@@ -147,6 +148,59 @@ async function convidarParaMcc(formData: FormData): Promise<void> {
   voltar(`Convite enviado para ${conta.externalId}. O dono precisa aceitar.`);
 }
 
+
+async function vincularAlcancavel(formData: FormData): Promise<void> {
+  'use server';
+
+  const contexto = await requireContext();
+  const organization = contexto.organization;
+  const ator = await atorAtual();
+  const voltar = (aviso: string): never =>
+    redirect(`/integracoes?aviso=${encodeURIComponent(aviso)}`);
+
+  if (!canOperate(contexto.role)) {
+    voltar('Seu papel não permite vincular contas.');
+    return;
+  }
+
+  const descobertas = await modules().discoveredAccounts.listPending(organization.id);
+  const escolhida = descobertas.find((conta) => conta.id === text(formData, 'contaId'));
+  if (!escolhida) {
+    voltar('Conta não encontrada entre as que você alcança.');
+    return;
+  }
+
+  const clientId = text(formData, 'clientId');
+  if (!clientId) {
+    voltar('Escolha o cliente dono desta conta. É ele que dá dono ao número.');
+    return;
+  }
+
+  const vinculada = await modules().connections.linkAccount(
+    {
+      organizationId: organization.id,
+      clientId,
+      connectionId: escolhida.connectionId,
+      platform: escolhida.platform,
+      externalId: escolhida.externalId,
+      name: escolhida.name,
+      accountGroup: 'Principal',
+      currency: escolhida.currency,
+      timezone: escolhida.timezone,
+      syncEnabled: !checkbox(formData, 'semColeta'),
+    },
+    ator,
+  );
+
+  if (!vinculada.ok) {
+    voltar(toActionState(vinculada.error).error ?? 'Falha ao vincular a conta.');
+    return;
+  }
+
+  await modules().discoveredAccounts.markLinked(organization.id, escolhida.id, vinculada.value.id);
+  voltar(`${escolhida.name} vinculada.`);
+}
+
 export default async function IntegrationsPage({
   searchParams,
 }: {
@@ -155,14 +209,17 @@ export default async function IntegrationsPage({
   const ctx = await requireContext();
   if (ctx.clientIds !== null) redirect('/clientes');
   const organization = ctx.organization;
+  const agencia = organization.type === 'agency';
+  const podeVincular = canOperate(ctx.role);
 
   const { aviso } = await searchParams;
 
-  const [connections, accounts, alcancaveis, tarefas] = await Promise.all([
+  const [connections, accounts, alcancaveis, tarefas, clientes] = await Promise.all([
     modules().connections.listConnections(organization.id),
     modules().connections.listAccounts(organization.id),
     modules().discoveredAccounts.listAll(organization.id),
     modules().tasks.listRecentes(organization.id),
+    modules().clients.list(organization.id),
   ]);
 
   const convitesEnviados = tarefas.filter((tarefa) => tarefa.kind === 'mcc_invite');
@@ -170,12 +227,21 @@ export default async function IntegrationsPage({
     tarefas.filter((tarefa) => tarefa.kind === 'mcc_accept').map((tarefa) => tarefa.targetExternalId),
   );
 
-  const caminhos = agruparPorAdministradora(alcancaveis);
-  const administradoras = caminhos.filter((caminho) => caminho.administradora !== null);
-  const foraDeMcc = new Set(
-    administradoras.flatMap((caminho) => caminho.contas.map((conta) => conta.externalId)),
+  const administradoras = agruparPorAdministradora(alcancaveis).filter(
+    (caminho) => caminho.administradora !== null,
   );
-  const porExternalId = new Map(accounts.map((conta) => [conta.externalId, conta]));
+  const vinculadas = new Set(accounts.map((conta) => conta.externalId));
+  const administradorasConhecidas = new Set(
+    administradoras.map((caminho) => caminho.administradora as string),
+  );
+  const porConexao = new Map(connections.map((conexao) => [conexao.id, conexao]));
+
+  const paraConectar = alcancaveis.filter(
+    (conta) => !vinculadas.has(conta.externalId) && !administradorasConhecidas.has(conta.externalId),
+  );
+  const clientesAtivos = clientes.filter((cliente) => cliente.status === 'active');
+  const clienteUnico = clientesAtivos.length === 1 ? clientesAtivos[0]!.id : '';
+  const substantivo = agencia ? 'cliente' : 'negócio';
 
   return (
     <Shell title="Contas e conexões" organization={organization} active="/integracoes">
@@ -183,167 +249,38 @@ export default async function IntegrationsPage({
         <div>
           <div className="page__title">Contas e conexões</div>
           <div className="page__sub">
-            A autorização guarda apenas metadado e uma referência de credencial. O segredo vive no n8n,
-            cifrado, e nunca passa por aqui.
+            O segredo da autorização vive cifrado no n8n. Aqui ficam só o metadado e uma referência.
           </div>
+        </div>
+        <div className="page__actions">
+          <Link className="btn btn--primary" href="/comecar?passo=conectar">
+            Autorizar plataforma
+          </Link>
         </div>
       </div>
 
-      <Readiness connections={connections.length} linkedAccounts={accounts.length} />
-
-
       <Feedback message={aviso} tone="info" />
 
-      {convitesEnviados.length > 0 ? (
-        <div className="card">
-          <div className="card__head">
-            <span className="card__title">Convites enviados pela sua MCC</span>
-            <span className="card__sub">
-              O Google exige que o aceite venha da conta convidada, não da administradora
-            </span>
-          </div>
-
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Conta convidada</th>
-                  <th>Administradora</th>
-                  <th>Estado do convite</th>
-                  <th>Resultado</th>
-                  <th>Aceitar pela tria</th>
-                </tr>
-              </thead>
-              <tbody>
-                {convitesEnviados.map((convite) => {
-                  const jaPedido = aceitesPedidos.has(convite.targetExternalId);
-                  const podeAceitar = convite.status === 'done' && !jaPedido;
-
-                  return (
-                    <tr key={convite.id}>
-                      <td className="mono">{convite.targetExternalId}</td>
-                      <td className="mono subtle">{convite.managerExternalId}</td>
-                      <td>
-                        <span
-                          className={`pill ${
-                            convite.status === 'done'
-                              ? 'pill--ok'
-                              : convite.status === 'failed'
-                                ? 'pill--danger'
-                                : 'pill--info'
-                          }`}
-                        >
-                          {convite.status === 'done' ? 'aguardando aceite' : convite.status}
-                        </span>
-                      </td>
-                      <td className="subtle">{convite.outcome ?? '—'}</td>
-                      <td>
-                        {jaPedido ? (
-                          <span className="subtle">aceite enfileirado</span>
-                        ) : podeAceitar ? (
-                          <form action={aceitarConvite} className="row">
-                            <input type="hidden" name="conviteId" value={convite.id} />
-                            <select className="select" name="conexaoDaConta" required>
-                              <option value="">autorização da conta convidada…</option>
-                              {connections.map((conexao) => (
-                                <option key={conexao.id} value={conexao.id}>
-                                  {conexao.accountEmail ?? conexao.externalId}
-                                </option>
-                              ))}
-                            </select>
-                            <button className="btn btn--primary btn--pill" type="submit">
-                              Aceitar
-                            </button>
-                          </form>
-                        ) : (
-                          <span className="subtle">o convite precisa chegar ao Google primeiro</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="card__foot">
-            Só aparece aqui a conta cujo dono já autorizou a tria. Sem essa autorização, o aceite
-            precisa ser feito no Google Ads dele.
-          </div>
+      {connections.length > 0 ? (
+        <div className="autorizacoes">
+          {connections.map((conexao) => (
+            <Link key={conexao.id} className="autorizacao" href={`/integracoes/${conexao.id}`}>
+              <span className={`dot ${pontoDoEstado[conexao.status] ?? ''}`} />
+              <span className="autorizacao__quem">
+                {conexao.accountEmail ?? conexao.externalId}
+              </span>
+              <span className="autorizacao__onde">
+                {conexao.platform === 'meta' ? 'Meta' : 'Google'} ·{' '}
+                {readinessOf(conexao).collectable ? conexao.status : 'sem credencial'}
+              </span>
+            </Link>
+          ))}
         </div>
       ) : null}
 
       <div className="card">
         <div className="card__head">
-          <span className="card__title">Autorizações</span>
-          <span className="card__sub">{connections.length} registrada(s)</span>
-        </div>
-        {connections.length === 0 ? (
-          <div className="empty">Nenhuma autorização. Crie uma ao conectar a primeira conta.</div>
-        ) : (
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Autorização</th>
-                  <th>Plataforma</th>
-                  <th>Conta que concedeu</th>
-                  <th>Concedida em</th>
-                  <th>Caminho</th>
-                  <th>Escopos</th>
-                  <th>Credencial</th>
-                  <th>Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {connections.map((connection) => (
-                  <tr key={connection.id}>
-                    <td>
-                      <Link className="strong" href={`/integracoes/${connection.id}`}>
-                        {connection.label}
-                      </Link>
-                      <div className="mono subtle">{connection.externalId}</div>
-                    </td>
-                    <td>{connection.platform === 'meta' ? 'Meta Ads' : 'Google Ads'}</td>
-                    <td>
-                      {connection.accountEmail ?? <span className="subtle">não informado</span>}
-                    </td>
-                    <td className="nowrap">
-                      <div>{connection.authorizedAt.toLocaleDateString('pt-BR')}</div>
-                      <div className="subtle">
-                        {connection.authorizedAt.toLocaleTimeString('pt-BR')}
-                      </div>
-                    </td>
-                    <td className="muted">{grantLabel[connection.grantType]}</td>
-                    <td>
-                      <div className="fichas">
-                        {connection.scopes.map((scope) => (
-                          <span key={scope} className="ficha" title={scope}>
-                            {encurtarEscopo(scope)}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="mono">
-                      {readinessOf(connection).collectable ? 'cofre · ok' : 'sem credencial'}
-                    </td>
-                    <td>
-                      <span className={`pill ${statusTone[connection.status] ?? ''}`}>
-                        <span className="dot" />
-                        {connection.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <div className="card">
-        <div className="card__head">
-          <span className="card__title">Administradoras conectadas</span>
+          <span className="card__title">Administradoras</span>
           <span className="card__sub">
             {administradoras.length === 0
               ? 'nenhuma MCC no caminho das suas autorizações'
@@ -353,7 +290,7 @@ export default async function IntegrationsPage({
 
         {administradoras.length === 0 ? (
           <div className="empty">
-            Nenhuma administradora. Autorize com a conta que administra sua MCC para enxergá-la aqui.
+            Autorize com a conta que administra sua MCC para enxergá-la aqui.
           </div>
         ) : (
           <div className="table-wrap">
@@ -362,25 +299,28 @@ export default async function IntegrationsPage({
                 <tr>
                   <th>Administradora</th>
                   <th className="num">Contas sob ela</th>
-                  <th className="num">Vinculadas a cliente</th>
+                  <th className="num">Vinculadas</th>
                   <th>Autorização que alcança</th>
                 </tr>
               </thead>
               <tbody>
                 {administradoras.map((caminho) => {
-                  const primeira = caminho.contas[0];
-                  const conexao = connections.find((item) => item.id === primeira?.connectionId);
-
+                  const conexao = porConexao.get(caminho.contas[0]?.connectionId ?? '');
                   return (
                     <tr key={caminho.administradora}>
                       <td>
-                        <span className="pill pill--info">MCC</span>
-                        <div className="mono strong">{caminho.administradora}</div>
+                        <span className="mono strong">{caminho.administradora}</span>
                       </td>
                       <td className="num">{caminho.contas.length}</td>
                       <td className="num">{caminho.vinculadas}</td>
                       <td className="subtle">
-                        {conexao?.accountEmail ?? conexao?.externalId ?? '—'}
+                        {conexao ? (
+                          <Link href={`/integracoes/${conexao.id}`}>
+                            {conexao.accountEmail ?? conexao.externalId}
+                          </Link>
+                        ) : (
+                          '—'
+                        )}
                       </td>
                     </tr>
                   );
@@ -393,15 +333,64 @@ export default async function IntegrationsPage({
 
       <div className="card">
         <div className="card__head">
-          <span className="card__title">Contas que você alcança</span>
+          <span className="card__title">Contas</span>
+          <span className="card__sub">{accounts.length} vinculada(s)</span>
+        </div>
+        {accounts.length === 0 ? (
+          <div className="empty">Nenhuma conta vinculada ainda.</div>
+        ) : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Conta</th>
+                  <th>{agencia ? 'Cliente' : 'Negócio'}</th>
+                  <th>Plataforma</th>
+                  <th>Coleta</th>
+                  <th>Última coleta</th>
+                </tr>
+              </thead>
+              <tbody>
+                {accounts.map((conta) => (
+                  <tr key={conta.id}>
+                    <td>
+                      <div className="strong">{conta.name}</div>
+                      <div className="mono subtle">{conta.externalId}</div>
+                    </td>
+                    <td>
+                      <Link href={`/clientes/${conta.clientId}`}>{conta.clientName}</Link>
+                    </td>
+                    <td className="muted">{conta.platform === 'meta' ? 'Meta Ads' : 'Google Ads'}</td>
+                    <td>
+                      <span className={`pill ${conta.syncEnabled ? 'pill--ok' : ''}`}>
+                        {conta.syncEnabled ? 'Ligada' : 'Pausada'}
+                      </span>
+                    </td>
+                    <td className="muted">
+                      {conta.lastSyncAt ? conta.lastSyncAt.toLocaleString('pt-BR') : 'nunca'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="card__head">
+          <span className="card__title">Conectar conta</span>
           <span className="card__sub">
-            {alcancaveis.length} conta(s) · {foraDeMcc.size} sob administradora
+            {paraConectar.length === 0
+              ? 'tudo o que você alcança já está vinculado'
+              : `${paraConectar.length} conta(s) ao seu alcance, ainda sem ${substantivo}`}
           </span>
         </div>
 
-        {alcancaveis.length === 0 ? (
+        {paraConectar.length === 0 ? (
           <div className="empty">
-            Nenhuma conta ainda. Autorize uma plataforma para a Orla enxergar o que você administra.
+            As contas aparecem aqui depois que você autoriza a plataforma. A Orla só enxerga o que o
+            Google ou a Meta devolvem.
           </div>
         ) : (
           <div className="table-wrap">
@@ -409,51 +398,60 @@ export default async function IntegrationsPage({
               <thead>
                 <tr>
                   <th>Conta</th>
-                  <th>Identificador</th>
-                  <th>Moeda</th>
-                  <th>Cliente</th>
-                  <th>Administradora</th>
+                  <th>Onde está</th>
+                  <th>{agencia ? 'Cliente' : 'Negócio'}</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
-                {alcancaveis.map((conta) => {
-                  const vinculada = porExternalId.get(conta.externalId);
+                {paraConectar.map((conta) => {
                   const sobMcc =
                     conta.managerExternalId && conta.managerExternalId !== conta.externalId
                       ? conta.managerExternalId
                       : null;
-                  const mccDisponivel = administradoras[0]?.administradora ?? null;
-                  const convitePedido = convitesEnviados.some(
-                    (convite) => convite.targetExternalId === conta.externalId,
+                  const convite = convitesEnviados.find(
+                    (item) => item.targetExternalId === conta.externalId,
                   );
+                  const mccDisponivel = administradoras[0]?.administradora ?? null;
 
                   return (
                     <tr key={conta.id}>
                       <td>
                         <div className="strong">{conta.name}</div>
+                        <div className="mono subtle">
+                          {conta.externalId} · {conta.currency}
+                        </div>
                         {conta.inactive ? (
                           <span className="pill pill--warn">inativa na plataforma</span>
                         ) : null}
                       </td>
-                      <td className="mono">{conta.externalId}</td>
-                      <td>{conta.currency}</td>
-                      <td>
-                        {vinculada ? (
-                          vinculada.clientName
-                        ) : (
-                          <span className="subtle">nenhum cliente</span>
-                        )}
-                      </td>
                       <td>
                         {sobMcc ? (
-                          <span className="mono">{sobMcc}</span>
-                        ) : convitePedido ? (
-                          <span className="subtle">convite enviado</span>
-                        ) : mccDisponivel ? (
+                          <span className="mono subtle">sob {sobMcc}</span>
+                        ) : convite && aceitesPedidos.has(conta.externalId) ? (
+                          <span className="subtle">aceite enfileirado</span>
+                        ) : convite && convite.status === 'done' ? (
+                          <form className="form--inline" action={aceitarConvite}>
+                            <input type="hidden" name="conviteId" value={convite.id} />
+                            <select className="select select--compacto" name="conexaoDaConta" required>
+                              <option value="">autorização da conta…</option>
+                              {connections.map((conexao) => (
+                                <option key={conexao.id} value={conexao.id}>
+                                  {conexao.accountEmail ?? conexao.externalId}
+                                </option>
+                              ))}
+                            </select>
+                            <button className="btn btn--compacto" type="submit">
+                              Aceitar convite
+                            </button>
+                          </form>
+                        ) : convite ? (
+                          <span className="subtle">convite a caminho do Google</span>
+                        ) : agencia && mccDisponivel && canAdminister(ctx.role) ? (
                           <form action={convidarParaMcc}>
                             <input type="hidden" name="contaId" value={conta.id} />
                             <input type="hidden" name="administradora" value={mccDisponivel} />
-                            <button className="btn btn--pill" type="submit">
+                            <button className="btn btn--compacto" type="submit">
                               Convidar para a MCC
                             </button>
                           </form>
@@ -461,53 +459,48 @@ export default async function IntegrationsPage({
                           <span className="subtle">acesso direto</span>
                         )}
                       </td>
+                      <td colSpan={2}>
+                        {!podeVincular ? (
+                          <span className="subtle">seu papel não vincula contas</span>
+                        ) : clientesAtivos.length === 0 ? (
+                          <span className="row">
+                            <span className="subtle">
+                              toda conta tem dono: cadastre um {substantivo} para vincular
+                            </span>
+                            <Link className="btn btn--compacto" href="/clientes/novo">
+                              Cadastrar {substantivo}
+                            </Link>
+                          </span>
+                        ) : (
+                          <form className="form--inline" action={vincularAlcancavel}>
+                            <input type="hidden" name="contaId" value={conta.id} />
+                            <select
+                              className="select select--compacto"
+                              name="clientId"
+                              defaultValue={clienteUnico}
+                              required
+                              aria-label={`${agencia ? 'Cliente' : 'Negócio'} dono de ${conta.name}`}
+                            >
+                              <option value="">escolher {substantivo}…</option>
+                              {clientesAtivos.map((cliente) => (
+                                <option key={cliente.id} value={cliente.id}>
+                                  {cliente.name}
+                                </option>
+                              ))}
+                            </select>
+                            <label className="checkline">
+                              <input type="checkbox" name="semColeta" />
+                              sem coletar agora
+                            </label>
+                            <button className="btn btn--primary btn--compacto" type="submit">
+                              Vincular
+                            </button>
+                          </form>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <div className="card">
-        <div className="card__head">
-          <span className="card__title">Contas vinculadas</span>
-          <span className="card__sub">{accounts.length} conta(s)</span>
-        </div>
-        {accounts.length === 0 ? (
-          <div className="empty">Nenhuma conta vinculada.</div>
-        ) : (
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Conta</th>
-                  <th>Cliente</th>
-                  <th>Plataforma</th>
-                  <th>Coleta</th>
-                  <th>Última coleta</th>
-                </tr>
-              </thead>
-              <tbody>
-                {accounts.map((account) => (
-                  <tr key={account.id}>
-                    <td>
-                      <div className="strong">{account.name}</div>
-                      <div className="mono subtle">{account.externalId}</div>
-                    </td>
-                    <td className="muted">{account.clientName}</td>
-                    <td>{account.platform === 'meta' ? 'Meta Ads' : 'Google Ads'}</td>
-                    <td>
-                      <span className={`pill ${account.syncEnabled ? 'pill--ok' : ''}`}>
-                        {account.syncEnabled ? 'Ligada' : 'Desligada'}
-                      </span>
-                    </td>
-                    <td className="muted">
-                      {account.lastSyncAt ? account.lastSyncAt.toLocaleString('pt-BR') : 'nunca'}
-                    </td>
-                  </tr>
-                ))}
               </tbody>
             </table>
           </div>

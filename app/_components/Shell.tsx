@@ -24,8 +24,6 @@ function navFor(organization: Organization | null, recortado: boolean): readonly
     { group: 'Operação' },
     { href: '/clientes', label: clientsLabel },
     { href: '/integracoes', label: 'Contas e conexões' },
-    { href: '/equipe', label: 'Equipe' },
-    { href: '/organizacao', label: 'Organização' },
     { group: 'Dados' },
     { href: '/automacoes', label: 'Coletas' },
     { href: '/auditoria', label: 'Auditoria' },
@@ -73,38 +71,46 @@ export async function Shell({ title, organization, active, children }: Props) {
           )}
         </nav>
         <div className="side__foot">
-          {organization ? (
-            <>
-              {organizacoes.length > 1 ? (
-                <form className="trocador" action="/api/organizacao" method="post">
-                  <input type="hidden" name="voltarPara" value={active} />
-                  <label className="trocador__rotulo" htmlFor="trocador-organizacao">
-                    Organização
-                  </label>
-                  <select
-                    className="select select--compacto"
-                    id="trocador-organizacao"
-                    name="organizationId"
-                    defaultValue={organization.id}
-                  >
-                    {organizacoes.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </select>
-                  <button className="btn btn--compacto" type="submit">
-                    Trocar
-                  </button>
-                </form>
-              ) : (
-                <div className="strong small" style={{ color: 'var(--fg)' }}>
-                  {organization.name}
-                </div>
-              )}
-              <div>{organization.type === 'agency' ? 'Opera contas de clientes' : 'Opera as próprias contas'}</div>
-              {recortado ? <div>Acesso restrito aos seus clientes</div> : null}
-            </>
+          {organization && organizacoes.length > 1 ? (
+            <form className="trocador" action="/api/organizacao" method="post">
+              <input type="hidden" name="voltarPara" value={active} />
+              <label className="trocador__rotulo" htmlFor="trocador-organizacao">
+                Organização
+              </label>
+              <select
+                className="select select--compacto"
+                id="trocador-organizacao"
+                name="organizationId"
+                defaultValue={organization.id}
+              >
+                {organizacoes.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+              <button className="btn btn--compacto" type="submit">
+                Trocar
+              </button>
+            </form>
+          ) : null}
+
+          {session ? (
+            <Link className="eu" href="/config" aria-current={active === '/config' ? 'page' : undefined}>
+              <span className="eu__inicial" aria-hidden="true">
+                {(session.user.name || session.user.email).trim().charAt(0).toUpperCase()}
+              </span>
+              <span className="eu__quem">
+                <span className="eu__nome">{session.user.name}</span>
+                <span className="eu__onde">
+                  {organization ? organization.name : 'sem organização'}
+                  {recortado ? ' · acesso restrito' : ''}
+                </span>
+              </span>
+              <span className="eu__seta" aria-hidden="true">
+                ›
+              </span>
+            </Link>
           ) : (
             <div>Nenhuma organização criada</div>
           )}
@@ -113,18 +119,21 @@ export async function Shell({ title, organization, active, children }: Props) {
       <main className="main">
         <header className="topbar">
           <span className="strong">{title}</span>
+          {organization ? (
+            <span
+              className={`modo modo--${organization.type}`}
+              title={
+                organization.type === 'agency'
+                  ? 'Esta organização opera contas de clientes'
+                  : 'Esta organização opera as próprias contas'
+              }
+            >
+              <span className="modo__ponto" aria-hidden="true" />
+              {organization.type === 'agency' ? 'Modo agência' : 'Modo anunciante'}
+            </span>
+          ) : null}
           <div className="sessao">
             <ThemeToggle />
-            {session ? (
-              <>
-                <span className="sessao__quem">{session.user.email}</span>
-                <form action="/api/auth/sair" method="post">
-                  <button className="sessao__sair" type="submit">
-                    Sair
-                  </button>
-                </form>
-              </>
-            ) : null}
           </div>
         </header>
         <div className="page" id="conteudo">

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { before, describe, it } from 'node:test';
 import {
   BASE,
-  acoesDe,
+  acaoComCampo,
   appIsUp,
   browse,
   ensureUser,
@@ -297,15 +297,16 @@ describe('a equipe pela tela', { concurrency: false }, () => {
   });
 
   it('quem administra abre a tela de equipe', async () => {
-    const resposta = await browse('/equipe');
+    const resposta = await browse('/config');
     assert.equal(resposta.status, 200);
     const html = await resposta.text();
-    assert.match(html, /Quem tem acesso/);
+    assert.match(html, /Configurações/);
+    assert.match(html, /Vínculos/);
   });
 
   it('o convite sai pela tela, com recorte, e fica na trilha', async () => {
-    const [convidar] = await acoesDe('/equipe');
-    const resultado = await submitAction('/equipe', convidar, {
+    const convidar = await acaoComCampo('/config', 'email');
+    const resultado = await submitAction('/config', convidar, {
       email: 'nova@tria.local',
       role: 'viewer',
       clientIds: [cliente],
@@ -329,8 +330,8 @@ describe('a equipe pela tela', { concurrency: false }, () => {
   });
 
   it('o mesmo e-mail não recebe dois convites abertos', async () => {
-    const [convidar] = await acoesDe('/equipe');
-    await submitAction('/equipe', convidar, { email: 'nova@tria.local', role: 'viewer' });
+    const convidar = await acaoComCampo('/config', 'email');
+    await submitAction('/config', convidar, { email: 'nova@tria.local', role: 'viewer' });
 
     const abertos = umaLinha(dono(
       `SELECT count(*) FROM core.invitations
@@ -364,9 +365,17 @@ describe('a equipe pela tela', { concurrency: false }, () => {
     assert.equal(entrada, '1');
   });
 
-  it('o acesso recortado não alcança equipe, conexões nem auditoria', async () => {
+  it('o acesso recortado abre as configurações só com o próprio perfil', async () => {
     signIn(nova);
-    for (const rota of ['/equipe', '/integracoes', '/auditoria', '/organizacao']) {
+    const html = await (await browse('/config')).text();
+    assert.match(html, /acesso restrito/i);
+    assert.ok(!html.includes('Vínculos'), 'o recorte não devia enxergar a equipe');
+    assert.ok(!html.includes('Como esta organização trabalha'), 'o recorte não muda a organização');
+  });
+
+  it('o acesso recortado não alcança conexões nem auditoria', async () => {
+    signIn(nova);
+    for (const rota of ['/integracoes', '/auditoria']) {
       const resposta = await browse(rota);
       assert.ok(
         [302, 303, 307].includes(resposta.status),
@@ -390,14 +399,16 @@ describe('a equipe pela tela', { concurrency: false }, () => {
     assert.match(completo, /Outro Cliente/);
   });
 
-  it('quem não administra não abre a tela de equipe', async () => {
+  it('quem não administra abre as configurações sem a seção de equipe', async () => {
     const operadora = ensureUser('operadora@tria.local');
     dono(`INSERT INTO core.members (organization_id, user_id, role) VALUES ('${org}', '${operadora}', 'operator')
           ON CONFLICT (organization_id, user_id) DO UPDATE SET role = 'operator', revoked_at = NULL`);
 
     signIn(operadora);
-    const resposta = await browse('/equipe');
-    assert.ok([302, 303, 307].includes(resposta.status), `veio ${resposta.status}`);
+    const html = await (await browse('/config')).text();
+    assert.match(html, /Configurações/);
+    assert.ok(!html.includes('Convites abertos'), 'quem opera não devia ver convites');
+    assert.ok(!html.includes('Convidar'), 'quem opera não devia ver o formulário de convite');
     signIn(dona);
   });
 

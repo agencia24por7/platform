@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
 import {
   BASE,
+  acaoComCampo,
   appIsUp,
   browse,
   ensureUser,
@@ -10,6 +11,7 @@ import {
   makeOwner,
   sessionCookie,
   signIn,
+  submitAction,
   submitForm,
   signOut,
 } from './helpers.mjs';
@@ -239,6 +241,14 @@ describe('vínculos de conta exigem papel e não confiam no formulário', { conc
        RETURNING id`,
     );
 
+    query(
+      `INSERT INTO integrations.connection_accounts
+         (organization_id, connection_id, platform, external_id, name)
+       VALUES ('${organizacao}', '${conexao}', 'google', '111-111-1111', 'Conta convidada')
+       ON CONFLICT (connection_id, external_id) DO UPDATE SET name = EXCLUDED.name
+       RETURNING id`,
+    );
+
     convite = query(
       `INSERT INTO automation.account_tasks
          (organization_id, connection_id, kind, manager_external_id, target_external_id, status)
@@ -273,7 +283,12 @@ describe('vínculos de conta exigem papel e não confiam no formulário', { conc
     const antes = query("select count(*) from automation.account_tasks where kind = 'mcc_accept'");
 
     signIn(leitor);
-    await submitForm('/integracoes', { conexaoDaConta: conexao, conviteId: convite });
+    const dono = ensureUser('dono-papel@tria.local');
+    makeOwner(dono, organizacao);
+    signIn(dono);
+    const aceitar = await acaoComCampo('/integracoes', 'conviteId');
+    signIn(leitor);
+    await submitAction('/integracoes', aceitar, { conexaoDaConta: conexao, conviteId: convite });
 
     const depois = query("select count(*) from automation.account_tasks where kind = 'mcc_accept'");
     assert.equal(depois, antes, 'leitor não pode enfileirar alteração de vínculo');
@@ -286,7 +301,8 @@ describe('vínculos de conta exigem papel e não confiam no formulário', { conc
 
     const antes = query("select count(*) from automation.account_tasks where kind = 'mcc_accept'");
 
-    await submitForm('/integracoes', {
+    const aceitar = await acaoComCampo('/integracoes', 'conviteId');
+    await submitAction('/integracoes', aceitar, {
       conexaoDaConta: conexao,
       conviteId: '00000000-0000-4000-8000-000000000999',
     });

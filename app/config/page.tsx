@@ -5,6 +5,7 @@ import { modules } from '@/composition';
 import { PAPEIS_CONVIDAVEIS, conviteVivo } from '@/modules/team/domain/convite';
 import { podeMexerNaEquipe } from '@/modules/team/domain/membro';
 import type { MemberRole } from '@/modules/identity/domain/user';
+import { canAdminister } from '@/modules/identity/domain/user';
 import { atorAtual } from '@/shared/http/ator';
 import { list, text, toActionState } from '@/shared/http/actions';
 import { requireContext } from '@/shared/http/currentOrganization';
@@ -25,14 +26,19 @@ const EFEITO_DO_PAPEL: Record<MemberRole, string> = {
   viewer: 'Só lê. É o papel certo para o próprio cliente acompanhar os dados dele.',
 };
 
+const EFEITO_DO_TIPO = {
+  advertiser: 'Opera as próprias contas. A lista principal chama os cadastros de negócios.',
+  agency: 'Opera contas de terceiros. A lista principal chama os cadastros de clientes.',
+} as const;
+
 function voltar(mensagem: string, tom: 'erro' | 'feito'): never {
-  redirect(`/equipe?${tom}=${encodeURIComponent(mensagem)}`);
+  redirect(`/config?${tom}=${encodeURIComponent(mensagem)}#equipe`);
 }
 
 async function contexto() {
   const ctx = await requireContext();
   if (ctx.clientIds !== null) redirect('/clientes');
-  if (!podeMexerNaEquipe(ctx.role)) redirect('/clientes');
+  if (!podeMexerNaEquipe(ctx.role)) redirect('/config');
   return ctx;
 }
 
@@ -125,34 +131,62 @@ async function definirEscopo(formData: FormData): Promise<void> {
   );
 }
 
-export default async function EquipePage({
+async function mudarTipo(formData: FormData): Promise<void> {
+  'use server';
+
+  const ctx = await requireContext();
+  if (ctx.clientIds !== null) redirect('/clientes');
+  if (!canAdminister(ctx.role)) redirect('/config');
+
+  const pedido = text(formData, 'tipo');
+  if (pedido !== 'agency' && pedido !== 'advertiser') {
+    redirect(`/config?erro=${encodeURIComponent('Tipo desconhecido.')}#organizacao`);
+  }
+
+  const resultado = await modules().organizations.changeType(
+    { id: ctx.organization.id, papelDeQuemAge: ctx.role, type: pedido },
+    await atorAtual(),
+  );
+  if (!resultado.ok) {
+    redirect(`/config?erro=${encodeURIComponent(toActionState(resultado.error).error ?? '')}#organizacao`);
+  }
+
+  redirect(`/config?feito=${encodeURIComponent('Tipo da organização atualizado.')}#organizacao`);
+}
+
+
+export default async function ConfiguracoesPage({
   searchParams,
 }: {
   searchParams: Promise<{ erro?: string; feito?: string }>;
 }) {
   const ctx = await requireContext();
-  if (ctx.clientIds !== null) redirect('/clientes');
-  if (!podeMexerNaEquipe(ctx.role)) redirect('/clientes');
+  const params = await searchParams;
 
-  const [params, equipe, clientes] = await Promise.all([
-    searchParams,
-    modules().team.equipe(ctx.organization.id),
-    modules().clients.list(ctx.organization.id),
-  ]);
+  const organization = ctx.organization;
+  const recortado = ctx.clientIds !== null;
+  const podeAdministrar = !recortado && canAdminister(ctx.role);
+  const podeVerEquipe = !recortado && podeMexerNaEquipe(ctx.role);
+
+  const [equipe, clientes] = podeVerEquipe
+    ? await Promise.all([
+        modules().team.equipe(organization.id),
+        modules().clients.list(organization.id),
+      ])
+    : [null, []];
 
   const agora = new Date();
-  const convitesAbertos = equipe.convites.filter((convite) => conviteVivo(convite, agora));
+  const convitesAbertos = equipe?.convites.filter((convite) => conviteVivo(convite, agora)) ?? [];
   const papeisQuePossoDar: readonly MemberRole[] =
     ctx.role === 'owner' ? ['owner', 'admin', 'operator', 'viewer'] : ['admin', 'operator', 'viewer'];
 
   return (
-    <Shell title="Equipe" organization={ctx.organization} active="/equipe">
+    <Shell title="Configurações" organization={organization} active="/config">
       <div className="page__head">
         <div>
-          <div className="page__title">Quem tem acesso</div>
+          <div className="page__title">Configurações</div>
           <div className="page__sub">
-            Vínculos não são apagados: são revogados, e a trilha continua lendo o passado. Um acesso
-            restrito a clientes específicos é como o próprio cliente entra para ver só o que é dele.
+            Quem é você aqui dentro, como esta organização trabalha e quem mais tem acesso a ela.
           </div>
         </div>
       </div>
@@ -160,6 +194,136 @@ export default async function EquipePage({
       <Feedback message={params.erro} tone="error" />
       <Feedback message={params.feito} tone="ok" />
 
+      <div className="card" id="voce">
+        <div className="card__head">
+          <span className="card__title">Você</span>
+          <span className="card__sub">{ROTULO_DO_PAPEL[ctx.role]} nesta organização</span>
+        </div>
+        <div className="card__body">
+          <div className="table-wrap">
+            <table className="table">
+              <tbody>
+                <tr>
+                  <td className="strong">Nome</td>
+                  <td className="muted">{ctx.session.user.name}</td>
+                </tr>
+                <tr>
+                  <td className="strong">E-mail</td>
+                  <td className="muted">{ctx.session.user.email}</td>
+                </tr>
+                <tr>
+                  <td className="strong">Papel</td>
+                  <td className="muted">{EFEITO_DO_PAPEL[ctx.role]}</td>
+                </tr>
+                <tr>
+                  <td className="strong">Enxerga</td>
+                  <td className="muted">
+                    {recortado
+                      ? `${ctx.clientIds!.length} cliente(s), por recorte de acesso`
+                      : 'A organização inteira'}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="strong">Último acesso</td>
+                  <td className="muted">
+                    {ctx.session.user.lastLoginAt
+                      ? ctx.session.user.lastLoginAt.toLocaleString('pt-BR')
+                      : '—'}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div className="card__foot row">
+          <span>A identidade vem do Google. A Orla não guarda senha.</span>
+          <span className="spacer" />
+          <form action="/api/auth/sair" method="post">
+            <button className="btn" type="submit">
+              Sair
+            </button>
+          </form>
+        </div>
+      </div>
+
+      {recortado ? null : (
+        <>
+        <div id="organizacao" />
+        <div className="card">
+          <div className="card__head">
+            <span className="card__title">Como esta organização trabalha</span>
+            <span className="card__sub">{EFEITO_DO_TIPO[organization.type]}</span>
+          </div>
+          {podeAdministrar ? (
+            <form className="form form--linha" action={mudarTipo}>
+              <label className="field">
+                <span className="field__label">Tipo</span>
+                <select className="select" name="tipo" defaultValue={organization.type}>
+                  <option value="advertiser">Anunciante — opera as próprias contas</option>
+                  <option value="agency">Agência — opera contas de clientes</option>
+                </select>
+                <span className="field__hint">
+                  A troca só muda a leitura das telas e fica registrada na auditoria. Nenhum dado é
+                  movido ou apagado.
+                </span>
+              </label>
+              <button className="btn" type="submit">
+                Aplicar
+              </button>
+            </form>
+          ) : (
+            <div className="empty">Só quem administra a organização pode mudar isso.</div>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="card__head">Identificadores</div>
+          <div className="table-wrap">
+            <table className="table">
+              <tbody>
+                <tr>
+                  <td className="strong">Apelido</td>
+                  <td className="mono muted">{organization.slug}</td>
+                </tr>
+                <tr>
+                  <td className="strong">Administradora do Google</td>
+                  <td className="mono muted">{organization.managerAccountId ?? '—'}</td>
+                </tr>
+                <tr>
+                  <td className="strong">Business Manager</td>
+                  <td className="mono muted">{organization.businessManagerId ?? '—'}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div className="card">
+          <div className="card__head">Identificadores</div>
+          <div className="table-wrap">
+            <table className="table">
+              <tbody>
+                <tr>
+                  <td className="strong">Apelido</td>
+                  <td className="mono muted">{organization.slug}</td>
+                </tr>
+                <tr>
+                  <td className="strong">Administradora do Google</td>
+                  <td className="mono muted">{organization.managerAccountId ?? '—'}</td>
+                </tr>
+                <tr>
+                  <td className="strong">Business Manager</td>
+                  <td className="mono muted">{organization.businessManagerId ?? '—'}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        </>
+      )}
+
+      {podeVerEquipe && equipe ? (
+        <>
+          <div id="equipe" />
       <div className="card">
         <div className="card__head">Convidar</div>
         <form className="form form--linha" action={convidar}>
@@ -352,6 +516,8 @@ export default async function EquipePage({
           </table>
         </div>
       </div>
+        </>
+      ) : null}
     </Shell>
   );
 }
