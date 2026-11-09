@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Bricolage_Grotesque, Inter } from 'next/font/google';
+import { Bricolage_Grotesque, Inter, Sora } from 'next/font/google';
 import type { ReactNode } from 'react';
 import './globals.css';
 
@@ -12,6 +12,13 @@ const inter = Inter({
 const bricolage = Bricolage_Grotesque({
   subsets: ['latin'],
   variable: '--font-bricolage',
+  display: 'swap',
+});
+
+const sora = Sora({
+  subsets: ['latin'],
+  weight: ['500', '600', '700'],
+  variable: '--font-sora',
   display: 'swap',
 });
 
@@ -32,7 +39,11 @@ const THEME_SCRIPT = `(function () {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="pt-BR" className={`${inter.variable} ${bricolage.variable}`}>
+    <html
+      lang="pt-BR"
+      className={`${inter.variable} ${bricolage.variable} ${sora.variable}`}
+      suppressHydrationWarning
+    >
       <head>
         {/* eslint-disable-next-line react/no-danger */}
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />

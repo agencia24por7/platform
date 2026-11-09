@@ -1,4 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="orla">
-  <rect width="64" height="64" rx="16" fill="#1468b0" />
-  <text x="32" y="43" text-anchor="middle" font-family="'Bricolage Grotesque','Arial Black',sans-serif" font-weight="700" font-size="34" fill="#ffffff">õ</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 860 860" role="img" aria-label="orla">
+  <g transform="matrix(1 0 0 -1 90.5 821)">
+    <path d="M340 -19Q268 -19 213.0 4.0Q158 27 120.0 66.5Q82 106 62.5 156.0Q43 206 43 260V281Q43 337 63.5 387.5Q84 438 122.5 477.5Q161 517 216.0 539.5Q271 562 340 562Q409 562 464.0 539.5Q519 517 557.5 477.5Q596 438 616.0 387.5Q636 337 636 281V260Q636 206 616.5 156.0Q597 106 559.0 66.5Q521 27 466.0 4.0Q411 -19 340 -19ZM340 100Q391 100 426.0 122.5Q461 145 479.0 183.5Q497 222 497 271Q497 321 478.5 359.5Q460 398 424.5 420.5Q389 443 340 443Q291 443 255.5 420.5Q220 398 201.0 359.5Q182 321 182 271Q182 222 200.5 183.5Q219 145 254.0 122.5Q289 100 340 100Z" fill="#232325" />
+  </g>
+  <g transform="translate(430 140)">
+    <path d="M-160 40 C-110 -50 -40 -60 5 0 S120 65 160 -40" fill="none" stroke="#1E8FFF" stroke-width="105" stroke-linecap="round" />
+  </g>
 </svg>
