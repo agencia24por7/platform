@@ -412,6 +412,40 @@ describe('a equipe pela tela', { concurrency: false }, () => {
     signIn(dona);
   });
 
+  it('sessão recortada não vincula conta, mesmo forjando o envio', async () => {
+    const operadoraRecortada = ensureUser('recortada@tria.local');
+    const membro = umaLinha(dono(
+      `INSERT INTO core.members (organization_id, user_id, role) VALUES ('${org}', '${operadoraRecortada}', 'operator')
+       ON CONFLICT (organization_id, user_id) DO UPDATE SET role = 'operator', revoked_at = NULL
+       RETURNING id`,
+    ));
+    dono(`INSERT INTO core.member_clients (member_id, client_id) VALUES ('${membro}', '${cliente}')
+          ON CONFLICT (member_id, client_id) DO UPDATE SET revoked_at = NULL`);
+
+    signIn(dona);
+    const vincular = await acaoComCampo('/integracoes', 'contaId').catch(() => null);
+
+    const antes = umaLinha(dono(`SELECT count(*) FROM integrations.ad_accounts WHERE organization_id = '${org}'`));
+
+    signIn(operadoraRecortada);
+    const resposta = await browse('/integracoes');
+    assert.ok(
+      [302, 303, 307].includes(resposta.status),
+      'a tela de conexões não pode abrir para quem entra recortado',
+    );
+
+    if (vincular) {
+      await submitAction('/integracoes', vincular, { contaId: 'qualquer', clientId: cliente });
+    }
+
+    assert.equal(
+      umaLinha(dono(`SELECT count(*) FROM integrations.ad_accounts WHERE organization_id = '${org}'`)),
+      antes,
+      'uma sessão recortada não pode vincular conta nem chamando a ação direto',
+    );
+    signIn(dona);
+  });
+
   it('trocar de organização só vale para um vínculo real', async () => {
     const outra = umaLinha(dono(
       `INSERT INTO core.organizations (name, slug, type) VALUES ('Alheia', 'alheia', 'agency') RETURNING id`,

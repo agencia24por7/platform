@@ -31,10 +31,16 @@ const grantLabel: Record<string, string> = {
 };
 
 
+async function contextoDeConexoes() {
+  const contexto = await requireContext();
+  if (contexto.clientIds !== null) redirect('/clientes');
+  return contexto;
+}
+
 async function aceitarConvite(formData: FormData): Promise<void> {
   'use server';
 
-  const contexto = await requireContext();
+  const contexto = await contextoDeConexoes();
   const organization = contexto.organization;
   const ator = await atorAtual();
   const voltar = (aviso: string): never =>
@@ -96,7 +102,7 @@ async function aceitarConvite(formData: FormData): Promise<void> {
 async function convidarParaMcc(formData: FormData): Promise<void> {
   'use server';
 
-  const contexto = await requireContext();
+  const contexto = await contextoDeConexoes();
   const ator = await atorAtual();
   const voltar = (aviso: string): never =>
     redirect(`/integracoes?aviso=${encodeURIComponent(aviso)}`);
@@ -152,7 +158,7 @@ async function convidarParaMcc(formData: FormData): Promise<void> {
 async function vincularAlcancavel(formData: FormData): Promise<void> {
   'use server';
 
-  const contexto = await requireContext();
+  const contexto = await contextoDeConexoes();
   const organization = contexto.organization;
   const ator = await atorAtual();
   const voltar = (aviso: string): never =>
@@ -171,8 +177,11 @@ async function vincularAlcancavel(formData: FormData): Promise<void> {
   }
 
   const clientId = text(formData, 'clientId');
-  if (!clientId) {
-    voltar('Escolha o cliente dono desta conta. É ele que dá dono ao número.');
+  const dono = (await modules().clients.list(organization.id)).find(
+    (cliente) => cliente.id === clientId && cliente.status === 'active',
+  );
+  if (!dono) {
+    voltar('Escolha um cliente ativo desta organização. É ele que dá dono ao número.');
     return;
   }
 
