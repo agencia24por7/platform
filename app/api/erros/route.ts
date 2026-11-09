@@ -63,12 +63,12 @@ const RELATOS_POR_MINUTO = 10;
 const RELATOS_GLOBAIS_POR_MINUTO = 120;
 
 export async function POST(request: Request): Promise<NextResponse> {
-  if (!consume('erros:todos', RELATOS_GLOBAIS_POR_MINUTO, 60_000).allowed) {
+  const origem = enderecoConfiavel(request.headers.get('x-forwarded-for')) ?? 'desconhecida';
+  if (!consume(`erros:${origem}`, RELATOS_POR_MINUTO, 60_000).allowed) {
     return new NextResponse(null, { status: 429 });
   }
 
-  const origem = enderecoConfiavel(request.headers.get('x-forwarded-for')) ?? 'desconhecida';
-  if (!consume(`erros:${origem}`, RELATOS_POR_MINUTO, 60_000).allowed) {
+  if (!consume('erros:todos', RELATOS_GLOBAIS_POR_MINUTO, 60_000).allowed) {
     return new NextResponse(null, { status: 429 });
   }
 
