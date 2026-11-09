@@ -1,32 +1,81 @@
 import { NextResponse } from 'next/server';
 import { currentUser } from '@/shared/http/currentUser';
 import { logger } from '@/shared/logging/logger';
+import { redactText } from '@/shared/logging/redact';
 
 export const dynamic = 'force-dynamic';
 
 const LIMITE_MENSAGEM = 2_000;
 const LIMITE_PILHA = 8_000;
 const LIMITE_DIGEST = 200;
-
-function textoLimitado(valor: unknown, limite: number): string | null {
-  return typeof valor === 'string' && valor.length > 0 ? valor.slice(0, limite) : null;
-}
-
 const LIMITE_CORPO_BYTES = 32_000;
 
-export async function POST(request: Request): Promise<NextResponse> {
-  const tamanho = Number(request.headers.get('content-length') ?? '0');
-  if (tamanho > LIMITE_CORPO_BYTES) return new NextResponse(null, { status: 413 });
+async function corpoAteOLimite(request: Request): Promise<string | null> {
+  const fluxo = request.body;
+  if (!fluxo) return null;
 
-  const corpo = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  const leitor = fluxo.getReader();
+  const pedacos: Uint8Array[] = [];
+  let total = 0;
+
+  try {
+    for (;;) {
+      const { done, value } = await leitor.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > LIMITE_CORPO_BYTES) {
+        await leitor.cancel();
+        return null;
+      }
+      pedacos.push(value);
+    }
+  } catch {
+    return null;
+  }
+
+  const bytes = new Uint8Array(total);
+  let posicao = 0;
+  for (const pedaco of pedacos) {
+    bytes.set(pedaco, posicao);
+    posicao += pedaco.byteLength;
+  }
+
+  return new TextDecoder().decode(bytes);
+}
+
+function textoLimpo(valor: unknown, limite: number): string | null {
+  if (typeof valor !== 'string' || valor.length === 0) return null;
+  return redactText(valor.slice(0, limite));
+}
+
+function caminhoDaOrigem(referer: string | null): string | null {
+  if (!referer) return null;
+  try {
+    return new URL(referer).pathname;
+  } catch {
+    return null;
+  }
+}
+
+export async function POST(request: Request): Promise<NextResponse> {
+  const bruto = await corpoAteOLimite(request);
+  if (bruto === null) return new NextResponse(null, { status: 413 });
+
+  let corpo: Record<string, unknown> | null = null;
+  try {
+    corpo = JSON.parse(bruto) as Record<string, unknown>;
+  } catch {
+    corpo = null;
+  }
+
   const session = await currentUser();
 
   logger.error('client.erro', {
-    clientMessage: textoLimitado(corpo?.['message'], LIMITE_MENSAGEM),
-    clientDigest: textoLimitado(corpo?.['digest'], LIMITE_DIGEST),
-    clientStack: textoLimitado(corpo?.['stack'], LIMITE_PILHA),
+    clientMessage: textoLimpo(corpo?.['message'], LIMITE_MENSAGEM),
+    clientDigest: textoLimpo(corpo?.['digest'], LIMITE_DIGEST),
+    clientStack: textoLimpo(corpo?.['stack'], LIMITE_PILHA),
     userId: session?.user.id ?? null,
-    path: textoLimitado(request.headers.get('referer'), 2_000),
+    path: caminhoDaOrigem(request.headers.get('referer')),
   });
 
   return new NextResponse(null, { status: 204 });
