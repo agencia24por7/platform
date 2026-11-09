@@ -15,7 +15,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  qualidade:
+    uses: ./.github/workflows/ci.yml
+
   publicar:
+    needs: qualidade
     runs-on: ubuntu-latest
     timeout-minutes: 25
     environment: producao
