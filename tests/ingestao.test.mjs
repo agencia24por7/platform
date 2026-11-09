@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
-import { appIsUp, browse, ensureUser, get, post, signIn, submitForm } from './helpers.mjs';
+import { appIsUp, browse, ensureUser, get, makeOwner, post, signIn, submitForm } from './helpers.mjs';
 
 const query = (sql) =>
   execFileSync('docker', ['exec', 'tria-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
@@ -25,45 +25,44 @@ const row = (overrides = {}) => ({
   ...overrides,
 });
 
-async function ensureAccount() {
+async function ensureAccount(userId) {
   const existing = query('select id from integrations.ad_accounts limit 1');
   if (existing) return existing;
 
-  if (query('select count(*) from core.organizations') === '0') {
+  let organizationId = query('select id from core.organizations order by created_at limit 1');
+  if (!organizationId) {
     await submitForm('/organizacoes/nova?tipo=agency', {
       type: 'agency',
       name: 'Operação de Ingestão',
       managerAccountId: '812-445-9031',
       businessManagerId: '1094887233',
     });
+    organizationId = query('select id from core.organizations order by created_at limit 1');
   }
 
-  const client = await submitForm('/clientes/novo', {
-    name: `Cliente de Ingestão ${Date.now()}`,
-    segment: '',
-    businessModel: 'leads',
-    parentClientId: '',
-  });
-  const clientId = (client.location ?? '').split('/').pop() ?? '';
+  makeOwner(userId, organizationId);
 
-  await submitForm(`/clientes/${clientId}/contas/nova`, {
-    clientId,
-    platform: 'meta',
-    connectionId: 'new',
-    connectionLabel: 'BM de ingestão',
-    grantType: 'system_user',
-    connectionExternalId: `10948872${Math.floor(Math.random() * 90 + 10)}`,
-    credentialRef: 'n8n:credential:meta',
-    scopes: ['ads_read'],
-    externalId: String(Date.now()).slice(-10),
-    name: 'Meta — Ingestão',
-    accountGroup: 'Principal',
-    currency: 'BRL',
-    timezone: 'America/Sao_Paulo',
-    syncEnabled: 'on',
-  });
+  const clientId = query(
+    `insert into core.clients (organization_id, name, business_model)
+     values ('${organizationId}', 'Cliente de Ingestão ${Date.now()}', 'leads') returning id`,
+  );
 
-  return query('select id from integrations.ad_accounts order by created_at desc limit 1');
+  const connectionId = query(
+    `insert into integrations.connections
+       (organization_id, platform, grant_type, label, external_id, scopes, credential_ref)
+     values ('${organizationId}', 'meta', 'system_user', 'BM de ingestão',
+             '10948872${Math.floor(Math.random() * 90 + 10)}',
+             array['ads_read'], 'n8n:credential:meta')
+     returning id`,
+  );
+
+  return query(
+    `insert into integrations.ad_accounts
+       (organization_id, client_id, connection_id, platform, external_id, name, account_group)
+     values ('${organizationId}', '${clientId}', '${connectionId}', 'meta',
+             'act_${String(Date.now()).slice(-10)}', 'Meta — Ingestão', 'Principal')
+     returning id`,
+  );
 }
 
 describe('coleta com metadados e auditoria', { concurrency: false }, () => {
@@ -72,8 +71,9 @@ describe('coleta com metadados e auditoria', { concurrency: false }, () => {
 
   before(async () => {
     if (!(await appIsUp())) throw new Error('App não está no ar');
-    signIn(ensureUser());
-    accountId = await ensureAccount();
+    const usuario = ensureUser();
+    signIn(usuario);
+    accountId = await ensureAccount(usuario);
     assert.match(accountId, /^[a-f0-9-]{36}$/);
   });
 

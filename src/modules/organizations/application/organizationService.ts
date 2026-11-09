@@ -14,7 +14,7 @@ import type { OrganizationRepository } from '@/modules/organizations/infrastruct
 export type OrganizationService = {
   create(input: NewOrganization, ator: Ator): Promise<Result<Organization, Failure>>;
   byId(id: string): Promise<Result<Organization, Failure>>;
-  byIds(ids: readonly string[]): Promise<readonly Organization[]>;
+  ofUser(userId: string): Promise<readonly Organization[]>;
   exists(): Promise<boolean>;
   changeType(input: {
     id: string;
@@ -34,7 +34,7 @@ export function createOrganizationService(
         return err(failure('validation', 'Nome curto demais para gerar identificador.'));
       }
 
-      if (await repository.findBySlug(slug)) {
+      if (await repository.slugTaken(slug)) {
         return err(failure('conflict', 'Já existe uma organização com esse nome.'));
       }
 
@@ -60,9 +60,9 @@ export function createOrganizationService(
       return organization ? ok(organization) : err(failure('not_found', 'Organização não encontrada.'));
     },
 
-    byIds: (ids) => repository.byIds(ids),
+    ofUser: (userId) => repository.ofUser(userId),
 
-    exists: async () => (await repository.count()) > 0,
+    exists: () => repository.exists(),
 
     async changeType(input, ator) {
       const { id, type } = input;

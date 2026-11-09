@@ -13,6 +13,7 @@ export type SignedInUser = {
 export type IdentityService = {
   signIn(identity: FederatedIdentity, ator: Ator): Promise<Result<SignedInUser, Failure>>;
   resolve(userId: string): Promise<SignedInUser | null>;
+  membershipsOf(userId: string): Promise<readonly Membership[]>;
   joinAsOwner(organizationId: string, ator: Ator): Promise<Result<void, Failure>>;
   grantMembership(organizationId: string, userId: string, role: MemberRole, ator: Ator): Promise<Result<void, Failure>>;
 };
@@ -50,6 +51,8 @@ export function createIdentityService(users: UserRepository, audit: AuditRecorde
 
       return ok({ user, memberships });
     },
+
+    membershipsOf: (userId) => users.membershipsOf(userId),
 
     async resolve(userId) {
       const user = await users.findById(userId);

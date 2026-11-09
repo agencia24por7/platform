@@ -42,7 +42,7 @@ type Props = {
 export async function Shell({ title, organization, active, children }: Props) {
   const session = await currentUser();
   const vinculos = session ? session.memberships : [];
-  const organizacoes = vinculos.length > 1 ? await modules().organizations.byIds(vinculos.map((v) => v.organizationId)) : [];
+  const organizacoes = vinculos.length > 1 ? await modules().organizations.ofUser(session!.user.id) : [];
   const recortado = organization ? (await escopoDeCliente(organization.id)) !== ORGANIZACAO_INTEIRA : false;
 
   return (

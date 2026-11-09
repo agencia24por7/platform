@@ -81,3 +81,53 @@ quando a pergunta era só "já existe alguma?". No lugar entraram `exists()` e
 
 Resolver o recorte custa uma consulta por transação de inquilino, memoizada por
 pedido. É o preço de não poder esquecer a restrição.
+
+## Adendo: as fronteiras entre inquilinos (migração 0021)
+
+A revisão do modelo encontrou cinco lugares em que a fronteira era mais larga do
+que precisava ser. Todos vinham de antes do recorte por cliente.
+
+**A identidade era da plataforma inteira.** `core.users` tinha política
+`USING (true) WITH CHECK (true)`: qualquer sessão lia o cadastro de qualquer
+pessoa da plataforma e podia reescrevê-lo. Reescrever um e-mail é grave de um
+jeito específico, porque `core.accept_invitation` casa convite com e-mail
+verificado. Agora cada sessão enxerga a si mesma e quem divide a organização com
+ela, e o `INSERT` saiu das mãos do app: o login escreve por
+`core.upsert_identity`, porque a identidade é gravada antes de existir sessão.
+
+**Qualquer sessão lia todas as organizações.** `organizations_read` liberava a
+tabela inteira quando não havia contexto, e `organizations.list()` usava isso
+para responder "já existe alguma?". A leitura passou a exigir contexto e vínculo
+vivo, e as três perguntas que precisavam atravessar inquilino viraram funções
+`SECURITY DEFINER`: `core.any_organization_exists`, `core.slug_taken`,
+`core.organizations_of`. Criar organização também: `core.create_organization`,
+já que o `INSERT` acontece antes de existir a quem pertencer.
+
+**Pertencer não podia ser uma consulta sob RLS.** A primeira versão da política
+nova perguntava o vínculo lendo `core.members` dentro do `USING`. Como a própria
+`core.members` é escondida de quem entra com recorte, o cliente final deixava de
+enxergar a própria organização. Pertencer é fato da organização, não do recorte:
+virou `core.is_member`, `SECURITY DEFINER`.
+
+**A trilha aceitava evento forjado.** `audit_insert` tinha `WITH CHECK (true)`.
+Agora só aceita evento da organização do contexto.
+
+**A faxina de passagens apagava passagem viva.** `core.handoff_consumed` tinha
+`DELETE` com `USING (true)`. Apagar um jti ainda vivo devolveria à passagem o
+direito de ser usada de novo, dentro da janela de 60 segundos. O `DELETE` passou
+a alcançar só `expires_at < now()`.
+
+Para isso a transação de inquilino ganhou um terceiro ajuste: além de
+`app.organization_id` e `app.client_ids`, agora carrega `app.user_id`, resolvido
+do cookie assinado antes de a transação abrir. Sem ele a política sabia de qual
+organização se tratava, nunca de quem estava pedindo.
+
+**O que ficou assumido e virou teste.** Nenhuma dessas funções fixa `search_path`
+por linha, porque fixá-lo impede a inlinização e `core.cliente_no_escopo` roda
+uma vez por linha. A segurança vem de `tria_app` não poder criar objeto em lugar
+nenhum — sem `CREATE` em schema nem no banco, não há onde pôr uma função que
+sombreie as usadas nas políticas. Isso era uma suposição; agora é
+`tests/fronteiras.test.mjs`, junto com: toda tabela de negócio com RLS ligada e
+forçada, toda tabela com RLS tendo ao menos uma política, toda função
+`SECURITY DEFINER` com `search_path` fixo e nenhuma delas executável por
+`PUBLIC`.

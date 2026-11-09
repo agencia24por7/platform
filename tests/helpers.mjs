@@ -54,7 +54,8 @@ export function makeOwner(userId, organizationId) {
   psql(
     `INSERT INTO core.members (organization_id, user_id, role)
      VALUES ('${organizationId}', '${userId}', 'owner')
-     ON CONFLICT (organization_id, user_id) DO NOTHING`,
+     ON CONFLICT (organization_id, user_id)
+     DO UPDATE SET role = 'owner', revoked_at = NULL, revoked_by = NULL`,
   );
 }
 

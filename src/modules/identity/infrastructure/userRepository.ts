@@ -36,13 +36,8 @@ export function createUserRepository(): UserRepository {
 
       return withoutTenant(async (tx) => {
         const rows = (await tx`
-          INSERT INTO core.users (email, name, picture_url, last_login_at)
-          VALUES (${email}, ${name}, ${identity.pictureUrl}, now())
-          ON CONFLICT (email) DO UPDATE
-            SET name          = EXCLUDED.name,
-                picture_url   = EXCLUDED.picture_url,
-                last_login_at = now()
-          RETURNING *`) as unknown as Row[];
+          SELECT * FROM core.upsert_identity(${email}, ${name}, ${identity.pictureUrl})
+        `) as unknown as Row[];
         return toUser(rows[0]!);
       });
     },

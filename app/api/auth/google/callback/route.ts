@@ -105,9 +105,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   });
 
   const vinculos =
-    aceitos.length > 0
-      ? ((await modules().identity.resolve(user.id))?.memberships ?? signedIn.value.memberships)
-      : signedIn.value.memberships;
+    aceitos.length > 0 ? await modules().identity.membershipsOf(user.id) : signedIn.value.memberships;
 
   const destination = vinculos.length > 0 ? returnTo : '/organizacoes/nova';
   const response = clearTransientCookies(NextResponse.redirect(new URL(destination, base)));
