@@ -8,7 +8,7 @@ function enderecoPublico(): string {
   return configurado;
 }
 
-const ROTAS_ABERTAS = ['/entrar', '/api/auth', '/api/health', '/api/v0', '/api/portaria'];
+const ROTAS_ABERTAS = ['/entrar', '/api/auth', '/api/health', '/api/v0', '/api/portaria', '/api/erros'];
 
 export function middleware(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
@@ -26,5 +26,7 @@ export function middleware(request: NextRequest): NextResponse {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|marcas/|orla/).*)'],
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|marcas/|orla/|icon.png|apple-icon.png|opengraph-image).*)',
+  ],
 };

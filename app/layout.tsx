@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Bricolage_Grotesque, Inter, Sora } from 'next/font/google';
 import type { ReactNode } from 'react';
+import { env } from '@/shared/config/env';
 import './globals.css';
 
 const inter = Inter({
@@ -22,12 +23,31 @@ const sora = Sora({
   display: 'swap',
 });
 
-export const metadata: Metadata = {
-  title: 'orla',
-  description: 'Um oceano azul para seus anúncios.',
-  robots: { index: false, follow: false },
-  icons: { icon: '/orla/icone.png' },
-};
+const DESCRICAO = 'Um oceano azul para seus anúncios.';
+
+export function generateMetadata(): Metadata {
+  const base = new URL(env().TRIA_APP_BASE_URL);
+
+  return {
+    metadataBase: base,
+    title: { default: 'orla', template: '%s · orla' },
+    description: DESCRICAO,
+    robots: { index: false, follow: false },
+    openGraph: {
+      title: 'orla',
+      description: DESCRICAO,
+      url: base,
+      siteName: 'orla',
+      locale: 'pt_BR',
+      type: 'website',
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: 'orla',
+      description: DESCRICAO,
+    },
+  };
+}
 
 const THEME_SCRIPT = `(function () {
   try {

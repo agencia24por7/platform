@@ -1,21 +1,22 @@
 import Link from 'next/link';
-import type { ReactNode } from 'react';
+import type { ComponentType, ReactNode } from 'react';
+import { IconeAuditoria, IconeClientes, IconeColetas, IconeConexoes } from '@/../app/_components/Icones';
 import { ThemeToggle } from '@/../app/_components/ThemeToggle';
 import type { Organization } from '@/modules/organizations/domain/organization';
 import { currentUser } from '@/shared/http/currentUser';
 
-type NavEntry = { group: string } | { href: string; label: string };
+type NavEntry = { group: string } | { href: string; label: string; icone: ComponentType<{ className?: string }> };
 
 function navFor(organization: Organization | null): readonly NavEntry[] {
   const clientsLabel = organization?.type === 'advertiser' ? 'Negócios' : 'Clientes';
 
   return [
     { group: 'Operação' },
-    { href: '/clientes', label: clientsLabel },
-    { href: '/integracoes', label: 'Contas e conexões' },
+    { href: '/clientes', label: clientsLabel, icone: IconeClientes },
+    { href: '/integracoes', label: 'Contas e conexões', icone: IconeConexoes },
     { group: 'Dados' },
-    { href: '/automacoes', label: 'Coletas' },
-    { href: '/auditoria', label: 'Auditoria' },
+    { href: '/automacoes', label: 'Coletas', icone: IconeColetas },
+    { href: '/auditoria', label: 'Auditoria', icone: IconeAuditoria },
   ];
 }
 
@@ -51,6 +52,7 @@ export async function Shell({ title, organization, active, children }: Props) {
                 className="nav__item"
                 aria-current={active === entry.href ? 'page' : undefined}
               >
+                <entry.icone className="nav__icone" />
                 {entry.label}
               </Link>
             ),
