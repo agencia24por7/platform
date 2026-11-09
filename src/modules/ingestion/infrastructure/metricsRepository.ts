@@ -36,8 +36,8 @@ export function createMetricsRepository(): MetricsRepository {
           SELECT external_campaign_id, metric_date, spend, impressions, clicks, conversions, revenue
           FROM metrics.metrics_daily
           WHERE ad_account_id = ${adAccountId}
-            AND metric_date = ANY(${tx.array(dates)}::date[])
-            AND external_campaign_id = ANY(${tx.array(campaigns)}::text[])`) as unknown as ExistingRow[];
+            AND metric_date = ANY(${dates}::date[])
+            AND external_campaign_id = ANY(${campaigns}::text[])`) as unknown as ExistingRow[];
 
         const previous = new Map(
           existing.map((row) => [

@@ -32,7 +32,6 @@
         "./src/*"
       ]
     },
-    "baseUrl": ".",
     "allowImportingTsExtensions": true
   },
   "include": [

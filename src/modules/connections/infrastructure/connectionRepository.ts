@@ -47,7 +47,7 @@ export function createConnectionRepository(): ConnectionRepository {
           INSERT INTO integrations.connections
             (organization_id, platform, grant_type, label, external_id, account_email, scopes, credential_ref, expires_at, status)
           VALUES (${input.organizationId}, ${input.platform}, ${input.grantType}, ${input.label},
-                  ${input.externalId}, ${input.accountEmail ?? null}, ${tx.array(input.scopes as string[])}, ${input.credentialRef}, ${input.expiresAt}, ${input.status ?? 'active'})
+                  ${input.externalId}, ${input.accountEmail ?? null}, ${input.scopes as string[]}::text[], ${input.credentialRef}, ${input.expiresAt}, ${input.status ?? 'active'})
           RETURNING *`) as unknown as Row[];
         return toConnection(rows[0]!);
       });
@@ -59,7 +59,7 @@ export function createConnectionRepository(): ConnectionRepository {
           UPDATE integrations.connections
           SET label          = ${input.label},
               account_email  = ${input.accountEmail ?? null},
-              scopes         = ${tx.array(input.scopes as string[])},
+              scopes         = ${input.scopes as string[]}::text[],
               credential_ref = ${input.credentialRef},
               status         = ${input.status ?? 'active'},
               expires_at     = ${input.expiresAt},
