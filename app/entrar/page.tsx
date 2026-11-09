@@ -36,6 +36,44 @@ const GOOGLE_G = (
   </svg>
 );
 
+const ONDA_PATH = 'M-160 40 C-110 -50 -40 -60 5 0 S120 65 160 -40';
+const ONDA_COLUNAS = 12;
+const ONDA_LINHAS = 10;
+const ONDA_CICLO_S = 6.3;
+const ONDA_PASSO_S = ONDA_CICLO_S / (ONDA_COLUNAS * ONDA_LINHAS);
+
+function corDaOnda(indice: number): string {
+  if (indice % 23 === 9) return 'var(--tide-500)';
+  if (indice % 11 === 4) return 'var(--ocean-500)';
+  return 'var(--onda-neutra)';
+}
+
+function Ondas() {
+  return (
+    <div className="vitrine__ondas" aria-hidden="true">
+      {Array.from({ length: ONDA_LINHAS }, (_, linha) => (
+        <div key={linha} className="vitrine__onda-linha" style={{ paddingLeft: linha % 2 ? 55 : 0 }}>
+          {Array.from({ length: ONDA_COLUNAS }, (_, coluna) => {
+            const indice = linha * ONDA_COLUNAS + coluna;
+            return (
+              <svg
+                key={coluna}
+                className="orla-onda"
+                width="56"
+                height="28"
+                viewBox="-215 -110 430 220"
+                style={{ animationDelay: `${(-indice * ONDA_PASSO_S).toFixed(2)}s`, color: corDaOnda(indice) }}
+              >
+                <path d={ONDA_PATH} fill="none" stroke="currentColor" strokeWidth={85} strokeLinecap="round" />
+              </svg>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 type Props = { readonly searchParams: Promise<Record<string, string | undefined>> };
 
 export default async function Entrar({ searchParams }: Props) {
@@ -53,32 +91,22 @@ export default async function Entrar({ searchParams }: Props) {
       </div>
 
       <section className="portao__vitrine">
-        <div className="malha" aria-hidden="true">
-          <span className="malha__azulejo" />
-          <span className="malha__traco malha__traco--um" />
-          <span className="malha__traco malha__traco--dois" />
+        <Ondas />
+        <span className="malha__azulejo" aria-hidden="true" />
+
+        <div className="vitrine__cartao">
+          <img className="vitrine__logo vitrine__logo--padrao" src="/orla/logo.svg" alt="orla" />
+          <img className="vitrine__logo vitrine__logo--reversa" src="/orla/logo-reversa.svg" alt="orla" />
+          <span className="vitrine__legenda">Um oceano azul para seus anúncios.</span>
         </div>
-
-        <div className="portao__marca">
-          <span className="portao__simbolo">õ</span>
-          <span className="portao__nome">orla</span>
-        </div>
-
-        <h1 className="portao__chamada">
-          Um oceano azul
-          <br />
-          para seus <em>anúncios.</em>
-        </h1>
-
-        <p className="portao__rodape">Nenhuma senha sua é armazenada aqui.</p>
       </section>
 
       <main className="portao__acesso">
         <div className="portao__caixa">
-          <h2 className="portao__titulo">Entrar</h2>
-          <p className="portao__apoio">
-            Use a conta Google com que você já administra as contas de anúncio.
-          </p>
+          <img className="portao__icone portao__icone--padrao" src="/orla/icone.svg" alt="" width={56} height={56} />
+          <img className="portao__icone portao__icone--reversa" src="/orla/icone-reversa.svg" alt="" width={56} height={56} />
+          <h1 className="portao__titulo">Boas-vindas à orla</h1>
+          <p className="portao__apoio">Use sua conta Google.</p>
 
           {motivo ? (
             <p className="portao__aviso" role="alert">
@@ -98,6 +126,7 @@ export default async function Entrar({ searchParams }: Props) {
             </p>
           )}
 
+          <p className="portao__nota">Ao continuar, você aceita os Termos e a Privacidade.</p>
         </div>
       </main>
     </div>
