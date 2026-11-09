@@ -1,4 +1,6 @@
 import type { Ator } from '@/modules/audit/domain/actor';
+import type { MemberRole } from '@/modules/identity/domain/user';
+import { canAdminister } from '@/modules/identity/domain/user';
 import { failure, type Failure } from '@/shared/result/failure';
 import { err, ok, type Result } from '@/shared/result/result';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
@@ -14,7 +16,11 @@ export type OrganizationService = {
   byId(id: string): Promise<Result<Organization, Failure>>;
   byIds(ids: readonly string[]): Promise<readonly Organization[]>;
   exists(): Promise<boolean>;
-  changeType(id: string, type: Organization['type'], ator: Ator): Promise<Result<Organization, Failure>>;
+  changeType(input: {
+    id: string;
+    papelDeQuemAge: MemberRole;
+    type: Organization['type'];
+  }, ator: Ator): Promise<Result<Organization, Failure>>;
 };
 
 export function createOrganizationService(
@@ -58,7 +64,12 @@ export function createOrganizationService(
 
     exists: async () => (await repository.count()) > 0,
 
-    async changeType(id, type, ator) {
+    async changeType(input, ator) {
+      const { id, type } = input;
+      if (!canAdminister(input.papelDeQuemAge)) {
+        return err(failure('forbidden', 'Só quem administra a organização pode mudar o tipo dela.'));
+      }
+
       const atual = await repository.findById(id);
       if (!atual) return err(failure('not_found', 'Organização não encontrada.'));
       if (atual.type === type) return ok(atual);

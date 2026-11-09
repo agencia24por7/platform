@@ -18,6 +18,7 @@ async function mudarTipo(formData: FormData): Promise<void> {
   'use server';
 
   const ctx = await requireContext();
+  if (ctx.clientIds !== null) redirect('/clientes');
   if (!canAdminister(ctx.role)) redirect('/clientes');
 
   const pedido = text(formData, 'tipo');
@@ -25,7 +26,10 @@ async function mudarTipo(formData: FormData): Promise<void> {
     redirect(`/organizacao?erro=${encodeURIComponent('Tipo desconhecido.')}`);
   }
 
-  const resultado = await modules().organizations.changeType(ctx.organization.id, pedido, await atorAtual());
+  const resultado = await modules().organizations.changeType(
+    { id: ctx.organization.id, papelDeQuemAge: ctx.role, type: pedido },
+    await atorAtual(),
+  );
   if (!resultado.ok) {
     redirect(`/organizacao?erro=${encodeURIComponent(toActionState(resultado.error).error ?? '')}`);
   }

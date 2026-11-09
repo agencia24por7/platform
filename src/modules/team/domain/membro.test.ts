@@ -51,3 +51,26 @@ test('rebaixar o último dono deixaria a organização órfã', () => {
     'ultimo_dono',
   );
 });
+
+test('quem administra não alcança quem responde pela organização', () => {
+  const donoAlvo = { ...alvo, role: 'owner' as const };
+
+  assert.equal(
+    revogacaoPermitida({ papelDeQuemAge: 'admin', userIdDeQuemAge: 'u1', alvo: donoAlvo, donosVivos: 3 }),
+    'sem_permissao',
+  );
+  assert.equal(
+    trocaDePapelPermitida({
+      papelDeQuemAge: 'admin',
+      userIdDeQuemAge: 'u1',
+      alvo: donoAlvo,
+      novoPapel: 'viewer',
+      donosVivos: 3,
+    }),
+    'sem_permissao',
+  );
+  assert.equal(
+    revogacaoPermitida({ papelDeQuemAge: 'owner', userIdDeQuemAge: 'u1', alvo: donoAlvo, donosVivos: 3 }),
+    null,
+  );
+});

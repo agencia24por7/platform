@@ -5,9 +5,7 @@ import { TilIcone } from '@/../app/_components/Til';
 export function ThemeToggle() {
   function alternar() {
     const raiz = document.documentElement;
-    const atual =
-      raiz.getAttribute('data-tema') ??
-      (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'grafite' : 'claro');
+    const atual = raiz.getAttribute('data-tema') ?? 'claro';
     const proximo = atual === 'grafite' ? 'claro' : 'grafite';
     raiz.setAttribute('data-tema', proximo);
     try {

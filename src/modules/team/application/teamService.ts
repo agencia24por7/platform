@@ -12,6 +12,7 @@ import type { Membro, MotivoBloqueio } from '@/modules/team/domain/membro';
 import {
   MOTIVO_BLOQUEIO,
   podeMexerNaEquipe,
+  podeMexerNesteVinculo,
   revogacaoPermitida,
   trocaDePapelPermitida,
 } from '@/modules/team/domain/membro';
@@ -223,6 +224,9 @@ export function createTeamService(repository: TeamRepository, audit: AuditRecord
 
       const alvo = await exigirMembro(input.organizationId, input.memberId);
       if (!alvo.ok) return alvo;
+      if (!podeMexerNesteVinculo(input.papelDeQuemAge, alvo.value)) {
+        return err(bloqueio('sem_permissao'));
+      }
 
       await repository.replaceScope(input.organizationId, input.memberId, input.clientIds);
 

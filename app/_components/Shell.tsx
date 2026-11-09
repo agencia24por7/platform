@@ -52,11 +52,7 @@ export async function Shell({ title, organization, active, children }: Props) {
       </a>
       <aside className="side">
         <div className="side__brand">
-          <span className="mark">õ</span>
-          <span className="brand">
-            orla
-            <small>Um oceano azul para seus anúncios</small>
-          </span>
+          <img className="side__logo" src="/orla/logo.svg" alt="orla" />
         </div>
         <nav className="side__nav">
           {navFor(organization, recortado).map((entry) =>
@@ -102,7 +98,7 @@ export async function Shell({ title, organization, active, children }: Props) {
                   </button>
                 </form>
               ) : (
-                <div className="strong small" style={{ color: 'var(--rail-fg-strong)' }}>
+                <div className="strong small" style={{ color: 'var(--fg)' }}>
                   {organization.name}
                 </div>
               )}

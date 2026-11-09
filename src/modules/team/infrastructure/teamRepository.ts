@@ -147,12 +147,13 @@ export function createTeamRepository(): TeamRepository {
           WHERE member_id = ${memberId} AND revoked_at IS NULL
             AND NOT (client_id = ANY (${clientIds as string[]}::uuid[]))`;
 
-        for (const clientId of clientIds) {
-          await tx`
-            INSERT INTO core.member_clients (member_id, client_id)
-            VALUES (${memberId}, ${clientId})
-            ON CONFLICT (member_id, client_id) DO UPDATE SET revoked_at = NULL`;
-        }
+        await tx`
+          INSERT INTO core.member_clients (member_id, client_id)
+          SELECT ${memberId}::uuid, c.id
+          FROM core.clients c
+          WHERE c.id = ANY (${clientIds as string[]}::uuid[])
+            AND c.organization_id = ${organizationId}
+          ON CONFLICT (member_id, client_id) DO UPDATE SET revoked_at = NULL`;
       });
     },
 

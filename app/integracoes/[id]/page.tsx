@@ -162,107 +162,103 @@ export default async function DetalheAutorizacao({
         </div>
       ) : null}
 
-      <div className="grid grid--3">
-        <div className="card">
-          <div className="card__head">
-            <span className="card__title">Identidade</span>
-          </div>
-          <div className="card__body">
-            <div className="dupla">
-              <span>Plataforma</span>
+      <div className="card">
+        <div className="card__head">
+          <span className="card__title">Identidade</span>
+          <span className={`pill ${prontidao.collectable ? 'pill--ok' : 'pill--warn'}`} style={{ marginLeft: 'auto' }}>
+            <span className="dot" />
+            {conexao.status}
+          </span>
+        </div>
+        <div className="card__body">
+          <div className="fatos">
+            <div className="fatos__item">
+              <span className="fatos__rotulo">Plataforma</span>
               <span className="com-marca">
                 <img src={plataforma.marca} alt="" width={16} height={16} />
                 {plataforma.nome}
               </span>
             </div>
-            <div className="dupla">
-              <span>Conta que concedeu</span>
+            <div className="fatos__item">
+              <span className="fatos__rotulo">Conta que concedeu</span>
               <span>{conexao.accountEmail ?? <span className="subtle">não informado</span>}</span>
             </div>
-            <div className="dupla">
-              <span>Id na plataforma</span>
+            <div className="fatos__item">
+              <span className="fatos__rotulo">Id na plataforma</span>
               <span className="mono">{conexao.externalId}</span>
             </div>
-            <div className="dupla">
-              <span>Estado</span>
-              <span className={`pill ${prontidao.collectable ? 'pill--ok' : 'pill--warn'}`}>
-                {conexao.status}
-              </span>
-            </div>
-            <div className="dupla">
-              <span>Credencial</span>
+            <div className="fatos__item">
+              <span className="fatos__rotulo">Credencial</span>
               <span>{prontidao.collectable ? 'guardada no cofre' : 'ausente'}</span>
             </div>
             {conexao.expiresAt ? (
-              <div className="dupla">
-                <span>Expira</span>
+              <div className="fatos__item">
+                <span className="fatos__rotulo">Expira</span>
                 <span>{conexao.expiresAt.toLocaleString('pt-BR')}</span>
               </div>
             ) : null}
           </div>
-        </div>
 
-        <div className="card">
-          <div className="card__head">
-            <span className="card__title">Quem autorizou</span>
-          </div>
-          <div className="card__body">
-            {autorizacao ? (
-              <>
-                <div className="dupla">
-                  <span>Pessoa</span>
-                  <span className="mono" title={autorizacao.actorId ?? ''}>
-                    {autorizacao.actorId ? autorizacao.actorId.slice(0, 8) : '—'}
-                  </span>
+          <details className="disclosure">
+            <summary>Quem autorizou</summary>
+            <div>
+              {autorizacao ? (
+                <div className="fatos">
+                  <div className="fatos__item">
+                    <span className="fatos__rotulo">Pessoa</span>
+                    <span className="mono" title={autorizacao.actorId ?? ''}>
+                      {autorizacao.actorId ? autorizacao.actorId.slice(0, 8) : '—'}
+                    </span>
+                  </div>
+                  <div className="fatos__item">
+                    <span className="fatos__rotulo">Quando</span>
+                    <span>{autorizacao.occurredAt.toLocaleString('pt-BR')}</span>
+                  </div>
+                  <div className="fatos__item">
+                    <span className="fatos__rotulo">Origem</span>
+                    <span className="mono">{autorizacao.sourceIp ?? '—'}</span>
+                  </div>
+                  <div className="fatos__item">
+                    <span className="fatos__rotulo">Requisição</span>
+                    <span className="mono" title={autorizacao.requestId ?? ''}>
+                      {autorizacao.requestId ? autorizacao.requestId.slice(0, 8) : '—'}
+                    </span>
+                  </div>
                 </div>
-                <div className="dupla">
-                  <span>Quando</span>
-                  <span>{autorizacao.occurredAt.toLocaleString('pt-BR')}</span>
-                </div>
-                <div className="dupla">
-                  <span>Origem</span>
-                  <span className="mono">{autorizacao.sourceIp ?? '—'}</span>
-                </div>
-                <div className="dupla">
-                  <span>Requisição</span>
-                  <span className="mono" title={autorizacao.requestId ?? ''}>
-                    {autorizacao.requestId ? autorizacao.requestId.slice(0, 8) : '—'}
-                  </span>
-                </div>
-              </>
-            ) : (
-              <p className="subtle">
-                Sem evento de auditoria para esta autorização. Ela é anterior ao registro de autor.
-              </p>
-            )}
-            <Link className="quiet-link" href={`/auditoria?evento=connection.authorize`}>
-              ver na trilha de auditoria →
-            </Link>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card__head">
-            <span className="card__title">Permissões concedidas</span>
-            <span className="card__sub">{conexao.scopes.length}</span>
-          </div>
-          <div className="card__body">
-            <div className="fichas">
-              {conexao.scopes.map((scope) => (
-                <span key={scope} className="ficha" title={scope}>
-                  {encurtarEscopo(scope)}
-                </span>
-              ))}
+              ) : (
+                <p className="subtle">
+                  Sem evento de auditoria para esta autorização. Ela é anterior ao registro de autor.
+                </p>
+              )}
+              <Link className="quiet-link" href="/auditoria?evento=connection.authorize" style={{ marginTop: 10, display: 'inline-block' }}>
+                ver na trilha de auditoria →
+              </Link>
             </div>
-            {faltando.length > 0 ? (
-              <p className="subtle">
-                Falta o escopo obrigatório <strong>{faltando.join(', ')}</strong>. Reautorize para
-                coletar.
-              </p>
-            ) : (
-              <p className="subtle">Os escopos obrigatórios desta plataforma estão presentes.</p>
-            )}
+          </details>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card__head">
+          <span className="card__title">Permissões concedidas</span>
+          <span className="card__sub">{conexao.scopes.length}</span>
+        </div>
+        <div className="card__body">
+          <div className="fichas">
+            {conexao.scopes.map((scope) => (
+              <span key={scope} className="ficha" title={scope}>
+                {encurtarEscopo(scope)}
+              </span>
+            ))}
           </div>
+          {faltando.length > 0 ? (
+            <p className="subtle">
+              Falta o escopo obrigatório <strong>{faltando.join(', ')}</strong>. Reautorize para
+              coletar.
+            </p>
+          ) : (
+            <p className="subtle">Os escopos obrigatórios desta plataforma estão presentes.</p>
+          )}
         </div>
       </div>
 

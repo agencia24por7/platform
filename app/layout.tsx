@@ -19,13 +19,13 @@ export const metadata: Metadata = {
   title: 'orla',
   description: 'Um oceano azul para seus anúncios.',
   robots: { index: false, follow: false },
+  icons: { icon: '/orla/icone.svg' },
 };
 
 const THEME_SCRIPT = `(function () {
   try {
-    var salvo = localStorage.getItem('orla-tema');
-    if (salvo === 'claro' || salvo === 'grafite') {
-      document.documentElement.setAttribute('data-tema', salvo);
+    if (localStorage.getItem('orla-tema') === 'grafite') {
+      document.documentElement.setAttribute('data-tema', 'grafite');
     }
   } catch (_) {}
 })();`;

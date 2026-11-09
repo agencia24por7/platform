@@ -13,7 +13,7 @@ export type Membro = {
 };
 
 export const MOTIVO_BLOQUEIO = {
-  sem_permissao: 'Só quem administra a organização pode mexer na equipe.',
+  sem_permissao: 'Seu papel não alcança este vínculo. Quem responde pela organização só é tocado por quem também responde por ela.',
   nao_encontrado: 'Esse vínculo não existe nesta organização.',
   ultimo_dono: 'A organização ficaria sem responsável. Promova alguém antes.',
   proprio_vinculo: 'Você não pode revogar o próprio acesso.',
@@ -26,6 +26,10 @@ export function podeMexerNaEquipe(role: MemberRole): boolean {
   return canAdminister(role);
 }
 
+export function podeMexerNesteVinculo(papelDeQuemAge: MemberRole, alvo: Membro): boolean {
+  return alvo.role !== 'owner' || papelDeQuemAge === 'owner';
+}
+
 export function revogacaoPermitida(input: {
   readonly papelDeQuemAge: MemberRole;
   readonly userIdDeQuemAge: string;
@@ -33,6 +37,7 @@ export function revogacaoPermitida(input: {
   readonly donosVivos: number;
 }): MotivoBloqueio | null {
   if (!podeMexerNaEquipe(input.papelDeQuemAge)) return 'sem_permissao';
+  if (!podeMexerNesteVinculo(input.papelDeQuemAge, input.alvo)) return 'sem_permissao';
   if (input.alvo.userId === input.userIdDeQuemAge) return 'proprio_vinculo';
   if (input.alvo.role === 'owner' && input.donosVivos <= 1) return 'ultimo_dono';
   return null;
@@ -46,6 +51,7 @@ export function trocaDePapelPermitida(input: {
   readonly donosVivos: number;
 }): MotivoBloqueio | null {
   if (!podeMexerNaEquipe(input.papelDeQuemAge)) return 'sem_permissao';
+  if (!podeMexerNesteVinculo(input.papelDeQuemAge, input.alvo)) return 'sem_permissao';
   if (input.novoPapel === 'owner' && input.papelDeQuemAge !== 'owner') return 'sem_permissao';
   if (input.alvo.role === 'owner' && input.novoPapel !== 'owner' && input.donosVivos <= 1) {
     return 'ultimo_dono';
