@@ -1,4 +1,6 @@
 import type { Ator } from '@/modules/audit/domain/actor';
+import type { MemberRole } from '@/modules/identity/domain/user';
+import { canOperate } from '@/modules/identity/domain/user';
 import { failure, type Failure } from '@/shared/result/failure';
 import { err, ok, type Result } from '@/shared/result/result';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
@@ -20,10 +22,22 @@ export type ConnectionService = {
   listConnections(organizationId: string): Promise<readonly Connection[]>;
   listAccountsByClient(organizationId: string, clientId: string): Promise<readonly AdAccount[]>;
   listAccounts(organizationId: string): Promise<readonly (AdAccount & { clientName: string })[]>;
+  reassignAccount(input: {
+    organizationId: string;
+    papelDeQuemAge: MemberRole;
+    accountId: string;
+    clientId: string;
+  }, ator: Ator): Promise<Result<AdAccount, Failure>>;
+  setAccountSync(input: {
+    organizationId: string;
+    papelDeQuemAge: MemberRole;
+    accountId: string;
+    enabled: boolean;
+  }, ator: Ator): Promise<Result<AdAccount, Failure>>;
 };
 
 export type ClientOwnership = {
-  findById(organizationId: string, id: string): Promise<{ readonly id: string } | null>;
+  findById(organizationId: string, id: string): Promise<{ readonly id: string; readonly name: string } | null>;
 };
 
 export function createConnectionService(
@@ -95,8 +109,17 @@ export function createConnectionService(
         );
       }
 
-      if (await accounts.findByExternalId(input.organizationId, input.platform, externalId)) {
-        return err(failure('conflict', 'Esta conta já está vinculada nesta organização.'));
+      const jaVinculada = await accounts.findByExternalId(input.organizationId, input.platform, externalId);
+      if (jaVinculada) {
+        const dono = await clients.findById(input.organizationId, jaVinculada.clientId);
+        return err(
+          failure(
+            'conflict',
+            `Esta conta já está vinculada a ${dono?.name ?? 'outro cliente'}. Uma conta de anúncio ` +
+              'pertence a um cliente por vez, para que a métrica tenha um dono só. Abra esse cliente e ' +
+              'use Mover para trazê-la.',
+          ),
+        );
       }
 
       const account = await accounts.insert({ ...input, externalId });
@@ -124,6 +147,69 @@ export function createConnectionService(
 
     listConnections: (organizationId) => connections.list(organizationId),
     listAccountsByClient: (organizationId, clientId) => accounts.listByClient(organizationId, clientId),
+    async reassignAccount(input, ator) {
+      if (!canOperate(input.papelDeQuemAge)) {
+        return err(failure('forbidden', 'Seu papel não permite mover contas entre clientes.'));
+      }
+
+      const conta = await accounts.findById(input.organizationId, input.accountId);
+      if (!conta) return err(failure('not_found', 'Conta não encontrada nesta organização.'));
+
+      const destino = await clients.findById(input.organizationId, input.clientId);
+      if (!destino) return err(failure('validation', 'Cliente de destino não pertence a esta organização.'));
+      if (conta.clientId === input.clientId) return ok(conta);
+
+      const origem = await clients.findById(input.organizationId, conta.clientId);
+      const movida = await accounts.reassign(input.organizationId, input.accountId, input.clientId);
+      if (!movida) return err(failure('not_found', 'Conta não encontrada nesta organização.'));
+
+      await audit.record({
+        organizationId: input.organizationId,
+        actorType: 'user',
+        actorId: ator.userId,
+        action: 'ad_account.reassigned',
+        targetType: 'ad_account',
+        targetId: movida.id,
+        requestId: ator.requestId,
+        sourceIp: ator.sourceIp,
+        metadata: {
+          externalId: movida.externalId,
+          de: origem?.name ?? conta.clientId,
+          para: destino.name,
+          historicoSegue: true,
+        },
+      });
+
+      return ok(movida);
+    },
+
+    async setAccountSync(input, ator) {
+      if (!canOperate(input.papelDeQuemAge)) {
+        return err(failure('forbidden', 'Seu papel não permite pausar ou retomar a coleta.'));
+      }
+
+      const conta = await accounts.findById(input.organizationId, input.accountId);
+      if (!conta) return err(failure('not_found', 'Conta não encontrada nesta organização.'));
+      if (conta.syncEnabled === input.enabled) return ok(conta);
+
+      const alterada = await accounts.setSync(input.organizationId, input.accountId, input.enabled);
+      if (!alterada) return err(failure('not_found', 'Conta não encontrada nesta organização.'));
+
+      await audit.record({
+        organizationId: input.organizationId,
+        actorType: 'user',
+        actorId: ator.userId,
+        action: input.enabled ? 'ad_account.sync_resumed' : 'ad_account.sync_paused',
+        targetType: 'ad_account',
+        targetId: alterada.id,
+        requestId: ator.requestId,
+        sourceIp: ator.sourceIp,
+        metadata: { externalId: alterada.externalId, name: alterada.name },
+      });
+
+      return ok(alterada);
+    },
+
     listAccounts: (organizationId) => accounts.listByOrganization(organizationId),
   };
 }

@@ -4,15 +4,14 @@ import { Shell } from '@/../app/_components/Shell';
 import { modules } from '@/composition';
 import { atorAtual } from '@/shared/http/ator';
 import { optionalText, requestId, text, toActionState } from '@/shared/http/actions';
-import { currentOrganization } from '@/shared/http/currentOrganization';
+import { requireContext } from '@/shared/http/currentOrganization';
 
 export const dynamic = 'force-dynamic';
 
 async function createClient(formData: FormData): Promise<void> {
   'use server';
 
-  const organization = await currentOrganization();
-  if (!organization) redirect('/organizacoes/nova');
+  const organization = (await requireContext()).organization;
 
   const ator = await atorAtual();
 
@@ -36,8 +35,7 @@ async function createClient(formData: FormData): Promise<void> {
 }
 
 export default async function NewClientPage({ searchParams }: { searchParams: Promise<{ erro?: string }> }) {
-  const organization = await currentOrganization();
-  if (!organization) redirect('/organizacoes/nova');
+  const organization = (await requireContext()).organization;
 
   const [params, clients] = await Promise.all([searchParams, modules().clients.list(organization.id)]);
   const possibleParents = clients.filter((client) => client.parentClientId === null);

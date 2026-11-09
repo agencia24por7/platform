@@ -8,7 +8,7 @@ import { agruparPorAdministradora } from '@/modules/connections/domain/carteira'
 import { Feedback } from '@/../app/_components/Feedback';
 import { text } from '@/shared/http/actions';
 import { atorAtual } from '@/shared/http/ator';
-import { currentOrganization, requireContext } from '@/shared/http/currentOrganization';
+import { requireContext } from '@/shared/http/currentOrganization';
 import { canAdminister } from '@/modules/identity/domain/user';
 import { readinessOf } from '@/modules/connections/domain/connection';
 
@@ -152,8 +152,9 @@ export default async function IntegrationsPage({
 }: {
   searchParams: Promise<{ aviso?: string }>;
 }) {
-  const organization = await currentOrganization();
-  if (!organization) redirect('/organizacoes/nova');
+  const ctx = await requireContext();
+  if (ctx.clientIds !== null) redirect('/clientes');
+  const organization = ctx.organization;
 
   const { aviso } = await searchParams;
 

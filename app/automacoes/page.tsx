@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Shell } from '@/../app/_components/Shell';
 import { modules } from '@/composition';
-import { currentOrganization } from '@/shared/http/currentOrganization';
+import { requireContext } from '@/shared/http/currentOrganization';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,8 +14,7 @@ const runTone: Record<string, string> = {
 };
 
 export default async function AutomationsPage() {
-  const organization = await currentOrganization();
-  if (!organization) redirect('/organizacoes/nova');
+  const organization = (await requireContext()).organization;
 
   const runs = await modules().ingestion.recentRuns(organization.id, 25);
 

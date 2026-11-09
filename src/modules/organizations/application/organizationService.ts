@@ -12,7 +12,9 @@ import type { OrganizationRepository } from '@/modules/organizations/infrastruct
 export type OrganizationService = {
   create(input: NewOrganization, ator: Ator): Promise<Result<Organization, Failure>>;
   byId(id: string): Promise<Result<Organization, Failure>>;
-  list(): Promise<readonly Organization[]>;
+  byIds(ids: readonly string[]): Promise<readonly Organization[]>;
+  exists(): Promise<boolean>;
+  changeType(id: string, type: Organization['type'], ator: Ator): Promise<Result<Organization, Failure>>;
 };
 
 export function createOrganizationService(
@@ -52,6 +54,30 @@ export function createOrganizationService(
       return organization ? ok(organization) : err(failure('not_found', 'Organização não encontrada.'));
     },
 
-    list: () => repository.list(),
+    byIds: (ids) => repository.byIds(ids),
+
+    exists: async () => (await repository.count()) > 0,
+
+    async changeType(id, type, ator) {
+      const atual = await repository.findById(id);
+      if (!atual) return err(failure('not_found', 'Organização não encontrada.'));
+      if (atual.type === type) return ok(atual);
+
+      const alterada = await repository.updateType(id, type);
+
+      await audit.record({
+        organizationId: id,
+        actorType: 'user',
+        actorId: ator.userId,
+        action: 'organization.type_changed',
+        targetType: 'organization',
+        targetId: id,
+        requestId: ator.requestId,
+        sourceIp: ator.sourceIp,
+        metadata: { de: atual.type, para: type },
+      });
+
+      return ok(alterada);
+    },
   };
 }

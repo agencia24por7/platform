@@ -95,10 +95,43 @@ function authHeaders(extra = {}) {
   return cookieAtual ? { ...extra, Cookie: cookieAtual } : extra;
 }
 
+function actionIds(html) {
+  const todos = [...html.matchAll(/name="\$ACTION_ID_([a-f0-9]+)"/g)].map((match) => match[1]);
+  if (todos.length === 0) throw new Error('A página não renderizou nenhuma server action.');
+  return [...new Set(todos)];
+}
+
 function actionId(html) {
-  const match = html.match(/name="\$ACTION_ID_([a-f0-9]+)"/);
-  if (!match) throw new Error('A página não renderizou nenhuma server action.');
-  return match[1];
+  return actionIds(html)[0];
+}
+
+export async function acoesDe(path) {
+  const html = await fetch(`${BASE}${path}`, { headers: authHeaders() }).then((response) => response.text());
+  return actionIds(html);
+}
+
+export async function submitAction(path, actionIdEscolhido, fields) {
+  const body = new FormData();
+  body.set(`$ACTION_ID_${actionIdEscolhido}`, '');
+  for (const [key, value] of Object.entries(fields)) {
+    if (Array.isArray(value)) value.forEach((item) => body.append(key, item));
+    else body.set(key, value);
+  }
+
+  const response = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: authHeaders({ Origin: BASE, Referer: `${BASE}${path}` }),
+    body,
+    redirect: 'manual',
+  });
+
+  const text = await response.text();
+  return {
+    status: response.status,
+    location: response.headers.get('location'),
+    redirectedTo: text.match(/"(\/[a-z0-9/?=%.-]*)"/)?.[1] ?? null,
+    text,
+  };
 }
 
 export async function submitForm(path, fields) {

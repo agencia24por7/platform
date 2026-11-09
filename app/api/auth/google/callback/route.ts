@@ -89,17 +89,30 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const identity = identityFromClaims(claims, configuration.GOOGLE_OAUTH_CLIENT_ID, Date.now());
   if (!identity) return deny('identidade_invalida');
 
-  const signedIn = await modules().identity.signIn(identity, {
+  const ator = {
     userId: null,
     requestId,
     sourceIp: primeiroEndereco(request.headers.get('x-forwarded-for')),
-  });
+  };
+
+  const signedIn = await modules().identity.signIn(identity, ator);
   if (!signedIn.ok) return deny('sem_acesso');
 
-  const destination = signedIn.value.memberships.length > 0 ? returnTo : '/organizacoes/nova';
+  const user = signedIn.value.user;
+  const aceitos = await modules().team.aceitarPendentes(user.id, user.email, {
+    ...ator,
+    userId: user.id,
+  });
+
+  const vinculos =
+    aceitos.length > 0
+      ? ((await modules().identity.resolve(user.id))?.memberships ?? signedIn.value.memberships)
+      : signedIn.value.memberships;
+
+  const destination = vinculos.length > 0 ? returnTo : '/organizacoes/nova';
   const response = clearTransientCookies(NextResponse.redirect(new URL(destination, base)));
 
-  response.cookies.set(SESSION_COOKIE, issueSession(signedIn.value.user.id, configuration.TRIA_SESSION_SECRET, Date.now()), {
+  response.cookies.set(SESSION_COOKIE, issueSession(user.id, configuration.TRIA_SESSION_SECRET, Date.now()), {
     httpOnly: true,
     sameSite: 'lax',
     secure: configuration.NODE_ENV === 'production',
@@ -107,6 +120,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     maxAge: SESSION_MAX_AGE_SECONDS,
   });
 
-  logger.info('auth.callback.signed_in', { requestId, userId: signedIn.value.user.id });
+  logger.info('auth.callback.signed_in', { requestId, userId: user.id, convitesAceitos: aceitos.length });
   return response;
 }

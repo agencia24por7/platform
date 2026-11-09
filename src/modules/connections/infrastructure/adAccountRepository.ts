@@ -41,6 +41,9 @@ export type AdAccountRepository = {
   listByClient(organizationId: string, clientId: string): Promise<readonly AdAccount[]>;
   listByOrganization(organizationId: string): Promise<readonly (AdAccount & { clientName: string })[]>;
   markSynced(organizationId: string, id: string, at: Date): Promise<void>;
+  findById(organizationId: string, id: string): Promise<AdAccount | null>;
+  reassign(organizationId: string, id: string, clientId: string): Promise<AdAccount | null>;
+  setSync(organizationId: string, id: string, enabled: boolean): Promise<AdAccount | null>;
 };
 
 export function createAdAccountRepository(): AdAccountRepository {
@@ -84,6 +87,34 @@ export function createAdAccountRepository(): AdAccountRepository {
           JOIN core.clients c ON c.id = a.client_id
           ORDER BY c.name, a.platform`) as unknown as Row[];
         return rows.map((row) => ({ ...toAccount(row), clientName: row.client_name ?? '' }));
+      });
+    },
+
+    async findById(organizationId, id) {
+      return withTenant(organizationId, async (tx) => {
+        const rows = (await tx`
+          SELECT * FROM integrations.ad_accounts WHERE id = ${id}`) as unknown as Row[];
+        return rows[0] ? toAccount(rows[0]) : null;
+      });
+    },
+
+    async reassign(organizationId, id, clientId) {
+      return withTenant(organizationId, async (tx) => {
+        const rows = (await tx`
+          UPDATE integrations.ad_accounts SET client_id = ${clientId}
+          WHERE id = ${id}
+          RETURNING *`) as unknown as Row[];
+        return rows[0] ? toAccount(rows[0]) : null;
+      });
+    },
+
+    async setSync(organizationId, id, enabled) {
+      return withTenant(organizationId, async (tx) => {
+        const rows = (await tx`
+          UPDATE integrations.ad_accounts SET sync_enabled = ${enabled}
+          WHERE id = ${id}
+          RETURNING *`) as unknown as Row[];
+        return rows[0] ? toAccount(rows[0]) : null;
       });
     },
 

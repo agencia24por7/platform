@@ -8,7 +8,7 @@ import { Feedback } from '@/../app/_components/Feedback';
 import { MOTIVO_DO_CONVITE, decidirConvite } from '@/modules/connections/domain/convite';
 import { text } from '@/shared/http/actions';
 import { atorAtual } from '@/shared/http/ator';
-import { currentOrganization, requireContext } from '@/shared/http/currentOrganization';
+import { requireContext } from '@/shared/http/currentOrganization';
 import { canAdminister } from '@/modules/identity/domain/user';
 
 export const dynamic = 'force-dynamic';
@@ -100,8 +100,9 @@ export default async function DetalheAutorizacao({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ aviso?: string }>;
 }) {
-  const organization = await currentOrganization();
-  if (!organization) redirect('/organizacoes/nova');
+  const ctx = await requireContext();
+  if (ctx.clientIds !== null) redirect('/clientes');
+  const organization = ctx.organization;
 
   const { id } = await params;
   const { aviso } = await searchParams;

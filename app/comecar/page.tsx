@@ -33,10 +33,8 @@ export default async function StartPage({
   const params = await searchParams;
   if (params.passo === 'operacao') redirect('/organizacoes/nova');
 
-  const organizations = await modules().organizations.list();
-  if (organizations.length > 0 && !params.passo) redirect('/clientes');
-
-  const hasOrganization = organizations.length > 0;
+  const hasOrganization = await modules().organizations.exists();
+  if (hasOrganization && !params.passo) redirect('/clientes');
 
   const config = env();
   const available = {

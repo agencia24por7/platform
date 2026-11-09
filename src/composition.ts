@@ -14,6 +14,8 @@ import { createUserRepository } from '@/modules/identity/infrastructure/userRepo
 import { createIngestionService } from '@/modules/ingestion/application/ingestionService';
 import { createMetricsRepository } from '@/modules/ingestion/infrastructure/metricsRepository';
 import { createSyncRunRepository } from '@/modules/ingestion/infrastructure/syncRunRepository';
+import { createTeamService } from '@/modules/team/application/teamService';
+import { createTeamRepository } from '@/modules/team/infrastructure/teamRepository';
 import { createOrganizationService } from '@/modules/organizations/application/organizationService';
 import { createOrganizationRepository } from '@/modules/organizations/infrastructure/organizationRepository';
 
@@ -33,6 +35,7 @@ function build() {
     organizations,
     identity: createIdentityService(createUserRepository(), audit),
     clients: createClientService(clientRepository, audit),
+    team: createTeamService(createTeamRepository(), audit),
     connections: createConnectionService(connectionRepository, adAccounts, audit, clientRepository),
     authorization: createAuthorizationService(
       organizations,

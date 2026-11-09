@@ -102,14 +102,16 @@ export function createSyncRunRepository(): SyncRunRepository {
 
     async findAccountOrganization(adAccountId) {
       const rows = (await sql()`
-        SELECT organization_id, sync_enabled, account_status
+        SELECT organization_id, sync_enabled, account_status, client_status
         FROM automation.resolve_account_organization(${adAccountId})`) as unknown as {
         organization_id: string;
         sync_enabled: boolean;
         account_status: string;
+        client_status: string;
       }[];
       const found = rows[0];
       if (!found || !found.sync_enabled || found.account_status !== 'linked') return null;
+      if (found.client_status !== 'active') return null;
       return found.organization_id;
     },
 

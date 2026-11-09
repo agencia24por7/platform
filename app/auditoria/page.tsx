@@ -9,7 +9,7 @@ import {
   familiaDe,
   resumoPorFamilia,
 } from '@/modules/audit/domain/auditView';
-import { currentOrganization } from '@/shared/http/currentOrganization';
+import { requireContext } from '@/shared/http/currentOrganization';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,8 +48,9 @@ function comFiltro(atual: Busca, mudanca: Partial<Busca>): string {
 }
 
 export default async function Auditoria({ searchParams }: { searchParams: Promise<Busca> }) {
-  const organization = await currentOrganization();
-  if (!organization) redirect('/organizacoes/nova');
+  const ctx = await requireContext();
+  if (ctx.clientIds !== null) redirect('/clientes');
+  const organization = ctx.organization;
 
   const busca = await searchParams;
   const limite = LIMITES.includes(Number(busca.limite) as (typeof LIMITES)[number])

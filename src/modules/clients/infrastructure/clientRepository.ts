@@ -29,6 +29,7 @@ export type ClientRepository = {
   findById(organizationId: string, id: string): Promise<Client | null>;
   findByName(organizationId: string, name: string): Promise<Client | null>;
   list(organizationId: string): Promise<readonly ClientWithAccounts[]>;
+  updateStatus(organizationId: string, id: string, status: Client['status']): Promise<Client | null>;
 };
 
 export function createClientRepository(): ClientRepository {
@@ -54,6 +55,14 @@ export function createClientRepository(): ClientRepository {
     async findByName(organizationId, name) {
       return withTenant(organizationId, async (tx) => {
         const rows = (await tx`SELECT * FROM core.clients WHERE lower(name) = lower(${name})`) as unknown as Row[];
+        return rows[0] ? toClient(rows[0]) : null;
+      });
+    },
+
+    async updateStatus(organizationId, id, status) {
+      return withTenant(organizationId, async (tx) => {
+        const rows = (await tx`
+          UPDATE core.clients SET status = ${status} WHERE id = ${id} RETURNING *`) as unknown as Row[];
         return rows[0] ? toClient(rows[0]) : null;
       });
     },

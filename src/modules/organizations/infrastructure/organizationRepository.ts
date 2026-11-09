@@ -1,4 +1,4 @@
-import { withoutTenant } from '@/shared/db/tenant';
+import { withTenant, withoutTenant } from '@/shared/db/tenant';
 import type { NewOrganization, Organization } from '@/modules/organizations/domain/organization';
 
 type Row = {
@@ -27,7 +27,9 @@ export type OrganizationRepository = {
   insert(input: NewOrganization & { slug: string }): Promise<Organization>;
   findBySlug(slug: string): Promise<Organization | null>;
   findById(id: string): Promise<Organization | null>;
-  list(): Promise<readonly Organization[]>;
+  byIds(ids: readonly string[]): Promise<readonly Organization[]>;
+  count(): Promise<number>;
+  updateType(id: string, type: Organization['type']): Promise<Organization>;
 };
 
 export function createOrganizationRepository(): OrganizationRepository {
@@ -57,10 +59,28 @@ export function createOrganizationRepository(): OrganizationRepository {
       });
     },
 
-    async list() {
+    async updateType(id, type) {
+      return withTenant(id, async (tx) => {
+        const rows = (await tx`
+          UPDATE core.organizations SET type = ${type} WHERE id = ${id} RETURNING *`) as unknown as Row[];
+        return toOrganization(rows[0]!);
+      });
+    },
+
+    async byIds(ids) {
+      if (ids.length === 0) return [];
       return withoutTenant(async (tx) => {
-        const rows = (await tx`SELECT * FROM core.organizations ORDER BY created_at ASC`) as unknown as Row[];
+        const rows = (await tx`
+          SELECT * FROM core.organizations WHERE id = ANY (${ids as string[]}::uuid[])
+          ORDER BY name`) as unknown as Row[];
         return rows.map(toOrganization);
+      });
+    },
+
+    async count() {
+      return withoutTenant(async (tx) => {
+        const rows = (await tx`SELECT count(*)::int AS total FROM core.organizations`) as unknown as { total: number }[];
+        return rows[0]?.total ?? 0;
       });
     },
   };

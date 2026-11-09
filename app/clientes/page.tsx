@@ -4,7 +4,7 @@ import { Readiness } from '@/../app/_components/Readiness';
 import { Shell } from '@/../app/_components/Shell';
 import { modules } from '@/composition';
 import type { ClientWithAccounts } from '@/modules/clients/domain/client';
-import { currentOrganization } from '@/shared/http/currentOrganization';
+import { requireContext } from '@/shared/http/currentOrganization';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,8 +35,7 @@ function primeiro(valor: string | readonly string[] | undefined): string | undef
 }
 
 export default async function ClientsPage({ searchParams }: { searchParams: Promise<RawBusca> }) {
-  const organization = await currentOrganization();
-  if (!organization) redirect('/organizacoes/nova');
+  const organization = (await requireContext()).organization;
 
   const bruto = await searchParams;
   const filtro: Busca = { situacao: primeiro(bruto.situacao), busca: primeiro(bruto.busca) };

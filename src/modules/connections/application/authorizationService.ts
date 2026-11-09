@@ -113,10 +113,10 @@ export function createAuthorizationService(
           ? await discovery.google(granted.accessToken)
           : await discovery.meta(granted.accessToken);
 
-      const existing = await organizations.list();
+      const existing = await organizations.exists();
       const organizationCreated = input.organizationId === null;
 
-      if (input.organizationId === null && existing.length > 0) {
+      if (input.organizationId === null && existing) {
         logger.warn('oauth.authorize.ambiguous_tenant', { platform: input.platform });
         return err(
           failure(
