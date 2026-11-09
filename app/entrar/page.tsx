@@ -95,16 +95,16 @@ export default async function Entrar({ searchParams }: Props) {
         <span className="malha__azulejo" aria-hidden="true" />
 
         <div className="vitrine__cartao">
-          <img className="vitrine__logo vitrine__logo--padrao" src="/orla/logo.svg" alt="orla" />
-          <img className="vitrine__logo vitrine__logo--reversa" src="/orla/logo-reversa.svg" alt="orla" />
+          <img className="vitrine__logo vitrine__logo--padrao" src="/orla/logo.png" alt="orla" />
+          <img className="vitrine__logo vitrine__logo--reversa" src="/orla/logo-reversa.png" alt="orla" />
           <span className="vitrine__legenda">Um oceano azul para seus anúncios.</span>
         </div>
       </section>
 
       <main className="portao__acesso">
         <div className="portao__caixa">
-          <img className="portao__icone portao__icone--padrao" src="/orla/icone.svg" alt="" width={56} height={56} />
-          <img className="portao__icone portao__icone--reversa" src="/orla/icone-reversa.svg" alt="" width={56} height={56} />
+          <img className="portao__icone portao__icone--padrao" src="/orla/icone.png" alt="" width={56} height={56} />
+          <img className="portao__icone portao__icone--reversa" src="/orla/icone-reversa.png" alt="" width={56} height={56} />
           <h1 className="portao__titulo">Boas-vindas à orla</h1>
           <p className="portao__apoio">Use sua conta Google.</p>
 

@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   title: 'orla',
   description: 'Um oceano azul para seus anúncios.',
   robots: { index: false, follow: false },
-  icons: { icon: '/orla/icone.svg' },
+  icons: { icon: '/orla/icone.png' },
 };
 
 const THEME_SCRIPT = `(function () {
