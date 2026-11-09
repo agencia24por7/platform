@@ -60,13 +60,28 @@ async function reasonOf(response: Response): Promise<string> {
   }
 }
 
-type OndeSeIdentifica = { readonly url: string; readonly campoDoId: string };
+type OndeSeIdentifica = { readonly url: string; readonly camposDoId: readonly string[] };
 
 const ONDE_SE_IDENTIFICA: Partial<Record<Platform, OndeSeIdentifica>> = {
-  google: { url: 'https://www.googleapis.com/oauth2/v3/userinfo', campoDoId: 'sub' },
-  meta: { url: `${GRAPH_API}/me?fields=id,email`, campoDoId: 'id' },
-  rdstation: { url: 'https://api.rd.services/marketing/account_info', campoDoId: 'name' },
+  google: { url: 'https://www.googleapis.com/oauth2/v3/userinfo', camposDoId: ['sub'] },
+  meta: { url: `${GRAPH_API}/me?fields=id,email`, camposDoId: ['id'] },
+  rdstation: {
+    url: 'https://api.rd.services/marketing/account_info',
+    camposDoId: ['uuid', 'id', 'account_id', 'tenant_id'],
+  },
 };
+
+function primeiroIdentificador(
+  dados: Record<string, unknown>,
+  campos: readonly string[],
+): string | null {
+  for (const campo of campos) {
+    const valor = dados[campo];
+    if (typeof valor === 'string' && valor.length > 0) return valor;
+    if (typeof valor === 'number' && Number.isFinite(valor)) return String(valor);
+  }
+  return null;
+}
 
 export function createPlatformDiscovery(): PlatformDiscovery {
   return {
@@ -144,8 +159,15 @@ export function createPlatformDiscovery(): PlatformDiscovery {
       if (typeof payload !== 'object' || payload === null) return null;
 
       const dados = payload as Record<string, unknown>;
-      const identificador = dados[onde.campoDoId];
-      if (typeof identificador !== 'string' || identificador.length === 0) return null;
+      const identificador = primeiroIdentificador(dados, onde.camposDoId);
+      if (!identificador) {
+        logger.warn('discovery.identify.sem_identificador_estavel', {
+          platform,
+          procurados: onde.camposDoId,
+          devolvidos: Object.keys(dados),
+        });
+        return null;
+      }
 
       const email = dados['email'];
       return {

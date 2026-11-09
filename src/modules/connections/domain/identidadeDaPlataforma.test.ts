@@ -19,19 +19,42 @@ test('a identificação é por plataforma declarada, nunca por fallback', () => 
   );
 });
 
+test('nenhuma plataforma é chaveada por nome de exibição', () => {
+  const mapa = FONTE.slice(
+    FONTE.indexOf('const ONDE_SE_IDENTIFICA'),
+    FONTE.indexOf('function primeiroIdentificador'),
+  );
+
+  assert.ok(
+    !/camposDoId:.*'name'/.test(mapa),
+    'nome de exibição muda e se repete: não serve como chave de conexão',
+  );
+  assert.ok(
+    !/camposDoId:.*'label'/.test(mapa) && !/camposDoId:.*'title'/.test(mapa),
+    'nenhum rótulo humano pode virar identificador',
+  );
+  assert.ok(
+    FONTE.includes('discovery.identify.sem_identificador_estavel'),
+    'sem identificador estável a identificação precisa falhar fechada e deixar rastro',
+  );
+});
+
 test('cada plataforma aponta para o próprio host', () => {
   const mapa = FONTE.slice(
     FONTE.indexOf('const ONDE_SE_IDENTIFICA'),
-    FONTE.indexOf('export function createPlatformDiscovery'),
+    FONTE.indexOf('function primeiroIdentificador'),
   );
 
-  const linhaDo = (plataforma: string) =>
-    mapa.split('\n').find((linha) => linha.trim().startsWith(`${plataforma}:`)) ?? '';
+  const blocoDe = (plataforma: string) => {
+    const inicio = mapa.indexOf(`${plataforma}: {`);
+    assert.ok(inicio > 0, `${plataforma} precisa declarar onde se identifica`);
+    return mapa.slice(inicio, mapa.indexOf('},', inicio));
+  };
 
-  assert.match(linhaDo('google'), /googleapis\.com/);
-  assert.match(linhaDo('meta'), /GRAPH_API|graph\.facebook\.com/);
-  assert.match(linhaDo('rdstation'), /api\.rd\.services/);
-  assert.ok(!linhaDo('rdstation').includes('graph.facebook'), 'token do RD não pode ir para a Meta');
+  assert.match(blocoDe('google'), /googleapis\.com/);
+  assert.match(blocoDe('meta'), /GRAPH_API|graph\.facebook\.com/);
+  assert.match(blocoDe('rdstation'), /api\.rd\.services/);
+  assert.ok(!blocoDe('rdstation').includes('graph.facebook'), 'token do RD não pode ir para a Meta');
 });
 
 test('a credencial só é guardada depois de saber quem autorizou', () => {
