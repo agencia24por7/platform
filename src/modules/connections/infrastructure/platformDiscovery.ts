@@ -60,6 +60,14 @@ async function reasonOf(response: Response): Promise<string> {
   }
 }
 
+type OndeSeIdentifica = { readonly url: string; readonly campoDoId: string };
+
+const ONDE_SE_IDENTIFICA: Partial<Record<Platform, OndeSeIdentifica>> = {
+  google: { url: 'https://www.googleapis.com/oauth2/v3/userinfo', campoDoId: 'sub' },
+  meta: { url: `${GRAPH_API}/me?fields=id,email`, campoDoId: 'id' },
+  rdstation: { url: 'https://api.rd.services/marketing/account_info', campoDoId: 'name' },
+};
+
 export function createPlatformDiscovery(): PlatformDiscovery {
   return {
     async google(accessToken) {
@@ -122,12 +130,13 @@ export function createPlatformDiscovery(): PlatformDiscovery {
     },
 
     async identify(platform, accessToken) {
-      const url =
-        platform === 'google'
-          ? 'https://www.googleapis.com/oauth2/v3/userinfo'
-          : `${GRAPH_API}/me?fields=id,email`;
+      const onde = ONDE_SE_IDENTIFICA[platform];
+      if (!onde) {
+        logger.warn('discovery.identify.plataforma_sem_identidade', { platform });
+        return null;
+      }
 
-      const payload = await fetchJson(url, {
+      const payload = await fetchJson(onde.url, {
         method: 'GET',
         headers: { Authorization: `Bearer ${accessToken}` },
       });
@@ -135,7 +144,7 @@ export function createPlatformDiscovery(): PlatformDiscovery {
       if (typeof payload !== 'object' || payload === null) return null;
 
       const dados = payload as Record<string, unknown>;
-      const identificador = dados[platform === 'google' ? 'sub' : 'id'];
+      const identificador = dados[onde.campoDoId];
       if (typeof identificador !== 'string' || identificador.length === 0) return null;
 
       const email = dados['email'];

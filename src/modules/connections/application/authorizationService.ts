@@ -153,6 +153,14 @@ export function createAuthorizationService(
       if (!organization.ok) return err(organization.error);
       const organizationId = organization.value.id;
 
+      const identidade = await discovery.identify(input.platform, granted.accessToken);
+      if (!identidade) {
+        logger.warn('oauth.authorize.sem_identidade', { platform: input.platform });
+        return err(
+          failure('unavailable', 'A plataforma não informou qual conta concedeu o acesso.'),
+        );
+      }
+
       let credentialRef: string = CREDENCIAL_SEM_COFRE;
       if (vault.available) {
         credentialRef = await vault.store({
@@ -163,14 +171,6 @@ export function createAuthorizationService(
           clientId: input.clientId,
           clientSecret: input.clientSecret,
         });
-      }
-
-      const identidade = await discovery.identify(input.platform, granted.accessToken);
-      if (!identidade) {
-        logger.warn('oauth.authorize.sem_identidade', { platform: input.platform });
-        return err(
-          failure('unavailable', 'A plataforma não informou qual conta concedeu o acesso.'),
-        );
       }
 
       const externalId = identidade.id;
