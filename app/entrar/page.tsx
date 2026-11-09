@@ -6,16 +6,16 @@ import { currentUser } from '@/shared/http/currentUser';
 export const dynamic = 'force-dynamic';
 
 const MOTIVOS: Record<string, string> = {
-  indisponivel: 'Esta instalação ainda não tem credencial de login configurada.',
+  indisponivel: 'O login com Google ainda não foi configurado nesta instalação.',
   recusado: 'Você cancelou a autorização no Google.',
-  origem: 'A resposta não veio do endereço esperado.',
+  origem: 'Algo não bateu na resposta do Google. Tente de novo.',
   estado: 'A sessão de login expirou. Tente de novo.',
-  codigo: 'A resposta do Google veio incompleta.',
-  troca: 'O Google recusou a troca do código de autorização.',
-  sem_identidade: 'O Google não devolveu uma identidade.',
-  identidade_ilegivel: 'Não foi possível ler a identidade devolvida.',
-  identidade_invalida: 'A identidade devolvida não passou na verificação.',
-  sem_acesso: 'Esta conta não tem acesso liberado.',
+  codigo: 'A resposta do Google veio incompleta. Tente de novo.',
+  troca: 'O Google recusou a autorização. Tente de novo.',
+  sem_identidade: 'O Google não confirmou quem você é. Tente de novo.',
+  identidade_ilegivel: 'Não conseguimos confirmar sua conta. Tente de novo.',
+  identidade_invalida: 'A verificação da sua conta não passou. Tente de novo.',
+  sem_acesso: 'Esta conta ainda não tem acesso liberado.',
 };
 
 const GOOGLE_G = (
@@ -95,16 +95,16 @@ export default async function Entrar({ searchParams }: Props) {
         <span className="malha__azulejo" aria-hidden="true" />
 
         <div className="vitrine__cartao">
-          <img className="vitrine__logo vitrine__logo--padrao" src="/orla/logo.png" alt="orla" />
-          <img className="vitrine__logo vitrine__logo--reversa" src="/orla/logo-reversa.png" alt="orla" />
+          <img className="vitrine__logo vitrine__logo--padrao" src="/orla/logo.png" alt="orla" width={182} height={70} />
+          <img className="vitrine__logo vitrine__logo--reversa" src="/orla/logo-reversa.png" alt="orla" width={182} height={70} />
           <span className="vitrine__legenda">Um oceano azul para seus anúncios.</span>
         </div>
       </section>
 
       <main className="portao__acesso">
         <div className="portao__caixa">
-          <img className="portao__icone portao__icone--padrao" src="/orla/icone.png" alt="" width={56} height={56} />
-          <img className="portao__icone portao__icone--reversa" src="/orla/icone-reversa.png" alt="" width={56} height={56} />
+          <img className="portao__icone portao__icone--padrao" src="/orla/icone.png" alt="" width={76} height={76} />
+          <img className="portao__icone portao__icone--reversa" src="/orla/icone-reversa.png" alt="" width={76} height={76} />
           <h1 className="portao__titulo">Boas-vindas à orla</h1>
           <p className="portao__apoio">Use sua conta Google.</p>
 
