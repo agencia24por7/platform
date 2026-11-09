@@ -10,7 +10,7 @@ export type OauthProvider = {
   readonly usesConfigId: boolean;
 };
 
-export const PLATAFORMAS_OAUTH = ['google', 'meta', 'rdstation'] as const;
+export const PLATAFORMAS_OAUTH = ['google', 'meta', 'rdstation', 'ga4'] as const;
 export type PlataformaOauth = (typeof PLATAFORMAS_OAUTH)[number];
 
 export function falaOauth(platform: Platform): platform is PlataformaOauth {
@@ -45,6 +45,15 @@ export const PROVIDERS: Readonly<Record<PlataformaOauth, OauthProvider>> = {
     usesPkce: false,
     usesConfigId: false,
   },
+  ga4: {
+    platform: 'ga4',
+    label: 'Google Analytics',
+    authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenUrl: 'https://oauth2.googleapis.com/token',
+    scopes: ['https://www.googleapis.com/auth/analytics.readonly'],
+    usesPkce: true,
+    usesConfigId: false,
+  },
 };
 
 export type ProviderCredentials = {
@@ -77,7 +86,7 @@ export function authorizeUrlFor(
     url.searchParams.set('response_type', 'code');
   }
 
-  if (provider.platform === 'google') {
+  if (provider.platform === 'google' || provider.platform === 'ga4') {
     url.searchParams.set('scope', provider.scopes.join(' '));
     url.searchParams.set('access_type', 'offline');
     url.searchParams.set('prompt', 'consent');
@@ -164,6 +173,7 @@ const ESCOPOS_EXIGIDOS: Record<PlataformaOauth, readonly string[]> = {
   google: PROVIDERS.google.scopes,
   meta: ['ads_read'],
   rdstation: [],
+  ga4: PROVIDERS.ga4.scopes,
 };
 
 export function hasRequiredScopes(platform: PlataformaOauth, granted: readonly string[]): boolean {

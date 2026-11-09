@@ -11,6 +11,7 @@ import {
   isConfigured,
   isSafeReturnPath,
   type PlataformaOauth,
+  type ProviderCredentials,
 } from '@/modules/connections/domain/oauth';
 import type { Platform } from '@/modules/connections/domain/connection';
 
@@ -20,21 +21,30 @@ const STATE_COOKIE = 'tria_oauth_state';
 const VERIFIER_COOKIE = 'tria_oauth_verifier';
 const COOKIE_MAX_AGE = 600;
 
-function credentialsFor(platform: PlataformaOauth) {
+function credentialsFor(platform: PlataformaOauth): ProviderCredentials {
   const config = env();
 
-  if (platform === 'google') {
-    return { clientId: config.GOOGLE_OAUTH_CLIENT_ID, clientSecret: config.GOOGLE_OAUTH_CLIENT_SECRET };
-  }
-  if (platform === 'meta') {
-    return {
+  const porPlataforma: Record<PlataformaOauth, ProviderCredentials> = {
+    google: {
+      clientId: config.GOOGLE_OAUTH_CLIENT_ID,
+      clientSecret: config.GOOGLE_OAUTH_CLIENT_SECRET,
+    },
+    ga4: {
+      clientId: config.GOOGLE_OAUTH_CLIENT_ID,
+      clientSecret: config.GOOGLE_OAUTH_CLIENT_SECRET,
+    },
+    meta: {
       clientId: config.META_APP_ID,
       clientSecret: config.META_APP_SECRET,
       configId: config.META_LOGIN_CONFIG_ID,
-    };
-  }
+    },
+    rdstation: {
+      clientId: config.RDSTATION_CLIENT_ID,
+      clientSecret: config.RDSTATION_CLIENT_SECRET,
+    },
+  };
 
-  return { clientId: config.RDSTATION_CLIENT_ID, clientSecret: config.RDSTATION_CLIENT_SECRET };
+  return porPlataforma[platform];
 }
 
 export async function GET(

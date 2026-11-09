@@ -3,6 +3,8 @@ export const Platform = {
   Google: 'google',
   RdStation: 'rdstation',
   Apify: 'apify',
+  Ga4: 'ga4',
+  ZApi: 'zapi',
 } as const;
 export type Platform = (typeof Platform)[keyof typeof Platform];
 
@@ -18,6 +20,8 @@ export const ROTULO_DA_PLATAFORMA: Record<Platform, string> = {
   meta: 'Meta Ads',
   rdstation: 'RD Station',
   apify: 'Apify',
+  ga4: 'Google Analytics',
+  zapi: 'Z-API',
 };
 
 export const MARCA_DA_PLATAFORMA: Record<Platform, string | null> = {
@@ -25,6 +29,8 @@ export const MARCA_DA_PLATAFORMA: Record<Platform, string | null> = {
   meta: '/marcas/meta.png',
   rdstation: null,
   apify: null,
+  ga4: null,
+  zapi: null,
 };
 
 export const PARA_QUE_SERVE: Record<Platform, string> = {
@@ -32,6 +38,8 @@ export const PARA_QUE_SERVE: Record<Platform, string> = {
   meta: 'Contas de anúncio do Business Manager. Cada cliente autoriza com a conta dele.',
   rdstation: 'Leads e conversões do CRM. Entra como conexão; ainda não alimenta relatório.',
   apify: 'Coleta de dados públicos por chave de API. Entra como conexão; ainda não alimenta relatório.',
+  ga4: 'Sessões, origem de tráfego e conversões do site. Entra como conexão; ainda não alimenta relatório.',
+  zapi: 'Mensagens de WhatsApp por chave de API. Entra como conexão; ainda não alimenta relatório.',
 };
 
 export const GrantType = {
@@ -91,6 +99,8 @@ const REQUIRED_SCOPES: Record<Platform, readonly string[]> = {
   meta: ['ads_read'],
   rdstation: [],
   apify: [],
+  ga4: ['https://www.googleapis.com/auth/analytics.readonly'],
+  zapi: [],
 };
 
 export function missingScopes(platform: Platform, scopes: readonly string[]): readonly string[] {
@@ -102,6 +112,8 @@ const GRANTS_BY_PLATFORM: Record<Platform, readonly GrantType[]> = {
   meta: ['bm_partner', 'system_user', 'oauth_user'],
   rdstation: ['oauth_user'],
   apify: ['api_key'],
+  ga4: ['oauth_user'],
+  zapi: ['api_key'],
 };
 
 export function grantTypesFor(platform: Platform): readonly GrantType[] {

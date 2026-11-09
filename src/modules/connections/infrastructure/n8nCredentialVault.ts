@@ -10,10 +10,12 @@ const CREDENTIAL_TYPE: Record<Platform, string> = {
   meta: 'facebookGraphApi',
   rdstation: 'httpHeaderAuth',
   apify: 'httpHeaderAuth',
+  ga4: 'googleOAuth2Api',
+  zapi: 'httpHeaderAuth',
 };
 
 function corpoDaCredencial(secret: VaultSecret) {
-  if (secret.platform === 'google') {
+  if (secret.platform === 'google' || secret.platform === 'ga4') {
     return {
       clientId: secret.clientId,
       clientSecret: secret.clientSecret,

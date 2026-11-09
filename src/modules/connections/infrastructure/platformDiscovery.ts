@@ -69,6 +69,7 @@ const ONDE_SE_IDENTIFICA: Partial<Record<Platform, OndeSeIdentifica>> = {
     url: 'https://api.rd.services/marketing/account_info',
     camposDoId: ['uuid', 'id', 'account_id', 'tenant_id'],
   },
+  ga4: { url: 'https://www.googleapis.com/oauth2/v3/userinfo', camposDoId: ['sub'] },
 };
 
 function primeiroIdentificador(

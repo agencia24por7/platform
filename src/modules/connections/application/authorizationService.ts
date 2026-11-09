@@ -59,6 +59,7 @@ const GRANT_BY_PLATFORM: Record<PlataformaOauth, GrantType> = {
   google: 'oauth_user',
   meta: 'oauth_user',
   rdstation: 'oauth_user',
+  ga4: 'oauth_user',
 };
 
 export function createAuthorizationService(
