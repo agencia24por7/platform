@@ -1,4 +1,15 @@
-const SENSITIVE_KEYS = ['token', 'secret', 'password', 'authorization', 'credential', 'key'];
+const SENSITIVE_KEYS = [
+  'token',
+  'secret',
+  'password',
+  'authorization',
+  'credential',
+  'key',
+  'chave',
+  'senha',
+  'segredo',
+  'credencial',
+];
 
 export function redact(input: unknown): unknown {
   if (Array.isArray(input)) return input.map(redact);
@@ -15,6 +26,7 @@ export function redact(input: unknown): unknown {
 const SECRET_SHAPES = [
   /"(access_token|refresh_token|id_token|client_secret|developer[-_]token)"\s*:\s*"[^"]*"/gi,
   /\b(ya29|1\/\/|GOCSPX-|EAA)[A-Za-z0-9._\-/+]{10,}/g,
+  /\bapify_api_[A-Za-z0-9]{10,}/g,
 ];
 
 export function redactText(input: string): string {

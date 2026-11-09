@@ -6,7 +6,7 @@ import {
   hasRequiredScopes,
   isConfigured,
   isSafeReturnPath,
-  longLivedExchangeUrl,
+  longLivedExchangeRequest,
   parseTokenResponse,
   requestCameFromBase,
   sameOrigin,
@@ -128,33 +128,60 @@ describe('sameOrigin', () => {
 });
 
 describe('tokenExchangeRequest', () => {
+  const campos = (corpo: string) => new URLSearchParams(corpo);
+
   it('envia code_verifier só onde há PKCE', () => {
     const google = tokenExchangeRequest(PROVIDERS.google, {
       code: 'c', clientId: 'id', clientSecret: 'sec', redirectUri: 'http://x/cb', codeVerifier: 'v',
     });
-    assert.equal(google.body.get('code_verifier'), 'v');
+    assert.equal(campos(google.body).get('code_verifier'), 'v');
 
     const meta = tokenExchangeRequest(PROVIDERS.meta, {
       code: 'c', clientId: 'id', clientSecret: 'sec', redirectUri: 'http://x/cb', codeVerifier: 'v',
     });
-    assert.equal(meta.body.get('code_verifier'), null);
+    assert.equal(campos(meta.body).get('code_verifier'), null);
   });
 
   it('usa authorization_code', () => {
     const request = tokenExchangeRequest(PROVIDERS.google, {
       code: 'c', clientId: 'id', clientSecret: 'sec', redirectUri: 'http://x/cb',
     });
-    assert.equal(request.body.get('grant_type'), 'authorization_code');
+    assert.equal(campos(request.body).get('grant_type'), 'authorization_code');
+    assert.equal(request.contentType, 'application/x-www-form-urlencoded');
+  });
+
+  it('o RD Station recebe JSON, como a API dele pede', () => {
+    const request = tokenExchangeRequest(PROVIDERS.rdstation, {
+      code: 'c', clientId: 'id', clientSecret: 'sec', redirectUri: 'http://x/cb',
+    });
+    assert.equal(request.contentType, 'application/json');
+    assert.deepEqual(JSON.parse(request.body), { client_id: 'id', client_secret: 'sec', code: 'c' });
+  });
+
+  it('nenhum segredo vai na URL da troca', () => {
+    for (const provider of [PROVIDERS.google, PROVIDERS.meta, PROVIDERS.ga4, PROVIDERS.rdstation]) {
+      const request = tokenExchangeRequest(provider, {
+        code: 'c', clientId: 'id', clientSecret: 'sec-que-nao-pode-vazar', redirectUri: 'http://x/cb',
+      });
+      assert.ok(!request.url.includes('sec-que-nao-pode-vazar'), provider.platform);
+      assert.ok(!request.url.includes('?'), `${provider.platform} não pode levar query na troca`);
+    }
   });
 });
 
-describe('longLivedExchangeUrl', () => {
-  it('monta a troca de token curto por longo no Meta', () => {
-    const url = new URL(
-      longLivedExchangeUrl({ clientId: 'id', clientSecret: 'sec', shortLivedToken: 'curto' }),
-    );
-    assert.equal(url.searchParams.get('grant_type'), 'fb_exchange_token');
-    assert.equal(url.searchParams.get('fb_exchange_token'), 'curto');
+describe('longLivedExchangeRequest', () => {
+  it('troca token curto por longo sem pôr segredo na URL', () => {
+    const troca = longLivedExchangeRequest({
+      clientId: 'id', clientSecret: 'sec-que-nao-pode-vazar', shortLivedToken: 'curto',
+    });
+
+    assert.ok(!troca.url.includes('sec-que-nao-pode-vazar'));
+    assert.ok(!troca.url.includes('curto'));
+    assert.ok(!troca.url.includes('?'));
+
+    const corpo = new URLSearchParams(troca.body);
+    assert.equal(corpo.get('grant_type'), 'fb_exchange_token');
+    assert.equal(corpo.get('fb_exchange_token'), 'curto');
   });
 });
 

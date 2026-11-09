@@ -1,0 +1,123 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, it } from 'node:test';
+
+const dono = (sql) =>
+  execFileSync('docker', ['exec', '-i', 'tria-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
+    encoding: 'utf8',
+  }).trim();
+
+function arquivosDe(raiz, extensoes) {
+  const encontrados = [];
+  for (const nome of readdirSync(raiz)) {
+    if (nome === 'node_modules' || nome === '.next') continue;
+    const caminho = join(raiz, nome);
+    if (statSync(caminho).isDirectory()) encontrados.push(...arquivosDe(caminho, extensoes));
+    else if (extensoes.some((ext) => nome.endsWith(ext))) encontrados.push(caminho);
+  }
+  return encontrados;
+}
+
+const FONTES = [...arquivosDe('src', ['.ts']), ...arquivosDe('app', ['.ts', '.tsx'])].filter(
+  (caminho) => !caminho.endsWith('.test.ts'),
+);
+
+describe('o segredo não mora aqui', { concurrency: false }, () => {
+  it('nenhuma coluna do banco guarda segredo de plataforma', () => {
+    const suspeitas = dono(`
+      SELECT coalesce(string_agg(table_schema || '.' || table_name || '.' || column_name, ', '), '')
+      FROM information_schema.columns
+      WHERE table_schema IN ('core','integrations','metrics','automation','audit')
+        AND (column_name ~* '(access_?token|refresh_?token|client_?secret|api_?key|password|senha|chave)')
+        AND column_name <> 'credential_ref'`);
+
+    assert.equal(suspeitas, '', `coluna com cara de segredo: ${suspeitas}`);
+  });
+
+  it('a conexão guarda referência de cofre, nunca o valor', () => {
+    const fora = dono(`
+      SELECT coalesce(string_agg(external_id, ', '), '')
+      FROM integrations.connections
+      WHERE credential_ref NOT LIKE 'n8n:credential:%'
+        AND credential_ref NOT LIKE 'pendente:%'`);
+
+    assert.equal(fora, '', `credential_ref fora do formato de referência: ${fora}`);
+  });
+
+  it('a chave de API nunca é gravada, só o apelido com as pontas', () => {
+    const servico = readFileSync(
+      'src/modules/connections/application/connectionService.ts',
+      'utf8',
+    );
+    const guardar = servico.slice(
+      servico.indexOf('async guardarChave('),
+      servico.indexOf('async createConnection('),
+    );
+
+    assert.ok(guardar.includes('accessToken: chave'), 'a chave precisa ir para o cofre');
+    assert.ok(
+      !/externalId:\s*chave\b/.test(guardar) && !/label:.*\$\{chave\}/.test(guardar),
+      'a chave crua não pode virar coluna do banco',
+    );
+    assert.ok(
+      /externalId:\s*identidade/.test(guardar),
+      'o identificador não pode derivar da chave, nem do apelido dela',
+    );
+    assert.ok(
+      !/externalId:\s*apelido/.test(guardar),
+      'apelido é fingerprint e colide: não serve de identidade',
+    );
+    assert.ok(
+      !/metadata:.*\bchave\b/.test(guardar),
+      'a chave não pode entrar na trilha de auditoria',
+    );
+  });
+
+  it('nenhum log recebe a chave', () => {
+    const vazamentos = FONTES.flatMap((caminho) => {
+      const conteudo = readFileSync(caminho, 'utf8');
+      return [...conteudo.matchAll(/logger\.\w+\([^)]*\)/gs)]
+        .filter((m) => /\b(chave|accessToken|clientSecret|apiKey|senha)\b\s*[,}]/.test(m[0]))
+        .map(() => caminho);
+    });
+
+    assert.deepEqual([...new Set(vazamentos)], [], 'log recebendo segredo');
+  });
+
+  it('todo destino de rede é constante do código, nunca vem de fora', () => {
+    const suspeitas = FONTES.flatMap((caminho) => {
+      const conteudo = readFileSync(caminho, 'utf8');
+      return [...conteudo.matchAll(/fetch\(\s*([^,)]+)/g)]
+        .map((m) => m[1].trim())
+        .filter((alvo) => !/^(new URL\(|`|'|"|GOOGLE_TOKEN_URL|exchange\.url|troca\.url|url\b|onde\.url)/.test(alvo))
+        .map((alvo) => `${caminho}: ${alvo}`);
+    });
+
+    assert.deepEqual(suspeitas, [], 'destino de rede derivado de valor externo');
+  });
+
+  it('nenhum segredo viaja em query string', () => {
+    const suspeitas = FONTES.flatMap((caminho) => {
+      const conteudo = readFileSync(caminho, 'utf8');
+      return [...conteudo.matchAll(/searchParams\.set\(\s*'([^']+)'/g)]
+        .map((m) => m[1])
+        .filter((campo) => /secret|token|password|senha|chave|api_?key/i.test(campo))
+        .map((campo) => `${caminho}: ${campo}`);
+    });
+
+    assert.deepEqual(suspeitas, [], 'segredo em parâmetro de URL');
+  });
+
+  it('o worker não tem privilégio de objeto e o app não cria objeto', () => {
+    assert.equal(
+      dono(`SELECT count(*) FROM information_schema.table_privileges WHERE grantee = 'tria_worker'`),
+      '0',
+    );
+    assert.equal(
+      dono(`SELECT count(*) FROM pg_namespace WHERE nspname IN ('public','core','integrations','metrics','automation','audit') AND has_schema_privilege('tria_app', nspname, 'CREATE')`),
+      '0',
+    );
+  });
+});

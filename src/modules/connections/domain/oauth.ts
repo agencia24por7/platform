@@ -1,7 +1,7 @@
 import type { Platform } from '@/modules/connections/domain/connection';
 
 export type OauthProvider = {
-  readonly platform: Platform;
+  readonly platform: PlataformaOauth;
   readonly label: string;
   readonly authorizeUrl: string;
   readonly tokenUrl: string;
@@ -90,6 +90,9 @@ export function authorizeUrlFor(
     url.searchParams.set('scope', provider.scopes.join(' '));
     url.searchParams.set('access_type', 'offline');
     url.searchParams.set('prompt', 'consent');
+  }
+
+  if (provider.platform === 'google') {
     url.searchParams.set('include_granted_scopes', 'true');
   }
 
@@ -106,7 +109,31 @@ export function authorizeUrlFor(
 }
 
 
-export type TokenExchangeRequest = { readonly url: string; readonly body: URLSearchParams };
+export type FormatoDoCorpo = 'form' | 'json';
+
+export type TokenExchangeRequest = {
+  readonly url: string;
+  readonly body: string;
+  readonly contentType: string;
+};
+
+const FORMATO_DO_CORPO: Record<PlataformaOauth, FormatoDoCorpo> = {
+  google: 'form',
+  ga4: 'form',
+  meta: 'form',
+  rdstation: 'json',
+};
+
+function corpoNoFormato(campos: Record<string, string>, formato: FormatoDoCorpo): TokenExchangeRequest['body'] {
+  return formato === 'json'
+    ? JSON.stringify(campos)
+    : new URLSearchParams(campos).toString();
+}
+
+const TIPO_DO_CORPO: Record<FormatoDoCorpo, string> = {
+  form: 'application/x-www-form-urlencoded',
+  json: 'application/json',
+};
 
 export function tokenExchangeRequest(
   provider: OauthProvider,
@@ -118,30 +145,49 @@ export function tokenExchangeRequest(
     readonly codeVerifier?: string;
   },
 ): TokenExchangeRequest {
-  const body = new URLSearchParams({
-    code: input.code,
-    client_id: input.clientId,
-    client_secret: input.clientSecret,
-    redirect_uri: input.redirectUri,
-    grant_type: 'authorization_code',
-  });
+  const formato = FORMATO_DO_CORPO[provider.platform];
 
-  if (provider.usesPkce && input.codeVerifier) body.set('code_verifier', input.codeVerifier);
+  const campos: Record<string, string> =
+    formato === 'json'
+      ? {
+          client_id: input.clientId,
+          client_secret: input.clientSecret,
+          code: input.code,
+        }
+      : {
+          code: input.code,
+          client_id: input.clientId,
+          client_secret: input.clientSecret,
+          redirect_uri: input.redirectUri,
+          grant_type: 'authorization_code',
+        };
 
-  return { url: provider.tokenUrl, body };
+  if (formato === 'form' && provider.usesPkce && input.codeVerifier) {
+    campos['code_verifier'] = input.codeVerifier;
+  }
+
+  return {
+    url: provider.tokenUrl,
+    body: corpoNoFormato(campos, formato),
+    contentType: TIPO_DO_CORPO[formato],
+  };
 }
 
-export function longLivedExchangeUrl(input: {
+export function longLivedExchangeRequest(input: {
   readonly clientId: string;
   readonly clientSecret: string;
   readonly shortLivedToken: string;
-}): string {
-  const url = new URL(PROVIDERS.meta.tokenUrl);
-  url.searchParams.set('grant_type', 'fb_exchange_token');
-  url.searchParams.set('client_id', input.clientId);
-  url.searchParams.set('client_secret', input.clientSecret);
-  url.searchParams.set('fb_exchange_token', input.shortLivedToken);
-  return url.toString();
+}): TokenExchangeRequest {
+  return {
+    url: PROVIDERS.meta.tokenUrl,
+    body: new URLSearchParams({
+      grant_type: 'fb_exchange_token',
+      client_id: input.clientId,
+      client_secret: input.clientSecret,
+      fb_exchange_token: input.shortLivedToken,
+    }).toString(),
+    contentType: TIPO_DO_CORPO.form,
+  };
 }
 
 export type GrantedToken = {
@@ -178,6 +224,23 @@ const ESCOPOS_EXIGIDOS: Record<PlataformaOauth, readonly string[]> = {
 
 export function hasRequiredScopes(platform: PlataformaOauth, granted: readonly string[]): boolean {
   return ESCOPOS_EXIGIDOS[platform].every((scope) => granted.includes(scope));
+}
+
+const ESCOPOS_PROIBIDOS: Partial<Record<PlataformaOauth, readonly string[]>> = {
+  ga4: [
+    'https://www.googleapis.com/auth/adwords',
+    'https://www.googleapis.com/auth/analytics.edit',
+    'https://www.googleapis.com/auth/analytics.manage.users',
+  ],
+};
+
+export function escopoExcedente(
+  platform: PlataformaOauth,
+  granted: readonly string[],
+): readonly string[] {
+  const proibidos = ESCOPOS_PROIBIDOS[platform];
+  if (!proibidos) return [];
+  return granted.filter((scope) => proibidos.includes(scope));
 }
 
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;

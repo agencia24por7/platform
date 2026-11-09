@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
-import { redact } from './redact.ts';
+import { describe, it, test } from 'node:test';
+import { redact, redactText } from './redact.ts';
 
 describe('redact', () => {
   it('esconde campos sensíveis por nome', () => {
@@ -30,4 +30,19 @@ describe('redact', () => {
   it('não quebra com null', () => {
     assert.equal(redact(null), null);
   });
+});
+
+test('o vocabulário em português também é redigido', () => {
+  const redigido = redact({ chave: 'apify_api_segredo', senha: '123', segredo: 'x', credencial: 'y' }) as Record<string, unknown>;
+
+  assert.equal(redigido['chave'], '[redigido]');
+  assert.equal(redigido['senha'], '[redigido]');
+  assert.equal(redigido['segredo'], '[redigido]');
+  assert.equal(redigido['credencial'], '[redigido]');
+});
+
+test('chave do Apify é redigida mesmo solta no texto', () => {
+  const texto = 'falhou ao usar apify_api_AbCdEf1234567890xyz no passo 3';
+  assert.ok(!redactText(texto).includes('AbCdEf1234567890xyz'));
+  assert.match(redactText(texto), /\[redigido\]/);
 });

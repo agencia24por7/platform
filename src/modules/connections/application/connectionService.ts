@@ -14,6 +14,7 @@ import {
 } from '@/modules/connections/domain/connection';
 import {
   MOTIVO_DA_CHAVE,
+  identidadeDaConexao,
   rotuloDaChave,
   usaChaveDeApi,
   validarChave,
@@ -80,6 +81,7 @@ export function createConnectionService(
 
       const chave = input.chave.trim();
       const apelido = rotuloDaChave(chave);
+      const identidade = identidadeDaConexao();
       const label = ROTULO_DA_PLATAFORMA[input.platform];
 
       const credentialRef = await vault.store({
@@ -96,7 +98,7 @@ export function createConnectionService(
         platform: input.platform,
         grantType: 'api_key' as const,
         label: `${label} · ${apelido}`,
-        externalId: apelido,
+        externalId: identidade,
         accountEmail: null,
         scopes: [],
         credentialRef,
@@ -107,7 +109,7 @@ export function createConnectionService(
       const existente = await connections.findByExternalId(
         input.organizationId,
         input.platform,
-        apelido,
+        identidade,
       );
 
       const connection = existente
@@ -127,7 +129,7 @@ export function createConnectionService(
         targetId: connection.id,
         requestId: ator.requestId,
         sourceIp: ator.sourceIp,
-        metadata: { platform: input.platform, apelido, substituiu: Boolean(existente) },
+        metadata: { platform: input.platform, apelido, rotacionou: Boolean(existente) },
       });
 
       return ok(connection);

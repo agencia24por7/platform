@@ -11,8 +11,9 @@ import {
 } from '@/modules/connections/domain/connection';
 import {
   PROVIDERS,
+  escopoExcedente,
   hasRequiredScopes,
-  longLivedExchangeUrl,
+  longLivedExchangeRequest,
   parseTokenResponse,
   tokenExchangeRequest,
   type PlataformaOauth,
@@ -84,7 +85,7 @@ export function createAuthorizationService(
 
       const response = await fetch(exchange.url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: { 'Content-Type': exchange.contentType, Accept: 'application/json' },
         body: exchange.body,
         signal: AbortSignal.timeout(15_000),
       });
@@ -103,15 +104,34 @@ export function createAuthorizationService(
         );
       }
 
-      if (input.platform === 'meta') {
-        const longLived = await fetch(
-          longLivedExchangeUrl({
-            clientId: input.clientId,
-            clientSecret: input.clientSecret,
-            shortLivedToken: granted.accessToken,
-          }),
-          { signal: AbortSignal.timeout(15_000) },
+      const excedente = escopoExcedente(input.platform, granted.grantedScopes);
+      if (excedente.length > 0) {
+        logger.warn('oauth.authorize.escopo_excedente', {
+          platform: input.platform,
+          excedente,
+        });
+        return err(
+          failure(
+            'forbidden',
+            'A autorização voltou com permissão além do que esta conexão precisa. ' +
+              'Revogue o acesso da Orla na sua Conta Google e autorize de novo.',
+          ),
         );
+      }
+
+      if (input.platform === 'meta') {
+        const troca = longLivedExchangeRequest({
+          clientId: input.clientId,
+          clientSecret: input.clientSecret,
+          shortLivedToken: granted.accessToken,
+        });
+
+        const longLived = await fetch(troca.url, {
+          method: 'POST',
+          headers: { 'Content-Type': troca.contentType, Accept: 'application/json' },
+          body: troca.body,
+          signal: AbortSignal.timeout(15_000),
+        });
 
         if (longLived.ok) {
           const upgraded = parseTokenResponse('meta', await longLived.json());

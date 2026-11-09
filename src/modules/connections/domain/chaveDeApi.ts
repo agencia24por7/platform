@@ -31,3 +31,9 @@ export function rotuloDaChave(chave: string): string {
   const limpa = chave.trim();
   return limpa.length <= 8 ? '••••' : `${limpa.slice(0, 4)}••••${limpa.slice(-4)}`;
 }
+
+export const CONTA_UNICA = 'principal';
+
+export function identidadeDaConexao(): string {
+  return CONTA_UNICA;
+}
