@@ -1,6 +1,8 @@
+import type { Platform } from '@/modules/connections/domain/connection';
+
 export type VaultSecret = {
   readonly label: string;
-  readonly platform: 'google' | 'meta';
+  readonly platform: Platform;
   readonly accessToken: string;
   readonly refreshToken: string | null;
   readonly clientId: string;

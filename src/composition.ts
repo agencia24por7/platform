@@ -27,6 +27,7 @@ function build() {
   const organizations = createOrganizationService(createOrganizationRepository(), audit);
 
   const clientRepository = createClientRepository();
+  const vault = createN8nCredentialVault();
 
   return {
     audit,
@@ -36,13 +37,13 @@ function build() {
     identity: createIdentityService(createUserRepository(), audit),
     clients: createClientService(clientRepository, audit),
     team: createTeamService(createTeamRepository(), audit),
-    connections: createConnectionService(connectionRepository, adAccounts, audit, clientRepository),
+    connections: createConnectionService(connectionRepository, adAccounts, audit, clientRepository, vault),
     authorization: createAuthorizationService(
       organizations,
       connectionRepository,
       discoveredAccounts,
       createPlatformDiscovery(),
-      createN8nCredentialVault(),
+      vault,
       audit,
     ),
     ingestion: createIngestionService(

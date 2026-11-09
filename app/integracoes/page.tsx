@@ -4,6 +4,14 @@ import { Readiness } from '@/../app/_components/Readiness';
 import { Shell } from '@/../app/_components/Shell';
 import { modules } from '@/composition';
 import { encurtarEscopo } from '@/modules/audit/domain/auditView';
+import { Marca } from '@/../app/_components/Marca';
+import {
+  PARA_QUE_SERVE,
+  ROTULO_DA_PLATAFORMA,
+  type Platform,
+} from '@/modules/connections/domain/connection';
+import { isConfigured, type ProviderCredentials } from '@/modules/connections/domain/oauth';
+import { env } from '@/shared/config/env';
 import { agruparPorAdministradora } from '@/modules/connections/domain/carteira';
 import { Feedback } from '@/../app/_components/Feedback';
 import { text, toActionState } from '@/shared/http/actions';
@@ -210,6 +218,29 @@ async function vincularAlcancavel(formData: FormData): Promise<void> {
   voltar(`${escolhida.name} vinculada.`);
 }
 
+async function guardarChave(formData: FormData): Promise<void> {
+  'use server';
+
+  const contexto = await contextoDeConexoes();
+  const ator = await atorAtual();
+  const voltar = (aviso: string): never =>
+    redirect(`/integracoes?aviso=${encodeURIComponent(aviso)}`);
+
+  const resultado = await modules().connections.guardarChave(
+    {
+      organizationId: contexto.organization.id,
+      organizationSlug: contexto.organization.slug,
+      papelDeQuemAge: contexto.role,
+      platform: 'apify',
+      chave: text(formData, 'chave'),
+    },
+    ator,
+  );
+
+  if (!resultado.ok) voltar(toActionState(resultado.error).error ?? 'Não deu para guardar a chave.');
+  voltar('Chave guardada no cofre. O banco ficou só com a referência.');
+}
+
 export default async function IntegrationsPage({
   searchParams,
 }: {
@@ -252,40 +283,66 @@ export default async function IntegrationsPage({
   const clienteUnico = clientesAtivos.length === 1 ? clientesAtivos[0]!.id : '';
   const substantivo = agencia ? 'cliente' : 'negócio';
 
+  const config = env();
+  const credenciais: Record<Platform, ProviderCredentials> = {
+    google: {
+      clientId: config.GOOGLE_OAUTH_CLIENT_ID,
+      clientSecret: config.GOOGLE_OAUTH_CLIENT_SECRET,
+    },
+    meta: {
+      clientId: config.META_APP_ID,
+      clientSecret: config.META_APP_SECRET,
+      configId: config.META_LOGIN_CONFIG_ID,
+    },
+    rdstation: {
+      clientId: config.RDSTATION_CLIENT_ID,
+      clientSecret: config.RDSTATION_CLIENT_SECRET,
+    },
+    apify: { clientId: 'n/a', clientSecret: 'n/a' },
+  };
+
+  const conexoesPor = (platform: Platform) =>
+    connections.filter((conexao) => conexao.platform === platform);
+
   return (
-    <Shell title="Contas e conexões" organization={organization} active="/integracoes">
+    <Shell title="Conexões" organization={organization} active="/integracoes">
       <div className="page__head">
         <div>
-          <div className="page__title">Contas e conexões</div>
+          <div className="page__title">Conexões</div>
           <div className="page__sub">
-            O segredo da autorização vive cifrado no n8n. Aqui ficam só o metadado e uma referência.
+            Um card por fornecedor. O segredo vive cifrado no cofre do n8n; aqui ficam só o metadado
+            e uma referência.
           </div>
-        </div>
-        <div className="page__actions">
-          <Link className="btn btn--primary" href="/comecar?passo=conectar">
-            Autorizar plataforma
-          </Link>
         </div>
       </div>
 
       <Feedback message={aviso} tone="info" />
 
-      {connections.length > 0 ? (
-        <div className="autorizacoes">
-          {connections.map((conexao) => (
-            <Link key={conexao.id} className="autorizacao" href={`/integracoes/${conexao.id}`}>
-              <span className={`dot ${pontoDoEstado[conexao.status] ?? ''}`} />
-              <span className="autorizacao__quem">
-                {conexao.accountEmail ?? conexao.externalId}
-              </span>
-              <span className="autorizacao__onde">
-                {conexao.platform === 'meta' ? 'Meta' : 'Google'} ·{' '}
-                {readinessOf(conexao).collectable ? conexao.status : 'sem credencial'}
-              </span>
+      <section className="fornecedor">
+        <header className="fornecedor__head">
+          <span className="fornecedor__marca">
+            <Marca platform="google" />
+          </span>
+          <span className="fornecedor__quem">
+            <span className="fornecedor__nome">{ROTULO_DA_PLATAFORMA.google}</span>
+            <span className="fornecedor__sub">{PARA_QUE_SERVE.google}</span>
+          </span>
+          <span className="fornecedor__estado">
+            {conexoesPor('google').map((conexao) => (
+              <Link key={conexao.id} className="autorizacao" href={`/integracoes/${conexao.id}`}>
+                <span className={`dot ${pontoDoEstado[conexao.status] ?? ''}`} />
+                <span className="autorizacao__quem">
+                  {conexao.accountEmail ?? conexao.externalId}
+                </span>
+              </Link>
+            ))}
+            <Link className="btn btn--compacto" href="/api/oauth/google/start?returnTo=/integracoes">
+              {conexoesPor('google').length > 0 ? 'Autorizar outra conta' : 'Autorizar'}
             </Link>
-          ))}
-        </div>
-      ) : null}
+          </span>
+        </header>
+
+        <div className="fornecedor__corpo">
 
       <div className="card">
         <div className="card__head">
@@ -515,6 +572,108 @@ export default async function IntegrationsPage({
           </div>
         )}
       </div>
+        </div>
+      </section>
+
+      {(['meta', 'rdstation'] as const).map((plataforma) => {
+        const conectadas = conexoesPor(plataforma);
+        const pronto = isConfigured(credenciais[plataforma], plataforma);
+
+        return (
+          <section className="fornecedor" key={plataforma}>
+            <header className="fornecedor__head">
+              <span className="fornecedor__marca">
+                <Marca platform={plataforma} />
+              </span>
+              <span className="fornecedor__quem">
+                <span className="fornecedor__nome">{ROTULO_DA_PLATAFORMA[plataforma]}</span>
+                <span className="fornecedor__sub">{PARA_QUE_SERVE[plataforma]}</span>
+              </span>
+              <span className="fornecedor__estado">
+                {conectadas.map((conexao) => (
+                  <Link key={conexao.id} className="autorizacao" href={`/integracoes/${conexao.id}`}>
+                    <span className={`dot ${pontoDoEstado[conexao.status] ?? ''}`} />
+                    <span className="autorizacao__quem">
+                      {conexao.accountEmail ?? conexao.externalId}
+                    </span>
+                  </Link>
+                ))}
+                {pronto ? (
+                  <Link
+                    className="btn btn--compacto"
+                    href={`/api/oauth/${plataforma}/start?returnTo=/integracoes`}
+                  >
+                    {conectadas.length > 0 ? 'Autorizar outra conta' : 'Autorizar'}
+                  </Link>
+                ) : (
+                  <span className="pill pill--warn">falta configurar o app</span>
+                )}
+              </span>
+            </header>
+
+            {plataforma === 'meta' ? (
+              <div className="fornecedor__corpo">
+                <div className="aviso">
+                  Cada cliente autoriza com a conta de Facebook dele, e as contas de anúncio que
+                  aquela pessoa administra passam a ser alcançáveis. Para funcionar com quem não tem
+                  papel no app, a Meta exige o app em modo Live com App Review aprovado para
+                  <span className="mono"> ads_read</span>,<span className="mono"> ads_management</span>,
+                  <span className="mono"> business_management</span> e
+                  <span className="mono"> leads_retrieval</span>.
+                </div>
+              </div>
+            ) : null}
+          </section>
+        );
+      })}
+
+      <section className="fornecedor">
+        <header className="fornecedor__head">
+          <span className="fornecedor__marca">
+            <Marca platform="apify" />
+          </span>
+          <span className="fornecedor__quem">
+            <span className="fornecedor__nome">{ROTULO_DA_PLATAFORMA.apify}</span>
+            <span className="fornecedor__sub">{PARA_QUE_SERVE.apify}</span>
+          </span>
+          <span className="fornecedor__estado">
+            {conexoesPor('apify').map((conexao) => (
+              <Link key={conexao.id} className="autorizacao" href={`/integracoes/${conexao.id}`}>
+                <span className={`dot ${pontoDoEstado[conexao.status] ?? ''}`} />
+                <span className="autorizacao__quem mono">{conexao.externalId}</span>
+              </Link>
+            ))}
+          </span>
+        </header>
+
+        {canAdminister(ctx.role) ? (
+          <form className="form--linha" action={guardarChave}>
+            <label className="field">
+              <span className="field__label">Chave de API</span>
+              <input
+                className="input"
+                type="password"
+                name="chave"
+                required
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="apify_api_..."
+              />
+              <span className="field__hint">
+                A chave vai direto para o cofre do n8n. Nosso banco guarda só a referência e as
+                quatro primeiras e últimas letras, para você reconhecê-la depois.
+              </span>
+            </label>
+            <button className="btn btn--primary" type="submit">
+              Guardar no cofre
+            </button>
+          </form>
+        ) : (
+          <div className="fornecedor__corpo">
+            <div className="empty">Só quem administra a organização pode guardar uma chave.</div>
+          </div>
+        )}
+      </section>
     </Shell>
   );
 }

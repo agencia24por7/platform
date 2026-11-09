@@ -3,7 +3,12 @@ import { notFound, redirect } from 'next/navigation';
 import { Shell } from '@/../app/_components/Shell';
 import { modules } from '@/composition';
 import { encurtarEscopo } from '@/modules/audit/domain/auditView';
-import { missingScopes, readinessOf } from '@/modules/connections/domain/connection';
+import {
+  MARCA_DA_PLATAFORMA,
+  ROTULO_DA_PLATAFORMA,
+  missingScopes,
+  readinessOf,
+} from '@/modules/connections/domain/connection';
 import { Feedback } from '@/../app/_components/Feedback';
 import { MOTIVO_DO_CONVITE, decidirConvite } from '@/modules/connections/domain/convite';
 import { text } from '@/shared/http/actions';
@@ -12,11 +17,6 @@ import { requireContext } from '@/shared/http/currentOrganization';
 import { canAdminister } from '@/modules/identity/domain/user';
 
 export const dynamic = 'force-dynamic';
-
-const PLATAFORMA = {
-  google: { nome: 'Google Ads', marca: '/marcas/google-ads.png' },
-  meta: { nome: 'Meta Ads', marca: '/marcas/meta.png' },
-} as const;
 
 const CAMINHO: Record<string, string> = {
   mcc: 'Conta de administrador (MCC)',
@@ -124,7 +124,6 @@ export default async function DetalheAutorizacao({
 
   const prontidao = readinessOf(conexao);
   const faltando = missingScopes(conexao.platform, conexao.scopes);
-  const plataforma = PLATAFORMA[conexao.platform];
   const autorizacao = eventos.find((evento) => evento.action === 'connection.authorize');
   const varredura = (autorizacao?.metadata?.['varredura'] ?? null) as {
     raizes?: number;
@@ -137,7 +136,7 @@ export default async function DetalheAutorizacao({
 
   return (
     <Shell
-      title={`Autorização · ${plataforma.nome}`}
+      title={`Autorização · ${ROTULO_DA_PLATAFORMA[conexao.platform]}`}
       organization={organization}
       active="/integracoes"
     >
@@ -175,8 +174,8 @@ export default async function DetalheAutorizacao({
             <div className="fatos__item">
               <span className="fatos__rotulo">Plataforma</span>
               <span className="com-marca">
-                <img src={plataforma.marca} alt="" width={16} height={16} />
-                {plataforma.nome}
+                <img src={MARCA_DA_PLATAFORMA[conexao.platform] ?? ''} alt="" width={16} height={16} />
+                {ROTULO_DA_PLATAFORMA[conexao.platform]}
               </span>
             </div>
             <div className="fatos__item">

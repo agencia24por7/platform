@@ -10,7 +10,14 @@ export type OauthProvider = {
   readonly usesConfigId: boolean;
 };
 
-export const PROVIDERS: Readonly<Record<Platform, OauthProvider>> = {
+export const PLATAFORMAS_OAUTH = ['google', 'meta', 'rdstation'] as const;
+export type PlataformaOauth = (typeof PLATAFORMAS_OAUTH)[number];
+
+export function falaOauth(platform: Platform): platform is PlataformaOauth {
+  return (PLATAFORMAS_OAUTH as readonly string[]).includes(platform);
+}
+
+export const PROVIDERS: Readonly<Record<PlataformaOauth, OauthProvider>> = {
   google: {
     platform: 'google',
     label: 'Google Ads',
@@ -28,6 +35,15 @@ export const PROVIDERS: Readonly<Record<Platform, OauthProvider>> = {
     scopes: ['ads_read', 'ads_management', 'business_management', 'leads_retrieval'],
     usesPkce: false,
     usesConfigId: true,
+  },
+  rdstation: {
+    platform: 'rdstation',
+    label: 'RD Station',
+    authorizeUrl: 'https://api.rd.services/auth/dialog',
+    tokenUrl: 'https://api.rd.services/auth/token',
+    scopes: [],
+    usesPkce: false,
+    usesConfigId: false,
   },
 };
 
@@ -55,8 +71,11 @@ export function authorizeUrlFor(
   const url = new URL(provider.authorizeUrl);
   url.searchParams.set('client_id', input.clientId);
   url.searchParams.set('redirect_uri', input.redirectUri);
-  url.searchParams.set('response_type', 'code');
   url.searchParams.set('state', input.state);
+
+  if (provider.platform !== 'rdstation') {
+    url.searchParams.set('response_type', 'code');
+  }
 
   if (provider.platform === 'google') {
     url.searchParams.set('scope', provider.scopes.join(' '));
@@ -123,7 +142,7 @@ export type GrantedToken = {
   readonly grantedScopes: readonly string[];
 };
 
-export function parseTokenResponse(platform: Platform, payload: unknown): GrantedToken | null {
+export function parseTokenResponse(platform: PlataformaOauth, payload: unknown): GrantedToken | null {
   if (payload === null || typeof payload !== 'object') return null;
   const data = payload as Record<string, unknown>;
 
@@ -141,9 +160,14 @@ export function parseTokenResponse(platform: Platform, payload: unknown): Grante
   };
 }
 
-export function hasRequiredScopes(platform: Platform, granted: readonly string[]): boolean {
-  const required = platform === 'google' ? PROVIDERS.google.scopes : ['ads_read'];
-  return required.every((scope) => granted.includes(scope));
+const ESCOPOS_EXIGIDOS: Record<PlataformaOauth, readonly string[]> = {
+  google: PROVIDERS.google.scopes,
+  meta: ['ads_read'],
+  rdstation: [],
+};
+
+export function hasRequiredScopes(platform: PlataformaOauth, granted: readonly string[]): boolean {
+  return ESCOPOS_EXIGIDOS[platform].every((scope) => granted.includes(scope));
 }
 
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;

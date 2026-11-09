@@ -3,13 +3,19 @@ import { err, ok, type Result } from '@/shared/result/result';
 import { logger } from '@/shared/logging/logger';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import type { CredentialVault } from '@/modules/connections/application/credentialVault';
-import { CREDENCIAL_SEM_COFRE, type Connection, type Platform } from '@/modules/connections/domain/connection';
+import {
+  CREDENCIAL_SEM_COFRE,
+  veiculaAnuncio,
+  type Connection,
+  type GrantType,
+} from '@/modules/connections/domain/connection';
 import {
   PROVIDERS,
   hasRequiredScopes,
   longLivedExchangeUrl,
   parseTokenResponse,
   tokenExchangeRequest,
+  type PlataformaOauth,
 } from '@/modules/connections/domain/oauth';
 import type { ConnectionRepository } from '@/modules/connections/infrastructure/connectionRepository';
 import type { DiscoveredAccount } from '@/modules/connections/domain/discovery';
@@ -20,7 +26,7 @@ import type { OrganizationService } from '@/modules/organizations/application/or
 export type AuthorizationInput = {
   readonly organizationId: string | null;
   readonly actorId: string;
-  readonly platform: Platform;
+  readonly platform: PlataformaOauth;
   readonly code: string;
   readonly codeVerifier: string | null;
   readonly redirectUri: string;
@@ -49,7 +55,11 @@ export type AuthorizationService = {
   complete(input: AuthorizationInput): Promise<Result<AuthorizationOutcome, Failure>>;
 };
 
-const GRANT_BY_PLATFORM = { google: 'oauth_user', meta: 'system_user' } as const;
+const GRANT_BY_PLATFORM: Record<PlataformaOauth, GrantType> = {
+  google: 'oauth_user',
+  meta: 'oauth_user',
+  rdstation: 'oauth_user',
+};
 
 export function createAuthorizationService(
   organizations: OrganizationService,
@@ -108,10 +118,11 @@ export function createAuthorizationService(
         }
       }
 
-      const accounts =
-        input.platform === 'google'
+      const accounts = veiculaAnuncio(input.platform)
+        ? input.platform === 'google'
           ? await discovery.google(granted.accessToken)
-          : await discovery.meta(granted.accessToken);
+          : await discovery.meta(granted.accessToken)
+        : [];
 
       const existing = await organizations.exists();
       const organizationCreated = input.organizationId === null;

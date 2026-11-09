@@ -26,7 +26,7 @@ function navFor(organization: Organization | null, recortado: boolean): readonly
   return [
     { group: 'Operação' },
     { href: '/clientes', label: clientsLabel, icone: IconeClientes },
-    { href: '/integracoes', label: 'Contas e conexões', icone: IconeConexoes },
+    { href: '/integracoes', label: 'Conexões', icone: IconeConexoes },
     { group: 'Dados' },
     { href: '/automacoes', label: 'Coletas', icone: IconeColetas },
     { href: '/auditoria', label: 'Auditoria', icone: IconeAuditoria },

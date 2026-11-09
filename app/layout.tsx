@@ -23,13 +23,15 @@ const sora = Sora({
 });
 
 const DESCRICAO = 'Um oceano azul para seus anúncios.';
-const ENDERECO_PADRAO = 'http://localhost:3000';
 
-function enderecoPublico(): URL {
+function enderecoPublico(): URL | undefined {
+  const bruto = process.env['TRIA_APP_BASE_URL'];
+  if (!bruto) return undefined;
+
   try {
-    return new URL(process.env['TRIA_APP_BASE_URL'] ?? ENDERECO_PADRAO);
+    return new URL(bruto);
   } catch {
-    return new URL(ENDERECO_PADRAO);
+    return undefined;
   }
 }
 

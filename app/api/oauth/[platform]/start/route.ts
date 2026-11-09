@@ -7,8 +7,10 @@ import { logger } from '@/shared/logging/logger';
 import {
   PROVIDERS,
   authorizeUrlFor,
+  falaOauth,
   isConfigured,
   isSafeReturnPath,
+  type PlataformaOauth,
 } from '@/modules/connections/domain/oauth';
 import type { Platform } from '@/modules/connections/domain/connection';
 
@@ -18,15 +20,21 @@ const STATE_COOKIE = 'tria_oauth_state';
 const VERIFIER_COOKIE = 'tria_oauth_verifier';
 const COOKIE_MAX_AGE = 600;
 
-function credentialsFor(platform: Platform) {
+function credentialsFor(platform: PlataformaOauth) {
   const config = env();
-  return platform === 'google'
-    ? { clientId: config.GOOGLE_OAUTH_CLIENT_ID, clientSecret: config.GOOGLE_OAUTH_CLIENT_SECRET }
-    : {
-        clientId: config.META_APP_ID,
-        clientSecret: config.META_APP_SECRET,
-        configId: config.META_LOGIN_CONFIG_ID,
-      };
+
+  if (platform === 'google') {
+    return { clientId: config.GOOGLE_OAUTH_CLIENT_ID, clientSecret: config.GOOGLE_OAUTH_CLIENT_SECRET };
+  }
+  if (platform === 'meta') {
+    return {
+      clientId: config.META_APP_ID,
+      clientSecret: config.META_APP_SECRET,
+      configId: config.META_LOGIN_CONFIG_ID,
+    };
+  }
+
+  return { clientId: config.RDSTATION_CLIENT_ID, clientSecret: config.RDSTATION_CLIENT_SECRET };
 }
 
 export async function GET(
@@ -34,12 +42,12 @@ export async function GET(
   context: { params: Promise<{ platform: string }> },
 ): Promise<NextResponse> {
   const { platform } = await context.params;
-  if (platform !== 'google' && platform !== 'meta') {
+  if (!falaOauth(platform as Platform)) {
     return NextResponse.redirect(new URL('/comecar?erro=plataforma_desconhecida', env().TRIA_APP_BASE_URL));
   }
 
-  const credentials = credentialsFor(platform);
-  if (!isConfigured(credentials, platform)) {
+  const credentials = credentialsFor(platform as PlataformaOauth);
+  if (!isConfigured(credentials, platform as Platform)) {
     logger.info('oauth.start.not_configured', { platform });
     return NextResponse.redirect(new URL(`/comecar?passo=conectar&indisponivel=${platform}`, env().TRIA_APP_BASE_URL));
   }
@@ -47,7 +55,7 @@ export async function GET(
   const returnTo = request.nextUrl.searchParams.get('returnTo') ?? '/comecar?passo=contas';
   const safeReturn = isSafeReturnPath(returnTo) ? returnTo : '/comecar?passo=contas';
 
-  const provider = PROVIDERS[platform];
+  const provider = PROVIDERS[platform as PlataformaOauth];
   const state = `${platform}.${randomBytes(24).toString('base64url')}`;
   const verifier = randomBytes(32).toString('base64url');
   const challenge = createHash('sha256').update(verifier).digest('base64url');

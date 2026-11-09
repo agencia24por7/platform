@@ -3,10 +3,33 @@ import { logger } from '@/shared/logging/logger';
 import { credentialIdOf } from '@/modules/connections/application/credentialVault';
 import type { CredentialVault, VaultSecret } from '@/modules/connections/application/credentialVault';
 
-const CREDENTIAL_TYPE = {
+import type { Platform } from '@/modules/connections/domain/connection';
+
+const CREDENTIAL_TYPE: Record<Platform, string> = {
   google: 'googleOAuth2Api',
   meta: 'facebookGraphApi',
-} as const;
+  rdstation: 'httpHeaderAuth',
+  apify: 'httpHeaderAuth',
+};
+
+function corpoDaCredencial(secret: VaultSecret) {
+  if (secret.platform === 'google') {
+    return {
+      clientId: secret.clientId,
+      clientSecret: secret.clientSecret,
+      oauthTokenData: {
+        access_token: secret.accessToken,
+        refresh_token: secret.refreshToken,
+      },
+    };
+  }
+
+  if (secret.platform === 'meta') {
+    return { accessToken: secret.accessToken };
+  }
+
+  return { name: 'Authorization', value: `Bearer ${secret.accessToken}` };
+}
 
 export function createN8nCredentialVault(): CredentialVault {
   const config = env();
@@ -38,25 +61,11 @@ export function createN8nCredentialVault(): CredentialVault {
     async store(secret: VaultSecret): Promise<string> {
       if (!available) throw new Error('Cofre de credenciais não configurado.');
 
-      const body =
-        secret.platform === 'google'
-          ? {
-              name: secret.label,
-              type: CREDENTIAL_TYPE.google,
-              data: {
-                clientId: secret.clientId,
-                clientSecret: secret.clientSecret,
-                oauthTokenData: {
-                  access_token: secret.accessToken,
-                  refresh_token: secret.refreshToken,
-                },
-              },
-            }
-          : {
-              name: secret.label,
-              type: CREDENTIAL_TYPE.meta,
-              data: { accessToken: secret.accessToken },
-            };
+      const body = {
+        name: secret.label,
+        type: CREDENTIAL_TYPE[secret.platform],
+        data: corpoDaCredencial(secret),
+      };
 
       const response = await fetch(new URL('/api/v1/credentials', config.N8N_API_URL).toString(), {
         method: 'POST',

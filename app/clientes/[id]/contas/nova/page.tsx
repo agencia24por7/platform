@@ -3,16 +3,15 @@ import { notFound, redirect } from 'next/navigation';
 import { Feedback } from '@/../app/_components/Feedback';
 import { Shell } from '@/../app/_components/Shell';
 import { modules } from '@/composition';
+import {
+  MARCA_DA_PLATAFORMA,
+  ROTULO_DA_PLATAFORMA,
+} from '@/modules/connections/domain/connection';
 import { atorAtual } from '@/shared/http/ator';
 import { checkbox, requestId, text, toActionState } from '@/shared/http/actions';
 import { currentOrganization } from '@/shared/http/currentOrganization';
 
 export const dynamic = 'force-dynamic';
-
-const PLATAFORMA = {
-  google: { nome: 'Google Ads', marca: '/marcas/google-ads.png' },
-  meta: { nome: 'Meta Ads', marca: '/marcas/meta.png' },
-} as const;
 
 async function vincularConta(formData: FormData): Promise<void> {
   'use server';
@@ -118,11 +117,11 @@ export default async function VincularConta({
                   defaultChecked={indice === 0}
                   required
                 />
-                <img src={PLATAFORMA[conta.platform].marca} alt="" width={22} height={22} />
+                <img src={MARCA_DA_PLATAFORMA[conta.platform] ?? ''} alt="" width={22} height={22} />
                 <span className="conta__corpo">
                   <span className="conta__nome">{conta.name}</span>
                   <span className="conta__meta">
-                    {PLATAFORMA[conta.platform].nome} · {conta.externalId} · {conta.currency} ·{' '}
+                    {ROTULO_DA_PLATAFORMA[conta.platform]} · {conta.externalId} · {conta.currency} ·{' '}
                     {conta.timezone}
                   </span>
                 </span>

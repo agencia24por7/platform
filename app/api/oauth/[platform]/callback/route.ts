@@ -4,7 +4,12 @@ import { currentUser } from '@/shared/http/currentUser';
 import { env } from '@/shared/config/env';
 import { logger } from '@/shared/logging/logger';
 import { newRequestId, secureCompare } from '@/shared/security/tokens';
-import { isSafeReturnPath, sameOrigin } from '@/modules/connections/domain/oauth';
+import {
+  falaOauth,
+  isSafeReturnPath,
+  sameOrigin,
+  type PlataformaOauth,
+} from '@/modules/connections/domain/oauth';
 import { decodeStateCookie } from '@/modules/connections/domain/tenantBinding';
 import type { Platform } from '@/modules/connections/domain/connection';
 
@@ -27,11 +32,17 @@ function backTo(_request: NextRequest, reason: string): NextResponse {
   );
 }
 
-function credentialsFor(platform: Platform) {
+function credentialsFor(platform: PlataformaOauth) {
   const config = env();
-  return platform === 'google'
-    ? { clientId: config.GOOGLE_OAUTH_CLIENT_ID, clientSecret: config.GOOGLE_OAUTH_CLIENT_SECRET }
-    : { clientId: config.META_APP_ID, clientSecret: config.META_APP_SECRET };
+
+  if (platform === 'google') {
+    return { clientId: config.GOOGLE_OAUTH_CLIENT_ID, clientSecret: config.GOOGLE_OAUTH_CLIENT_SECRET };
+  }
+  if (platform === 'meta') {
+    return { clientId: config.META_APP_ID, clientSecret: config.META_APP_SECRET };
+  }
+
+  return { clientId: config.RDSTATION_CLIENT_ID, clientSecret: config.RDSTATION_CLIENT_SECRET };
 }
 
 export async function GET(
@@ -39,7 +50,8 @@ export async function GET(
   context: { params: Promise<{ platform: string }> },
 ): Promise<NextResponse> {
   const { platform } = await context.params;
-  if (platform !== 'google' && platform !== 'meta') return backTo(request, 'plataforma_desconhecida');
+  if (!falaOauth(platform as Platform)) return backTo(request, 'plataforma_desconhecida');
+  const plataforma = platform as PlataformaOauth;
 
   const query = request.nextUrl.searchParams;
   const binding = decodeStateCookie(request.cookies.get(STATE_COOKIE)?.value ?? '', env().TRIA_SESSION_SECRET);
@@ -59,7 +71,7 @@ export async function GET(
   const code = query.get('code');
   if (!code) return backTo(request, 'sem_codigo');
 
-  const credentials = credentialsFor(platform);
+  const credentials = credentialsFor(plataforma);
   if (!credentials.clientId || !credentials.clientSecret) return backTo(request, 'app_indisponivel');
 
   const sessao = await currentUser();
@@ -70,7 +82,7 @@ export async function GET(
   const outcome = await modules().authorization.complete({
     organizationId: binding?.organizationId ?? null,
     actorId: sessao.user.id,
-    platform,
+    platform: plataforma,
     code,
     codeVerifier: request.cookies.get(VERIFIER_COOKIE)?.value ?? null,
     redirectUri: new URL(`/api/oauth/${platform}/callback`, env().TRIA_APP_BASE_URL).toString(),
