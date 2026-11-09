@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it, test } from 'node:test';
-import { consume, forget } from './rateLimit.ts';
+import { consume, consumeAll, forget } from './rateLimit.ts';
 
 describe('consume', () => {
   it('libera até o limite e bloqueia depois', () => {
@@ -41,7 +41,39 @@ describe('consume', () => {
   });
 });
 
-test('o mapa de baldes não cresce sem teto', () => {
-  for (let i = 0; i < 10_050; i++) consume(`inunda:${i}`, 1, 60_000);
-  assert.ok(consume('inunda:novo', 1, 60_000).allowed, 'balde novo precisa caber mesmo sob inundação');
+test('mapa cheio falha fechado e nunca despeja balde vivo', async () => {
+  assert.ok(consume('vivo-antes-da-inundacao', 5, 60_000).allowed);
+
+  for (let i = 0; i < 10_050; i++) consume(`inunda:${i}`, 1, 30);
+
+  assert.ok(
+    consume('vivo-antes-da-inundacao', 5, 60_000).allowed,
+    'o balde que já existia precisa seguir contando durante a inundação',
+  );
+
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.ok(
+    consume('novo-apos-vencerem', 1, 60_000).allowed,
+    'vencidos recolhidos abrem espaço para balde novo',
+  );
+
+  forget('vivo-antes-da-inundacao');
+  forget('novo-apos-vencerem');
+});
+
+test('a cobrança é tudo-ou-nada entre os baldes do mesmo pedido', () => {
+  for (let i = 0; i < 3; i++) consumeAll([{ key: 'par:a', limit: 10 }, { key: 'par:b', limit: 3 }], 60_000);
+
+  const barrado = consumeAll([{ key: 'par:a', limit: 10 }, { key: 'par:b', limit: 3 }], 60_000);
+  assert.equal(barrado.allowed, false, 'o balde menor precisa barrar o pedido inteiro');
+
+  const sozinho = consume('par:a', 10, 60_000);
+  assert.equal(
+    sozinho.remaining,
+    10 - 3 - 1,
+    'o balde maior tinha de estar em 3 quando o pedido barrado passou por ele: cobrado, estaria em 4 e a sobra seria menor',
+  );
+
+  forget('par:a');
+  forget('par:b');
 });

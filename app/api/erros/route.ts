@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { currentUser } from '@/shared/http/currentUser';
-import { consume } from '@/shared/security/rateLimit';
+import { consumeAll } from '@/shared/security/rateLimit';
 import { enderecoConfiavel } from '@/modules/audit/domain/actor';
 import { logger } from '@/shared/logging/logger';
 import { redactText } from '@/shared/logging/redact';
@@ -64,11 +64,14 @@ const RELATOS_GLOBAIS_POR_MINUTO = 120;
 
 export async function POST(request: Request): Promise<NextResponse> {
   const origem = enderecoConfiavel(request.headers.get('x-forwarded-for')) ?? 'desconhecida';
-  if (!consume(`erros:${origem}`, RELATOS_POR_MINUTO, 60_000).allowed) {
-    return new NextResponse(null, { status: 429 });
-  }
-
-  if (!consume('erros:todos', RELATOS_GLOBAIS_POR_MINUTO, 60_000).allowed) {
+  const veredito = consumeAll(
+    [
+      { key: `erros:${origem}`, limit: RELATOS_POR_MINUTO },
+      { key: 'erros:todos', limit: RELATOS_GLOBAIS_POR_MINUTO },
+    ],
+    60_000,
+  );
+  if (!veredito.allowed) {
     return new NextResponse(null, { status: 429 });
   }
 
