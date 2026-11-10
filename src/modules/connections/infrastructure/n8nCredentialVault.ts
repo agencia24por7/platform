@@ -12,10 +12,15 @@ const CREDENTIAL_TYPE: Record<Platform, string> = {
   apify: 'httpHeaderAuth',
   ga4: 'googleOAuth2Api',
   zapi: 'httpHeaderAuth',
+  gtm: 'googleOAuth2Api',
+  pixel: 'facebookGraphApi',
+  searchconsole: 'googleOAuth2Api',
+  youtube: 'googleOAuth2Api',
+  gbp: 'googleOAuth2Api',
 };
 
 function corpoDaCredencial(secret: VaultSecret) {
-  if (secret.platform === 'google' || secret.platform === 'ga4') {
+  if (CREDENTIAL_TYPE[secret.platform] === 'googleOAuth2Api') {
     return {
       clientId: secret.clientId,
       clientSecret: secret.clientSecret,
@@ -26,7 +31,7 @@ function corpoDaCredencial(secret: VaultSecret) {
     };
   }
 
-  if (secret.platform === 'meta') {
+  if (CREDENTIAL_TYPE[secret.platform] === 'facebookGraphApi') {
     return { accessToken: secret.accessToken };
   }
 

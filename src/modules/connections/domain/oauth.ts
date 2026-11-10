@@ -10,8 +10,39 @@ export type OauthProvider = {
   readonly usesConfigId: boolean;
 };
 
-export const PLATAFORMAS_OAUTH = ['google', 'meta', 'rdstation', 'ga4'] as const;
+export const PLATAFORMAS_OAUTH = [
+  'google',
+  'meta',
+  'rdstation',
+  'ga4',
+  'gtm',
+  'pixel',
+  'searchconsole',
+  'youtube',
+  'gbp',
+] as const;
 export type PlataformaOauth = (typeof PLATAFORMAS_OAUTH)[number];
+
+export const FAMILIA_GOOGLE = [
+  'google',
+  'ga4',
+  'gtm',
+  'searchconsole',
+  'youtube',
+  'gbp',
+] as const satisfies readonly PlataformaOauth[];
+export type PlataformaGoogle = (typeof FAMILIA_GOOGLE)[number];
+
+export function usaOauthDoGoogle(platform: PlataformaOauth): platform is PlataformaGoogle {
+  return (FAMILIA_GOOGLE as readonly string[]).includes(platform);
+}
+
+export const FAMILIA_META = ['meta', 'pixel'] as const satisfies readonly PlataformaOauth[];
+export type PlataformaMeta = (typeof FAMILIA_META)[number];
+
+export function usaOauthDaMeta(platform: PlataformaOauth): platform is PlataformaMeta {
+  return (FAMILIA_META as readonly string[]).includes(platform);
+}
 
 export function falaOauth(platform: Platform): platform is PlataformaOauth {
   return (PLATAFORMAS_OAUTH as readonly string[]).includes(platform);
@@ -54,6 +85,55 @@ export const PROVIDERS: Readonly<Record<PlataformaOauth, OauthProvider>> = {
     usesPkce: true,
     usesConfigId: false,
   },
+  gtm: {
+    platform: 'gtm',
+    label: 'Google Tag Manager',
+    authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenUrl: 'https://oauth2.googleapis.com/token',
+    scopes: ['https://www.googleapis.com/auth/tagmanager.readonly'],
+    usesPkce: true,
+    usesConfigId: false,
+  },
+  pixel: {
+    platform: 'pixel',
+    label: 'Meta Pixel',
+    authorizeUrl: 'https://www.facebook.com/v21.0/dialog/oauth',
+    tokenUrl: 'https://graph.facebook.com/v21.0/oauth/access_token',
+    scopes: ['ads_read', 'business_management'],
+    usesPkce: false,
+    usesConfigId: true,
+  },
+  searchconsole: {
+    platform: 'searchconsole',
+    label: 'Search Console',
+    authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenUrl: 'https://oauth2.googleapis.com/token',
+    scopes: ['https://www.googleapis.com/auth/webmasters.readonly'],
+    usesPkce: true,
+    usesConfigId: false,
+  },
+  youtube: {
+    platform: 'youtube',
+    label: 'YouTube',
+    authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenUrl: 'https://oauth2.googleapis.com/token',
+    scopes: [
+      'https://www.googleapis.com/auth/yt-analytics.readonly',
+      'https://www.googleapis.com/auth/yt-analytics-monetary.readonly',
+      'https://www.googleapis.com/auth/youtube.readonly',
+    ],
+    usesPkce: true,
+    usesConfigId: false,
+  },
+  gbp: {
+    platform: 'gbp',
+    label: 'Perfil da Empresa no Google',
+    authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenUrl: 'https://oauth2.googleapis.com/token',
+    scopes: ['https://www.googleapis.com/auth/business.manage'],
+    usesPkce: true,
+    usesConfigId: false,
+  },
 };
 
 export type ProviderCredentials = {
@@ -64,7 +144,8 @@ export type ProviderCredentials = {
 
 export function isConfigured(credentials: ProviderCredentials, platform: Platform): boolean {
   if (!credentials.clientId || !credentials.clientSecret) return false;
-  return platform === 'meta' ? Boolean(credentials.configId) : true;
+  const exigeConfigId = falaOauth(platform) && PROVIDERS[platform].usesConfigId;
+  return exigeConfigId ? Boolean(credentials.configId) : true;
 }
 
 export function authorizeUrlFor(
@@ -86,7 +167,7 @@ export function authorizeUrlFor(
     url.searchParams.set('response_type', 'code');
   }
 
-  if (provider.platform === 'google' || provider.platform === 'ga4') {
+  if (usaOauthDoGoogle(provider.platform)) {
     url.searchParams.set('scope', provider.scopes.join(' '));
     url.searchParams.set('access_type', 'offline');
     url.searchParams.set('prompt', 'consent');
@@ -96,7 +177,7 @@ export function authorizeUrlFor(
     url.searchParams.set('include_granted_scopes', 'true');
   }
 
-  if (provider.platform === 'meta' && input.configId) {
+  if (usaOauthDaMeta(provider.platform) && input.configId) {
     url.searchParams.set('config_id', input.configId);
   }
 
@@ -122,6 +203,11 @@ const FORMATO_DO_CORPO: Record<PlataformaOauth, FormatoDoCorpo> = {
   ga4: 'form',
   meta: 'form',
   rdstation: 'json',
+  gtm: 'form',
+  pixel: 'form',
+  searchconsole: 'form',
+  youtube: 'form',
+  gbp: 'form',
 };
 
 function corpoNoFormato(campos: Record<string, string>, formato: FormatoDoCorpo): TokenExchangeRequest['body'] {
@@ -220,18 +306,34 @@ const ESCOPOS_EXIGIDOS: Record<PlataformaOauth, readonly string[]> = {
   meta: ['ads_read'],
   rdstation: [],
   ga4: PROVIDERS.ga4.scopes,
+  gtm: PROVIDERS.gtm.scopes,
+  pixel: ['ads_read'],
+  searchconsole: PROVIDERS.searchconsole.scopes,
+  youtube: ['https://www.googleapis.com/auth/yt-analytics.readonly'],
+  gbp: PROVIDERS.gbp.scopes,
 };
 
 export function hasRequiredScopes(platform: PlataformaOauth, granted: readonly string[]): boolean {
   return ESCOPOS_EXIGIDOS[platform].every((scope) => granted.includes(scope));
 }
 
+const ADWORDS = 'https://www.googleapis.com/auth/adwords';
+
 const ESCOPOS_PROIBIDOS: Partial<Record<PlataformaOauth, readonly string[]>> = {
   ga4: [
-    'https://www.googleapis.com/auth/adwords',
+    ADWORDS,
     'https://www.googleapis.com/auth/analytics.edit',
     'https://www.googleapis.com/auth/analytics.manage.users',
   ],
+  gtm: [
+    ADWORDS,
+    'https://www.googleapis.com/auth/tagmanager.edit.containers',
+    'https://www.googleapis.com/auth/tagmanager.publish',
+    'https://www.googleapis.com/auth/tagmanager.delete.containers',
+  ],
+  searchconsole: [ADWORDS, 'https://www.googleapis.com/auth/webmasters'],
+  youtube: [ADWORDS, 'https://www.googleapis.com/auth/youtube', 'https://www.googleapis.com/auth/youtube.force-ssl'],
+  gbp: [ADWORDS],
 };
 
 export function escopoExcedente(

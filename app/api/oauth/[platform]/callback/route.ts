@@ -9,8 +9,8 @@ import {
   isSafeReturnPath,
   sameOrigin,
   type PlataformaOauth,
-  type ProviderCredentials,
 } from '@/modules/connections/domain/oauth';
+import { credenciaisDaPlataforma } from '@/modules/connections/application/credenciaisOauth';
 import { decodeStateCookie } from '@/modules/connections/domain/tenantBinding';
 import { ORGANIZACAO_INTEIRA, escopoDeCliente } from '@/shared/db/escopo';
 import type { Platform } from '@/modules/connections/domain/connection';
@@ -32,32 +32,6 @@ function backTo(_request: NextRequest, reason: string): NextResponse {
       new URL(`/comecar?passo=conectar&erro=${reason}`, env().TRIA_APP_BASE_URL),
     ),
   );
-}
-
-function credentialsFor(platform: PlataformaOauth): ProviderCredentials {
-  const config = env();
-
-  const porPlataforma: Record<PlataformaOauth, ProviderCredentials> = {
-    google: {
-      clientId: config.GOOGLE_OAUTH_CLIENT_ID,
-      clientSecret: config.GOOGLE_OAUTH_CLIENT_SECRET,
-    },
-    ga4: {
-      clientId: config.GOOGLE_OAUTH_CLIENT_ID,
-      clientSecret: config.GOOGLE_OAUTH_CLIENT_SECRET,
-    },
-    meta: {
-      clientId: config.META_APP_ID,
-      clientSecret: config.META_APP_SECRET,
-      configId: config.META_LOGIN_CONFIG_ID,
-    },
-    rdstation: {
-      clientId: config.RDSTATION_CLIENT_ID,
-      clientSecret: config.RDSTATION_CLIENT_SECRET,
-    },
-  };
-
-  return porPlataforma[platform];
 }
 
 export async function GET(
@@ -86,7 +60,7 @@ export async function GET(
   const code = query.get('code');
   if (!code) return backTo(request, 'sem_codigo');
 
-  const credentials = credentialsFor(plataforma);
+  const credentials = credenciaisDaPlataforma(plataforma);
   if (!credentials.clientId || !credentials.clientSecret) return backTo(request, 'app_indisponivel');
 
   const sessao = await currentUser();
