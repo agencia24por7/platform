@@ -423,7 +423,7 @@ describe('a equipe pela tela', { concurrency: false }, () => {
           ON CONFLICT (member_id, client_id) DO UPDATE SET revoked_at = NULL`);
 
     signIn(dona);
-    const vincular = await acaoComCampo('/integracoes', 'contaId').catch(() => null);
+    const vincular = await acaoComCampo('/integracoes/conector/google', 'contaId').catch(() => null);
 
     const antes = umaLinha(dono(`SELECT count(*) FROM integrations.ad_accounts WHERE organization_id = '${org}'`));
 
@@ -435,7 +435,7 @@ describe('a equipe pela tela', { concurrency: false }, () => {
     );
 
     if (vincular) {
-      await submitAction('/integracoes', vincular, { contaId: 'qualquer', clientId: cliente });
+      await submitAction('/integracoes/conector/google', vincular, { contaId: 'qualquer', clientId: cliente });
     }
 
     assert.equal(
