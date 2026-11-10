@@ -13,8 +13,8 @@ import {
   isConfigured,
   isSafeReturnPath,
   type PlataformaOauth,
-  type ProviderCredentials,
 } from '@/modules/connections/domain/oauth';
+import { credenciaisDaPlataforma } from '@/modules/connections/application/credenciaisOauth';
 import type { Platform } from '@/modules/connections/domain/connection';
 
 export const dynamic = 'force-dynamic';
@@ -22,32 +22,6 @@ export const dynamic = 'force-dynamic';
 const STATE_COOKIE = 'tria_oauth_state';
 const VERIFIER_COOKIE = 'tria_oauth_verifier';
 const COOKIE_MAX_AGE = 600;
-
-function credentialsFor(platform: PlataformaOauth): ProviderCredentials {
-  const config = env();
-
-  const porPlataforma: Record<PlataformaOauth, ProviderCredentials> = {
-    google: {
-      clientId: config.GOOGLE_OAUTH_CLIENT_ID,
-      clientSecret: config.GOOGLE_OAUTH_CLIENT_SECRET,
-    },
-    ga4: {
-      clientId: config.GOOGLE_OAUTH_CLIENT_ID,
-      clientSecret: config.GOOGLE_OAUTH_CLIENT_SECRET,
-    },
-    meta: {
-      clientId: config.META_APP_ID,
-      clientSecret: config.META_APP_SECRET,
-      configId: config.META_LOGIN_CONFIG_ID,
-    },
-    rdstation: {
-      clientId: config.RDSTATION_CLIENT_ID,
-      clientSecret: config.RDSTATION_CLIENT_SECRET,
-    },
-  };
-
-  return porPlataforma[platform];
-}
 
 export async function GET(
   request: NextRequest,
@@ -78,7 +52,7 @@ export async function GET(
   }
 
 
-  const credentials = credentialsFor(platform as PlataformaOauth);
+  const credentials = credenciaisDaPlataforma(platform as PlataformaOauth);
   if (!isConfigured(credentials, platform as Platform)) {
     logger.info('oauth.start.not_configured', { platform });
     return NextResponse.redirect(new URL(`/comecar?passo=conectar&indisponivel=${platform}`, env().TRIA_APP_BASE_URL));

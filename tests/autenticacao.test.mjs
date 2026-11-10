@@ -263,7 +263,7 @@ describe('vínculos de conta exigem papel e não confiam no formulário', { conc
     makeOwner(dono, organizacao);
     signIn(dono);
 
-    const html = await browse('/integracoes').then((r) => r.text());
+    const html = await browse('/integracoes/conector/google').then((r) => r.text());
 
     assert.match(html, /name="conviteId"/, 'o convite precisa ser identificado por id');
     assert.ok(
@@ -286,9 +286,9 @@ describe('vínculos de conta exigem papel e não confiam no formulário', { conc
     const dono = ensureUser('dono-papel@tria.local');
     makeOwner(dono, organizacao);
     signIn(dono);
-    const aceitar = await acaoComCampo('/integracoes', 'conviteId');
+    const aceitar = await acaoComCampo('/integracoes/conector/google', 'conviteId');
     signIn(leitor);
-    await submitAction('/integracoes', aceitar, { conexaoDaConta: conexao, conviteId: convite });
+    await submitAction('/integracoes/conector/google', aceitar, { conexaoDaConta: conexao, conviteId: convite });
 
     const depois = query("select count(*) from automation.account_tasks where kind = 'mcc_accept'");
     assert.equal(depois, antes, 'leitor não pode enfileirar alteração de vínculo');
@@ -322,7 +322,7 @@ describe('vínculos de conta exigem papel e não confiam no formulário', { conc
       });
     }
 
-    const peloPainel = await acaoComCampo('/integracoes', 'contaId').catch(() => null);
+    const peloPainel = await acaoComCampo('/integracoes/conector/google', 'contaId').catch(() => null);
     assert.equal(peloPainel, null, 'a tela de conexões nem devia abrir para o leitor chegar na ação');
 
     assert.equal(
@@ -339,8 +339,8 @@ describe('vínculos de conta exigem papel e não confiam no formulário', { conc
 
     const antes = query("select count(*) from automation.account_tasks where kind = 'mcc_accept'");
 
-    const aceitar = await acaoComCampo('/integracoes', 'conviteId');
-    await submitAction('/integracoes', aceitar, {
+    const aceitar = await acaoComCampo('/integracoes/conector/google', 'conviteId');
+    await submitAction('/integracoes/conector/google', aceitar, {
       conexaoDaConta: conexao,
       conviteId: '00000000-0000-4000-8000-000000000999',
     });

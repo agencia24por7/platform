@@ -70,6 +70,11 @@ const ONDE_SE_IDENTIFICA: Partial<Record<Platform, OndeSeIdentifica>> = {
     camposDoId: ['uuid', 'id', 'account_id', 'tenant_id'],
   },
   ga4: { url: 'https://www.googleapis.com/oauth2/v3/userinfo', camposDoId: ['sub'] },
+  gtm: { url: 'https://www.googleapis.com/oauth2/v3/userinfo', camposDoId: ['sub'] },
+  pixel: { url: `${GRAPH_API}/me?fields=id,email`, camposDoId: ['id'] },
+  searchconsole: { url: 'https://www.googleapis.com/oauth2/v3/userinfo', camposDoId: ['sub'] },
+  youtube: { url: 'https://www.googleapis.com/oauth2/v3/userinfo', camposDoId: ['sub'] },
+  gbp: { url: 'https://www.googleapis.com/oauth2/v3/userinfo', camposDoId: ['sub'] },
 };
 
 function primeiroIdentificador(

@@ -16,6 +16,7 @@ import {
   longLivedExchangeRequest,
   parseTokenResponse,
   tokenExchangeRequest,
+  usaOauthDaMeta,
   type PlataformaOauth,
 } from '@/modules/connections/domain/oauth';
 import type { ConnectionRepository } from '@/modules/connections/infrastructure/connectionRepository';
@@ -63,6 +64,11 @@ const GRANT_BY_PLATFORM: Record<PlataformaOauth, GrantType> = {
   meta: 'oauth_user',
   rdstation: 'oauth_user',
   ga4: 'oauth_user',
+  gtm: 'oauth_user',
+  pixel: 'oauth_user',
+  searchconsole: 'oauth_user',
+  youtube: 'oauth_user',
+  gbp: 'oauth_user',
 };
 
 export function createAuthorizationService(
@@ -133,7 +139,7 @@ export function createAuthorizationService(
         );
       }
 
-      if (input.platform === 'meta') {
+      if (usaOauthDaMeta(input.platform)) {
         const troca = longLivedExchangeRequest({
           clientId: input.clientId,
           clientSecret: input.clientSecret,

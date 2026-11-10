@@ -5,6 +5,11 @@ export const Platform = {
   Apify: 'apify',
   Ga4: 'ga4',
   ZApi: 'zapi',
+  Gtm: 'gtm',
+  Pixel: 'pixel',
+  SearchConsole: 'searchconsole',
+  Youtube: 'youtube',
+  Gbp: 'gbp',
 } as const;
 export type Platform = (typeof Platform)[keyof typeof Platform];
 
@@ -22,6 +27,11 @@ export const ROTULO_DA_PLATAFORMA: Record<Platform, string> = {
   apify: 'Apify',
   ga4: 'Google Analytics',
   zapi: 'Z-API',
+  gtm: 'Google Tag Manager',
+  pixel: 'Meta Pixel',
+  searchconsole: 'Search Console',
+  youtube: 'YouTube',
+  gbp: 'Perfil da Empresa no Google',
 };
 
 export const MARCA_DA_PLATAFORMA: Record<Platform, string | null> = {
@@ -31,6 +41,11 @@ export const MARCA_DA_PLATAFORMA: Record<Platform, string | null> = {
   apify: null,
   ga4: null,
   zapi: null,
+  gtm: null,
+  pixel: '/marcas/meta.png',
+  searchconsole: null,
+  youtube: null,
+  gbp: null,
 };
 
 export const PARA_QUE_SERVE: Record<Platform, string> = {
@@ -40,6 +55,11 @@ export const PARA_QUE_SERVE: Record<Platform, string> = {
   apify: 'Coleta de dados públicos por chave de API. Entra como conexão; ainda não alimenta relatório.',
   ga4: 'Sessões, origem de tráfego e conversões do site. Entra como conexão; ainda não alimenta relatório.',
   zapi: 'Mensagens de WhatsApp por chave de API. Entra como conexão; ainda não alimenta relatório.',
+  gtm: 'Tags e gatilhos dos contêineres do site, só leitura. Audita o que dispara em cada página.',
+  pixel: 'Eventos do Pixel e das Conversions API da Meta. Mede o que o site devolve para os anúncios.',
+  searchconsole: 'Consultas, cliques e impressões da busca orgânica dos sites verificados.',
+  youtube: 'Relatórios do canal no YouTube Analytics, inclusive receita, só leitura.',
+  gbp: 'Visualizações, buscas e ações no Perfil da Empresa. A API do Google só oferece escopo de gestão.',
 };
 
 export const GrantType = {
@@ -101,6 +121,11 @@ const REQUIRED_SCOPES: Record<Platform, readonly string[]> = {
   apify: [],
   ga4: ['https://www.googleapis.com/auth/analytics.readonly'],
   zapi: [],
+  gtm: ['https://www.googleapis.com/auth/tagmanager.readonly'],
+  pixel: ['ads_read'],
+  searchconsole: ['https://www.googleapis.com/auth/webmasters.readonly'],
+  youtube: ['https://www.googleapis.com/auth/yt-analytics.readonly'],
+  gbp: ['https://www.googleapis.com/auth/business.manage'],
 };
 
 export function missingScopes(platform: Platform, scopes: readonly string[]): readonly string[] {
@@ -114,6 +139,11 @@ const GRANTS_BY_PLATFORM: Record<Platform, readonly GrantType[]> = {
   apify: ['api_key'],
   ga4: ['oauth_user'],
   zapi: ['api_key'],
+  gtm: ['oauth_user'],
+  pixel: ['oauth_user'],
+  searchconsole: ['oauth_user'],
+  youtube: ['oauth_user'],
+  gbp: ['oauth_user'],
 };
 
 export function grantTypesFor(platform: Platform): readonly GrantType[] {
