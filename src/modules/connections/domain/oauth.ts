@@ -71,7 +71,7 @@ export const PROVIDERS: Readonly<Record<PlataformaOauth, OauthProvider>> = {
   },
   rdstation: {
     platform: 'rdstation',
-    label: 'RD Station',
+    label: 'RD Station CRM',
     authorizeUrl: 'https://api.rd.services/auth/dialog',
     tokenUrl: 'https://api.rd.services/auth/token',
     scopes: [],
