@@ -23,7 +23,7 @@ export function veiculaAnuncio(platform: Platform): platform is PlataformaDeAnun
 export const ROTULO_DA_PLATAFORMA: Record<Platform, string> = {
   google: 'Google Ads',
   meta: 'Meta Ads',
-  rdstation: 'RD Station',
+  rdstation: 'RD Station CRM',
   apify: 'Apify',
   ga4: 'Google Analytics',
   zapi: 'Z-API',
@@ -31,27 +31,27 @@ export const ROTULO_DA_PLATAFORMA: Record<Platform, string> = {
   pixel: 'Meta Pixel',
   searchconsole: 'Search Console',
   youtube: 'YouTube',
-  gbp: 'Perfil da Empresa no Google',
+  gbp: 'Google Minha Empresa',
 };
 
 export const MARCA_DA_PLATAFORMA: Record<Platform, string | null> = {
   google: '/marcas/google-ads.png',
   meta: '/marcas/meta.png',
-  rdstation: null,
-  apify: null,
+  rdstation: '/marcas/rdstation.png',
+  apify: '/marcas/apify.png',
   ga4: null,
-  zapi: null,
-  gtm: null,
+  zapi: '/marcas/zapi.png',
+  gtm: '/marcas/gtm.png',
   pixel: '/marcas/meta.png',
-  searchconsole: null,
-  youtube: null,
-  gbp: null,
+  searchconsole: '/marcas/searchconsole.png',
+  youtube: '/marcas/youtube.png',
+  gbp: '/marcas/gbp.png',
 };
 
 export const PARA_QUE_SERVE: Record<Platform, string> = {
   google: 'Contas de anúncio, campanhas e custo. Alcança contas de terceiros pela administradora.',
   meta: 'Contas de anúncio do Business Manager. Cada cliente autoriza com a conta dele.',
-  rdstation: 'Leads e conversões do CRM. Entra como conexão; ainda não alimenta relatório.',
+  rdstation: 'Negociações, contatos e funil de vendas do CRM. Entra como conexão; ainda não alimenta relatório.',
   apify: 'Coleta de dados públicos por chave de API. Entra como conexão; ainda não alimenta relatório.',
   ga4: 'Sessões, origem de tráfego e conversões do site. Entra como conexão; ainda não alimenta relatório.',
   zapi: 'Mensagens de WhatsApp por chave de API. Entra como conexão; ainda não alimenta relatório.',
@@ -59,7 +59,7 @@ export const PARA_QUE_SERVE: Record<Platform, string> = {
   pixel: 'Eventos do Pixel e das Conversions API da Meta. Mede o que o site devolve para os anúncios.',
   searchconsole: 'Consultas, cliques e impressões da busca orgânica dos sites verificados.',
   youtube: 'Relatórios do canal no YouTube Analytics, inclusive receita, só leitura.',
-  gbp: 'Visualizações, buscas e ações no Perfil da Empresa. A API do Google só oferece escopo de gestão.',
+  gbp: 'Visualizações, buscas e ações no Google Minha Empresa. A API do Google só oferece escopo de gestão.',
 };
 
 export const GrantType = {

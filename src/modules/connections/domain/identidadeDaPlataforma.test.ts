@@ -53,7 +53,7 @@ test('cada plataforma aponta para o próprio host', () => {
 
   assert.match(blocoDe('google'), /googleapis\.com/);
   assert.match(blocoDe('meta'), /GRAPH_API|graph\.facebook\.com/);
-  assert.match(blocoDe('rdstation'), /api\.rd\.services/);
+  assert.match(blocoDe('rdstation'), /rdstation\.com/);
   assert.ok(!blocoDe('rdstation').includes('graph.facebook'), 'token do RD não pode ir para a Meta');
 });
 

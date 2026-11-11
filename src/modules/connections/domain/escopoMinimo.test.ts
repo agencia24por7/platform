@@ -17,7 +17,10 @@ const pedido = (plataforma: 'google' | 'ga4') =>
 
 test('o Analytics não pede autorização incremental', () => {
   assert.equal(pedido('ga4').get('include_granted_scopes'), null);
-  assert.equal(pedido('ga4').get('scope'), ANALYTICS);
+  assert.equal(
+    pedido('ga4').get('scope'),
+    `${ANALYTICS} openid https://www.googleapis.com/auth/userinfo.email`,
+  );
 });
 
 test('o Google Ads continua somando o que já foi concedido', () => {

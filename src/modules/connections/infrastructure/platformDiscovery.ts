@@ -66,8 +66,8 @@ const ONDE_SE_IDENTIFICA: Partial<Record<Platform, OndeSeIdentifica>> = {
   google: { url: 'https://www.googleapis.com/oauth2/v3/userinfo', camposDoId: ['sub'] },
   meta: { url: `${GRAPH_API}/me?fields=id,email`, camposDoId: ['id'] },
   rdstation: {
-    url: 'https://api.rd.services/marketing/account_info',
-    camposDoId: ['uuid', 'id', 'account_id', 'tenant_id'],
+    url: 'https://crm.rdstation.com/api/v1/users/me',
+    camposDoId: ['id', '_id'],
   },
   ga4: { url: 'https://www.googleapis.com/oauth2/v3/userinfo', camposDoId: ['sub'] },
   gtm: { url: 'https://www.googleapis.com/oauth2/v3/userinfo', camposDoId: ['sub'] },
