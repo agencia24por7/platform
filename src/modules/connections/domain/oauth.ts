@@ -48,6 +48,8 @@ export function falaOauth(platform: Platform): platform is PlataformaOauth {
   return (PLATAFORMAS_OAUTH as readonly string[]).includes(platform);
 }
 
+const ESCOPOS_DE_IDENTIDADE = ['openid', 'https://www.googleapis.com/auth/userinfo.email'] as const;
+
 export const PROVIDERS: Readonly<Record<PlataformaOauth, OauthProvider>> = {
   google: {
     platform: 'google',
@@ -81,7 +83,7 @@ export const PROVIDERS: Readonly<Record<PlataformaOauth, OauthProvider>> = {
     label: 'Google Analytics',
     authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
     tokenUrl: 'https://oauth2.googleapis.com/token',
-    scopes: ['https://www.googleapis.com/auth/analytics.readonly'],
+    scopes: ['https://www.googleapis.com/auth/analytics.readonly', ...ESCOPOS_DE_IDENTIDADE],
     usesPkce: true,
     usesConfigId: false,
   },
@@ -90,7 +92,7 @@ export const PROVIDERS: Readonly<Record<PlataformaOauth, OauthProvider>> = {
     label: 'Google Tag Manager',
     authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
     tokenUrl: 'https://oauth2.googleapis.com/token',
-    scopes: ['https://www.googleapis.com/auth/tagmanager.readonly'],
+    scopes: ['https://www.googleapis.com/auth/tagmanager.readonly', ...ESCOPOS_DE_IDENTIDADE],
     usesPkce: true,
     usesConfigId: false,
   },
@@ -108,7 +110,7 @@ export const PROVIDERS: Readonly<Record<PlataformaOauth, OauthProvider>> = {
     label: 'Search Console',
     authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
     tokenUrl: 'https://oauth2.googleapis.com/token',
-    scopes: ['https://www.googleapis.com/auth/webmasters.readonly'],
+    scopes: ['https://www.googleapis.com/auth/webmasters.readonly', ...ESCOPOS_DE_IDENTIDADE],
     usesPkce: true,
     usesConfigId: false,
   },
@@ -121,6 +123,7 @@ export const PROVIDERS: Readonly<Record<PlataformaOauth, OauthProvider>> = {
       'https://www.googleapis.com/auth/yt-analytics.readonly',
       'https://www.googleapis.com/auth/yt-analytics-monetary.readonly',
       'https://www.googleapis.com/auth/youtube.readonly',
+      ...ESCOPOS_DE_IDENTIDADE,
     ],
     usesPkce: true,
     usesConfigId: false,
@@ -130,7 +133,7 @@ export const PROVIDERS: Readonly<Record<PlataformaOauth, OauthProvider>> = {
     label: 'Perfil da Empresa no Google',
     authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
     tokenUrl: 'https://oauth2.googleapis.com/token',
-    scopes: ['https://www.googleapis.com/auth/business.manage'],
+    scopes: ['https://www.googleapis.com/auth/business.manage', ...ESCOPOS_DE_IDENTIDADE],
     usesPkce: true,
     usesConfigId: false,
   },
