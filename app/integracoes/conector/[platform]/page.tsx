@@ -271,7 +271,7 @@ export default async function ConectorPage({
         )
       ) : null}
 
-      {plataforma === 'zapi' && conexoes.length > 0 ? (
+      {plataforma === 'zapi' && conexoes.length > 0 && canAdminister(ctx.role) ? (
         <div className="card">
           <div className="card__head">
             <span className="card__title">URL do webhook</span>
