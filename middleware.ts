@@ -8,7 +8,15 @@ function enderecoPublico(): string {
   return configurado;
 }
 
-const ROTAS_ABERTAS = ['/entrar', '/api/auth', '/api/health', '/api/v0', '/api/portaria', '/api/erros'];
+const ROTAS_ABERTAS = [
+  '/entrar',
+  '/api/auth',
+  '/api/health',
+  '/api/v0',
+  '/api/portaria',
+  '/api/erros',
+  '/api/webhooks',
+];
 
 export function middleware(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;

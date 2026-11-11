@@ -17,6 +17,7 @@ const CREDENTIAL_TYPE: Record<Platform, string> = {
   searchconsole: 'googleOAuth2Api',
   youtube: 'googleOAuth2Api',
   gbp: 'googleOAuth2Api',
+  whatsapp: 'facebookGraphApi',
 };
 
 function corpoDaCredencial(secret: VaultSecret) {

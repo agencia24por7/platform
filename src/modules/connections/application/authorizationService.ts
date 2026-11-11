@@ -69,6 +69,7 @@ const GRANT_BY_PLATFORM: Record<PlataformaOauth, GrantType> = {
   searchconsole: 'oauth_user',
   youtube: 'oauth_user',
   gbp: 'oauth_user',
+  whatsapp: 'oauth_user',
 };
 
 export function createAuthorizationService(

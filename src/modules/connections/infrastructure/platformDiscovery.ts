@@ -75,6 +75,7 @@ const ONDE_SE_IDENTIFICA: Partial<Record<Platform, OndeSeIdentifica>> = {
   searchconsole: { url: 'https://www.googleapis.com/oauth2/v3/userinfo', camposDoId: ['sub'] },
   youtube: { url: 'https://www.googleapis.com/oauth2/v3/userinfo', camposDoId: ['sub'] },
   gbp: { url: 'https://www.googleapis.com/oauth2/v3/userinfo', camposDoId: ['sub'] },
+  whatsapp: { url: `${GRAPH_API}/me?fields=id,email`, camposDoId: ['id'] },
 };
 
 function primeiroIdentificador(

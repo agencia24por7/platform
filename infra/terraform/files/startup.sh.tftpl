@@ -54,6 +54,8 @@ umask 077
   echo "META_LOGIN_CONFIG_ID=$(read_optional_secret meta-login-config-id)"
   echo "RDSTATION_CLIENT_ID=$(read_optional_secret rdstation-client-id)"
   echo "RDSTATION_CLIENT_SECRET=$(read_optional_secret rdstation-client-secret)"
+  echo "WHATSAPP_LOGIN_CONFIG_ID=$(read_optional_secret whatsapp-login-config-id)"
+  echo "WHATSAPP_WEBHOOK_VERIFY_TOKEN=$(read_optional_secret whatsapp-webhook-verify-token)"
 } > .env
 if [ -n "$IMAGEM_ATUAL" ]; then echo "$IMAGEM_ATUAL" >> .env; fi
 chmod 600 .env

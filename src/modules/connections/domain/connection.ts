@@ -10,6 +10,7 @@ export const Platform = {
   SearchConsole: 'searchconsole',
   Youtube: 'youtube',
   Gbp: 'gbp',
+  Whatsapp: 'whatsapp',
 } as const;
 export type Platform = (typeof Platform)[keyof typeof Platform];
 
@@ -32,6 +33,7 @@ export const ROTULO_DA_PLATAFORMA: Record<Platform, string> = {
   searchconsole: 'Search Console',
   youtube: 'YouTube',
   gbp: 'Google Minha Empresa',
+  whatsapp: 'WhatsApp',
 };
 
 export const MARCA_DA_PLATAFORMA: Record<Platform, string | null> = {
@@ -46,6 +48,7 @@ export const MARCA_DA_PLATAFORMA: Record<Platform, string | null> = {
   searchconsole: '/marcas/searchconsole.png',
   youtube: '/marcas/youtube.png',
   gbp: '/marcas/gbp.png',
+  whatsapp: null,
 };
 
 export const PARA_QUE_SERVE: Record<Platform, string> = {
@@ -60,6 +63,7 @@ export const PARA_QUE_SERVE: Record<Platform, string> = {
   searchconsole: 'Consultas, cliques e impressões da busca orgânica dos sites verificados.',
   youtube: 'Relatórios do canal no YouTube Analytics, inclusive receita, só leitura.',
   gbp: 'Visualizações, buscas e ações no Google Minha Empresa. A API do Google só oferece escopo de gestão.',
+  whatsapp: 'Número oficial do WhatsApp Cloud API. Recebe mensagem por webhook; ainda não extrai clid nem casa com lead.',
 };
 
 export const GrantType = {
@@ -126,6 +130,7 @@ const REQUIRED_SCOPES: Record<Platform, readonly string[]> = {
   searchconsole: ['https://www.googleapis.com/auth/webmasters.readonly'],
   youtube: ['https://www.googleapis.com/auth/yt-analytics.readonly'],
   gbp: ['https://www.googleapis.com/auth/business.manage'],
+  whatsapp: [],
 };
 
 export function missingScopes(platform: Platform, scopes: readonly string[]): readonly string[] {
@@ -144,6 +149,7 @@ const GRANTS_BY_PLATFORM: Record<Platform, readonly GrantType[]> = {
   searchconsole: ['oauth_user'],
   youtube: ['oauth_user'],
   gbp: ['oauth_user'],
+  whatsapp: ['oauth_user'],
 };
 
 export function grantTypesFor(platform: Platform): readonly GrantType[] {
