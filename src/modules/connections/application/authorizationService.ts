@@ -8,6 +8,7 @@ import {
   veiculaAnuncio,
   type Connection,
   type GrantType,
+  type Platform,
 } from '@/modules/connections/domain/connection';
 import {
   PROVIDERS,
@@ -59,6 +60,31 @@ export type AuthorizationService = {
   complete(input: AuthorizationInput): Promise<Result<AuthorizationOutcome, Failure>>;
 };
 
+function descobrirRecursos(
+  discovery: PlatformDiscovery,
+  platform: Platform,
+  accessToken: string,
+): Promise<readonly DiscoveredAccount[]> {
+  if (veiculaAnuncio(platform)) {
+    return platform === 'google' ? discovery.google(accessToken) : discovery.meta(accessToken);
+  }
+
+  switch (platform) {
+    case 'ga4':
+      return discovery.ga4(accessToken);
+    case 'gtm':
+      return discovery.gtm(accessToken);
+    case 'searchconsole':
+      return discovery.searchconsole(accessToken);
+    case 'youtube':
+      return discovery.youtube(accessToken);
+    case 'gbp':
+      return discovery.gbp(accessToken);
+    default:
+      return Promise.resolve([]);
+  }
+}
+
 const GRANT_BY_PLATFORM: Record<PlataformaOauth, GrantType> = {
   google: 'oauth_user',
   meta: 'oauth_user',
@@ -69,6 +95,7 @@ const GRANT_BY_PLATFORM: Record<PlataformaOauth, GrantType> = {
   searchconsole: 'oauth_user',
   youtube: 'oauth_user',
   gbp: 'oauth_user',
+  whatsapp: 'oauth_user',
 };
 
 export function createAuthorizationService(
@@ -159,11 +186,7 @@ export function createAuthorizationService(
         }
       }
 
-      const accounts = veiculaAnuncio(input.platform)
-        ? input.platform === 'google'
-          ? await discovery.google(granted.accessToken)
-          : await discovery.meta(granted.accessToken)
-        : [];
+      const accounts = await descobrirRecursos(discovery, input.platform, granted.accessToken);
 
       const existing = await organizations.exists();
       const organizationCreated = input.organizationId === null;

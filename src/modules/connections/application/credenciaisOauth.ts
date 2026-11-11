@@ -20,7 +20,7 @@ export function credenciaisDaPlataforma(platform: PlataformaOauth): ProviderCred
     return {
       clientId: config.META_APP_ID,
       clientSecret: config.META_APP_SECRET,
-      configId: config.META_LOGIN_CONFIG_ID,
+      configId: platform === 'whatsapp' ? config.WHATSAPP_LOGIN_CONFIG_ID : config.META_LOGIN_CONFIG_ID,
     };
   }
 

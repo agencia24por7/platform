@@ -10,6 +10,7 @@ export const Platform = {
   SearchConsole: 'searchconsole',
   Youtube: 'youtube',
   Gbp: 'gbp',
+  Whatsapp: 'whatsapp',
 } as const;
 export type Platform = (typeof Platform)[keyof typeof Platform];
 
@@ -19,6 +20,21 @@ export type PlataformaDeAnuncio = (typeof PLATAFORMAS_DE_ANUNCIO)[number];
 export function veiculaAnuncio(platform: Platform): platform is PlataformaDeAnuncio {
   return (PLATAFORMAS_DE_ANUNCIO as readonly string[]).includes(platform);
 }
+
+export const PLATAFORMAS_COM_RECURSO = ['ga4', 'gtm', 'searchconsole', 'youtube', 'gbp'] as const;
+export type PlataformaComRecurso = (typeof PLATAFORMAS_COM_RECURSO)[number];
+
+export function temRecursoParaVincular(platform: Platform): platform is PlataformaComRecurso {
+  return (PLATAFORMAS_COM_RECURSO as readonly string[]).includes(platform);
+}
+
+export const ROTULO_DO_RECURSO: Record<PlataformaComRecurso, string> = {
+  ga4: 'Propriedade',
+  gtm: 'Contêiner',
+  searchconsole: 'Site',
+  youtube: 'Canal',
+  gbp: 'Local',
+};
 
 export const ROTULO_DA_PLATAFORMA: Record<Platform, string> = {
   google: 'Google Ads',
@@ -32,6 +48,7 @@ export const ROTULO_DA_PLATAFORMA: Record<Platform, string> = {
   searchconsole: 'Search Console',
   youtube: 'YouTube',
   gbp: 'Google Minha Empresa',
+  whatsapp: 'WhatsApp',
 };
 
 export const MARCA_DA_PLATAFORMA: Record<Platform, string | null> = {
@@ -46,6 +63,7 @@ export const MARCA_DA_PLATAFORMA: Record<Platform, string | null> = {
   searchconsole: '/marcas/searchconsole.png',
   youtube: '/marcas/youtube.png',
   gbp: '/marcas/gbp.png',
+  whatsapp: '/marcas/whatsapp.png',
 };
 
 export const PARA_QUE_SERVE: Record<Platform, string> = {
@@ -60,6 +78,7 @@ export const PARA_QUE_SERVE: Record<Platform, string> = {
   searchconsole: 'Consultas, cliques e impressões da busca orgânica dos sites verificados.',
   youtube: 'Relatórios do canal no YouTube Analytics, inclusive receita, só leitura.',
   gbp: 'Visualizações, buscas e ações no Google Minha Empresa. A API do Google só oferece escopo de gestão.',
+  whatsapp: 'Número oficial do WhatsApp Cloud API. Recebe mensagem por webhook; ainda não extrai clid nem casa com lead.',
 };
 
 export const GrantType = {
@@ -86,11 +105,13 @@ export type Connection = {
   readonly status: ConnectionStatus;
   readonly expiresAt: Date | null;
   readonly authorizedAt: Date;
+  readonly webhookToken: string | null;
 };
 
-export type NewConnection = Omit<Connection, 'id' | 'status' | 'authorizedAt'> & {
+export type NewConnection = Omit<Connection, 'id' | 'status' | 'authorizedAt' | 'webhookToken'> & {
   readonly expiresAt: Date | null;
   readonly status?: Connection['status'];
+  readonly webhookToken?: string | null;
 };
 
 export const CREDENCIAL_SEM_COFRE = 'pendente:cofre-indisponivel';
@@ -126,6 +147,7 @@ const REQUIRED_SCOPES: Record<Platform, readonly string[]> = {
   searchconsole: ['https://www.googleapis.com/auth/webmasters.readonly'],
   youtube: ['https://www.googleapis.com/auth/yt-analytics.readonly'],
   gbp: ['https://www.googleapis.com/auth/business.manage'],
+  whatsapp: [],
 };
 
 export function missingScopes(platform: Platform, scopes: readonly string[]): readonly string[] {
@@ -144,6 +166,7 @@ const GRANTS_BY_PLATFORM: Record<Platform, readonly GrantType[]> = {
   searchconsole: ['oauth_user'],
   youtube: ['oauth_user'],
   gbp: ['oauth_user'],
+  whatsapp: ['oauth_user'],
 };
 
 export function grantTypesFor(platform: Platform): readonly GrantType[] {

@@ -20,6 +20,7 @@ export const PLATAFORMAS_OAUTH = [
   'searchconsole',
   'youtube',
   'gbp',
+  'whatsapp',
 ] as const;
 export type PlataformaOauth = (typeof PLATAFORMAS_OAUTH)[number];
 
@@ -37,7 +38,7 @@ export function usaOauthDoGoogle(platform: PlataformaOauth): platform is Platafo
   return (FAMILIA_GOOGLE as readonly string[]).includes(platform);
 }
 
-export const FAMILIA_META = ['meta', 'pixel'] as const satisfies readonly PlataformaOauth[];
+export const FAMILIA_META = ['meta', 'pixel', 'whatsapp'] as const satisfies readonly PlataformaOauth[];
 export type PlataformaMeta = (typeof FAMILIA_META)[number];
 
 export function usaOauthDaMeta(platform: PlataformaOauth): platform is PlataformaMeta {
@@ -137,6 +138,15 @@ export const PROVIDERS: Readonly<Record<PlataformaOauth, OauthProvider>> = {
     usesPkce: true,
     usesConfigId: false,
   },
+  whatsapp: {
+    platform: 'whatsapp',
+    label: 'WhatsApp',
+    authorizeUrl: 'https://www.facebook.com/v21.0/dialog/oauth',
+    tokenUrl: 'https://graph.facebook.com/v21.0/oauth/access_token',
+    scopes: ['whatsapp_business_management', 'whatsapp_business_messaging'],
+    usesPkce: false,
+    usesConfigId: true,
+  },
 };
 
 export type ProviderCredentials = {
@@ -211,6 +221,7 @@ const FORMATO_DO_CORPO: Record<PlataformaOauth, FormatoDoCorpo> = {
   searchconsole: 'form',
   youtube: 'form',
   gbp: 'form',
+  whatsapp: 'form',
 };
 
 function corpoNoFormato(campos: Record<string, string>, formato: FormatoDoCorpo): TokenExchangeRequest['body'] {
@@ -314,6 +325,7 @@ const ESCOPOS_EXIGIDOS: Record<PlataformaOauth, readonly string[]> = {
   searchconsole: PROVIDERS.searchconsole.scopes,
   youtube: ['https://www.googleapis.com/auth/yt-analytics.readonly'],
   gbp: PROVIDERS.gbp.scopes,
+  whatsapp: [],
 };
 
 export function hasRequiredScopes(platform: PlataformaOauth, granted: readonly string[]): boolean {

@@ -141,6 +141,131 @@ export function dedupe(accounts: readonly DiscoveredAccount[]): readonly Discove
   return [...melhor.values()];
 }
 
+function recurso(
+  platform: Platform,
+  externalId: string,
+  name: string,
+  inactive = false,
+): DiscoveredAccount {
+  return {
+    platform,
+    externalId,
+    name: name.trim() || externalId,
+    currency: '',
+    timezone: '',
+    managerExternalId: null,
+    spendingLast30Days: null,
+    inactive,
+  };
+}
+
+export function parseGa4Properties(payload: unknown): readonly DiscoveredAccount[] {
+  if (payload === null || typeof payload !== 'object') return [];
+  const resumos = (payload as { accountSummaries?: unknown }).accountSummaries;
+  if (!Array.isArray(resumos)) return [];
+
+  const propriedades: DiscoveredAccount[] = [];
+  for (const resumo of resumos) {
+    const propriedadesDaConta = (resumo as { propertySummaries?: unknown }).propertySummaries;
+    if (!Array.isArray(propriedadesDaConta)) continue;
+
+    for (const propriedade of propriedadesDaConta) {
+      const path = (propriedade as { property?: unknown }).property;
+      if (typeof path !== 'string' || !path.startsWith('properties/')) continue;
+      const externalId = path.slice('properties/'.length);
+      const nome = (propriedade as { displayName?: unknown }).displayName;
+      propriedades.push(recurso('ga4', externalId, typeof nome === 'string' ? nome : externalId));
+    }
+  }
+
+  return propriedades;
+}
+
+export function parseGtmContainers(payload: unknown): readonly DiscoveredAccount[] {
+  if (payload === null || typeof payload !== 'object') return [];
+  const containers = (payload as { container?: unknown }).container;
+  if (!Array.isArray(containers)) return [];
+
+  return containers
+    .map((item) => item as { containerId?: unknown; publicId?: unknown; name?: unknown })
+    .filter((item) => typeof item.containerId === 'string' || typeof item.publicId === 'string')
+    .map((item) => {
+      const externalId =
+        typeof item.publicId === 'string' ? item.publicId : String(item.containerId);
+      return recurso('gtm', externalId, typeof item.name === 'string' ? item.name : externalId);
+    });
+}
+
+export function parseSearchConsoleSites(payload: unknown): readonly DiscoveredAccount[] {
+  if (payload === null || typeof payload !== 'object') return [];
+  const entradas = (payload as { siteEntry?: unknown }).siteEntry;
+  if (!Array.isArray(entradas)) return [];
+
+  return entradas
+    .map((item) => item as { siteUrl?: unknown; permissionLevel?: unknown })
+    .filter((item) => typeof item.siteUrl === 'string')
+    .map((item) =>
+      recurso(
+        'searchconsole',
+        item.siteUrl as string,
+        item.siteUrl as string,
+        item.permissionLevel === 'siteUnverifiedUser',
+      ),
+    );
+}
+
+export function parseYoutubeChannels(payload: unknown): readonly DiscoveredAccount[] {
+  if (payload === null || typeof payload !== 'object') return [];
+  const items = (payload as { items?: unknown }).items;
+  if (!Array.isArray(items)) return [];
+
+  return items
+    .map((item) => item as { id?: unknown; snippet?: { title?: unknown } })
+    .filter((item) => typeof item.id === 'string')
+    .map((item) =>
+      recurso(
+        'youtube',
+        item.id as string,
+        typeof item.snippet?.title === 'string' ? item.snippet.title : (item.id as string),
+      ),
+    );
+}
+
+export function parseGbpLocations(payload: unknown): readonly DiscoveredAccount[] {
+  if (payload === null || typeof payload !== 'object') return [];
+  const locations = (payload as { locations?: unknown }).locations;
+  if (!Array.isArray(locations)) return [];
+
+  return locations
+    .map((item) => item as { name?: unknown; title?: unknown })
+    .filter((item) => typeof item.name === 'string' && item.name.startsWith('locations/'))
+    .map((item) => {
+      const externalId = (item.name as string).slice('locations/'.length);
+      return recurso('gbp', externalId, typeof item.title === 'string' ? item.title : externalId);
+    });
+}
+
+export function parseGbpAccounts(payload: unknown): readonly string[] {
+  if (payload === null || typeof payload !== 'object') return [];
+  const accounts = (payload as { accounts?: unknown }).accounts;
+  if (!Array.isArray(accounts)) return [];
+
+  return accounts
+    .map((item) => (item as { name?: unknown }).name)
+    .filter((name): name is string => typeof name === 'string' && name.startsWith('accounts/'))
+    .map((name) => name.slice('accounts/'.length));
+}
+
+export function parseGtmAccountIds(payload: unknown): readonly string[] {
+  if (payload === null || typeof payload !== 'object') return [];
+  const contas = (payload as { account?: unknown }).account;
+  if (!Array.isArray(contas)) return [];
+
+  return contas
+    .map((item) => (item as { accountId?: unknown }).accountId)
+    .filter((id): id is string => typeof id === 'string');
+}
+
 export function sortForSelection(accounts: readonly DiscoveredAccount[]): readonly DiscoveredAccount[] {
   return [...accounts].sort((left, right) => {
     if (left.inactive !== right.inactive) return left.inactive ? 1 : -1;

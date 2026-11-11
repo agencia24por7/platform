@@ -29,6 +29,7 @@ const ORDEM_DOS_CONECTORES: readonly Platform[] = [
   'rdstation',
   'apify',
   'zapi',
+  'whatsapp',
 ];
 
 const PESO_DO_ESTADO: Record<Connection['status'], number> = {

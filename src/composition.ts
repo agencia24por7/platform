@@ -8,6 +8,7 @@ import { createConnectionRepository } from '@/modules/connections/infrastructure
 import { createDiscoveredAccountRepository } from '@/modules/connections/infrastructure/discoveredAccountRepository';
 import { createTaskRepository } from '@/modules/connections/infrastructure/taskRepository';
 import { createN8nCredentialVault } from '@/modules/connections/infrastructure/n8nCredentialVault';
+import { createCredentialTester } from '@/modules/connections/infrastructure/credentialTester';
 import { createPlatformDiscovery } from '@/modules/connections/infrastructure/platformDiscovery';
 import { createIdentityService } from '@/modules/identity/application/identityService';
 import { createUserRepository } from '@/modules/identity/infrastructure/userRepository';
@@ -28,6 +29,7 @@ function build() {
 
   const clientRepository = createClientRepository();
   const vault = createN8nCredentialVault();
+  const credentialTester = createCredentialTester();
 
   return {
     audit,
@@ -37,7 +39,14 @@ function build() {
     identity: createIdentityService(createUserRepository(), audit),
     clients: createClientService(clientRepository, audit),
     team: createTeamService(createTeamRepository(), audit),
-    connections: createConnectionService(connectionRepository, adAccounts, audit, clientRepository, vault),
+    connections: createConnectionService(
+      connectionRepository,
+      adAccounts,
+      audit,
+      clientRepository,
+      vault,
+      credentialTester,
+    ),
     authorization: createAuthorizationService(
       organizations,
       connectionRepository,

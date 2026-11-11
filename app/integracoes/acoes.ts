@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { modules } from '@/composition';
-import { usaChaveDeApi } from '@/modules/connections/domain/chaveDeApi';
+import { montarChaveZapi, usaChaveDeApi } from '@/modules/connections/domain/chaveDeApi';
 import { isSafeReturnPath } from '@/modules/connections/domain/oauth';
 import type { Platform } from '@/modules/connections/domain/connection';
 import { checkbox, text, toActionState } from '@/shared/http/actions';
@@ -189,6 +189,38 @@ export async function vincularAlcancavel(formData: FormData): Promise<void> {
   voltar(`${escolhida.name} vinculada.`);
 }
 
+export async function vincularRecurso(formData: FormData): Promise<void> {
+  const contexto = await contextoDeConexoes();
+  const organization = contexto.organization;
+  const destino = destinoDoRetorno(formData);
+  const voltar = (aviso: string): never =>
+    redirect(`${destino}?aviso=${encodeURIComponent(aviso)}`);
+
+  if (!canOperate(contexto.role)) {
+    voltar('Seu papel não permite vincular recursos.');
+    return;
+  }
+
+  const descobertas = await modules().discoveredAccounts.listPending(organization.id);
+  const escolhido = descobertas.find((recurso) => recurso.id === text(formData, 'recursoId'));
+  if (!escolhido) {
+    voltar('Recurso não encontrado entre os que você alcança.');
+    return;
+  }
+
+  const clientId = text(formData, 'clientId');
+  const dono = (await modules().clients.list(organization.id)).find(
+    (cliente) => cliente.id === clientId && cliente.status === 'active',
+  );
+  if (!dono) {
+    voltar('Escolha um cliente ativo desta organização. É ele que dá dono ao recurso.');
+    return;
+  }
+
+  await modules().discoveredAccounts.markLinkedToClient(organization.id, escolhido.id, clientId);
+  voltar(`${escolhido.name} vinculado.`);
+}
+
 export async function guardarChave(formData: FormData): Promise<void> {
   const contexto = await contextoDeConexoes();
   const ator = await atorAtual();
@@ -202,17 +234,53 @@ export async function guardarChave(formData: FormData): Promise<void> {
     return;
   }
 
+  const chave =
+    pedida === 'zapi'
+      ? montarChaveZapi(text(formData, 'instanceId'), text(formData, 'token'))
+      : text(formData, 'chave');
+
   const resultado = await modules().connections.guardarChave(
     {
       organizationId: contexto.organization.id,
       organizationSlug: contexto.organization.slug,
       papelDeQuemAge: contexto.role,
       platform: pedida as Platform,
-      chave: text(formData, 'chave'),
+      chave,
     },
     ator,
   );
 
-  if (!resultado.ok) voltar(toActionState(resultado.error).error ?? 'Não deu para guardar a chave.');
-  voltar('Chave guardada no cofre. O banco ficou só com a referência.');
+  if (!resultado.ok) {
+    voltar(toActionState(resultado.error).error ?? 'Não deu para guardar a chave.');
+    return;
+  }
+  voltar('Chave testada com sucesso e guardada no cofre. O banco ficou só com a referência.');
+}
+
+export async function removerChave(formData: FormData): Promise<void> {
+  const contexto = await contextoDeConexoes();
+  const ator = await atorAtual();
+  const destino = destinoDoRetorno(formData);
+  const voltar = (aviso: string): never =>
+    redirect(`${destino}?aviso=${encodeURIComponent(aviso)}`);
+
+  if (!canAdminister(contexto.role)) {
+    voltar('Só quem administra a organização pode remover uma conexão.');
+    return;
+  }
+
+  const resultado = await modules().connections.removerChave(
+    {
+      organizationId: contexto.organization.id,
+      papelDeQuemAge: contexto.role,
+      connectionId: text(formData, 'connectionId'),
+    },
+    ator,
+  );
+
+  if (!resultado.ok) {
+    voltar(toActionState(resultado.error).error ?? 'Não deu para remover a conexão.');
+    return;
+  }
+  voltar('Conexão removida.');
 }

@@ -14,6 +14,7 @@ type Row = {
   status: Connection['status'];
   expires_at: Date | null;
   authorized_at: Date;
+  webhook_token: string | null;
 };
 
 const toConnection = (row: Row): Connection => ({
@@ -29,6 +30,7 @@ const toConnection = (row: Row): Connection => ({
   status: row.status,
   expiresAt: row.expires_at,
   authorizedAt: row.authorized_at,
+  webhookToken: row.webhook_token,
 });
 
 export type ConnectionRepository = {
@@ -37,6 +39,7 @@ export type ConnectionRepository = {
   findByExternalId(organizationId: string, platform: string, externalId: string): Promise<Connection | null>;
   renew(input: NewConnection & { readonly id: string }): Promise<Connection>;
   list(organizationId: string): Promise<readonly Connection[]>;
+  remove(organizationId: string, id: string): Promise<boolean>;
 };
 
 export function createConnectionRepository(): ConnectionRepository {
@@ -45,9 +48,9 @@ export function createConnectionRepository(): ConnectionRepository {
       return withTenant(input.organizationId, async (tx) => {
         const rows = (await tx`
           INSERT INTO integrations.connections
-            (organization_id, platform, grant_type, label, external_id, account_email, scopes, credential_ref, expires_at, status)
+            (organization_id, platform, grant_type, label, external_id, account_email, scopes, credential_ref, expires_at, status, webhook_token)
           VALUES (${input.organizationId}, ${input.platform}, ${input.grantType}, ${input.label},
-                  ${input.externalId}, ${input.accountEmail ?? null}, ${input.scopes as string[]}::text[], ${input.credentialRef}, ${input.expiresAt}, ${input.status ?? 'active'})
+                  ${input.externalId}, ${input.accountEmail ?? null}, ${input.scopes as string[]}::text[], ${input.credentialRef}, ${input.expiresAt}, ${input.status ?? 'active'}, ${input.webhookToken ?? null})
           RETURNING *`) as unknown as Row[];
         return toConnection(rows[0]!);
       });
@@ -91,6 +94,14 @@ export function createConnectionRepository(): ConnectionRepository {
         const rows = (await tx`
           SELECT * FROM integrations.connections ORDER BY authorized_at DESC`) as unknown as Row[];
         return rows.map(toConnection);
+      });
+    },
+
+    async remove(organizationId, id) {
+      return withTenant(organizationId, async (tx) => {
+        const rows = (await tx`
+          DELETE FROM integrations.connections WHERE id = ${id} RETURNING id`) as unknown as { id: string }[];
+        return rows.length > 0;
       });
     },
   };

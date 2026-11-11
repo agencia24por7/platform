@@ -8,6 +8,8 @@ import {
   PARA_QUE_SERVE,
   Platform,
   ROTULO_DA_PLATAFORMA,
+  ROTULO_DO_RECURSO,
+  temRecursoParaVincular,
   veiculaAnuncio,
   type Connection,
 } from '@/modules/connections/domain/connection';
@@ -21,8 +23,11 @@ import {
   aceitarConvite,
   convidarParaMcc,
   guardarChave,
+  removerChave,
   vincularAlcancavel,
+  vincularRecurso,
 } from '@/../app/integracoes/acoes';
+import { env } from '@/shared/config/env';
 
 export const dynamic = 'force-dynamic';
 
@@ -100,6 +105,14 @@ export default async function ConectorPage({
   const clienteUnico = clientesAtivos.length === 1 ? clientesAtivos[0]!.id : '';
   const substantivo = agencia ? 'cliente' : 'negócio';
 
+  const recursosPendentes = temRecursoParaVincular(plataforma)
+    ? alcancaveis.filter((recurso) => recurso.state === 'discovered')
+    : [];
+  const recursosVinculados = temRecursoParaVincular(plataforma)
+    ? alcancaveis.filter((recurso) => recurso.state === 'linked')
+    : [];
+  const clientesPorId = new Map(clientes.map((cliente) => [cliente.id, cliente]));
+
   const oauth = falaOauth(plataforma);
   const pronto = oauth && isConfigured(credenciaisDaPlataforma(plataforma), plataforma);
 
@@ -161,6 +174,7 @@ export default async function ConectorPage({
                     <th>Caminho</th>
                     <th>Estado</th>
                     <th>Autorizada em</th>
+                    {usaChaveDeApi(plataforma) && canAdminister(ctx.role) ? <th /> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -181,6 +195,17 @@ export default async function ConectorPage({
                         </span>
                       </td>
                       <td className="muted">{conexao.authorizedAt.toLocaleString('pt-BR')}</td>
+                      {usaChaveDeApi(plataforma) && canAdminister(ctx.role) ? (
+                        <td>
+                          <form action={removerChave}>
+                            <input type="hidden" name="connectionId" value={conexao.id} />
+                            <input type="hidden" name="voltarPara" value={voltarPara} />
+                            <button className="btn btn--compacto" type="submit">
+                              Excluir
+                            </button>
+                          </form>
+                        </td>
+                      ) : null}
                     </tr>
                   ))}
                 </tbody>
@@ -207,30 +232,72 @@ export default async function ConectorPage({
             <form className="form--linha" action={guardarChave}>
               <input type="hidden" name="plataforma" value={plataforma} />
               <input type="hidden" name="voltarPara" value={voltarPara} />
-              <label className="field">
-                <span className="field__label">Chave de API</span>
-                <input
-                  className="input"
-                  type="password"
-                  name="chave"
-                  required
-                  autoComplete="off"
-                  spellCheck={false}
-                  placeholder={plataforma === 'apify' ? 'apify_api_...' : 'token da instância'}
-                />
-                <span className="field__hint">
-                  A chave vai direto para o cofre do n8n. Nosso banco guarda só a referência e as
-                  quatro primeiras e últimas letras, para você reconhecê-la depois.
-                </span>
-              </label>
+              {plataforma === 'zapi' ? (
+                <>
+                  <label className="field">
+                    <span className="field__label">ID da instância</span>
+                    <input className="input" type="text" name="instanceId" required autoComplete="off" />
+                  </label>
+                  <label className="field">
+                    <span className="field__label">Token da instância</span>
+                    <input
+                      className="input"
+                      type="password"
+                      name="token"
+                      required
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                    <span className="field__hint">
+                      Testamos contra o Z-API antes de guardar — a instância precisa estar
+                      conectada a um WhatsApp.
+                    </span>
+                  </label>
+                </>
+              ) : (
+                <label className="field">
+                  <span className="field__label">Chave de API</span>
+                  <input
+                    className="input"
+                    type="password"
+                    name="chave"
+                    required
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="apify_api_..."
+                  />
+                  <span className="field__hint">
+                    Testamos contra a Apify antes de guardar. O banco fica só com a referência e as
+                    quatro primeiras e últimas letras, para você reconhecê-la depois.
+                  </span>
+                </label>
+              )}
               <button className="btn btn--primary" type="submit">
-                Guardar no cofre
+                Testar e guardar no cofre
               </button>
             </form>
           </section>
         ) : (
           <div className="empty">Só quem administra a organização pode guardar uma chave.</div>
         )
+      ) : null}
+
+      {plataforma === 'zapi' && conexoes.length > 0 && canAdminister(ctx.role) ? (
+        <div className="card">
+          <div className="card__head">
+            <span className="card__title">URL do webhook</span>
+            <span className="card__sub">cole isso na configuração de webhook da instância no Z-API</span>
+          </div>
+          <div className="fornecedor__corpo">
+            {conexoes.map((conexao) =>
+              conexao.webhookToken ? (
+                <div key={conexao.id} className="mono subtle">
+                  {env().TRIA_APP_BASE_URL}/api/webhooks/zapi/{conexao.webhookToken}
+                </div>
+              ) : null,
+            )}
+          </div>
+        </div>
       ) : null}
 
       {plataforma === 'google' ? (
@@ -465,6 +532,124 @@ export default async function ConectorPage({
                         </tr>
                       );
                     })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      ) : null}
+
+      {temRecursoParaVincular(plataforma) ? (
+        <>
+          <div className="card">
+            <div className="card__head">
+              <span className="card__title">{ROTULO_DO_RECURSO[plataforma]}s vinculados</span>
+              <span className="card__sub">{recursosVinculados.length} vinculado(s)</span>
+            </div>
+            {recursosVinculados.length === 0 ? (
+              <div className="empty">Nenhum {ROTULO_DO_RECURSO[plataforma].toLowerCase()} vinculado ainda.</div>
+            ) : (
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>{ROTULO_DO_RECURSO[plataforma]}</th>
+                      <th>{agencia ? 'Cliente' : 'Negócio'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recursosVinculados.map((recurso) => (
+                      <tr key={recurso.id}>
+                        <td>
+                          <div className="strong">{recurso.name}</div>
+                          <div className="mono subtle">{recurso.externalId}</div>
+                        </td>
+                        <td>
+                          {recurso.clientId && clientesPorId.get(recurso.clientId) ? (
+                            <Link href={`/clientes/${recurso.clientId}`}>
+                              {clientesPorId.get(recurso.clientId)!.name}
+                            </Link>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="card">
+            <div className="card__head">
+              <span className="card__title">Conectar {ROTULO_DO_RECURSO[plataforma].toLowerCase()}</span>
+              <span className="card__sub">
+                {recursosPendentes.length === 0
+                  ? 'tudo o que você alcança já está vinculado'
+                  : `${recursosPendentes.length} ${ROTULO_DO_RECURSO[plataforma].toLowerCase()}(s) ao seu alcance, ainda sem ${substantivo}`}
+              </span>
+            </div>
+
+            {recursosPendentes.length === 0 ? (
+              <div className="empty">
+                Os recursos aparecem aqui depois que você autoriza a plataforma.
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>{ROTULO_DO_RECURSO[plataforma]}</th>
+                      <th>{agencia ? 'Cliente' : 'Negócio'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recursosPendentes.map((recurso) => (
+                      <tr key={recurso.id}>
+                        <td>
+                          <div className="strong">{recurso.name}</div>
+                          <div className="mono subtle">{recurso.externalId}</div>
+                        </td>
+                        <td>
+                          {!podeVincular ? (
+                            <span className="subtle">seu papel não vincula recursos</span>
+                          ) : clientesAtivos.length === 0 ? (
+                            <span className="row">
+                              <span className="subtle">
+                                todo recurso tem dono: cadastre um {substantivo} para vincular
+                              </span>
+                              <Link className="btn btn--compacto" href="/clientes/novo">
+                                Cadastrar {substantivo}
+                              </Link>
+                            </span>
+                          ) : (
+                            <form className="form--inline" action={vincularRecurso}>
+                              <input type="hidden" name="recursoId" value={recurso.id} />
+                              <input type="hidden" name="voltarPara" value={voltarPara} />
+                              <select
+                                className="select select--compacto"
+                                name="clientId"
+                                defaultValue={clienteUnico}
+                                required
+                                aria-label={`${agencia ? 'Cliente' : 'Negócio'} dono de ${recurso.name}`}
+                              >
+                                <option value="">escolher {substantivo}…</option>
+                                {clientesAtivos.map((cliente) => (
+                                  <option key={cliente.id} value={cliente.id}>
+                                    {cliente.name}
+                                  </option>
+                                ))}
+                              </select>
+                              <button className="btn btn--primary btn--compacto" type="submit">
+                                Vincular
+                              </button>
+                            </form>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
