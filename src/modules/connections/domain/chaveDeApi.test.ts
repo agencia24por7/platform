@@ -10,10 +10,10 @@ import {
   validarChave,
 } from './chaveDeApi.ts';
 
-test('só o Apify se conecta por chave', () => {
+test('Apify, Z-API e RD Station se conectam por chave; Google não', () => {
   assert.equal(usaChaveDeApi('apify'), true);
   assert.equal(usaChaveDeApi('google'), false);
-  assert.equal(usaChaveDeApi('rdstation'), false);
+  assert.equal(usaChaveDeApi('rdstation'), true);
 });
 
 test('chave com espaço é recusada antes de sair daqui', () => {

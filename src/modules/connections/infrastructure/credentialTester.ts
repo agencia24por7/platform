@@ -54,6 +54,23 @@ export function createCredentialTester(): CredentialTester {
         }
       }
 
+      if (platform === 'rdstation') {
+        try {
+          const resposta = await fetch(
+            `https://crm.rdstation.com/api/v1/users/me?token=${encodeURIComponent(chave)}`,
+            { signal: AbortSignal.timeout(TIMEOUT_MS) },
+          );
+          if (resposta.ok) return ok(undefined);
+          logger.warn('credentialTester.rdstation.recusada', { status: resposta.status });
+          return err(failure('validation', MOTIVO_DA_CHAVE.chave_recusada));
+        } catch (error) {
+          logger.warn('credentialTester.rdstation.falhou', {
+            error: error instanceof Error ? error.message : 'desconhecido',
+          });
+          return err(failure('unavailable', 'Não deu para checar o token com o RD Station agora.'));
+        }
+      }
+
       return err(failure('validation', MOTIVO_DA_CHAVE.plataforma_invalida));
     },
   };

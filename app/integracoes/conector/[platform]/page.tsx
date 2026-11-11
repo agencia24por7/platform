@@ -256,7 +256,9 @@ export default async function ConectorPage({
                 </>
               ) : (
                 <label className="field">
-                  <span className="field__label">Chave de API</span>
+                  <span className="field__label">
+                    {plataforma === 'rdstation' ? 'Token do usuário' : 'Chave de API'}
+                  </span>
                   <input
                     className="input"
                     type="password"
@@ -264,11 +266,12 @@ export default async function ConectorPage({
                     required
                     autoComplete="off"
                     spellCheck={false}
-                    placeholder="apify_api_..."
+                    placeholder={plataforma === 'rdstation' ? 'token do CRM' : 'apify_api_...'}
                   />
                   <span className="field__hint">
-                    Testamos contra a Apify antes de guardar. O banco fica só com a referência e as
-                    quatro primeiras e últimas letras, para você reconhecê-la depois.
+                    {plataforma === 'rdstation'
+                      ? 'Pegue em Configurações › Integrações › Token de API, dentro do RD Station CRM. Testamos contra a conta antes de guardar.'
+                      : 'Testamos contra a Apify antes de guardar. O banco fica só com a referência e as quatro primeiras e últimas letras, para você reconhecê-la depois.'}
                   </span>
                 </label>
               )}

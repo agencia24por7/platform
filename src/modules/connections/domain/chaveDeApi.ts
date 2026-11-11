@@ -1,6 +1,6 @@
 import type { Platform } from './connection.ts';
 
-export const PLATAFORMAS_POR_CHAVE = ['apify', 'zapi'] as const;
+export const PLATAFORMAS_POR_CHAVE = ['apify', 'zapi', 'rdstation'] as const;
 export type PlataformaPorChave = (typeof PLATAFORMAS_POR_CHAVE)[number];
 
 export function usaChaveDeApi(platform: Platform): platform is PlataformaPorChave {
