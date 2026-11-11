@@ -7,27 +7,21 @@ import { modules } from '@/composition';
 import { ORGANIZACAO_INTEIRA, escopoDeCliente } from '@/shared/db/escopo';
 import { currentUser } from '@/shared/http/currentUser';
 
-type NavEntry =
-  | { group: string }
-  | { href: string; label: string; icone?: ComponentType<{ className?: string }> };
+type NavEntry = { href: string; label: string; icone?: ComponentType<{ className?: string }> };
 
 function navFor(organization: Organization | null, recortado: boolean): readonly NavEntry[] {
   const clientsLabel = organization?.type === 'advertiser' ? 'Negócios' : 'Clientes';
 
   if (recortado) {
     return [
-      { group: 'Operação' },
       { href: '/clientes', label: clientsLabel, icone: IconeClientes },
-      { group: 'Dados' },
       { href: '/automacoes', label: 'Coletas', icone: IconeColetas },
     ];
   }
 
   return [
-    { group: 'Operação' },
     { href: '/clientes', label: clientsLabel, icone: IconeClientes },
     { href: '/integracoes', label: 'Conexões', icone: IconeConexoes },
-    { group: 'Dados' },
     { href: '/automacoes', label: 'Coletas', icone: IconeColetas },
     { href: '/auditoria', label: 'Auditoria', icone: IconeAuditoria },
   ];
@@ -54,25 +48,24 @@ export async function Shell({ title, organization, active, children }: Props) {
       <aside className="side">
         <div className="side__brand">
           <img className="side__logo" src="/orla/logo.png" alt="orla" />
+          {organization ? (
+            <span className="side__modo">
+              {organization.type === 'agency' ? 'Modo agência' : 'Modo anunciante'}
+            </span>
+          ) : null}
         </div>
         <nav className="side__nav">
-          {navFor(organization, recortado).map((entry) =>
-            'group' in entry ? (
-              <div key={entry.group} className="nav__group">
-                {entry.group}
-              </div>
-            ) : (
-              <Link
-                key={entry.href}
-                href={entry.href}
-                className="nav__item"
-                aria-current={active === entry.href ? 'page' : undefined}
-              >
-                {entry.icone ? <entry.icone className="nav__icone" /> : null}
-                {entry.label}
-              </Link>
-            ),
-          )}
+          {navFor(organization, recortado).map((entry) => (
+            <Link
+              key={entry.href}
+              href={entry.href}
+              className="nav__item"
+              aria-current={active === entry.href ? 'page' : undefined}
+            >
+              {entry.icone ? <entry.icone className="nav__icone" /> : null}
+              {entry.label}
+            </Link>
+          ))}
         </nav>
         <div className="side__foot">
           {organization && organizacoes.length > 1 ? (
@@ -123,19 +116,6 @@ export async function Shell({ title, organization, active, children }: Props) {
       <main className="main">
         <header className="topbar">
           <span className="strong">{title}</span>
-          {organization ? (
-            <span
-              className={`modo modo--${organization.type}`}
-              title={
-                organization.type === 'agency'
-                  ? 'Esta organização opera contas de clientes'
-                  : 'Esta organização opera as próprias contas'
-              }
-            >
-              <span className="modo__ponto" aria-hidden="true" />
-              {organization.type === 'agency' ? 'Modo agência' : 'Modo anunciante'}
-            </span>
-          ) : null}
           <div className="sessao">
             <ThemeToggle />
           </div>
