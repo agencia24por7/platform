@@ -21,6 +21,21 @@ export function veiculaAnuncio(platform: Platform): platform is PlataformaDeAnun
   return (PLATAFORMAS_DE_ANUNCIO as readonly string[]).includes(platform);
 }
 
+export const PLATAFORMAS_COM_RECURSO = ['ga4', 'gtm', 'searchconsole', 'youtube', 'gbp'] as const;
+export type PlataformaComRecurso = (typeof PLATAFORMAS_COM_RECURSO)[number];
+
+export function temRecursoParaVincular(platform: Platform): platform is PlataformaComRecurso {
+  return (PLATAFORMAS_COM_RECURSO as readonly string[]).includes(platform);
+}
+
+export const ROTULO_DO_RECURSO: Record<PlataformaComRecurso, string> = {
+  ga4: 'Propriedade',
+  gtm: 'Contêiner',
+  searchconsole: 'Site',
+  youtube: 'Canal',
+  gbp: 'Local',
+};
+
 export const ROTULO_DA_PLATAFORMA: Record<Platform, string> = {
   google: 'Google Ads',
   meta: 'Meta Ads',
@@ -48,7 +63,7 @@ export const MARCA_DA_PLATAFORMA: Record<Platform, string | null> = {
   searchconsole: '/marcas/searchconsole.png',
   youtube: '/marcas/youtube.png',
   gbp: '/marcas/gbp.png',
-  whatsapp: null,
+  whatsapp: '/marcas/whatsapp.png',
 };
 
 export const PARA_QUE_SERVE: Record<Platform, string> = {

@@ -5,6 +5,13 @@ import {
   parseAccessibleCustomers,
   triarClientesGoogle,
   parseMetaAdAccounts,
+  parseGa4Properties,
+  parseGtmAccountIds,
+  parseGtmContainers,
+  parseSearchConsoleSites,
+  parseYoutubeChannels,
+  parseGbpAccounts,
+  parseGbpLocations,
   sortForSelection,
   type DiscoveredAccount,
 } from '@/modules/connections/domain/discovery';
@@ -194,6 +201,80 @@ export function createPlatformDiscovery(): PlatformDiscovery {
       const accounts = parseMetaAdAccounts(owned);
       logger.info('discovery.meta.done', { accounts: accounts.length });
       return sortForSelection(dedupe(accounts));
+    },
+
+    async ga4(accessToken) {
+      esquecerFalhas();
+      const payload = await fetchJson(
+        'https://analyticsadmin.googleapis.com/v1beta/accountSummaries',
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      const propriedades = parseGa4Properties(payload);
+      logger.info('discovery.ga4.done', { propriedades: propriedades.length });
+      return sortForSelection(propriedades);
+    },
+
+    async gtm(accessToken) {
+      esquecerFalhas();
+      const headers = { Authorization: `Bearer ${accessToken}` };
+      const contas = parseGtmAccountIds(
+        await fetchJson('https://www.googleapis.com/tagmanager/v2/accounts', { headers }),
+      );
+
+      const containers: DiscoveredAccount[] = [];
+      for (const contaId of contas) {
+        const payload = await fetchJson(
+          `https://www.googleapis.com/tagmanager/v2/accounts/${contaId}/containers`,
+          { headers },
+        );
+        containers.push(...parseGtmContainers(payload));
+      }
+
+      logger.info('discovery.gtm.done', { contas: contas.length, containers: containers.length });
+      return sortForSelection(containers);
+    },
+
+    async searchconsole(accessToken) {
+      esquecerFalhas();
+      const payload = await fetchJson('https://www.googleapis.com/webmasters/v3/sites', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const sites = parseSearchConsoleSites(payload);
+      logger.info('discovery.searchconsole.done', { sites: sites.length });
+      return sortForSelection(sites);
+    },
+
+    async youtube(accessToken) {
+      esquecerFalhas();
+      const payload = await fetchJson(
+        'https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true',
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      const canais = parseYoutubeChannels(payload);
+      logger.info('discovery.youtube.done', { canais: canais.length });
+      return sortForSelection(canais);
+    },
+
+    async gbp(accessToken) {
+      esquecerFalhas();
+      const headers = { Authorization: `Bearer ${accessToken}` };
+      const contas = parseGbpAccounts(
+        await fetchJson('https://mybusinessaccountmanagement.googleapis.com/v1/accounts', {
+          headers,
+        }),
+      );
+
+      const locais: DiscoveredAccount[] = [];
+      for (const contaId of contas) {
+        const payload = await fetchJson(
+          `https://mybusinessbusinessinformation.googleapis.com/v1/accounts/${contaId}/locations?readMask=title`,
+          { headers },
+        );
+        locais.push(...parseGbpLocations(payload));
+      }
+
+      logger.info('discovery.gbp.done', { contas: contas.length, locais: locais.length });
+      return sortForSelection(locais);
     },
   };
 }

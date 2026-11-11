@@ -6,6 +6,7 @@ export type StoredDiscovery = DiscoveredAccount & {
   readonly id: string;
   readonly connectionId: string;
   readonly state: 'discovered' | 'linked' | 'ignored' | 'lost';
+  readonly clientId: string | null;
 };
 
 type Row = {
@@ -19,6 +20,7 @@ type Row = {
   manager_external_id: string | null;
   inactive: boolean;
   state: StoredDiscovery['state'];
+  client_id: string | null;
 };
 
 const toStored = (row: Row): StoredDiscovery => ({
@@ -33,6 +35,7 @@ const toStored = (row: Row): StoredDiscovery => ({
   inactive: row.inactive,
   spendingLast30Days: null,
   state: row.state,
+  clientId: row.client_id,
 });
 
 export type DiscoveredAccountRepository = {
@@ -45,6 +48,7 @@ export type DiscoveredAccountRepository = {
   listAll(organizationId: string): Promise<readonly StoredDiscovery[]>;
   listByConnection(organizationId: string, connectionId: string): Promise<readonly StoredDiscovery[]>;
   markLinked(organizationId: string, id: string, adAccountId: string): Promise<void>;
+  markLinkedToClient(organizationId: string, id: string, clientId: string): Promise<void>;
   markIgnored(organizationId: string, id: string): Promise<void>;
 };
 
@@ -114,6 +118,15 @@ export function createDiscoveredAccountRepository(): DiscoveredAccountRepository
         await tx`
           UPDATE integrations.connection_accounts
           SET state = 'linked', ad_account_id = ${adAccountId}
+          WHERE id = ${id}`;
+      });
+    },
+
+    async markLinkedToClient(organizationId, id, clientId) {
+      await withTenant(organizationId, async (tx) => {
+        await tx`
+          UPDATE integrations.connection_accounts
+          SET state = 'linked', client_id = ${clientId}
           WHERE id = ${id}`;
       });
     },

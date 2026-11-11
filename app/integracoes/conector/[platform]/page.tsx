@@ -8,6 +8,8 @@ import {
   PARA_QUE_SERVE,
   Platform,
   ROTULO_DA_PLATAFORMA,
+  ROTULO_DO_RECURSO,
+  temRecursoParaVincular,
   veiculaAnuncio,
   type Connection,
 } from '@/modules/connections/domain/connection';
@@ -23,6 +25,7 @@ import {
   guardarChave,
   removerChave,
   vincularAlcancavel,
+  vincularRecurso,
 } from '@/../app/integracoes/acoes';
 import { env } from '@/shared/config/env';
 
@@ -101,6 +104,14 @@ export default async function ConectorPage({
   const clientesAtivos = clientes.filter((cliente) => cliente.status === 'active');
   const clienteUnico = clientesAtivos.length === 1 ? clientesAtivos[0]!.id : '';
   const substantivo = agencia ? 'cliente' : 'negócio';
+
+  const recursosPendentes = temRecursoParaVincular(plataforma)
+    ? alcancaveis.filter((recurso) => recurso.state === 'discovered')
+    : [];
+  const recursosVinculados = temRecursoParaVincular(plataforma)
+    ? alcancaveis.filter((recurso) => recurso.state === 'linked')
+    : [];
+  const clientesPorId = new Map(clientes.map((cliente) => [cliente.id, cliente]));
 
   const oauth = falaOauth(plataforma);
   const pronto = oauth && isConfigured(credenciaisDaPlataforma(plataforma), plataforma);
@@ -521,6 +532,124 @@ export default async function ConectorPage({
                         </tr>
                       );
                     })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      ) : null}
+
+      {temRecursoParaVincular(plataforma) ? (
+        <>
+          <div className="card">
+            <div className="card__head">
+              <span className="card__title">{ROTULO_DO_RECURSO[plataforma]}s vinculados</span>
+              <span className="card__sub">{recursosVinculados.length} vinculado(s)</span>
+            </div>
+            {recursosVinculados.length === 0 ? (
+              <div className="empty">Nenhum {ROTULO_DO_RECURSO[plataforma].toLowerCase()} vinculado ainda.</div>
+            ) : (
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>{ROTULO_DO_RECURSO[plataforma]}</th>
+                      <th>{agencia ? 'Cliente' : 'Negócio'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recursosVinculados.map((recurso) => (
+                      <tr key={recurso.id}>
+                        <td>
+                          <div className="strong">{recurso.name}</div>
+                          <div className="mono subtle">{recurso.externalId}</div>
+                        </td>
+                        <td>
+                          {recurso.clientId && clientesPorId.get(recurso.clientId) ? (
+                            <Link href={`/clientes/${recurso.clientId}`}>
+                              {clientesPorId.get(recurso.clientId)!.name}
+                            </Link>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="card">
+            <div className="card__head">
+              <span className="card__title">Conectar {ROTULO_DO_RECURSO[plataforma].toLowerCase()}</span>
+              <span className="card__sub">
+                {recursosPendentes.length === 0
+                  ? 'tudo o que você alcança já está vinculado'
+                  : `${recursosPendentes.length} ${ROTULO_DO_RECURSO[plataforma].toLowerCase()}(s) ao seu alcance, ainda sem ${substantivo}`}
+              </span>
+            </div>
+
+            {recursosPendentes.length === 0 ? (
+              <div className="empty">
+                Os recursos aparecem aqui depois que você autoriza a plataforma.
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>{ROTULO_DO_RECURSO[plataforma]}</th>
+                      <th>{agencia ? 'Cliente' : 'Negócio'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recursosPendentes.map((recurso) => (
+                      <tr key={recurso.id}>
+                        <td>
+                          <div className="strong">{recurso.name}</div>
+                          <div className="mono subtle">{recurso.externalId}</div>
+                        </td>
+                        <td>
+                          {!podeVincular ? (
+                            <span className="subtle">seu papel não vincula recursos</span>
+                          ) : clientesAtivos.length === 0 ? (
+                            <span className="row">
+                              <span className="subtle">
+                                todo recurso tem dono: cadastre um {substantivo} para vincular
+                              </span>
+                              <Link className="btn btn--compacto" href="/clientes/novo">
+                                Cadastrar {substantivo}
+                              </Link>
+                            </span>
+                          ) : (
+                            <form className="form--inline" action={vincularRecurso}>
+                              <input type="hidden" name="recursoId" value={recurso.id} />
+                              <input type="hidden" name="voltarPara" value={voltarPara} />
+                              <select
+                                className="select select--compacto"
+                                name="clientId"
+                                defaultValue={clienteUnico}
+                                required
+                                aria-label={`${agencia ? 'Cliente' : 'Negócio'} dono de ${recurso.name}`}
+                              >
+                                <option value="">escolher {substantivo}…</option>
+                                {clientesAtivos.map((cliente) => (
+                                  <option key={cliente.id} value={cliente.id}>
+                                    {cliente.name}
+                                  </option>
+                                ))}
+                              </select>
+                              <button className="btn btn--primary btn--compacto" type="submit">
+                                Vincular
+                              </button>
+                            </form>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>

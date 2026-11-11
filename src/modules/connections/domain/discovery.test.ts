@@ -4,8 +4,15 @@ import {
   dedupe,
   formatGoogleCustomerId,
   parseAccessibleCustomers,
+  parseGbpAccounts,
+  parseGbpLocations,
+  parseGa4Properties,
   parseGoogleCustomerClients,
+  parseGtmAccountIds,
+  parseGtmContainers,
   parseMetaAdAccounts,
+  parseSearchConsoleSites,
+  parseYoutubeChannels,
   sortForSelection,
 } from './discovery.ts';
 
@@ -142,5 +149,110 @@ describe('dedupe e ordenação', () => {
       { ...base, externalId: 'act_3', name: 'Beta', inactive: false },
     ]);
     assert.deepEqual(accounts.map((account) => account.name), ['Beta', 'Zebra', 'Alfa']);
+  });
+});
+
+describe('parseGa4Properties', () => {
+  it('extrai as propriedades de dentro de cada conta', () => {
+    const propriedades = parseGa4Properties({
+      accountSummaries: [
+        {
+          propertySummaries: [
+            { property: 'properties/111', displayName: 'Site A' },
+            { property: 'properties/222', displayName: 'Site B' },
+          ],
+        },
+      ],
+    });
+    assert.deepEqual(
+      propriedades.map((p) => [p.externalId, p.name]),
+      [
+        ['111', 'Site A'],
+        ['222', 'Site B'],
+      ],
+    );
+  });
+
+  it('payload vazio ou fora do formato devolve lista vazia', () => {
+    assert.deepEqual(parseGa4Properties({}), []);
+    assert.deepEqual(parseGa4Properties(null), []);
+  });
+});
+
+describe('parseGtmAccountIds e parseGtmContainers', () => {
+  it('lista os ids de conta', () => {
+    assert.deepEqual(parseGtmAccountIds({ account: [{ accountId: '1' }, { accountId: '2' }] }), [
+      '1',
+      '2',
+    ]);
+  });
+
+  it('prefere o publicId (GTM-XXXX) como identificador do contêiner', () => {
+    const containers = parseGtmContainers({
+      container: [{ containerId: '999', publicId: 'GTM-ABC123', name: 'Site principal' }],
+    });
+    assert.deepEqual(containers[0]?.externalId, 'GTM-ABC123');
+  });
+
+  it('cai para o containerId quando não há publicId', () => {
+    const containers = parseGtmContainers({ container: [{ containerId: '999', name: 'Sem publicId' }] });
+    assert.deepEqual(containers[0]?.externalId, '999');
+  });
+});
+
+describe('parseSearchConsoleSites', () => {
+  it('marca como inativo o site com acesso ainda não verificado', () => {
+    const sites = parseSearchConsoleSites({
+      siteEntry: [
+        { siteUrl: 'https://a.com/', permissionLevel: 'siteOwner' },
+        { siteUrl: 'https://b.com/', permissionLevel: 'siteUnverifiedUser' },
+      ],
+    });
+    assert.deepEqual(
+      sites.map((s) => [s.externalId, s.inactive]),
+      [
+        ['https://a.com/', false],
+        ['https://b.com/', true],
+      ],
+    );
+  });
+});
+
+describe('parseYoutubeChannels', () => {
+  it('usa o título do snippet como nome', () => {
+    const canais = parseYoutubeChannels({
+      items: [{ id: 'UC123', snippet: { title: 'Meu Canal' } }],
+    });
+    assert.deepEqual(canais, [
+      {
+        platform: 'youtube',
+        externalId: 'UC123',
+        name: 'Meu Canal',
+        currency: '',
+        timezone: '',
+        managerExternalId: null,
+        spendingLast30Days: null,
+        inactive: false,
+      },
+    ]);
+  });
+});
+
+describe('parseGbpAccounts e parseGbpLocations', () => {
+  it('extrai o id numérico do nome da conta', () => {
+    assert.deepEqual(parseGbpAccounts({ accounts: [{ name: 'accounts/555' }] }), ['555']);
+  });
+
+  it('extrai o id numérico do nome do local, usando o title como nome', () => {
+    const locais = parseGbpLocations({ locations: [{ name: 'locations/777', title: 'Loja Centro' }] });
+    assert.deepEqual(
+      locais.map((l) => [l.externalId, l.name]),
+      [['777', 'Loja Centro']],
+    );
+  });
+
+  it('ignora entradas sem o prefixo esperado', () => {
+    assert.deepEqual(parseGbpAccounts({ accounts: [{ name: 'algo-estranho' }] }), []);
+    assert.deepEqual(parseGbpLocations({ locations: [{ name: 'algo-estranho' }] }), []);
   });
 });

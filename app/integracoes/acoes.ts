@@ -189,6 +189,38 @@ export async function vincularAlcancavel(formData: FormData): Promise<void> {
   voltar(`${escolhida.name} vinculada.`);
 }
 
+export async function vincularRecurso(formData: FormData): Promise<void> {
+  const contexto = await contextoDeConexoes();
+  const organization = contexto.organization;
+  const destino = destinoDoRetorno(formData);
+  const voltar = (aviso: string): never =>
+    redirect(`${destino}?aviso=${encodeURIComponent(aviso)}`);
+
+  if (!canOperate(contexto.role)) {
+    voltar('Seu papel não permite vincular recursos.');
+    return;
+  }
+
+  const descobertas = await modules().discoveredAccounts.listPending(organization.id);
+  const escolhido = descobertas.find((recurso) => recurso.id === text(formData, 'recursoId'));
+  if (!escolhido) {
+    voltar('Recurso não encontrado entre os que você alcança.');
+    return;
+  }
+
+  const clientId = text(formData, 'clientId');
+  const dono = (await modules().clients.list(organization.id)).find(
+    (cliente) => cliente.id === clientId && cliente.status === 'active',
+  );
+  if (!dono) {
+    voltar('Escolha um cliente ativo desta organização. É ele que dá dono ao recurso.');
+    return;
+  }
+
+  await modules().discoveredAccounts.markLinkedToClient(organization.id, escolhido.id, clientId);
+  voltar(`${escolhido.name} vinculado.`);
+}
+
 export async function guardarChave(formData: FormData): Promise<void> {
   const contexto = await contextoDeConexoes();
   const ator = await atorAtual();
