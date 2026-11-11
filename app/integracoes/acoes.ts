@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { modules } from '@/composition';
-import { usaChaveDeApi } from '@/modules/connections/domain/chaveDeApi';
+import { montarChaveZapi, usaChaveDeApi } from '@/modules/connections/domain/chaveDeApi';
 import { isSafeReturnPath } from '@/modules/connections/domain/oauth';
 import type { Platform } from '@/modules/connections/domain/connection';
 import { checkbox, text, toActionState } from '@/shared/http/actions';
@@ -202,17 +202,53 @@ export async function guardarChave(formData: FormData): Promise<void> {
     return;
   }
 
+  const chave =
+    pedida === 'zapi'
+      ? montarChaveZapi(text(formData, 'instanceId'), text(formData, 'token'))
+      : text(formData, 'chave');
+
   const resultado = await modules().connections.guardarChave(
     {
       organizationId: contexto.organization.id,
       organizationSlug: contexto.organization.slug,
       papelDeQuemAge: contexto.role,
       platform: pedida as Platform,
-      chave: text(formData, 'chave'),
+      chave,
     },
     ator,
   );
 
-  if (!resultado.ok) voltar(toActionState(resultado.error).error ?? 'Não deu para guardar a chave.');
-  voltar('Chave guardada no cofre. O banco ficou só com a referência.');
+  if (!resultado.ok) {
+    voltar(toActionState(resultado.error).error ?? 'Não deu para guardar a chave.');
+    return;
+  }
+  voltar('Chave testada com sucesso e guardada no cofre. O banco ficou só com a referência.');
+}
+
+export async function removerChave(formData: FormData): Promise<void> {
+  const contexto = await contextoDeConexoes();
+  const ator = await atorAtual();
+  const destino = destinoDoRetorno(formData);
+  const voltar = (aviso: string): never =>
+    redirect(`${destino}?aviso=${encodeURIComponent(aviso)}`);
+
+  if (!canAdminister(contexto.role)) {
+    voltar('Só quem administra a organização pode remover uma conexão.');
+    return;
+  }
+
+  const resultado = await modules().connections.removerChave(
+    {
+      organizationId: contexto.organization.id,
+      papelDeQuemAge: contexto.role,
+      connectionId: text(formData, 'connectionId'),
+    },
+    ator,
+  );
+
+  if (!resultado.ok) {
+    voltar(toActionState(resultado.error).error ?? 'Não deu para remover a conexão.');
+    return;
+  }
+  voltar('Conexão removida.');
 }

@@ -14,6 +14,11 @@ const MAX_BODY_BYTES = 1_000_000;
 const RATE_LIMIT = 300;
 const RATE_WINDOW_MS = 60_000;
 
+function ipDoClienteViaProxyConfiavel(request: NextRequest): string {
+  const encadeamento = request.headers.get('x-forwarded-for')?.split(',') ?? [];
+  return encadeamento.at(-1)?.trim() || 'desconhecido';
+}
+
 export function GET(request: NextRequest): NextResponse {
   const query = request.nextUrl.searchParams;
   const verifyToken = env().WHATSAPP_WEBHOOK_VERIFY_TOKEN;
@@ -37,7 +42,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'app_indisponivel' }, { status: 503 });
   }
 
-  const sourceIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'desconhecido';
+  const sourceIp = ipDoClienteViaProxyConfiavel(request);
   const verdict = consume(`webhook:whatsapp:${sourceIp}`, RATE_LIMIT, RATE_WINDOW_MS);
   if (!verdict.allowed) {
     return NextResponse.json(

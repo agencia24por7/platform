@@ -90,11 +90,13 @@ export type Connection = {
   readonly status: ConnectionStatus;
   readonly expiresAt: Date | null;
   readonly authorizedAt: Date;
+  readonly webhookToken: string | null;
 };
 
-export type NewConnection = Omit<Connection, 'id' | 'status' | 'authorizedAt'> & {
+export type NewConnection = Omit<Connection, 'id' | 'status' | 'authorizedAt' | 'webhookToken'> & {
   readonly expiresAt: Date | null;
   readonly status?: Connection['status'];
+  readonly webhookToken?: string | null;
 };
 
 export const CREDENCIAL_SEM_COFRE = 'pendente:cofre-indisponivel';

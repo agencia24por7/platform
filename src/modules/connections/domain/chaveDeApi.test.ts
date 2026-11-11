@@ -3,6 +3,8 @@ import test from 'node:test';
 import {
   CONTA_UNICA,
   identidadeDaConexao,
+  montarChaveZapi,
+  partesDaChaveZapi,
   rotuloDaChave,
   usaChaveDeApi,
   validarChave,
@@ -47,4 +49,24 @@ test('a identidade da conexão não deriva da chave', () => {
 
 test('trocar a chave renova a mesma conexão em vez de criar outra', () => {
   assert.equal(identidadeDaConexao(), identidadeDaConexao());
+});
+
+test('Z-API também se conecta por chave', () => {
+  assert.equal(usaChaveDeApi('zapi'), true);
+});
+
+test('a chave do Z-API junta instância e token com dois-pontos', () => {
+  assert.equal(montarChaveZapi('ABC123', 'tok-xyz'), 'ABC123:tok-xyz');
+  assert.equal(montarChaveZapi(' ABC123 ', ' tok-xyz '), 'ABC123:tok-xyz');
+});
+
+test('a chave do Z-API é separável de volta em instância e token', () => {
+  assert.deepEqual(partesDaChaveZapi('ABC123:tok-xyz'), { instanceId: 'ABC123', token: 'tok-xyz' });
+});
+
+test('chave do Z-API sem os dois-pontos, ou com mais de um, é recusada', () => {
+  assert.equal(partesDaChaveZapi('sem-separador'), null);
+  assert.equal(partesDaChaveZapi('a:b:c'), null);
+  assert.equal(partesDaChaveZapi(':semid'), null);
+  assert.equal(partesDaChaveZapi('semtoken:'), null);
 });

@@ -20,8 +20,10 @@ import {
   validarChave,
 } from '@/modules/connections/domain/chaveDeApi';
 import type { CredentialVault } from '@/modules/connections/application/credentialVault';
+import type { CredentialTester } from '@/modules/connections/application/credentialTester';
 import type { AdAccountRepository } from '@/modules/connections/infrastructure/adAccountRepository';
 import type { ConnectionRepository } from '@/modules/connections/infrastructure/connectionRepository';
+import { randomBytes } from 'node:crypto';
 
 export type LinkAccountInput = Omit<NewAdAccount, 'organizationId'> & {
   readonly organizationId: string;
@@ -41,6 +43,11 @@ export type ConnectionService = {
     platform: Platform;
     chave: string;
   }, ator: Ator): Promise<Result<Connection, Failure>>;
+  removerChave(input: {
+    organizationId: string;
+    papelDeQuemAge: MemberRole;
+    connectionId: string;
+  }, ator: Ator): Promise<Result<void, Failure>>;
   reassignAccount(input: {
     organizationId: string;
     papelDeQuemAge: MemberRole;
@@ -65,6 +72,7 @@ export function createConnectionService(
   audit: AuditRecorder,
   clients: ClientOwnership,
   vault: CredentialVault,
+  tester: CredentialTester,
 ): ConnectionService {
   return {
     async guardarChave(input, ator) {
@@ -80,6 +88,10 @@ export function createConnectionService(
       if (!vault.available) return err(failure('unavailable', MOTIVO_DA_CHAVE.cofre_indisponivel));
 
       const chave = input.chave.trim();
+
+      const teste = await tester.testar(input.platform, chave);
+      if (!teste.ok) return err(teste.error);
+
       const apelido = rotuloDaChave(chave);
       const identidade = identidadeDaConexao();
       const label = ROTULO_DA_PLATAFORMA[input.platform];
@@ -93,6 +105,15 @@ export function createConnectionService(
         clientSecret: '',
       });
 
+      const existente = await connections.findByExternalId(
+        input.organizationId,
+        input.platform,
+        identidade,
+      );
+
+      const webhookToken =
+        existente?.webhookToken ?? (input.platform === 'zapi' ? randomBytes(24).toString('base64url') : null);
+
       const proposta = {
         organizationId: input.organizationId,
         platform: input.platform,
@@ -104,13 +125,8 @@ export function createConnectionService(
         credentialRef,
         status: 'active' as const,
         expiresAt: null,
+        webhookToken,
       };
-
-      const existente = await connections.findByExternalId(
-        input.organizationId,
-        input.platform,
-        identidade,
-      );
 
       const connection = existente
         ? await connections.renew({ ...proposta, id: existente.id })
@@ -133,6 +149,36 @@ export function createConnectionService(
       });
 
       return ok(connection);
+    },
+
+    async removerChave(input, ator) {
+      if (!canAdminister(input.papelDeQuemAge)) {
+        return err(failure('forbidden', MOTIVO_DA_CHAVE.sem_permissao));
+      }
+
+      const conexao = await connections.findById(input.organizationId, input.connectionId);
+      if (!conexao || !usaChaveDeApi(conexao.platform)) {
+        return err(failure('not_found', 'Conexão não encontrada.'));
+      }
+
+      const removida = await connections.remove(input.organizationId, conexao.id);
+      if (!removida) return err(failure('not_found', 'Conexão não encontrada.'));
+
+      await vault.discard(conexao.credentialRef);
+
+      await audit.record({
+        organizationId: input.organizationId,
+        actorType: 'user',
+        actorId: ator.userId,
+        action: 'connection.key_removed',
+        targetType: 'connection',
+        targetId: conexao.id,
+        requestId: ator.requestId,
+        sourceIp: ator.sourceIp,
+        metadata: { platform: conexao.platform },
+      });
+
+      return ok(undefined);
     },
 
     async createConnection(input, ator) {

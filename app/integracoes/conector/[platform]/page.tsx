@@ -21,8 +21,10 @@ import {
   aceitarConvite,
   convidarParaMcc,
   guardarChave,
+  removerChave,
   vincularAlcancavel,
 } from '@/../app/integracoes/acoes';
+import { env } from '@/shared/config/env';
 
 export const dynamic = 'force-dynamic';
 
@@ -161,6 +163,7 @@ export default async function ConectorPage({
                     <th>Caminho</th>
                     <th>Estado</th>
                     <th>Autorizada em</th>
+                    {usaChaveDeApi(plataforma) && canAdminister(ctx.role) ? <th /> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -181,6 +184,17 @@ export default async function ConectorPage({
                         </span>
                       </td>
                       <td className="muted">{conexao.authorizedAt.toLocaleString('pt-BR')}</td>
+                      {usaChaveDeApi(plataforma) && canAdminister(ctx.role) ? (
+                        <td>
+                          <form action={removerChave}>
+                            <input type="hidden" name="connectionId" value={conexao.id} />
+                            <input type="hidden" name="voltarPara" value={voltarPara} />
+                            <button className="btn btn--compacto" type="submit">
+                              Excluir
+                            </button>
+                          </form>
+                        </td>
+                      ) : null}
                     </tr>
                   ))}
                 </tbody>
@@ -207,30 +221,72 @@ export default async function ConectorPage({
             <form className="form--linha" action={guardarChave}>
               <input type="hidden" name="plataforma" value={plataforma} />
               <input type="hidden" name="voltarPara" value={voltarPara} />
-              <label className="field">
-                <span className="field__label">Chave de API</span>
-                <input
-                  className="input"
-                  type="password"
-                  name="chave"
-                  required
-                  autoComplete="off"
-                  spellCheck={false}
-                  placeholder={plataforma === 'apify' ? 'apify_api_...' : 'token da instância'}
-                />
-                <span className="field__hint">
-                  A chave vai direto para o cofre do n8n. Nosso banco guarda só a referência e as
-                  quatro primeiras e últimas letras, para você reconhecê-la depois.
-                </span>
-              </label>
+              {plataforma === 'zapi' ? (
+                <>
+                  <label className="field">
+                    <span className="field__label">ID da instância</span>
+                    <input className="input" type="text" name="instanceId" required autoComplete="off" />
+                  </label>
+                  <label className="field">
+                    <span className="field__label">Token da instância</span>
+                    <input
+                      className="input"
+                      type="password"
+                      name="token"
+                      required
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                    <span className="field__hint">
+                      Testamos contra o Z-API antes de guardar — a instância precisa estar
+                      conectada a um WhatsApp.
+                    </span>
+                  </label>
+                </>
+              ) : (
+                <label className="field">
+                  <span className="field__label">Chave de API</span>
+                  <input
+                    className="input"
+                    type="password"
+                    name="chave"
+                    required
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="apify_api_..."
+                  />
+                  <span className="field__hint">
+                    Testamos contra a Apify antes de guardar. O banco fica só com a referência e as
+                    quatro primeiras e últimas letras, para você reconhecê-la depois.
+                  </span>
+                </label>
+              )}
               <button className="btn btn--primary" type="submit">
-                Guardar no cofre
+                Testar e guardar no cofre
               </button>
             </form>
           </section>
         ) : (
           <div className="empty">Só quem administra a organização pode guardar uma chave.</div>
         )
+      ) : null}
+
+      {plataforma === 'zapi' && conexoes.length > 0 ? (
+        <div className="card">
+          <div className="card__head">
+            <span className="card__title">URL do webhook</span>
+            <span className="card__sub">cole isso na configuração de webhook da instância no Z-API</span>
+          </div>
+          <div className="fornecedor__corpo">
+            {conexoes.map((conexao) =>
+              conexao.webhookToken ? (
+                <div key={conexao.id} className="mono subtle">
+                  {env().TRIA_APP_BASE_URL}/api/webhooks/zapi/{conexao.webhookToken}
+                </div>
+              ) : null,
+            )}
+          </div>
+        </div>
       ) : null}
 
       {plataforma === 'google' ? (

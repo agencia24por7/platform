@@ -1,5 +1,10 @@
 BEGIN;
 
+ALTER TABLE integrations.connections ADD COLUMN webhook_token text UNIQUE;
+
+COMMENT ON COLUMN integrations.connections.webhook_token IS
+  'Segredo de alta entropia exigido na URL do webhook (ex.: Z-API). Só a conexão que o possui pode gravar eventos — o id da conexão sozinho não basta, porque pode vazar em log, print ou configuração copiada.';
+
 CREATE TABLE integrations.whatsapp_inbound_events (
   id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   connection_id  uuid REFERENCES integrations.connections(id) ON DELETE SET NULL,
@@ -18,7 +23,7 @@ COMMENT ON TABLE integrations.whatsapp_inbound_events IS
 ALTER TABLE integrations.whatsapp_inbound_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE integrations.whatsapp_inbound_events FORCE ROW LEVEL SECURITY;
 
-CREATE FUNCTION integrations.resolve_webhook_connection(p_connection_id uuid, p_platform integrations.platform)
+CREATE FUNCTION integrations.resolve_webhook_connection(p_token text, p_platform integrations.platform)
 RETURNS TABLE (connection_id uuid, status integrations.connection_status)
 LANGUAGE sql
 SECURITY DEFINER
@@ -27,14 +32,14 @@ STABLE
 AS $$
   SELECT id, status
   FROM integrations.connections
-  WHERE id = p_connection_id AND platform = p_platform;
+  WHERE webhook_token = p_token AND platform = p_platform;
 $$;
 
 COMMENT ON FUNCTION integrations.resolve_webhook_connection IS
-  'Única travessia de tenant do sistema. Confirma que a conexão existe e fala a plataforma esperada antes do webhook ser aceito — nunca devolve segredo, nem dado de outra plataforma.';
+  'Única travessia de tenant do sistema. Resolve pelo segredo da URL, nunca pelo id da conexão — um id vazado não basta pra gravar evento. Confirma a plataforma esperada e nunca devolve segredo nem dado de outra plataforma.';
 
-REVOKE ALL ON FUNCTION integrations.resolve_webhook_connection(uuid, integrations.platform) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION integrations.resolve_webhook_connection(uuid, integrations.platform) TO tria_app;
+REVOKE ALL ON FUNCTION integrations.resolve_webhook_connection(text, integrations.platform) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION integrations.resolve_webhook_connection(text, integrations.platform) TO tria_app;
 
 CREATE FUNCTION integrations.record_whatsapp_inbound(
   p_connection_id uuid,
