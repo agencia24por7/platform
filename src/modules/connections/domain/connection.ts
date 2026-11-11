@@ -31,7 +31,7 @@ export const ROTULO_DA_PLATAFORMA: Record<Platform, string> = {
   pixel: 'Meta Pixel',
   searchconsole: 'Search Console',
   youtube: 'YouTube',
-  gbp: 'Perfil da Empresa no Google',
+  gbp: 'Google Minha Empresa',
 };
 
 export const MARCA_DA_PLATAFORMA: Record<Platform, string | null> = {
@@ -44,8 +44,8 @@ export const MARCA_DA_PLATAFORMA: Record<Platform, string | null> = {
   gtm: '/marcas/gtm.png',
   pixel: '/marcas/meta.png',
   searchconsole: '/marcas/searchconsole.png',
-  youtube: null,
-  gbp: null,
+  youtube: '/marcas/youtube.png',
+  gbp: '/marcas/gbp.png',
 };
 
 export const PARA_QUE_SERVE: Record<Platform, string> = {
@@ -59,7 +59,7 @@ export const PARA_QUE_SERVE: Record<Platform, string> = {
   pixel: 'Eventos do Pixel e das Conversions API da Meta. Mede o que o site devolve para os anúncios.',
   searchconsole: 'Consultas, cliques e impressões da busca orgânica dos sites verificados.',
   youtube: 'Relatórios do canal no YouTube Analytics, inclusive receita, só leitura.',
-  gbp: 'Visualizações, buscas e ações no Perfil da Empresa. A API do Google só oferece escopo de gestão.',
+  gbp: 'Visualizações, buscas e ações no Google Minha Empresa. A API do Google só oferece escopo de gestão.',
 };
 
 export const GrantType = {

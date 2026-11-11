@@ -130,7 +130,7 @@ export const PROVIDERS: Readonly<Record<PlataformaOauth, OauthProvider>> = {
   },
   gbp: {
     platform: 'gbp',
-    label: 'Perfil da Empresa no Google',
+    label: 'Google Minha Empresa',
     authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
     tokenUrl: 'https://oauth2.googleapis.com/token',
     scopes: ['https://www.googleapis.com/auth/business.manage', ...ESCOPOS_DE_IDENTIDADE],
