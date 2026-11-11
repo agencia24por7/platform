@@ -39,7 +39,7 @@ export const MARCA_DA_PLATAFORMA: Record<Platform, string | null> = {
   meta: '/marcas/meta.png',
   rdstation: '/marcas/rdstation.png',
   apify: '/marcas/apify.png',
-  ga4: null,
+  ga4: '/marcas/ga4.png',
   zapi: '/marcas/zapi.png',
   gtm: '/marcas/gtm.png',
   pixel: '/marcas/meta.png',
