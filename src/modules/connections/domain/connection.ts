@@ -92,6 +92,8 @@ export type GrantType = (typeof GrantType)[keyof typeof GrantType];
 
 export type ConnectionStatus = 'active' | 'expiring' | 'degraded' | 'revoked' | 'reauth_pending';
 
+export type AuthorizedVia = 'staff' | 'invite';
+
 export type Connection = {
   readonly id: string;
   readonly organizationId: string;
@@ -106,6 +108,7 @@ export type Connection = {
   readonly expiresAt: Date | null;
   readonly authorizedAt: Date;
   readonly webhookToken: string | null;
+  readonly authorizedVia: AuthorizedVia;
 };
 
 export type NewConnection = Omit<Connection, 'id' | 'status' | 'authorizedAt' | 'webhookToken'> & {

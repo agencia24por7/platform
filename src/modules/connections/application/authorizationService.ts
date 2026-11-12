@@ -257,6 +257,7 @@ export function createAuthorizationService(
         expiresAt: granted.expiresInSeconds
           ? new Date(Date.now() + granted.expiresInSeconds * 1000)
           : null,
+        authorizedVia: input.autorizadoPor.via === 'invite' ? ('invite' as const) : ('staff' as const),
       };
 
       const connection = already

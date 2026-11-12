@@ -15,6 +15,7 @@ type Row = {
   expires_at: Date | null;
   authorized_at: Date;
   webhook_token: string | null;
+  authorized_via: Connection['authorizedVia'];
 };
 
 const toConnection = (row: Row): Connection => ({
@@ -31,6 +32,7 @@ const toConnection = (row: Row): Connection => ({
   expiresAt: row.expires_at,
   authorizedAt: row.authorized_at,
   webhookToken: row.webhook_token,
+  authorizedVia: row.authorized_via,
 });
 
 export type ConnectionRepository = {
@@ -48,9 +50,9 @@ export function createConnectionRepository(): ConnectionRepository {
       return withTenant(input.organizationId, async (tx) => {
         const rows = (await tx`
           INSERT INTO integrations.connections
-            (organization_id, platform, grant_type, label, external_id, account_email, scopes, credential_ref, expires_at, status, webhook_token)
+            (organization_id, platform, grant_type, label, external_id, account_email, scopes, credential_ref, expires_at, status, webhook_token, authorized_via)
           VALUES (${input.organizationId}, ${input.platform}, ${input.grantType}, ${input.label},
-                  ${input.externalId}, ${input.accountEmail ?? null}, ${input.scopes as string[]}::text[], ${input.credentialRef}, ${input.expiresAt}, ${input.status ?? 'active'}, ${input.webhookToken ?? null})
+                  ${input.externalId}, ${input.accountEmail ?? null}, ${input.scopes as string[]}::text[], ${input.credentialRef}, ${input.expiresAt}, ${input.status ?? 'active'}, ${input.webhookToken ?? null}, ${input.authorizedVia})
           RETURNING *`) as unknown as Row[];
         return toConnection(rows[0]!);
       });

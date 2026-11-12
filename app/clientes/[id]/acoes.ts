@@ -138,7 +138,8 @@ export async function pedirAcessoMetaPartner(formData: FormData): Promise<void> 
 
   const conexoes = await modules().connections.listConnections(organization.id);
   const conexaoMeta = conexoes.find(
-    (conexao) => conexao.platform === 'meta' && conexao.grantType === 'oauth_user',
+    (conexao) =>
+      conexao.platform === 'meta' && conexao.grantType === 'oauth_user' && conexao.authorizedVia === 'staff',
   );
   if (!conexaoMeta) {
     voltar(MOTIVO_DO_PEDIDO_DE_PARTNER.sem_conexao_meta);

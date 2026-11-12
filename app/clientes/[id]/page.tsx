@@ -123,10 +123,13 @@ export default async function ClientPage({
   const podeAdministrar = canAdminister(ctx.role);
   const destinos = irmaos.filter((item) => item.id !== client.id);
   const temConexaoMeta = conexoes.some(
-    (conexao) => conexao.platform === 'meta' && conexao.grantType === 'oauth_user',
+    (conexao) =>
+      conexao.platform === 'meta' && conexao.grantType === 'oauth_user' && conexao.authorizedVia === 'staff',
   );
   const temBusinessManager = organizacao.ok && Boolean(organizacao.value.businessManagerId);
-  const conexaoGoogle = conexoes.find((conexao) => conexao.platform === 'google');
+  const conexaoGoogle = conexoes.find(
+    (conexao) => conexao.platform === 'google' && conexao.authorizedVia === 'staff',
+  );
   const baseUrl = env().TRIA_APP_BASE_URL;
 
   return (
@@ -310,7 +313,7 @@ export default async function ClientPage({
               </p>
               {conexaoGoogle ? (
                 <Link className="btn btn--pill" href={`/integracoes/${conexaoGoogle.id}`}>
-                  Convidar conta para a MCC →
+                  Ver conexão do Google Ads →
                 </Link>
               ) : (
                 <span className="subtle">Autorize o Google Ads com uma conta administradora primeiro.</span>

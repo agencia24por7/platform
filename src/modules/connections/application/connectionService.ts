@@ -126,6 +126,7 @@ export function createConnectionService(
         status: 'active' as const,
         expiresAt: null,
         webhookToken,
+        authorizedVia: 'staff' as const,
       };
 
       const connection = existente
