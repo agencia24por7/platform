@@ -9,10 +9,13 @@ import {
   SITUACOES,
   mudancaPermitida,
 } from '@/modules/clients/domain/ciclo';
-import { canOperate } from '@/modules/identity/domain/user';
+import { canAdminister, canOperate } from '@/modules/identity/domain/user';
 import { atorAtual } from '@/shared/http/ator';
 import { text, toActionState } from '@/shared/http/actions';
 import { requireContext } from '@/shared/http/currentOrganization';
+import { env } from '@/shared/config/env';
+import { ROTULO_DA_PLATAFORMA } from '@/modules/connections/domain/connection';
+import { pedirAcessoMetaPartner, revogarConviteDeIntegracao } from '@/../app/clientes/[id]/acoes';
 
 export const dynamic = 'force-dynamic';
 
@@ -107,12 +110,22 @@ export default async function ClientPage({
   if (!found.ok) notFound();
 
   const client = found.value;
-  const [accounts, irmaos] = await Promise.all([
+  const [accounts, irmaos, convites, pedidosDePartner, organizacao, conexoes] = await Promise.all([
     modules().connections.listAccountsByClient(organization.id, client.id),
     modules().clients.list(organization.id),
+    modules().connectionInvites.listByClient(organization.id, client.id),
+    modules().tasks.listByClient(organization.id, client.id),
+    modules().organizations.byId(organization.id),
+    modules().connections.listConnections(organization.id),
   ]);
   const podeMexer = canOperate(ctx.role);
+  const podeAdministrar = canAdminister(ctx.role);
   const destinos = irmaos.filter((item) => item.id !== client.id);
+  const temConexaoMeta = conexoes.some(
+    (conexao) => conexao.platform === 'meta' && conexao.grantType === 'oauth_user',
+  );
+  const temBusinessManager = organizacao.ok && Boolean(organizacao.value.businessManagerId);
+  const baseUrl = env().TRIA_APP_BASE_URL;
 
   return (
     <Shell title={client.name} organization={organization} active="/clientes">
@@ -256,6 +269,115 @@ export default async function ClientPage({
                         )}
                       </td>
                     ) : null}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="card__head">
+          <span className="card__title">Convites de integração</span>
+          <span className="card__sub">
+            Dois jeitos de pedir acesso sem logar como o cliente: link para ele autorizar, ou pedido
+            direto ao Business Manager do Meta.
+          </span>
+        </div>
+
+        {podeAdministrar ? (
+          <div className="card__body" style={{ display: 'flex', flexWrap: 'wrap', gap: 24 }}>
+            <Link className="btn btn--primary btn--pill" href={`/clientes/${client.id}/convite/novo`}>
+              Convite de integração
+            </Link>
+
+            {temConexaoMeta && temBusinessManager ? (
+              <form action={pedirAcessoMetaPartner} className="form--inline">
+                <input type="hidden" name="clientId" value={client.id} />
+                <input
+                  className="input input--compacto"
+                  name="contaDeAnuncio"
+                  placeholder="act_1234567890"
+                  required
+                />
+                <button className="btn btn--pill" type="submit">
+                  Pedir acesso Meta Partner
+                </button>
+              </form>
+            ) : (
+              <span className="subtle">
+                Autorize o Meta Ads com uma conta administradora do Business Manager para liberar o
+                pedido de acesso parceiro.
+              </span>
+            )}
+          </div>
+        ) : null}
+
+        {convites.length === 0 && pedidosDePartner.length === 0 ? (
+          <div className="empty">Nenhum convite ainda.</div>
+        ) : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Caminho</th>
+                  <th>Plataforma</th>
+                  <th>Estado</th>
+                  <th>Criado em</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {convites.flatMap((convite) =>
+                  convite.items.map((item) => (
+                    <tr key={item.id}>
+                      <td className="muted">Link de convite</td>
+                      <td>{ROTULO_DA_PLATAFORMA[item.platform]}</td>
+                      <td>
+                        <span className={`pill ${item.status === 'completed' ? 'pill--ok' : ''}`}>
+                          {item.status}
+                        </span>
+                      </td>
+                      <td className="muted">{convite.createdAt.toLocaleString('pt-BR')}</td>
+                      <td>
+                        {podeAdministrar && item.status === 'pending' && convite.status === 'pending' ? (
+                          <span className="mono subtle" title={`${baseUrl}/convite/${convite.token}`}>
+                            {baseUrl}/convite/{convite.token}
+                          </span>
+                        ) : null}
+                        {podeAdministrar && convite.status === 'pending' ? (
+                          <form action={revogarConviteDeIntegracao} className="form--inline">
+                            <input type="hidden" name="clientId" value={client.id} />
+                            <input type="hidden" name="inviteId" value={convite.id} />
+                            <button className="btn btn--compacto" type="submit">
+                              Revogar convite
+                            </button>
+                          </form>
+                        ) : null}
+                      </td>
+                    </tr>
+                  )),
+                )}
+                {pedidosDePartner.map((pedido) => (
+                  <tr key={pedido.id}>
+                    <td className="muted">Pedido Meta Partner</td>
+                    <td className="mono">{pedido.targetExternalId}</td>
+                    <td>
+                      <span
+                        className={`pill ${
+                          pedido.status === 'done'
+                            ? 'pill--ok'
+                            : pedido.status === 'failed'
+                              ? 'pill--danger'
+                              : 'pill--info'
+                        }`}
+                      >
+                        {pedido.status}
+                      </span>
+                    </td>
+                    <td className="muted">{pedido.createdAt.toLocaleString('pt-BR')}</td>
+                    <td className="subtle">{pedido.outcome ?? '—'}</td>
                   </tr>
                 ))}
               </tbody>

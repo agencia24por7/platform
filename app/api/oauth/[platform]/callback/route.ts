@@ -11,9 +11,10 @@ import {
   type PlataformaOauth,
 } from '@/modules/connections/domain/oauth';
 import { credenciaisDaPlataforma } from '@/modules/connections/application/credenciaisOauth';
-import { decodeStateCookie } from '@/modules/connections/domain/tenantBinding';
+import { decodeStateCookie, type StateCookie } from '@/modules/connections/domain/tenantBinding';
 import { ORGANIZACAO_INTEIRA, escopoDeCliente } from '@/shared/db/escopo';
-import type { Platform } from '@/modules/connections/domain/connection';
+import { temRecursoParaVincular, type Platform } from '@/modules/connections/domain/connection';
+import type { AuthorizationOutcome } from '@/modules/connections/application/authorizationService';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,6 +35,105 @@ function backTo(_request: NextRequest, reason: string): NextResponse {
   );
 }
 
+function redirectComResultado(
+  returnTo: string,
+  fallback: string,
+  platform: string,
+  discovered: number,
+): NextResponse {
+  const base = env().TRIA_APP_BASE_URL;
+  const destination = isSafeReturnPath(returnTo) ? returnTo : fallback;
+  const url = new URL(destination, base);
+
+  if (!sameOrigin(url, base)) {
+    logger.warn('oauth.callback.redirect_blocked', { platform });
+    return clear(NextResponse.redirect(new URL(fallback, base)));
+  }
+
+  url.searchParams.set('autorizado', platform);
+  url.searchParams.set('descobertas', String(discovered));
+  return clear(NextResponse.redirect(url));
+}
+
+async function completarViaConvite(input: {
+  readonly request: NextRequest;
+  readonly platform: string;
+  readonly plataforma: PlataformaOauth;
+  readonly binding: StateCookie;
+  readonly code: string;
+  readonly clientId: string;
+  readonly clientSecret: string;
+}): Promise<NextResponse> {
+  const { request, platform, plataforma, binding, code, clientId, clientSecret } = input;
+  const itemId = binding.inviteItemId;
+  if (!itemId) return backTo(request, 'convite_invalido');
+
+  const destino = isSafeReturnPath(binding.returnTo) ? binding.returnTo : '/convite';
+
+  const pendente = await modules().connectionInvites.stillPending(itemId);
+  if (!pendente) {
+    logger.warn('convite.oauth.callback.item_nao_pendente', { platform });
+    return NextResponse.redirect(new URL(destino, env().TRIA_APP_BASE_URL));
+  }
+
+  const requestId = request.headers.get('x-request-id') ?? newRequestId();
+  const sourceIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+
+  const outcome = await modules().authorization.complete({
+    organizationId: pendente.organizationId,
+    autorizadoPor: { via: 'invite', inviteItemId: itemId },
+    actorId: itemId,
+    platform: plataforma,
+    code,
+    codeVerifier: request.cookies.get(VERIFIER_COOKIE)?.value ?? null,
+    redirectUri: new URL(`/api/oauth/${platform}/callback`, env().TRIA_APP_BASE_URL).toString(),
+    clientId,
+    clientSecret,
+    requestId,
+    sourceIp,
+  });
+
+  if (!outcome.ok) {
+    logger.warn('convite.oauth.callback.authorization_failed', { platform, code: outcome.error.code });
+    return clear(
+      NextResponse.redirect(
+        new URL(
+          `${destino}?erro=${outcome.error.code === 'forbidden' ? 'autorizacao_recusada' : 'falha_autorizacao'}`,
+          env().TRIA_APP_BASE_URL,
+        ),
+      ),
+    );
+  }
+
+  await concluirItemDoConvite(itemId, plataforma, outcome.value, pendente.clientId);
+
+  return redirectComResultado(binding.returnTo, destino, platform, outcome.value.discovered);
+}
+
+async function concluirItemDoConvite(
+  itemId: string,
+  platform: Platform,
+  outcome: AuthorizationOutcome,
+  clientId: string,
+): Promise<void> {
+  await modules().connectionInvites.completeItem(itemId, outcome.connectionId);
+
+  if (!temRecursoParaVincular(platform)) return;
+
+  const descobertos = await modules().discoveredAccounts.listByConnection(
+    outcome.organizationId,
+    outcome.connectionId,
+  );
+
+  if (descobertos.length !== 1 || descobertos[0]!.state !== 'discovered') return;
+
+  await modules().discoveredAccounts.markLinkedToClient(
+    outcome.organizationId,
+    descobertos[0]!.id,
+    clientId,
+  );
+}
+
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ platform: string }> },
@@ -47,7 +147,12 @@ export async function GET(
   const expectedState = binding?.state ?? '';
   const returnTo = binding?.returnTo ?? '/comecar?passo=contas';
 
-  if (!expectedState || !secureCompare(query.get('state') ?? '', expectedState)) {
+  if (
+    !expectedState ||
+    !binding ||
+    !expectedState.startsWith(`${plataforma}.`) ||
+    !secureCompare(query.get('state') ?? '', expectedState)
+  ) {
     logger.warn('oauth.callback.state_mismatch', { platform });
     return backTo(request, 'estado_invalido');
   }
@@ -63,10 +168,22 @@ export async function GET(
   const credentials = credenciaisDaPlataforma(plataforma);
   if (!credentials.clientId || !credentials.clientSecret) return backTo(request, 'app_indisponivel');
 
+  if (binding.inviteItemId) {
+    return completarViaConvite({
+      request,
+      platform,
+      plataforma,
+      binding,
+      code,
+      clientId: credentials.clientId,
+      clientSecret: credentials.clientSecret,
+    });
+  }
+
   const sessao = await currentUser();
   if (!sessao) return backTo(request, 'sessao_expirada');
 
-  if (!binding?.userId || binding.userId !== sessao.user.id) {
+  if (!binding.userId || binding.userId !== sessao.user.id) {
     logger.warn('oauth.callback.sessao_trocada', { platform });
     return backTo(request, 'sessao_trocada');
   }
@@ -87,7 +204,7 @@ export async function GET(
 
   const outcome = await modules().authorization.complete({
     organizationId: binding.organizationId,
-    papelNaOrganizacao,
+    autorizadoPor: { via: 'staff', papel: papelNaOrganizacao },
     actorId: sessao.user.id,
     platform: plataforma,
     code,
@@ -118,17 +235,5 @@ export async function GET(
     }
   }
 
-  const base = env().TRIA_APP_BASE_URL;
-  const destination = isSafeReturnPath(returnTo) ? returnTo : '/comecar?passo=contas';
-  const url = new URL(destination, base);
-
-  if (!sameOrigin(url, base)) {
-    logger.warn('oauth.callback.redirect_blocked', { platform });
-    return clear(NextResponse.redirect(new URL('/comecar?passo=conectar', base)));
-  }
-
-  url.searchParams.set('autorizado', platform);
-  url.searchParams.set('descobertas', String(outcome.value.discovered));
-
-  return clear(NextResponse.redirect(url));
+  return redirectComResultado(returnTo, '/comecar?passo=contas', platform, outcome.value.discovered);
 }

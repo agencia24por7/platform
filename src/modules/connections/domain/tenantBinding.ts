@@ -5,6 +5,7 @@ export type StateCookie = {
   readonly returnTo: string;
   readonly organizationId: string | null;
   readonly userId: string | null;
+  readonly inviteItemId: string | null;
 };
 
 function sign(body: string, secret: string): string {
@@ -23,6 +24,7 @@ export function encodeStateCookie(binding: StateCookie, secret: string): string 
     returnTo: binding.returnTo,
     organizationId: binding.organizationId,
     userId: binding.userId,
+    inviteItemId: binding.inviteItemId,
   });
   return `${Buffer.from(body).toString('base64url')}.${sign(body, secret)}`;
 }
@@ -58,14 +60,17 @@ export function decodeStateCookie(raw: string, secret: string): StateCookie | nu
   const returnTo = campos['returnTo'];
   const organizationId = campos['organizationId'];
   const userId = campos['userId'];
+  const inviteItemId = campos['inviteItemId'];
   if (organizationId !== null && typeof organizationId !== 'string') return null;
   if (userId !== null && typeof userId !== 'string') return null;
+  if (inviteItemId !== undefined && inviteItemId !== null && typeof inviteItemId !== 'string') return null;
 
   return {
     state,
     returnTo: typeof returnTo === 'string' && returnTo.length > 0 ? returnTo : '/comecar?passo=contas',
     organizationId: organizationId || null,
     userId: userId || null,
+    inviteItemId: (inviteItemId as string | null | undefined) || null,
   };
 }
 
