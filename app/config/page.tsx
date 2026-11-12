@@ -154,6 +154,42 @@ async function mudarTipo(formData: FormData): Promise<void> {
   redirect(`/config?feito=${encodeURIComponent('Tipo da organização atualizado.')}#organizacao`);
 }
 
+async function definirAdministradoraGoogle(formData: FormData): Promise<void> {
+  'use server';
+
+  const ctx = await requireContext();
+  if (ctx.clientIds !== null) redirect('/clientes');
+  if (!canAdminister(ctx.role)) redirect('/config');
+
+  const resultado = await modules().organizations.setManagerAccountId(
+    { id: ctx.organization.id, papelDeQuemAge: ctx.role, managerAccountId: text(formData, 'managerAccountId') },
+    await atorAtual(),
+  );
+  if (!resultado.ok) {
+    redirect(`/config?erro=${encodeURIComponent(toActionState(resultado.error).error ?? '')}#organizacao`);
+  }
+
+  redirect(`/config?feito=${encodeURIComponent('Administradora do Google atualizada.')}#organizacao`);
+}
+
+async function definirBusinessManager(formData: FormData): Promise<void> {
+  'use server';
+
+  const ctx = await requireContext();
+  if (ctx.clientIds !== null) redirect('/clientes');
+  if (!canAdminister(ctx.role)) redirect('/config');
+
+  const resultado = await modules().organizations.setBusinessManagerId(
+    { id: ctx.organization.id, papelDeQuemAge: ctx.role, businessManagerId: text(formData, 'businessManagerId') },
+    await atorAtual(),
+  );
+  if (!resultado.ok) {
+    redirect(`/config?erro=${encodeURIComponent(toActionState(resultado.error).error ?? '')}#organizacao`);
+  }
+
+  redirect(`/config?feito=${encodeURIComponent('Business Manager do Meta atualizado.')}#organizacao`);
+}
+
 
 export default async function ConfiguracoesPage({
   searchParams,
@@ -277,7 +313,14 @@ export default async function ConfiguracoesPage({
         </div>
 
         <div className="card">
-          <div className="card__head">Identificadores</div>
+          <div className="card__head">
+            <span className="card__title">Identificadores</span>
+            <span className="card__sub">
+              Preenchidos sozinhos na primeira vez que alguém autoriza o Google Ads ou o Meta Ads com
+              uma conta administradora. Se a organização já existia antes disso, ou se a administradora
+              mudou, ajuste aqui.
+            </span>
+          </div>
           <div className="table-wrap">
             <table className="table">
               <tbody>
@@ -285,38 +328,60 @@ export default async function ConfiguracoesPage({
                   <td className="strong">Apelido</td>
                   <td className="mono muted">{organization.slug}</td>
                 </tr>
-                <tr>
-                  <td className="strong">Administradora do Google</td>
-                  <td className="mono muted">{organization.managerAccountId ?? '—'}</td>
-                </tr>
-                <tr>
-                  <td className="strong">Business Manager</td>
-                  <td className="mono muted">{organization.businessManagerId ?? '—'}</td>
-                </tr>
               </tbody>
             </table>
           </div>
-        </div>
-        <div className="card">
-          <div className="card__head">Identificadores</div>
-          <div className="table-wrap">
-            <table className="table">
-              <tbody>
-                <tr>
-                  <td className="strong">Apelido</td>
-                  <td className="mono muted">{organization.slug}</td>
-                </tr>
-                <tr>
-                  <td className="strong">Administradora do Google</td>
-                  <td className="mono muted">{organization.managerAccountId ?? '—'}</td>
-                </tr>
-                <tr>
-                  <td className="strong">Business Manager</td>
-                  <td className="mono muted">{organization.businessManagerId ?? '—'}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          {podeAdministrar ? (
+            <div className="card__body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <form className="form form--linha" action={definirAdministradoraGoogle}>
+                <label className="field">
+                  <span className="field__label">Administradora do Google (MCC)</span>
+                  <input
+                    className="input"
+                    name="managerAccountId"
+                    defaultValue={organization.managerAccountId ?? ''}
+                    placeholder="123-456-7890"
+                    required
+                  />
+                  <span className="field__hint">10 dígitos, com ou sem traço.</span>
+                </label>
+                <button className="btn" type="submit">
+                  Salvar
+                </button>
+              </form>
+              <form className="form form--linha" action={definirBusinessManager}>
+                <label className="field">
+                  <span className="field__label">Business Manager do Meta</span>
+                  <input
+                    className="input"
+                    name="businessManagerId"
+                    defaultValue={organization.businessManagerId ?? ''}
+                    placeholder="1234567890123"
+                    required
+                  />
+                  <span className="field__hint">O identificador numérico do Business Manager.</span>
+                </label>
+                <button className="btn" type="submit">
+                  Salvar
+                </button>
+              </form>
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table className="table">
+                <tbody>
+                  <tr>
+                    <td className="strong">Administradora do Google</td>
+                    <td className="mono muted">{organization.managerAccountId ?? '—'}</td>
+                  </tr>
+                  <tr>
+                    <td className="strong">Business Manager</td>
+                    <td className="mono muted">{organization.businessManagerId ?? '—'}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
         </>
       )}

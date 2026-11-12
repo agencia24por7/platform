@@ -21,6 +21,16 @@ export type OrganizationService = {
     papelDeQuemAge: MemberRole;
     type: Organization['type'];
   }, ator: Ator): Promise<Result<Organization, Failure>>;
+  setManagerAccountId(input: {
+    id: string;
+    papelDeQuemAge: MemberRole;
+    managerAccountId: string;
+  }, ator: Ator): Promise<Result<Organization, Failure>>;
+  setBusinessManagerId(input: {
+    id: string;
+    papelDeQuemAge: MemberRole;
+    businessManagerId: string;
+  }, ator: Ator): Promise<Result<Organization, Failure>>;
 };
 
 export function createOrganizationService(
@@ -86,6 +96,66 @@ export function createOrganizationService(
         requestId: ator.requestId,
         sourceIp: ator.sourceIp,
         metadata: { de: atual.type, para: type },
+      });
+
+      return ok(alterada);
+    },
+
+    async setManagerAccountId(input, ator) {
+      if (!canAdminister(input.papelDeQuemAge)) {
+        return err(failure('forbidden', 'Só quem administra a organização pode definir a administradora do Google.'));
+      }
+
+      const digitos = input.managerAccountId.replace(/\D/g, '');
+      if (digitos.length !== 10) {
+        return err(failure('validation', 'O identificador da administradora do Google tem 10 dígitos.'));
+      }
+
+      const atual = await repository.findById(input.id);
+      if (!atual) return err(failure('not_found', 'Organização não encontrada.'));
+
+      const alterada = await repository.updateManagerAccountId(input.id, digitos);
+
+      await audit.record({
+        organizationId: input.id,
+        actorType: 'user',
+        actorId: ator.userId,
+        action: 'organization.manager_account_id_set',
+        targetType: 'organization',
+        targetId: input.id,
+        requestId: ator.requestId,
+        sourceIp: ator.sourceIp,
+        metadata: { de: atual.managerAccountId, para: digitos },
+      });
+
+      return ok(alterada);
+    },
+
+    async setBusinessManagerId(input, ator) {
+      if (!canAdminister(input.papelDeQuemAge)) {
+        return err(failure('forbidden', 'Só quem administra a organização pode definir o Business Manager do Meta.'));
+      }
+
+      const digitos = input.businessManagerId.replace(/\D/g, '');
+      if (digitos.length < 4) {
+        return err(failure('validation', 'Informe o identificador numérico do Business Manager.'));
+      }
+
+      const atual = await repository.findById(input.id);
+      if (!atual) return err(failure('not_found', 'Organização não encontrada.'));
+
+      const alterada = await repository.updateBusinessManagerId(input.id, digitos);
+
+      await audit.record({
+        organizationId: input.id,
+        actorType: 'user',
+        actorId: ator.userId,
+        action: 'organization.business_manager_id_set',
+        targetType: 'organization',
+        targetId: input.id,
+        requestId: ator.requestId,
+        sourceIp: ator.sourceIp,
+        metadata: { de: atual.businessManagerId, para: digitos },
       });
 
       return ok(alterada);
