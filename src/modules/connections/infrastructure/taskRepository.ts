@@ -2,13 +2,14 @@ import { withTenant, withoutTenant } from '@/shared/db/tenant';
 
 export type AccountTask = {
   readonly id: string;
-  readonly kind: 'mcc_invite' | 'mcc_accept';
+  readonly kind: 'mcc_invite' | 'mcc_accept' | 'bm_partner_request';
   readonly managerExternalId: string;
   readonly targetExternalId: string;
   readonly status: 'pending' | 'running' | 'done' | 'failed';
   readonly outcome: string | null;
   readonly attempts: number;
   readonly createdAt: Date;
+  readonly clientId: string | null;
 };
 
 export type ClaimedTask = {
@@ -30,6 +31,7 @@ type Row = {
   outcome: string | null;
   attempts: number;
   created_at: Date;
+  client_id: string | null;
 };
 
 const toTask = (row: Row): AccountTask => ({
@@ -41,6 +43,7 @@ const toTask = (row: Row): AccountTask => ({
   outcome: row.outcome,
   attempts: row.attempts,
   createdAt: row.created_at,
+  clientId: row.client_id,
 });
 
 export type TaskRepository = {
@@ -51,9 +54,11 @@ export type TaskRepository = {
     readonly managerExternalId: string;
     readonly targetExternalId: string;
     readonly requestedBy: string | null;
+    readonly clientId?: string | null;
   }): Promise<AccountTask>;
   listRecentes(organizationId: string): Promise<readonly (AccountTask & { connectionId: string })[]>;
   listByConnection(organizationId: string, connectionId: string): Promise<readonly AccountTask[]>;
+  listByClient(organizationId: string, clientId: string): Promise<readonly AccountTask[]>;
   claim(limit: number): Promise<readonly ClaimedTask[]>;
   report(taskId: string, sucesso: boolean, outcome: string): Promise<string | null>;
 };
@@ -64,11 +69,11 @@ export function createTaskRepository(): TaskRepository {
       return withTenant(input.organizationId, async (tx) => {
         const rows = (await tx`
           INSERT INTO automation.account_tasks
-            (organization_id, connection_id, kind, manager_external_id, target_external_id, requested_by)
+            (organization_id, connection_id, kind, manager_external_id, target_external_id, requested_by, client_id)
           VALUES (${input.organizationId}, ${input.connectionId}, ${input.kind},
-                  ${input.managerExternalId}, ${input.targetExternalId}, ${input.requestedBy})
+                  ${input.managerExternalId}, ${input.targetExternalId}, ${input.requestedBy}, ${input.clientId ?? null})
           ON CONFLICT (connection_id, kind, target_external_id) DO UPDATE
-            SET status = 'pending', attempts = 0, outcome = NULL
+            SET status = 'pending', attempts = 0, outcome = NULL, client_id = EXCLUDED.client_id
           RETURNING *`) as unknown as Row[];
         return toTask(rows[0]!);
       });
@@ -89,6 +94,17 @@ export function createTaskRepository(): TaskRepository {
         const rows = (await tx`
           SELECT * FROM automation.account_tasks
           WHERE connection_id = ${connectionId}
+          ORDER BY created_at DESC
+          LIMIT 50`) as unknown as Row[];
+        return rows.map(toTask);
+      });
+    },
+
+    async listByClient(organizationId, clientId) {
+      return withTenant(organizationId, async (tx) => {
+        const rows = (await tx`
+          SELECT * FROM automation.account_tasks
+          WHERE client_id = ${clientId}
           ORDER BY created_at DESC
           LIMIT 50`) as unknown as Row[];
         return rows.map(toTask);

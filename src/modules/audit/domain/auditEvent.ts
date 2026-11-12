@@ -3,6 +3,7 @@ export const ActorType = {
   Agent: 'agent',
   Worker: 'worker',
   System: 'system',
+  Invite: 'invite',
 } as const;
 
 export type ActorType = (typeof ActorType)[keyof typeof ActorType];
