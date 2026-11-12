@@ -86,7 +86,10 @@ export async function revogarConviteDeIntegracao(formData: FormData): Promise<vo
   }
 
   const inviteId = text(formData, 'inviteId');
-  await modules().connectionInvites.revoke(organization.id, inviteId);
+  const revogado = await modules().connectionInvites.revoke(organization.id, inviteId);
+  if (!revogado) {
+    redirect(`/clientes/${clientId}?erro=${encodeURIComponent('Convite não encontrado ou já concluído.')}`);
+  }
 
   await modules().audit.record({
     organizationId: organization.id,
@@ -94,13 +97,13 @@ export async function revogarConviteDeIntegracao(formData: FormData): Promise<vo
     actorId: ator.userId,
     action: 'integration_invite.revoked',
     targetType: 'client',
-    targetId: clientId,
+    targetId: revogado.clientId,
     requestId: ator.requestId,
     sourceIp: ator.sourceIp,
     metadata: { inviteId },
   });
 
-  redirect(`/clientes/${clientId}?feito=${encodeURIComponent('Convite revogado.')}`);
+  redirect(`/clientes/${revogado.clientId}?feito=${encodeURIComponent('Convite revogado.')}`);
 }
 
 export async function pedirAcessoMetaPartner(formData: FormData): Promise<void> {

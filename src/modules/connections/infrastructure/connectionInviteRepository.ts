@@ -73,7 +73,7 @@ export type ConnectionInviteRepository = {
   forDisplay(token: string): Promise<PublicInviteView | null>;
   stillPending(itemId: string): Promise<{ readonly organizationId: string; readonly clientId: string } | null>;
   completeItem(itemId: string, connectionId: string): Promise<CompletedInviteItem | null>;
-  revoke(organizationId: string, inviteId: string): Promise<void>;
+  revoke(organizationId: string, inviteId: string): Promise<{ readonly clientId: string } | null>;
 };
 
 function toItem(row: ItemRow): IntegrationInviteItem {
@@ -220,11 +220,13 @@ export function createConnectionInviteRepository(): ConnectionInviteRepository {
     },
 
     async revoke(organizationId, inviteId) {
-      await withTenant(organizationId, async (tx) => {
-        await tx`
+      return withTenant(organizationId, async (tx) => {
+        const rows = (await tx`
           UPDATE integrations.connection_invites
           SET status = 'revoked', revoked_at = now()
-          WHERE id = ${inviteId} AND status = 'pending'`;
+          WHERE id = ${inviteId} AND status = 'pending'
+          RETURNING client_id`) as unknown as { client_id: string }[];
+        return rows[0] ? { clientId: rows[0].client_id } : null;
       });
     },
   };

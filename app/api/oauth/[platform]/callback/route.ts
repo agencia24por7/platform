@@ -125,7 +125,7 @@ async function concluirItemDoConvite(
     outcome.connectionId,
   );
 
-  if (descobertos.length !== 1) return;
+  if (descobertos.length !== 1 || descobertos[0]!.state !== 'discovered') return;
 
   await modules().discoveredAccounts.markLinkedToClient(
     outcome.organizationId,
