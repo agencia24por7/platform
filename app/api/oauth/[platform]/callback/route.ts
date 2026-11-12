@@ -147,7 +147,12 @@ export async function GET(
   const expectedState = binding?.state ?? '';
   const returnTo = binding?.returnTo ?? '/comecar?passo=contas';
 
-  if (!expectedState || !binding || !secureCompare(query.get('state') ?? '', expectedState)) {
+  if (
+    !expectedState ||
+    !binding ||
+    !expectedState.startsWith(`${plataforma}.`) ||
+    !secureCompare(query.get('state') ?? '', expectedState)
+  ) {
     logger.warn('oauth.callback.state_mismatch', { platform });
     return backTo(request, 'estado_invalido');
   }
