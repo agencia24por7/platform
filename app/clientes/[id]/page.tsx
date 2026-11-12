@@ -16,6 +16,7 @@ import { requireContext } from '@/shared/http/currentOrganization';
 import { env } from '@/shared/config/env';
 import { ROTULO_DA_PLATAFORMA } from '@/modules/connections/domain/connection';
 import { pedirAcessoMetaPartner, revogarConviteDeIntegracao } from '@/../app/clientes/[id]/acoes';
+import { CopyButton } from '@/../app/_components/CopyButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -125,6 +126,7 @@ export default async function ClientPage({
     (conexao) => conexao.platform === 'meta' && conexao.grantType === 'oauth_user',
   );
   const temBusinessManager = organizacao.ok && Boolean(organizacao.value.businessManagerId);
+  const conexaoGoogle = conexoes.find((conexao) => conexao.platform === 'google');
   const baseUrl = env().TRIA_APP_BASE_URL;
 
   return (
@@ -281,36 +283,67 @@ export default async function ClientPage({
         <div className="card__head">
           <span className="card__title">Convites de integração</span>
           <span className="card__sub">
-            Dois jeitos de pedir acesso sem logar como o cliente: link para ele autorizar, ou pedido
-            direto ao Business Manager do Meta.
+            Três jeitos de pedir acesso sem logar como o cliente.
           </span>
         </div>
 
         {podeAdministrar ? (
-          <div className="card__body" style={{ display: 'flex', flexWrap: 'wrap', gap: 24 }}>
-            <Link className="btn btn--primary btn--pill" href={`/clientes/${client.id}/convite/novo`}>
-              Convite de integração
-            </Link>
+          <div className="card__body" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div>
+              <div className="strong">Link de convite</div>
+              <p className="subtle" style={{ margin: '4px 0 10px' }}>
+                Cobre todas as plataformas OAuth, inclusive Google Ads e Meta Ads quando o cliente
+                prefere autorizar direto, sem passar pela administradora ou pelo Business Manager.
+                O cliente abre o link, autoriza com a própria conta, e nada disso passa pela sua sessão.
+              </p>
+              <Link className="btn btn--primary btn--pill" href={`/clientes/${client.id}/convite/novo`}>
+                Convite de integração
+              </Link>
+            </div>
 
-            {temConexaoMeta && temBusinessManager ? (
-              <form action={pedirAcessoMetaPartner} className="form--inline">
-                <input type="hidden" name="clientId" value={client.id} />
-                <input
-                  className="input input--compacto"
-                  name="contaDeAnuncio"
-                  placeholder="act_1234567890"
-                  required
-                />
-                <button className="btn btn--pill" type="submit">
-                  Pedir acesso Meta Partner
-                </button>
-              </form>
-            ) : (
-              <span className="subtle">
-                Autorize o Meta Ads com uma conta administradora do Business Manager para liberar o
-                pedido de acesso parceiro.
-              </span>
-            )}
+            <div>
+              <div className="strong">Google Ads · administradora (MCC)</div>
+              <p className="subtle" style={{ margin: '4px 0 10px' }}>
+                Em vez de link, convide a conta de anúncio do cliente pela sua administradora: ela
+                entra na fila, o dono da conta aceita direto no Google Ads dele, sem OAuth nenhum com
+                a Orla. Depois é só vincular a conta a este cliente em “Conectar conta”.
+              </p>
+              {conexaoGoogle ? (
+                <Link className="btn btn--pill" href={`/integracoes/${conexaoGoogle.id}`}>
+                  Convidar conta para a MCC →
+                </Link>
+              ) : (
+                <span className="subtle">Autorize o Google Ads com uma conta administradora primeiro.</span>
+              )}
+            </div>
+
+            <div>
+              <div className="strong">Meta Ads · parceiro do Business Manager</div>
+              <p className="subtle" style={{ margin: '4px 0 10px' }}>
+                Pede acesso à conta de anúncio do cliente usando a credencial Meta já conectada da
+                agência. O cliente aceita dentro do próprio Gerenciador de Negócios, sem OAuth
+                nenhum com a Orla. Informe o identificador da conta (formato act_1234567890).
+              </p>
+              {temConexaoMeta && temBusinessManager ? (
+                <form action={pedirAcessoMetaPartner} className="form--inline">
+                  <input type="hidden" name="clientId" value={client.id} />
+                  <input
+                    className="input input--compacto"
+                    name="contaDeAnuncio"
+                    placeholder="act_1234567890"
+                    required
+                  />
+                  <button className="btn btn--pill" type="submit">
+                    Pedir acesso Meta Partner
+                  </button>
+                </form>
+              ) : (
+                <span className="subtle">
+                  Autorize o Meta Ads com uma conta administradora do Business Manager para liberar o
+                  pedido de acesso parceiro.
+                </span>
+              )}
+            </div>
           </div>
         ) : null}
 
@@ -342,8 +375,11 @@ export default async function ClientPage({
                       <td className="muted">{convite.createdAt.toLocaleString('pt-BR')}</td>
                       <td>
                         {podeAdministrar && item.status === 'pending' && convite.status === 'pending' ? (
-                          <span className="mono subtle" title={`${baseUrl}/convite/${convite.token}`}>
-                            {baseUrl}/convite/{convite.token}
+                          <span className="form--inline" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                            <span className="mono subtle" title={`${baseUrl}/convite/${convite.token}`}>
+                              {baseUrl}/convite/{convite.token}
+                            </span>
+                            <CopyButton texto={`${baseUrl}/convite/${convite.token}`} />
                           </span>
                         ) : null}
                         {podeAdministrar && convite.status === 'pending' ? (
