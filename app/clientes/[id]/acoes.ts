@@ -1,0 +1,171 @@
+'use server';
+
+import { redirect } from 'next/navigation';
+import { modules } from '@/composition';
+import {
+  MOTIVO_DO_CONVITE_DE_INTEGRACAO,
+  validarPlataformasEscolhidas,
+} from '@/modules/connections/domain/integrationInvite';
+import {
+  MOTIVO_DO_PEDIDO_DE_PARTNER,
+  normalizarContaDeAnuncioMeta,
+} from '@/modules/connections/domain/metaPartner';
+import { text } from '@/shared/http/actions';
+import { atorAtual } from '@/shared/http/ator';
+import { requireContext } from '@/shared/http/currentOrganization';
+import { canAdminister } from '@/modules/identity/domain/user';
+
+async function contextoDoCliente() {
+  const contexto = await requireContext();
+  if (contexto.clientIds !== null) redirect('/clientes');
+  return contexto;
+}
+
+async function clienteDaOrganizacao(organizationId: string, clientId: string) {
+  const cliente = await modules().clients.byId(organizationId, clientId);
+  return cliente.ok ? cliente.value : null;
+}
+
+export async function criarConviteDeIntegracao(formData: FormData): Promise<void> {
+  const clientId = text(formData, 'clientId');
+  const contexto = await contextoDoCliente();
+  const organization = contexto.organization;
+  const ator = await atorAtual();
+  const voltar = (aviso: string): never =>
+    redirect(`/clientes/${clientId}/convite/novo?erro=${encodeURIComponent(aviso)}`);
+
+  if (!canAdminister(contexto.role)) {
+    voltar('Só quem administra a organização pode criar convite de integração.');
+    return;
+  }
+
+  if (!(await clienteDaOrganizacao(organization.id, clientId))) {
+    voltar('Cliente não encontrado nesta organização.');
+    return;
+  }
+
+  const plataformas = formData.getAll('platforms').map(String);
+  const decisao = validarPlataformasEscolhidas(plataformas);
+  if (!decisao.ok) {
+    voltar(MOTIVO_DO_CONVITE_DE_INTEGRACAO[decisao.motivo]);
+    return;
+  }
+
+  const convite = await modules().connectionInvites.create({
+    organizationId: organization.id,
+    clientId,
+    platforms: decisao.platforms,
+    createdBy: ator.userId,
+  });
+
+  await modules().audit.record({
+    organizationId: organization.id,
+    actorType: 'user',
+    actorId: ator.userId,
+    action: 'integration_invite.created',
+    targetType: 'client',
+    targetId: clientId,
+    requestId: ator.requestId,
+    sourceIp: ator.sourceIp,
+    metadata: { inviteId: convite.id, platforms: decisao.platforms },
+  });
+
+  redirect(`/clientes/${clientId}?feito=${encodeURIComponent('Convite criado.')}`);
+}
+
+export async function revogarConviteDeIntegracao(formData: FormData): Promise<void> {
+  const clientId = text(formData, 'clientId');
+  const contexto = await contextoDoCliente();
+  const organization = contexto.organization;
+  const ator = await atorAtual();
+
+  if (!canAdminister(contexto.role)) {
+    redirect(
+      `/clientes/${clientId}?erro=${encodeURIComponent('Só quem administra a organização pode revogar um convite.')}`,
+    );
+  }
+
+  const inviteId = text(formData, 'inviteId');
+  const revogado = await modules().connectionInvites.revoke(organization.id, inviteId);
+  if (!revogado) {
+    redirect(`/clientes/${clientId}?erro=${encodeURIComponent('Convite não encontrado ou já concluído.')}`);
+  }
+
+  await modules().audit.record({
+    organizationId: organization.id,
+    actorType: 'user',
+    actorId: ator.userId,
+    action: 'integration_invite.revoked',
+    targetType: 'client',
+    targetId: revogado.clientId,
+    requestId: ator.requestId,
+    sourceIp: ator.sourceIp,
+    metadata: { inviteId },
+  });
+
+  redirect(`/clientes/${revogado.clientId}?feito=${encodeURIComponent('Convite revogado.')}`);
+}
+
+export async function pedirAcessoMetaPartner(formData: FormData): Promise<void> {
+  const clientId = text(formData, 'clientId');
+  const contexto = await contextoDoCliente();
+  const organization = contexto.organization;
+  const ator = await atorAtual();
+  const voltar = (aviso: string): never =>
+    redirect(`/clientes/${clientId}?erro=${encodeURIComponent(aviso)}`);
+
+  if (!canAdminister(contexto.role)) {
+    voltar('Só quem administra a organização pode pedir acesso parceiro no Meta.');
+    return;
+  }
+
+  if (!(await clienteDaOrganizacao(organization.id, clientId))) {
+    voltar('Cliente não encontrado nesta organização.');
+    return;
+  }
+
+  const contaDeAnuncio = normalizarContaDeAnuncioMeta(text(formData, 'contaDeAnuncio'));
+  if (!contaDeAnuncio) {
+    voltar(MOTIVO_DO_PEDIDO_DE_PARTNER.formato);
+    return;
+  }
+
+  const organizacao = await modules().organizations.byId(organization.id);
+  if (!organizacao.ok || !organizacao.value.businessManagerId) {
+    voltar(MOTIVO_DO_PEDIDO_DE_PARTNER.sem_business_manager);
+    return;
+  }
+
+  const conexoes = await modules().connections.listConnections(organization.id);
+  const conexaoMeta = conexoes.find(
+    (conexao) => conexao.platform === 'meta' && conexao.grantType === 'oauth_user',
+  );
+  if (!conexaoMeta) {
+    voltar(MOTIVO_DO_PEDIDO_DE_PARTNER.sem_conexao_meta);
+    return;
+  }
+
+  await modules().tasks.request({
+    organizationId: organization.id,
+    connectionId: conexaoMeta.id,
+    kind: 'bm_partner_request',
+    managerExternalId: organizacao.value.businessManagerId,
+    targetExternalId: contaDeAnuncio,
+    requestedBy: ator.userId,
+    clientId,
+  });
+
+  await modules().audit.record({
+    organizationId: organization.id,
+    actorType: 'user',
+    actorId: ator.userId,
+    action: 'meta.partner_requested',
+    targetType: 'client',
+    targetId: clientId,
+    requestId: ator.requestId,
+    sourceIp: ator.sourceIp,
+    metadata: { businessManagerId: organizacao.value.businessManagerId, contaDeAnuncio },
+  });
+
+  redirect(`/clientes/${clientId}?feito=${encodeURIComponent('Pedido de acesso enviado para a fila.')}`);
+}

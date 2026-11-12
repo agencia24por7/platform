@@ -16,6 +16,9 @@ const ROTAS_ABERTAS = [
   '/api/portaria',
   '/api/erros',
   '/api/webhooks',
+  '/convite',
+  '/api/convite',
+  '/api/oauth',
 ];
 
 export function middleware(request: NextRequest): NextResponse {

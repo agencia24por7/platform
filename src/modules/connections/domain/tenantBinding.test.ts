@@ -10,14 +10,14 @@ describe('cookie de estado', () => {
       state: 'google.abc',
       returnTo: '/comecar?passo=contas',
       organizationId: 'org-1',
-      userId: 'user-1',
+      userId: 'user-1', inviteItemId: null,
     };
     assert.deepEqual(decodeStateCookie(encodeStateCookie(binding, SEGREDO), SEGREDO), binding);
   });
 
   it('trata ausência de organização no primeiro acesso', () => {
     const decoded = decodeStateCookie(
-      encodeStateCookie({ state: 's', returnTo: '/x', organizationId: null, userId: 'user-1' }, SEGREDO),
+      encodeStateCookie({ state: 's', returnTo: '/x', organizationId: null, userId: 'user-1', inviteItemId: null }, SEGREDO),
       SEGREDO,
     );
     assert.equal(decoded?.organizationId, null);
@@ -26,14 +26,14 @@ describe('cookie de estado', () => {
 
   it('o cookie carrega quem começou o fluxo, para o callback exigir a mesma pessoa', () => {
     const decoded = decodeStateCookie(
-      encodeStateCookie({ state: 's', returnTo: '/x', organizationId: 'org-1', userId: 'user-7' }, SEGREDO),
+      encodeStateCookie({ state: 's', returnTo: '/x', organizationId: 'org-1', userId: 'user-7', inviteItemId: null }, SEGREDO),
       SEGREDO,
     );
     assert.equal(decoded?.userId, 'user-7');
   });
 
   it('cookie sem usuário decodifica com userId nulo — e o callback recusa', () => {
-    const assinado = encodeStateCookie({ state: 's', returnTo: '/x', organizationId: 'org-1', userId: null }, SEGREDO);
+    const assinado = encodeStateCookie({ state: 's', returnTo: '/x', organizationId: 'org-1', userId: null, inviteItemId: null }, SEGREDO);
     assert.equal(decodeStateCookie(assinado, SEGREDO)?.userId, null);
   });
 
@@ -42,7 +42,7 @@ describe('cookie de estado', () => {
       state: 's',
       returnTo: '/x|org-intrusa|user-intruso',
       organizationId: 'org-1',
-      userId: 'user-1',
+      userId: 'user-1', inviteItemId: null,
     };
     const decoded = decodeStateCookie(encodeStateCookie(binding, SEGREDO), SEGREDO);
     assert.equal(decoded?.organizationId, 'org-1');
@@ -58,7 +58,7 @@ describe('cookie de estado', () => {
   it('recusa cookie vazio ou sem estado', () => {
     assert.equal(decodeStateCookie('', SEGREDO), null);
     const semEstado = encodeStateCookie(
-      { state: '', returnTo: '/x', organizationId: 'org-1', userId: 'u' },
+      { state: '', returnTo: '/x', organizationId: 'org-1', userId: 'u', inviteItemId: null },
       SEGREDO,
     );
     assert.equal(decodeStateCookie(semEstado, SEGREDO), null);
@@ -66,11 +66,11 @@ describe('cookie de estado', () => {
 
   it('recusa cookie adulterado', () => {
     const valido = encodeStateCookie(
-      { state: 's', returnTo: '/x', organizationId: 'org-1', userId: 'user-1' },
+      { state: 's', returnTo: '/x', organizationId: 'org-1', userId: 'user-1', inviteItemId: null },
       SEGREDO,
     );
     const corpo = Buffer.from(
-      JSON.stringify({ state: 's', returnTo: '/x', organizationId: 'org-invasora', userId: 'user-1' }),
+      JSON.stringify({ state: 's', returnTo: '/x', organizationId: 'org-invasora', userId: 'user-1', inviteItemId: null }),
     ).toString('base64url');
     const forjado = `${corpo}.${valido.slice(valido.lastIndexOf('.') + 1)}`;
     assert.equal(decodeStateCookie(forjado, SEGREDO), null);
@@ -78,11 +78,11 @@ describe('cookie de estado', () => {
 
   it('recusa troca de usuário com a mesma assinatura', () => {
     const valido = encodeStateCookie(
-      { state: 's', returnTo: '/x', organizationId: 'org-1', userId: 'user-1' },
+      { state: 's', returnTo: '/x', organizationId: 'org-1', userId: 'user-1', inviteItemId: null },
       SEGREDO,
     );
     const corpo = Buffer.from(
-      JSON.stringify({ state: 's', returnTo: '/x', organizationId: 'org-1', userId: 'user-intruso' }),
+      JSON.stringify({ state: 's', returnTo: '/x', organizationId: 'org-1', userId: 'user-intruso', inviteItemId: null }),
     ).toString('base64url');
     const forjado = `${corpo}.${valido.slice(valido.lastIndexOf('.') + 1)}`;
     assert.equal(decodeStateCookie(forjado, SEGREDO), null);
@@ -90,7 +90,7 @@ describe('cookie de estado', () => {
 
   it('recusa assinatura de outro segredo', () => {
     const outro = encodeStateCookie(
-      { state: 's', returnTo: '/x', organizationId: 'org-1', userId: 'user-1' },
+      { state: 's', returnTo: '/x', organizationId: 'org-1', userId: 'user-1', inviteItemId: null },
       'outro-segredo-bem-longo-aqui',
     );
     assert.equal(decodeStateCookie(outro, SEGREDO), null);

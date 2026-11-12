@@ -91,6 +91,7 @@ export async function GET(
         returnTo: safeReturn,
         organizationId: contexto?.organization.id ?? null,
         userId: sessao.user.id,
+        inviteItemId: null,
       },
       env().TRIA_SESSION_SECRET,
     ),

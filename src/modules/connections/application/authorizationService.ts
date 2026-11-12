@@ -27,9 +27,13 @@ import type { PlatformDiscovery } from '@/modules/connections/application/platfo
 import type { OrganizationService } from '@/modules/organizations/application/organizationService';
 import { canAdminister, type MemberRole } from '@/modules/identity/domain/user';
 
+export type AutorizadoPor =
+  | { readonly via: 'staff'; readonly papel: MemberRole | null }
+  | { readonly via: 'invite'; readonly inviteItemId: string };
+
 export type AuthorizationInput = {
   readonly organizationId: string | null;
-  readonly papelNaOrganizacao: MemberRole | null;
+  readonly autorizadoPor: AutorizadoPor;
   readonly actorId: string;
   readonly platform: PlataformaOauth;
   readonly code: string;
@@ -108,11 +112,11 @@ export function createAuthorizationService(
 ): AuthorizationService {
   return {
     async complete(input) {
-      if (input.organizationId !== null) {
-        if (!input.papelNaOrganizacao || !canAdminister(input.papelNaOrganizacao)) {
+      if (input.organizationId !== null && input.autorizadoPor.via === 'staff') {
+        if (!input.autorizadoPor.papel || !canAdminister(input.autorizadoPor.papel)) {
           logger.warn('oauth.authorize.papel_insuficiente', {
             platform: input.platform,
-            role: input.papelNaOrganizacao,
+            role: input.autorizadoPor.papel,
           });
           return err(
             failure('forbidden', 'Só quem administra a organização pode autorizar plataformas.'),
@@ -267,7 +271,7 @@ export function createAuthorizationService(
 
       await audit.record({
         organizationId,
-        actorType: 'user',
+        actorType: input.autorizadoPor.via === 'invite' ? 'invite' : 'user',
         actorId: input.actorId,
         action: 'connection.authorize',
         targetType: 'connection',
@@ -285,6 +289,9 @@ export function createAuthorizationService(
           vaultAvailable: vault.available,
           organizationCreated,
           refreshTokenReceived: granted.refreshToken !== null,
+          ...(input.autorizadoPor.via === 'invite'
+            ? { inviteItemId: input.autorizadoPor.inviteItemId }
+            : {}),
         },
       });
 
