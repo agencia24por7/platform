@@ -116,7 +116,11 @@ async function concluirItemDoConvite(
   outcome: AuthorizationOutcome,
   clientId: string,
 ): Promise<void> {
-  await modules().connectionInvites.completeItem(itemId, outcome.connectionId);
+  const concluido = await modules().connectionInvites.completeItem(itemId, outcome.connectionId);
+  if (!concluido) {
+    logger.warn('convite.oauth.callback.item_revogado_durante_fluxo', { platform });
+    return;
+  }
 
   if (!temRecursoParaVincular(platform)) return;
 
