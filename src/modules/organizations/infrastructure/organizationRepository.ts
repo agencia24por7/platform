@@ -30,6 +30,8 @@ export type OrganizationRepository = {
   ofUser(userId: string): Promise<readonly Organization[]>;
   exists(): Promise<boolean>;
   updateType(id: string, type: Organization['type']): Promise<Organization>;
+  updateManagerAccountId(id: string, managerAccountId: string): Promise<Organization>;
+  updateBusinessManagerId(id: string, businessManagerId: string): Promise<Organization>;
 };
 
 export function createOrganizationRepository(): OrganizationRepository {
@@ -63,6 +65,24 @@ export function createOrganizationRepository(): OrganizationRepository {
       return withTenant(id, async (tx) => {
         const rows = (await tx`
           UPDATE core.organizations SET type = ${type} WHERE id = ${id} RETURNING *`) as unknown as Row[];
+        return toOrganization(rows[0]!);
+      });
+    },
+
+    async updateManagerAccountId(id, managerAccountId) {
+      return withTenant(id, async (tx) => {
+        const rows = (await tx`
+          UPDATE core.organizations SET manager_account_id = ${managerAccountId} WHERE id = ${id}
+          RETURNING *`) as unknown as Row[];
+        return toOrganization(rows[0]!);
+      });
+    },
+
+    async updateBusinessManagerId(id, businessManagerId) {
+      return withTenant(id, async (tx) => {
+        const rows = (await tx`
+          UPDATE core.organizations SET business_manager_id = ${businessManagerId} WHERE id = ${id}
+          RETURNING *`) as unknown as Row[];
         return toOrganization(rows[0]!);
       });
     },

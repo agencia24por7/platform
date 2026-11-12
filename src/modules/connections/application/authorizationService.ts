@@ -60,6 +60,34 @@ function administradoraDe(accounts: readonly DiscoveredAccount[]): string | null
   return gerenciada?.managerExternalId ?? null;
 }
 
+async function atualizarAdministradoraDescoberta(
+  organizations: OrganizationService,
+  organization: { readonly id: string; readonly managerAccountId: string | null; readonly businessManagerId: string | null },
+  platform: Platform,
+  accounts: readonly DiscoveredAccount[],
+  ator: { readonly userId: string; readonly requestId: string; readonly sourceIp: string | null },
+  papel: MemberRole | null,
+): Promise<void> {
+  if (!veiculaAnuncio(platform) || !papel) return;
+
+  const administradora = administradoraDe(accounts);
+  if (!administradora) return;
+
+  if (platform === 'google' && !organization.managerAccountId) {
+    await organizations.setManagerAccountId(
+      { id: organization.id, papelDeQuemAge: papel, managerAccountId: administradora },
+      ator,
+    );
+  }
+
+  if (platform === 'meta' && !organization.businessManagerId) {
+    await organizations.setBusinessManagerId(
+      { id: organization.id, papelDeQuemAge: papel, businessManagerId: administradora },
+      ator,
+    );
+  }
+}
+
 export type AuthorizationService = {
   complete(input: AuthorizationInput): Promise<Result<AuthorizationOutcome, Failure>>;
 };
@@ -220,6 +248,14 @@ export function createAuthorizationService(
 
       if (!organization.ok) return err(organization.error);
       const organizationId = organization.value.id;
+
+      if (!organizationCreated && input.autorizadoPor.via === 'staff') {
+        await atualizarAdministradoraDescoberta(organizations, organization.value, input.platform, accounts, {
+          userId: input.actorId,
+          requestId: input.requestId,
+          sourceIp: input.sourceIp,
+        }, input.autorizadoPor.papel);
+      }
 
       const identidade = await discovery.identify(input.platform, granted.accessToken);
       if (!identidade) {
