@@ -59,6 +59,32 @@ async function fetchJson(url: string, init: RequestInit): Promise<unknown> {
   return response.json();
 }
 
+const MAX_PAGINAS = 20;
+
+async function fetchTodasAsPaginas(
+  baseUrl: string,
+  headers: Record<string, string>,
+  parametroDaPagina: string,
+): Promise<readonly unknown[]> {
+  const paginas: unknown[] = [];
+  let pageToken: string | undefined;
+
+  for (let i = 0; i < MAX_PAGINAS; i++) {
+    const url = new URL(baseUrl);
+    if (pageToken) url.searchParams.set(parametroDaPagina, pageToken);
+
+    const payload = await fetchJson(url.toString(), { headers });
+    if (payload === null || typeof payload !== 'object') break;
+    paginas.push(payload);
+
+    const proximo = (payload as { nextPageToken?: unknown }).nextPageToken;
+    if (typeof proximo !== 'string' || proximo.length === 0) break;
+    pageToken = proximo;
+  }
+
+  return paginas;
+}
+
 async function reasonOf(response: Response): Promise<string> {
   try {
     return redactText((await response.text()).slice(0, MOTIVO_MAX));
@@ -205,12 +231,14 @@ export function createPlatformDiscovery(): PlatformDiscovery {
 
     async ga4(accessToken) {
       esquecerFalhas();
-      const payload = await fetchJson(
-        'https://analyticsadmin.googleapis.com/v1beta/accountSummaries',
-        { headers: { Authorization: `Bearer ${accessToken}` } },
+      const headers = { Authorization: `Bearer ${accessToken}` };
+      const paginas = await fetchTodasAsPaginas(
+        'https://analyticsadmin.googleapis.com/v1beta/accountSummaries?pageSize=200',
+        headers,
+        'pageToken',
       );
-      const propriedades = parseGa4Properties(payload);
-      logger.info('discovery.ga4.done', { propriedades: propriedades.length });
+      const propriedades = paginas.flatMap((pagina) => parseGa4Properties(pagina));
+      logger.info('discovery.ga4.done', { paginas: paginas.length, propriedades: propriedades.length });
       return sortForSelection(propriedades);
     },
 
@@ -246,31 +274,35 @@ export function createPlatformDiscovery(): PlatformDiscovery {
 
     async youtube(accessToken) {
       esquecerFalhas();
-      const payload = await fetchJson(
-        'https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true',
-        { headers: { Authorization: `Bearer ${accessToken}` } },
+      const headers = { Authorization: `Bearer ${accessToken}` };
+      const paginas = await fetchTodasAsPaginas(
+        'https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true&maxResults=50',
+        headers,
+        'pageToken',
       );
-      const canais = parseYoutubeChannels(payload);
-      logger.info('discovery.youtube.done', { canais: canais.length });
+      const canais = paginas.flatMap((pagina) => parseYoutubeChannels(pagina));
+      logger.info('discovery.youtube.done', { paginas: paginas.length, canais: canais.length });
       return sortForSelection(canais);
     },
 
     async gbp(accessToken) {
       esquecerFalhas();
       const headers = { Authorization: `Bearer ${accessToken}` };
-      const contas = parseGbpAccounts(
-        await fetchJson('https://mybusinessaccountmanagement.googleapis.com/v1/accounts', {
-          headers,
-        }),
+      const paginasDeContas = await fetchTodasAsPaginas(
+        'https://mybusinessaccountmanagement.googleapis.com/v1/accounts?pageSize=20',
+        headers,
+        'pageToken',
       );
+      const contas = paginasDeContas.flatMap((pagina) => parseGbpAccounts(pagina));
 
       const locais: DiscoveredAccount[] = [];
       for (const contaId of contas) {
-        const payload = await fetchJson(
-          `https://mybusinessbusinessinformation.googleapis.com/v1/accounts/${contaId}/locations?readMask=title`,
-          { headers },
+        const paginasDeLocais = await fetchTodasAsPaginas(
+          `https://mybusinessbusinessinformation.googleapis.com/v1/accounts/${contaId}/locations?readMask=title&pageSize=100`,
+          headers,
+          'pageToken',
         );
-        locais.push(...parseGbpLocations(payload));
+        locais.push(...paginasDeLocais.flatMap((pagina) => parseGbpLocations(pagina)));
       }
 
       logger.info('discovery.gbp.done', { contas: contas.length, locais: locais.length });
