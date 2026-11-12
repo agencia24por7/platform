@@ -341,7 +341,7 @@ export default async function ClientPage({
                       </td>
                       <td className="muted">{convite.createdAt.toLocaleString('pt-BR')}</td>
                       <td>
-                        {item.status === 'pending' && convite.status === 'pending' ? (
+                        {podeAdministrar && item.status === 'pending' && convite.status === 'pending' ? (
                           <span className="mono subtle" title={`${baseUrl}/convite/${convite.token}`}>
                             {baseUrl}/convite/{convite.token}
                           </span>

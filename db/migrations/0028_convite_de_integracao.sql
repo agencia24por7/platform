@@ -81,6 +81,7 @@ AS $$
   WHERE i.token = p_token
     AND it.platform = p_platform
     AND i.status = 'pending'
+    AND it.status = 'pending'
     AND i.expires_at > now();
 $$;
 

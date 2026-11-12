@@ -68,10 +68,12 @@ async function completarViaConvite(input: {
   const itemId = binding.inviteItemId;
   if (!itemId) return backTo(request, 'convite_invalido');
 
+  const destino = isSafeReturnPath(binding.returnTo) ? binding.returnTo : '/convite';
+
   const pendente = await modules().connectionInvites.stillPending(itemId);
   if (!pendente) {
     logger.warn('convite.oauth.callback.item_nao_pendente', { platform });
-    return NextResponse.redirect(new URL(binding.returnTo, env().TRIA_APP_BASE_URL));
+    return NextResponse.redirect(new URL(destino, env().TRIA_APP_BASE_URL));
   }
 
   const requestId = request.headers.get('x-request-id') ?? newRequestId();
@@ -96,7 +98,7 @@ async function completarViaConvite(input: {
     return clear(
       NextResponse.redirect(
         new URL(
-          `${binding.returnTo}?erro=${outcome.error.code === 'forbidden' ? 'autorizacao_recusada' : 'falha_autorizacao'}`,
+          `${destino}?erro=${outcome.error.code === 'forbidden' ? 'autorizacao_recusada' : 'falha_autorizacao'}`,
           env().TRIA_APP_BASE_URL,
         ),
       ),
@@ -105,7 +107,7 @@ async function completarViaConvite(input: {
 
   await concluirItemDoConvite(itemId, plataforma, outcome.value, pendente.clientId);
 
-  return redirectComResultado(binding.returnTo, binding.returnTo, platform, outcome.value.discovered);
+  return redirectComResultado(binding.returnTo, destino, platform, outcome.value.discovered);
 }
 
 async function concluirItemDoConvite(

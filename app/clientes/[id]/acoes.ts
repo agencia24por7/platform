@@ -2,7 +2,10 @@
 
 import { redirect } from 'next/navigation';
 import { modules } from '@/composition';
-import { validarPlataformasEscolhidas } from '@/modules/connections/domain/integrationInvite';
+import {
+  MOTIVO_DO_CONVITE_DE_INTEGRACAO,
+  validarPlataformasEscolhidas,
+} from '@/modules/connections/domain/integrationInvite';
 import {
   MOTIVO_DO_PEDIDO_DE_PARTNER,
   normalizarContaDeAnuncioMeta,
@@ -18,6 +21,11 @@ async function contextoDoCliente() {
   return contexto;
 }
 
+async function clienteDaOrganizacao(organizationId: string, clientId: string) {
+  const cliente = await modules().clients.byId(organizationId, clientId);
+  return cliente.ok ? cliente.value : null;
+}
+
 export async function criarConviteDeIntegracao(formData: FormData): Promise<void> {
   const clientId = text(formData, 'clientId');
   const contexto = await contextoDoCliente();
@@ -31,16 +39,15 @@ export async function criarConviteDeIntegracao(formData: FormData): Promise<void
     return;
   }
 
+  if (!(await clienteDaOrganizacao(organization.id, clientId))) {
+    voltar('Cliente não encontrado nesta organização.');
+    return;
+  }
+
   const plataformas = formData.getAll('platforms').map(String);
   const decisao = validarPlataformasEscolhidas(plataformas);
   if (!decisao.ok) {
-    voltar(
-      decisao.motivo === 'vazio'
-        ? 'Escolha ao menos uma plataforma para o convite.'
-        : decisao.motivo === 'duplicada'
-          ? 'Cada plataforma só pode entrar uma vez no mesmo convite.'
-          : 'Essa plataforma não entra no convite por link.',
-    );
+    voltar(MOTIVO_DO_CONVITE_DE_INTEGRACAO[decisao.motivo]);
     return;
   }
 
@@ -106,6 +113,11 @@ export async function pedirAcessoMetaPartner(formData: FormData): Promise<void> 
 
   if (!canAdminister(contexto.role)) {
     voltar('Só quem administra a organização pode pedir acesso parceiro no Meta.');
+    return;
+  }
+
+  if (!(await clienteDaOrganizacao(organization.id, clientId))) {
+    voltar('Cliente não encontrado nesta organização.');
     return;
   }
 
