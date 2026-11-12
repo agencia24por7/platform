@@ -10,12 +10,12 @@ import {
   validarPlataformasEscolhidas,
 } from './integrationInvite.ts';
 
-test('google e meta não entram no convite por link — já têm caminho próprio', () => {
-  assert.equal(convidavelPorLink('google'), false);
-  assert.equal(convidavelPorLink('meta'), false);
+test('google e meta também entram no convite por link, além do caminho de administradora', () => {
+  assert.equal(convidavelPorLink('google'), true);
+  assert.equal(convidavelPorLink('meta'), true);
 });
 
-test('as sete plataformas OAuth sem caminho de administradora são convidáveis', () => {
+test('todas as plataformas OAuth, inclusive as que têm caminho de administradora, são convidáveis', () => {
   for (const platform of PLATAFORMAS_CONVIDAVEIS) {
     assert.equal(convidavelPorLink(platform), true);
   }
@@ -57,7 +57,7 @@ test('plataforma repetida no mesmo convite é recusada', () => {
 });
 
 test('plataforma que não é convidável por link é recusada', () => {
-  const decisao = validarPlataformasEscolhidas(['ga4', 'google']);
+  const decisao = validarPlataformasEscolhidas(['ga4', 'apify']);
   assert.deepEqual(decisao, { ok: false, motivo: 'plataforma_invalida' });
 });
 

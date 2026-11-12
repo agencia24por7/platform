@@ -2,6 +2,8 @@ import { randomBytes } from 'node:crypto';
 import type { Platform } from './connection.ts';
 
 export const PLATAFORMAS_CONVIDAVEIS = [
+  'google',
+  'meta',
   'ga4',
   'gtm',
   'pixel',
