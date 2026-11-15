@@ -64,6 +64,36 @@ jobs:
           tentar gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet \
             --command "sudo sh -c 'find /opt/tria -mindepth 1 -maxdepth 1 ! -name .env -exec rm -rf {} +' && sudo cp -a /tmp/compose/. /opt/tria/ && rm -rf /tmp/compose"
 
+      - name: Migrar volumes de tria para orla (uma vez)
+        env:
+          VM: tria-${{ vars.ENVIRONMENT }}-vm
+          ZONE: ${{ vars.GCP_ZONE }}
+        run: |
+          tentar() {
+            for n in 1 2 3 4 5; do
+              "$@" && return 0
+              echo "tentativa $n falhou; o tunel IAP cai de vez em quando. repetindo em 15s"
+              sleep 15
+            done
+            return 1
+          }
+          tentar gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "
+            set -eu
+            if sudo docker volume inspect tria_postgres-data > /dev/null 2>&1 \
+               && ! sudo docker volume inspect orla_postgres-data > /dev/null 2>&1; then
+              echo 'copiando volumes de tria para orla (corte unico, containers antigos param durante a copia)'
+              sudo docker stop tria-proxy tria-app tria-n8n tria-postgres 2>/dev/null || true
+              for vol in postgres-data n8n-data caddy-data caddy-config; do
+                sudo docker volume create orla_\$vol > /dev/null
+                sudo docker run --rm -v tria_\$vol:/de -v orla_\$vol:/para alpine sh -c 'cp -a /de/. /para/'
+              done
+              sudo docker rm tria-proxy tria-app tria-n8n tria-postgres 2>/dev/null || true
+              echo 'volumes copiados; os volumes tria_* antigos ficam intactos, sem remocao automatica.'
+            else
+              echo 'ja migrado ou nao ha volume tria_postgres-data — pulando.'
+            fi
+          "
+
       - name: Aplicar migrações pendentes
         env:
           VM: tria-${{ vars.ENVIRONMENT }}-vm
