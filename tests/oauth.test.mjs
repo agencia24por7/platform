@@ -7,7 +7,7 @@ const follow = (path) => browse(path);
 
 const resetToFirstRun = () =>
   execFileSync('docker', [
-    'exec', 'tria-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-tAc',
+    'exec', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-tAc',
     'TRUNCATE metrics.metrics_restatements, metrics.metrics_daily, automation.sync_runs, integrations.connection_accounts, integrations.ad_accounts, integrations.connections, core.clients, audit.audit_log, core.organizations RESTART IDENTITY CASCADE',
   ]);
 
@@ -109,7 +109,7 @@ describe('autorizar plataforma exige administrar a organização', { concurrency
   let organizacao = '';
 
   const query = (sql) =>
-    execFileSync('docker', ['exec', '-i', 'tria-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
+    execFileSync('docker', ['exec', '-i', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
       encoding: 'utf8',
     })
       .trim()

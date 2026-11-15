@@ -4,7 +4,7 @@ import { before, describe, it } from 'node:test';
 import { appIsUp, browse, ensureUser, get, makeOwner, post, signIn, submitForm } from './helpers.mjs';
 
 const query = (sql) =>
-  execFileSync('docker', ['exec', 'tria-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
+  execFileSync('docker', ['exec', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
     .toString()
     .trim()
     .split('\n')[0]

@@ -39,7 +39,7 @@ jobs:
 
       - name: Construir e publicar a imagem
         env:
-          IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/tria/app
+          IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/orla/app
         run: |
           docker build -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" .
           docker push "$IMAGE:${{ github.sha }}"
@@ -80,7 +80,7 @@ jobs:
           tentar gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "
             set -eu
             sudo docker compose -f /opt/tria/docker-compose.prod.yml --project-directory /opt/tria up -d postgres
-            until sudo docker exec tria-postgres pg_isready -U postgres -d tria > /dev/null 2>&1; do sleep 2; done
+            until sudo docker exec orla-postgres pg_isready -U postgres -d tria > /dev/null 2>&1; do sleep 2; done
             sudo sh /opt/tria/migrar.sh
           "
 
@@ -88,7 +88,7 @@ jobs:
         env:
           VM: tria-${{ vars.ENVIRONMENT }}-vm
           ZONE: ${{ vars.GCP_ZONE }}
-          IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/tria/app
+          IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/orla/app
         run: |
           tentar() {
             for n in 1 2 3 4 5; do

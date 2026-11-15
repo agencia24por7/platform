@@ -1,9 +1,9 @@
-name: tria-v0
+name: orla-v0
 
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: tria-postgres
+    container_name: orla-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?required}
@@ -24,7 +24,7 @@ services:
 
   n8n-postgres:
     image: postgres:16-alpine
-    container_name: tria-n8n-postgres
+    container_name: orla-n8n-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: n8n
@@ -40,7 +40,7 @@ services:
 
   n8n:
     image: n8nio/n8n:latest
-    container_name: tria-n8n
+    container_name: orla-n8n
     restart: unless-stopped
     depends_on:
       n8n-postgres:
