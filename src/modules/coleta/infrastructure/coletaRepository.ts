@@ -94,7 +94,6 @@ export type ColetaRepository = {
   resolveFonte(fonteTipo: FonteTipo, fonteId: string): Promise<{ organizationId: string; clientId: string; platform: Platform } | null>;
   findByIdempotencyKey(key: string): Promise<Coleta | null>;
   abrir(input: AbrirColetaInput, organizationId: string, clientId: string, platform: Platform): Promise<Coleta>;
-  findById(organizationId: string, id: string): Promise<Coleta | null>;
   fechar(input: FecharColetaInput): Promise<Coleta | null>;
   marcarFalhaDeAuth(fonteTipo: FonteTipo, fonteId: string): Promise<void>;
 };
@@ -147,13 +146,6 @@ export function createColetaRepository(): ColetaRepository {
           )
           RETURNING *`) as unknown as ColetaRow[];
         return toColeta(rows[0]!);
-      });
-    },
-
-    async findById(organizationId, id) {
-      return withTenant(organizationId, async (tx) => {
-        const rows = (await tx`SELECT * FROM automation.coletas WHERE id = ${id}`) as unknown as ColetaRow[];
-        return rows[0] ? toColeta(rows[0]) : null;
       });
     },
 
