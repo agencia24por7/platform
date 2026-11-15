@@ -10,6 +10,7 @@ const MOTIVOS: Record<string, string> = {
   recusado: 'Você cancelou a autorização no Google.',
   origem: 'Algo não bateu na resposta do Google. Tente de novo.',
   estado: 'A sessão de login expirou. Tente de novo.',
+  nonce: 'A verificação da sua conta não bateu. Tente de novo.',
   codigo: 'A resposta do Google veio incompleta. Tente de novo.',
   troca: 'O Google recusou a autorização. Tente de novo.',
   sem_identidade: 'O Google não confirmou quem você é. Tente de novo.',
