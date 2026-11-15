@@ -136,6 +136,7 @@ resource "google_project_iam_member" "terraform" {
     "roles/serviceusage.serviceUsageAdmin",
     "roles/monitoring.notificationChannelEditor",
     "roles/dns.admin",
+    "roles/bigquery.admin",
   ])
 
   project = var.project_id
