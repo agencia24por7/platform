@@ -70,7 +70,7 @@ function handle<I, O>(
     const verdict = consume(`worker:${caller}`, RATE_LIMIT, RATE_WINDOW_MS);
     if (!verdict.allowed) {
       return NextResponse.json(
-        { type: 'https://tria.app/problems/rate_limited', title: 'Limite de chamadas excedido.', status: 429, requestId },
+        { type: 'https://orla.app/problems/rate_limited', title: 'Limite de chamadas excedido.', status: 429, requestId },
         { status: 429, headers: { 'Retry-After': String(verdict.retryAfterSeconds), 'X-Request-Id': requestId } },
       );
     }

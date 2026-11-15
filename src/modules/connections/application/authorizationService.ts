@@ -268,7 +268,7 @@ export function createAuthorizationService(
       let credentialRef: string = CREDENCIAL_SEM_COFRE;
       if (vault.available) {
         credentialRef = await vault.store({
-          label: `tria · ${provider.label} · ${organization.value.slug}`,
+          label: `ORLA · ${provider.label} · ${organization.value.slug}`,
           platform: input.platform,
           accessToken: granted.accessToken,
           refreshToken: granted.refreshToken,

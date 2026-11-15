@@ -12,15 +12,15 @@ function senhaDoApp() {
 }
 
 const dono = (sql) =>
-  execFileSync('docker', ['exec', '-i', 'tria-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
+  execFileSync('docker', ['exec', '-i', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
     encoding: 'utf8',
   }).trim();
 
 const comoApp = (sql) =>
   execFileSync(
     'docker',
-    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoApp()}`, 'tria-postgres',
-     'psql', '-U', 'tria_app', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
+    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoApp()}`, 'orla-postgres',
+     'psql', '-U', 'orla_app', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
     { encoding: 'utf8' },
   ).trim();
 
@@ -113,7 +113,7 @@ describe('fronteiras entre inquilinos', { concurrency: false }, () => {
   it('o app não escreve direto na identidade nem cria organização por INSERT', () => {
     for (const tabela of ['core.users', 'core.organizations']) {
       assert.equal(
-        umaLinha(dono(`SELECT has_table_privilege('tria_app', '${tabela}', 'INSERT')`)),
+        umaLinha(dono(`SELECT has_table_privilege('orla_app', '${tabela}', 'INSERT')`)),
         'f',
         `${tabela} não podia aceitar INSERT direto do app`,
       );
@@ -176,23 +176,23 @@ describe('fronteiras entre inquilinos', { concurrency: false }, () => {
     const schemas = dono(
       `SELECT count(*) FROM pg_namespace
         WHERE nspname IN ('public','core','integrations','metrics','automation','audit')
-          AND has_schema_privilege('tria_app', nspname, 'CREATE')`,
+          AND has_schema_privilege('orla_app', nspname, 'CREATE')`,
     );
     assert.equal(umaLinha(schemas), '0', 'criar objeto permitiria sombrear função usada em política');
 
     assert.equal(
-      umaLinha(dono(`SELECT has_database_privilege('tria_app', 'tria', 'CREATE')`)),
+      umaLinha(dono(`SELECT has_database_privilege('orla_app', 'tria', 'CREATE')`)),
       'f',
     );
     assert.equal(
-      umaLinha(dono(`SELECT rolsuper::text || rolbypassrls::text FROM pg_roles WHERE rolname = 'tria_app'`)),
+      umaLinha(dono(`SELECT rolsuper::text || rolbypassrls::text FROM pg_roles WHERE rolname = 'orla_app'`)),
       'falsefalse',
     );
   });
 
   it('o papel do worker continua sem nenhum privilégio de objeto', () => {
     assert.equal(
-      umaLinha(dono(`SELECT count(*) FROM information_schema.table_privileges WHERE grantee = 'tria_worker'`)),
+      umaLinha(dono(`SELECT count(*) FROM information_schema.table_privileges WHERE grantee = 'orla_worker'`)),
       '0',
     );
   });

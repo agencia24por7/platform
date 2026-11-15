@@ -7,7 +7,7 @@ LEDGER="CREATE TABLE IF NOT EXISTS public.schema_migrations (
 )"
 
 psql_admin() {
-  docker exec -i tria-postgres psql -U postgres -d tria -v ON_ERROR_STOP=1 "$@"
+  docker exec -i orla-postgres psql -U postgres -d tria -v ON_ERROR_STOP=1 "$@"
 }
 
 psql_admin -q -c "$LEDGER"
