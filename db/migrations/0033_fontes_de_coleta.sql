@@ -127,8 +127,10 @@ AS $$
   FROM integrations.ad_accounts a
   JOIN core.clients c ON c.id = a.client_id
   JOIN core.organizations o ON o.id = a.organization_id
+  JOIN integrations.connections n ON n.id = a.connection_id
   WHERE p_fonte_tipo = 'ad_account' AND a.id = p_fonte_id
     AND a.sync_enabled AND a.status = 'linked' AND c.status = 'active' AND o.status = 'active'
+    AND n.status IN ('active', 'expiring')
 
   UNION ALL
 
@@ -136,8 +138,10 @@ AS $$
   FROM integrations.connection_accounts ca
   JOIN core.clients c ON c.id = ca.client_id
   JOIN core.organizations o ON o.id = ca.organization_id
+  JOIN integrations.connections n ON n.id = ca.connection_id
   WHERE p_fonte_tipo = 'connection_account' AND ca.id = p_fonte_id AND ca.client_id IS NOT NULL
-    AND ca.state = 'linked' AND NOT ca.inactive AND c.status = 'active' AND o.status = 'active';
+    AND ca.state = 'linked' AND NOT ca.inactive AND c.status = 'active' AND o.status = 'active'
+    AND n.status IN ('active', 'expiring');
 $$;
 
 COMMENT ON FUNCTION automation.resolve_coleta_fonte IS
