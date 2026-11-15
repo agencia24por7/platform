@@ -5,7 +5,7 @@ import type { CredentialVault, VaultSecret } from '@/modules/connections/applica
 
 import type { Platform } from '@/modules/connections/domain/connection';
 
-const CREDENTIAL_TYPE: Record<Platform, string> = {
+export const CREDENTIAL_TYPE: Record<Platform, string> = {
   google: 'googleOAuth2Api',
   meta: 'facebookGraphApi',
   rdstation: 'httpHeaderAuth',

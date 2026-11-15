@@ -1,6 +1,7 @@
 import { createAuditRepository } from '@/modules/audit/infrastructure/auditRepository';
 import { createColetaService } from '@/modules/coleta/application/coletaService';
 import { createColetaRepository } from '@/modules/coleta/infrastructure/coletaRepository';
+import { createColetorProvisioner } from '@/modules/coleta/infrastructure/coletorProvisioner';
 import { createClientService } from '@/modules/clients/application/clientService';
 import { createClientRepository } from '@/modules/clients/infrastructure/clientRepository';
 import { createAuthorizationService } from '@/modules/connections/application/authorizationService';
@@ -58,6 +59,7 @@ function build() {
       createPlatformDiscovery(),
       vault,
       audit,
+      createColetorProvisioner(),
     ),
     ingestion: createIngestionService(
       createSyncRunRepository(),

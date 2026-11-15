@@ -1,0 +1,57 @@
+{
+  "name": "Coletor · Google Ads · __CREDENCIAL_NOME__",
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "timezone": "America/Sao_Paulo"
+  },
+  "nodes": [
+    {
+      "id": "entrada",
+      "name": "Entrada",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-200, 0],
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            { "name": "fonte" },
+            { "name": "janela" },
+            { "name": "modo" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "coletar",
+      "name": "Buscar métricas no Google Ads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [40, 0],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const inicio = Date.now();\nconst fonte = $json.fonte;\nconst janela = $json.janela;\nconst modo = $json.modo;\nconst versaoApi = 'v26';\n\nconst administradora = String(fonte.managerExternalId || fonte.externalId).replace(/\\D/g, '');\nconst cliente = String(fonte.externalId).replace(/\\D/g, '');\nconst limite = modo === 'amostra' ? ' LIMIT 500' : '';\n\nconst query = `SELECT campaign.id, campaign.name, segments.date, metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions, metrics.conversions_value FROM campaign WHERE segments.date BETWEEN '${janela.start}' AND '${janela.end}'${limite}`;\n\nfunction devolver(linhas, falhas, requests, bytes) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - inicio },\n      falhas,\n      requests,\n      versaoApi,\n    },\n  }];\n}\n\nlet resposta;\ntry {\n  resposta = await this.helpers.httpRequestWithAuthentication.call(this, 'googleOAuth2Api', {\n    method: 'POST',\n    url: `https://googleads.googleapis.com/${versaoApi}/customers/${cliente}/googleAds:searchStream`,\n    headers: { 'login-customer-id': administradora, 'Content-Type': 'application/json' },\n    body: { query },\n    json: true,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  });\n} catch (erro) {\n  return devolver([], [{ causa: 'api_recusou', detalhe: `falha de rede: ${erro.message}` }], 1, 0);\n}\n\nif (resposta.statusCode === 401 || resposta.statusCode === 403) {\n  const detalhe = resposta.body?.error?.message || `HTTP ${resposta.statusCode}`;\n  return devolver([], [{ causa: 'reauth_pending', detalhe }], 1, 0);\n}\n\nif (resposta.statusCode < 200 || resposta.statusCode >= 300) {\n  const detalhe = resposta.body?.error?.message || `HTTP ${resposta.statusCode}`;\n  return devolver([], [{ causa: 'api_recusou', detalhe }], 1, 0);\n}\n\nconst lotes = Array.isArray(resposta.body) ? resposta.body : [resposta.body];\nconst linhasBrutas = lotes.flatMap((lote) => lote.results || []);\nconst bytes = JSON.stringify(resposta.body).length;\n\nconst linhas = linhasBrutas.map((linha) => ({\n  externalCampaignId: String(linha.campaign?.id ?? ''),\n  campaignName: linha.campaign?.name ?? null,\n  metricDate: linha.segments?.date ?? null,\n  spend: Number(linha.metrics?.costMicros ?? 0) / 1_000_000,\n  impressions: Number(linha.metrics?.impressions ?? 0),\n  clicks: Number(linha.metrics?.clicks ?? 0),\n  conversions: Number(linha.metrics?.conversions ?? 0),\n  revenue: Number(linha.metrics?.conversionsValue ?? 0),\n  currency: fonte.currency || 'BRL',\n}));\n\nif (linhas.length === 0) {\n  return devolver([], [{ causa: 'sem_dados_no_periodo', detalhe: null }], 1, bytes);\n}\n\nreturn devolver(linhas, [], 1, bytes);"
+      },
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "__CREDENCIAL_ID__",
+          "name": "__CREDENCIAL_NOME__"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Entrada": {
+      "main": [
+        [
+          {
+            "node": "Buscar métricas no Google Ads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

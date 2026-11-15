@@ -21,6 +21,7 @@ import {
   type PlataformaOauth,
 } from '@/modules/connections/domain/oauth';
 import type { ConnectionRepository } from '@/modules/connections/infrastructure/connectionRepository';
+import type { ColetorProvisioner } from '@/modules/coleta/infrastructure/coletorProvisioner';
 import type { DiscoveredAccount } from '@/modules/connections/domain/discovery';
 import type { DiscoveredAccountRepository } from '@/modules/connections/infrastructure/discoveredAccountRepository';
 import type { PlatformDiscovery } from '@/modules/connections/application/platformDiscoveryPort';
@@ -137,6 +138,7 @@ export function createAuthorizationService(
   discovery: PlatformDiscovery,
   vault: CredentialVault,
   audit: AuditRecorder,
+  coletorProvisioner: ColetorProvisioner,
 ): AuthorizationService {
   return {
     async complete(input) {
@@ -303,6 +305,23 @@ export function createAuthorizationService(
       const credencialTrocada =
         already && already.credentialRef !== credentialRef ? already.credentialRef : null;
       const descarte = credencialTrocada ? await vault.discard(credencialTrocada) : null;
+
+      if (vault.available && connection.credentialRef !== CREDENCIAL_SEM_COFRE) {
+        try {
+          const coletorRef = await coletorProvisioner.provisionar({
+            platform: input.platform,
+            credentialRef: connection.credentialRef,
+            label: connection.label,
+          });
+          if (coletorRef) await connections.setColetorRef(organizationId, connection.id, coletorRef);
+        } catch (error) {
+          logger.warn('coletor.provisionar.ignorado', {
+            platform: input.platform,
+            connectionId: connection.id,
+            error: error instanceof Error ? error.message : 'desconhecido',
+          });
+        }
+      }
 
       const stored = await discovered.replace(organizationId, connection.id, accounts);
 
