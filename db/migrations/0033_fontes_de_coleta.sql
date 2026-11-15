@@ -116,6 +116,52 @@ COMMENT ON FUNCTION automation.fontes_de_coleta IS
 REVOKE ALL ON FUNCTION automation.fontes_de_coleta(integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION automation.fontes_de_coleta(integer) TO tria_app;
 
+CREATE FUNCTION automation.resolve_coleta_fonte(p_fonte_tipo text, p_fonte_id uuid)
+RETURNS TABLE (organization_id uuid, client_id uuid, platform text)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+STABLE
+AS $$
+  SELECT a.organization_id, a.client_id, a.platform::text
+  FROM integrations.ad_accounts a
+  JOIN core.clients c ON c.id = a.client_id
+  JOIN core.organizations o ON o.id = a.organization_id
+  WHERE p_fonte_tipo = 'ad_account' AND a.id = p_fonte_id
+    AND a.sync_enabled AND a.status = 'linked' AND c.status = 'active' AND o.status = 'active'
+
+  UNION ALL
+
+  SELECT ca.organization_id, ca.client_id, ca.platform::text
+  FROM integrations.connection_accounts ca
+  JOIN core.clients c ON c.id = ca.client_id
+  JOIN core.organizations o ON o.id = ca.organization_id
+  WHERE p_fonte_tipo = 'connection_account' AND ca.id = p_fonte_id AND ca.client_id IS NOT NULL
+    AND ca.state = 'linked' AND NOT ca.inactive AND c.status = 'active' AND o.status = 'active';
+$$;
+
+COMMENT ON FUNCTION automation.resolve_coleta_fonte IS
+  'Resolve o tenant de uma fonte para o worker, que não tem contexto de organização — no molde de automation.resolve_account_organization. Reconfirma os mesmos filtros de ciclo de vida de fontes_de_coleta, porque algum tempo passa entre listar e abrir.';
+
+REVOKE ALL ON FUNCTION automation.resolve_coleta_fonte(text, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION automation.resolve_coleta_fonte(text, uuid) TO tria_app;
+
+CREATE FUNCTION automation.resolve_coleta_by_key(p_idempotency_key text)
+RETURNS TABLE (organization_id uuid, coleta_id uuid)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+STABLE
+AS $$
+  SELECT organization_id, id FROM automation.coletas WHERE idempotency_key = p_idempotency_key;
+$$;
+
+COMMENT ON FUNCTION automation.resolve_coleta_by_key IS
+  'Resolve o tenant de uma execução já aberta pela chave de idempotência — no molde de automation.resolve_run_by_key.';
+
+REVOKE ALL ON FUNCTION automation.resolve_coleta_by_key(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION automation.resolve_coleta_by_key(text) TO tria_app;
+
 CREATE FUNCTION automation.fechar_coleta(
   p_coleta_id uuid,
   p_status automation.run_status,
@@ -152,7 +198,7 @@ COMMENT ON FUNCTION automation.fechar_coleta IS
 REVOKE ALL ON FUNCTION automation.fechar_coleta(uuid, automation.run_status, integer, integer, integer, jsonb, text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION automation.fechar_coleta(uuid, automation.run_status, integer, integer, integer, jsonb, text, text) TO tria_app;
 
-CREATE FUNCTION automation.coleta_falhou_por_auth(p_connection_id uuid)
+CREATE FUNCTION automation.coleta_falhou_por_auth(p_fonte_tipo text, p_fonte_id uuid)
 RETURNS integrations.connection_status
 LANGUAGE sql
 SECURITY DEFINER
@@ -161,14 +207,21 @@ VOLATILE
 AS $$
   UPDATE integrations.connections
   SET status = 'reauth_pending'
-  WHERE id = p_connection_id AND status IN ('active', 'expiring', 'degraded')
+  WHERE status IN ('active', 'expiring', 'degraded')
+    AND id = (
+      SELECT a.connection_id FROM integrations.ad_accounts a
+      WHERE p_fonte_tipo = 'ad_account' AND a.id = p_fonte_id
+      UNION ALL
+      SELECT ca.connection_id FROM integrations.connection_accounts ca
+      WHERE p_fonte_tipo = 'connection_account' AND ca.id = p_fonte_id
+    )
   RETURNING status;
 $$;
 
 COMMENT ON FUNCTION automation.coleta_falhou_por_auth IS
-  'Loop de reautorização que a coleta fecha: 401/403 de token marca a conexão reauth_pending (a tela de conexões já exibe esse status), sem rebaixar quem já estava revoked.';
+  'Loop de reautorização que a coleta fecha: 401/403 de token marca a conexão reauth_pending (a tela de conexões já exibe esse status), sem rebaixar quem já estava revoked. Recebe a fonte (não o connection_id direto) porque é isso que o worker tem em mãos ao fechar a execução.';
 
-REVOKE ALL ON FUNCTION automation.coleta_falhou_por_auth(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION automation.coleta_falhou_por_auth(uuid) TO tria_app;
+REVOKE ALL ON FUNCTION automation.coleta_falhou_por_auth(text, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION automation.coleta_falhou_por_auth(text, uuid) TO tria_app;
 
 COMMIT;
