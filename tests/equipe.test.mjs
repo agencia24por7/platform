@@ -30,7 +30,7 @@ const comoApp = (sql) =>
   execFileSync(
     'docker',
     ['exec', '-i', '-e', `PGPASSWORD=${senhaDoApp()}`, 'orla-postgres',
-     'psql', '-U', 'tria_app', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
+     'psql', '-U', 'orla_app', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
     { encoding: 'utf8' },
   ).trim();
 
@@ -260,7 +260,7 @@ describe('equipe, convites e recorte por cliente', { concurrency: false }, () =>
   it('o app não tem como apagar vínculo, convite nem recorte', () => {
     for (const tabela of ['core.members', 'core.invitations', 'core.member_clients']) {
       const permitido = umaLinha(dono(
-        `SELECT has_table_privilege('tria_app', '${tabela}', 'DELETE')`,
+        `SELECT has_table_privilege('orla_app', '${tabela}', 'DELETE')`,
       ));
       assert.equal(permitido, 'f', `${tabela} não podia aceitar DELETE do app`);
     }

@@ -112,11 +112,11 @@ describe('o segredo não mora aqui', { concurrency: false }, () => {
 
   it('o worker não tem privilégio de objeto e o app não cria objeto', () => {
     assert.equal(
-      dono(`SELECT count(*) FROM information_schema.table_privileges WHERE grantee = 'tria_worker'`),
+      dono(`SELECT count(*) FROM information_schema.table_privileges WHERE grantee = 'orla_worker'`),
       '0',
     );
     assert.equal(
-      dono(`SELECT count(*) FROM pg_namespace WHERE nspname IN ('public','core','integrations','metrics','automation','audit') AND has_schema_privilege('tria_app', nspname, 'CREATE')`),
+      dono(`SELECT count(*) FROM pg_namespace WHERE nspname IN ('public','core','integrations','metrics','automation','audit') AND has_schema_privilege('orla_app', nspname, 'CREATE')`),
       '0',
     );
   });
