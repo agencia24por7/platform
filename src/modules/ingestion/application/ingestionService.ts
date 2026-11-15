@@ -56,7 +56,14 @@ export function createIngestionService(
       }
 
       const existing = await runs.findByIdempotencyKey(input.idempotencyKey);
-      if (existing) return ok(existing);
+      if (existing) {
+        if (existing.adAccountId !== input.adAccountId) {
+          return err(
+            failure('conflict', 'Esta chave de idempotência já pertence a uma execução de outra conta.'),
+          );
+        }
+        return ok(existing);
+      }
 
       const organizationId = await runs.findAccountOrganization(input.adAccountId);
       if (!organizationId) return err(failure('not_found', 'Conta de anúncios não encontrada.'));

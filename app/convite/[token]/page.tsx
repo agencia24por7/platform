@@ -1,6 +1,7 @@
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { modules } from '@/composition';
+import { enderecoConfiavel } from '@/modules/audit/domain/actor';
 import { consume } from '@/shared/security/rateLimit';
 import { MARCA_DA_PLATAFORMA, ROTULO_DA_PLATAFORMA } from '@/modules/connections/domain/connection';
 
@@ -23,7 +24,7 @@ export default async function PaginaDoConvite({
 }) {
   const { token } = await params;
 
-  const sourceIp = (await headers()).get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'desconhecido';
+  const sourceIp = enderecoConfiavel((await headers()).get('x-forwarded-for')) ?? 'desconhecido';
   const verdict = consume(`convite:view:${sourceIp}`, LIMITE_POR_JANELA, JANELA_MS);
   if (!verdict.allowed) {
     return (

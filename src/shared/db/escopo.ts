@@ -26,10 +26,16 @@ async function resolver(organizationId: string): Promise<string> {
   if (!userId) return ORGANIZACAO_INTEIRA;
 
   const linhas = (await sql()`
-    SELECT core.client_scope_of(${userId}::uuid, ${organizationId}::uuid) AS escopo
-  `) as unknown as { escopo: string[] | null }[];
+    SELECT core.sessao_alcanca_organizacao(${organizationId}::uuid, ${userId}::uuid) AS alcanca,
+           core.client_scope_of(${userId}::uuid, ${organizationId}::uuid) AS escopo
+  `) as unknown as { alcanca: boolean; escopo: string[] | null }[];
 
-  const escopo = linhas[0]?.escopo;
+  const linha = linhas[0];
+  if (!linha?.alcanca) {
+    throw new Error('Sessão sem vínculo vivo com esta organização. O contexto de tenant não abre.');
+  }
+
+  const escopo = linha.escopo;
   return escopo && escopo.length > 0 ? escopo.join(',') : ORGANIZACAO_INTEIRA;
 }
 

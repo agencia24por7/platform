@@ -11,6 +11,7 @@ import {
   type PlataformaOauth,
 } from '@/modules/connections/domain/oauth';
 import { credenciaisDaPlataforma } from '@/modules/connections/application/credenciaisOauth';
+import { enderecoConfiavel } from '@/modules/audit/domain/actor';
 import { decodeStateCookie, type StateCookie } from '@/modules/connections/domain/tenantBinding';
 import { ORGANIZACAO_INTEIRA, escopoDeCliente } from '@/shared/db/escopo';
 import { temRecursoParaVincular, type Platform } from '@/modules/connections/domain/connection';
@@ -77,7 +78,7 @@ async function completarViaConvite(input: {
   }
 
   const requestId = request.headers.get('x-request-id') ?? newRequestId();
-  const sourceIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+  const sourceIp = enderecoConfiavel(request.headers.get('x-forwarded-for'));
 
   const outcome = await modules().authorization.complete({
     organizationId: pendente.organizationId,
@@ -217,7 +218,7 @@ export async function GET(
     clientId: credentials.clientId,
     clientSecret: credentials.clientSecret,
     requestId,
-    sourceIp: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+    sourceIp: enderecoConfiavel(request.headers.get('x-forwarded-for')),
   });
 
   if (!outcome.ok) {
@@ -232,7 +233,7 @@ export async function GET(
     const posse = await modules().identity.joinAsOwner(outcome.value.organizationId, {
       userId: sessao.user.id,
       requestId,
-      sourceIp: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      sourceIp: enderecoConfiavel(request.headers.get('x-forwarded-for')),
     });
     if (!posse.ok) {
       logger.warn('oauth.callback.ownership_failed', { platform, code: posse.error.code });
