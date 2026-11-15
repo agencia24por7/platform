@@ -13,7 +13,7 @@ export type ProblemBody = {
 export function problem(failure: Failure, requestId: string): NextResponse<ProblemBody> {
   const status = httpStatusFor(failure.code);
   const body: ProblemBody = {
-    type: `https://tria.app/problems/${failure.code}`,
+    type: `https://orla.app/problems/${failure.code}`,
     title: failure.message,
     status,
     requestId,

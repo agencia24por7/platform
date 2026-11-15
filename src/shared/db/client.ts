@@ -16,7 +16,7 @@ function create(): Sql {
     prepare: true,
     onnotice: () => {},
     connection: {
-      application_name: 'tria-app',
+      application_name: 'orla-app',
       statement_timeout: config.DATABASE_STATEMENT_TIMEOUT_MS,
     },
   });
