@@ -9,6 +9,8 @@ locals {
     "monitoring.googleapis.com",
     "billingbudgets.googleapis.com",
     "oslogin.googleapis.com",
+    "bigquery.googleapis.com",
+    "businessprofileperformance.googleapis.com",
   ]
 }
 

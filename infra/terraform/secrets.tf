@@ -12,6 +12,7 @@ locals {
     "n8n-owner-password",
     "n8n-db-password",
     "proxy-basic-auth",
+    "bq-coleta-key",
   ]
 
   oauth_secret_names = [
