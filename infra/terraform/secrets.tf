@@ -75,3 +75,15 @@ resource "google_project_iam_member" "vm_pull_image" {
   role    = "roles/artifactregistry.reader"
   member  = "serviceAccount:${google_service_account.vm.email}"
 }
+
+resource "google_project_iam_audit_config" "secretmanager_access" {
+  project = var.project_id
+  service = "secretmanager.googleapis.com"
+
+  audit_log_config {
+    log_type = "DATA_READ"
+  }
+  audit_log_config {
+    log_type = "ADMIN_READ"
+  }
+}
