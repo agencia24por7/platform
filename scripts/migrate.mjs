@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 
 const DIR = 'db/migrations';
-const CONTAINER = 'tria-postgres';
+const CONTAINER = 'orla-postgres';
 
 const env = Object.fromEntries(
   readFileSync('.env', 'utf8').split('\n').filter((l) => l.includes('=')).map((l) => {

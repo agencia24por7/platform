@@ -35,7 +35,7 @@ const values = {
   NODE_ENV: 'development',
 };
 
-values.DATABASE_URL = `postgres://tria_app:${values.APP_DB_PASSWORD}@127.0.0.1:${values.POSTGRES_PORT}/${values.POSTGRES_DB}`;
+values.DATABASE_URL = `postgres://orla_app:${values.APP_DB_PASSWORD}@127.0.0.1:${values.POSTGRES_PORT}/${values.POSTGRES_DB}`;
 
 const order = [
   'POSTGRES_DB', 'POSTGRES_PORT', 'POSTGRES_SUPERUSER', 'POSTGRES_SUPERUSER_PASSWORD',
