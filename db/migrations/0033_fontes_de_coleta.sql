@@ -1,5 +1,14 @@
 BEGIN;
 
+DO $$
+BEGIN
+  PERFORM set_config(
+    'coleta.papel_app',
+    (SELECT rolname FROM pg_roles WHERE rolname IN ('orla_app', 'tria_app') ORDER BY rolname = 'orla_app' DESC LIMIT 1),
+    true
+  );
+END $$;
+
 ALTER TABLE integrations.connections
   ADD COLUMN coletor_ref text CHECK (coletor_ref IS NULL OR length(coletor_ref) <= 64);
 
@@ -44,14 +53,21 @@ CREATE INDEX coletas_status_idx ON automation.coletas (status, started_at DESC);
 COMMENT ON TABLE automation.coletas IS
   'Plano de controle da camada de coleta. Os DADOS trazidos vão para o BigQuery; aqui fica só execução, qualidade e volumetria, no mesmo espírito de automation.sync_runs.';
 
-GRANT SELECT, INSERT, UPDATE ON automation.coletas TO tria_app;
+DO $$ BEGIN
+  EXECUTE format('GRANT SELECT, INSERT, UPDATE ON automation.coletas TO %I', current_setting('coleta.papel_app'));
+END $$;
 
 ALTER TABLE automation.coletas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE automation.coletas FORCE ROW LEVEL SECURITY;
 
-CREATE POLICY coletas_tenant ON automation.coletas FOR ALL TO tria_app
-  USING (organization_id = core.current_organization() AND core.cliente_no_escopo(client_id))
-  WITH CHECK (organization_id = core.current_organization() AND core.cliente_no_escopo(client_id));
+DO $$ BEGIN
+  EXECUTE format(
+    'CREATE POLICY coletas_tenant ON automation.coletas FOR ALL TO %I
+       USING (organization_id = core.current_organization() AND core.cliente_no_escopo(client_id))
+       WITH CHECK (organization_id = core.current_organization() AND core.cliente_no_escopo(client_id))',
+    current_setting('coleta.papel_app')
+  );
+END $$;
 
 CREATE FUNCTION automation.fontes_de_coleta(p_limit integer DEFAULT 50)
 RETURNS TABLE (
@@ -114,7 +130,9 @@ COMMENT ON FUNCTION automation.fontes_de_coleta IS
   'Travessia de tenant do orquestrador de coleta, no molde de automation.sync_queue — mas unindo duas origens polimórficas: ad_accounts (google/meta) e connection_accounts vinculadas a cliente (ga4/gtm/searchconsole/youtube/gbp). Pausar ou arquivar organização/cliente tira a fonte da lista.';
 
 REVOKE ALL ON FUNCTION automation.fontes_de_coleta(integer) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION automation.fontes_de_coleta(integer) TO tria_app;
+DO $$ BEGIN
+  EXECUTE format('GRANT EXECUTE ON FUNCTION automation.fontes_de_coleta(integer) TO %I', current_setting('coleta.papel_app'));
+END $$;
 
 CREATE FUNCTION automation.resolve_coleta_fonte(p_fonte_tipo text, p_fonte_id uuid)
 RETURNS TABLE (organization_id uuid, client_id uuid, platform text)
@@ -148,7 +166,9 @@ COMMENT ON FUNCTION automation.resolve_coleta_fonte IS
   'Resolve o tenant de uma fonte para o worker, que não tem contexto de organização — no molde de automation.resolve_account_organization. Reconfirma os mesmos filtros de ciclo de vida de fontes_de_coleta, porque algum tempo passa entre listar e abrir.';
 
 REVOKE ALL ON FUNCTION automation.resolve_coleta_fonte(text, uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION automation.resolve_coleta_fonte(text, uuid) TO tria_app;
+DO $$ BEGIN
+  EXECUTE format('GRANT EXECUTE ON FUNCTION automation.resolve_coleta_fonte(text, uuid) TO %I', current_setting('coleta.papel_app'));
+END $$;
 
 CREATE FUNCTION automation.resolve_coleta_by_key(p_idempotency_key text)
 RETURNS TABLE (organization_id uuid, coleta_id uuid)
@@ -164,7 +184,9 @@ COMMENT ON FUNCTION automation.resolve_coleta_by_key IS
   'Resolve o tenant de uma execução já aberta pela chave de idempotência — no molde de automation.resolve_run_by_key.';
 
 REVOKE ALL ON FUNCTION automation.resolve_coleta_by_key(text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION automation.resolve_coleta_by_key(text) TO tria_app;
+DO $$ BEGIN
+  EXECUTE format('GRANT EXECUTE ON FUNCTION automation.resolve_coleta_by_key(text) TO %I', current_setting('coleta.papel_app'));
+END $$;
 
 CREATE FUNCTION automation.fechar_coleta(
   p_coleta_id uuid,
@@ -200,7 +222,12 @@ COMMENT ON FUNCTION automation.fechar_coleta IS
   'Fail-closed como automation.task_result: só fecha uma coleta que ainda está running. Um fechamento duplicado ou atrasado do n8n devolve NULL em vez de sobrescrever um resultado já gravado.';
 
 REVOKE ALL ON FUNCTION automation.fechar_coleta(uuid, automation.run_status, integer, integer, integer, jsonb, text, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION automation.fechar_coleta(uuid, automation.run_status, integer, integer, integer, jsonb, text, text) TO tria_app;
+DO $$ BEGIN
+  EXECUTE format(
+    'GRANT EXECUTE ON FUNCTION automation.fechar_coleta(uuid, automation.run_status, integer, integer, integer, jsonb, text, text) TO %I',
+    current_setting('coleta.papel_app')
+  );
+END $$;
 
 CREATE FUNCTION automation.coleta_falhou_por_auth(p_fonte_tipo text, p_fonte_id uuid)
 RETURNS integrations.connection_status
@@ -226,6 +253,8 @@ COMMENT ON FUNCTION automation.coleta_falhou_por_auth IS
   'Loop de reautorização que a coleta fecha: 401/403 de token marca a conexão reauth_pending (a tela de conexões já exibe esse status), sem rebaixar quem já estava revoked. Recebe a fonte (não o connection_id direto) porque é isso que o worker tem em mãos ao fechar a execução.';
 
 REVOKE ALL ON FUNCTION automation.coleta_falhou_por_auth(text, uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION automation.coleta_falhou_por_auth(text, uuid) TO tria_app;
+DO $$ BEGIN
+  EXECUTE format('GRANT EXECUTE ON FUNCTION automation.coleta_falhou_por_auth(text, uuid) TO %I', current_setting('coleta.papel_app'));
+END $$;
 
 COMMIT;
