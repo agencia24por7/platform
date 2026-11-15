@@ -48,3 +48,55 @@ export const closeRunBody = z.object({
   errorCode: z.string().max(80).nullable().default(null),
   errorMessage: z.string().max(1000).nullable().default(null),
 });
+
+export const fontesColetaQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+
+export const janela = z.object({ start: isoDate, end: isoDate });
+
+export const abrirColetaBody = z.object({
+  fonteTipo: z.enum(['ad_account', 'connection_account']),
+  fonteId: uuid,
+  mode: z.enum(['amostra', 'completa']),
+  window: janela,
+  idempotencyKey: z.string().min(8).max(160),
+  n8nExecutionId: z.string().max(64).nullable().default(null),
+});
+
+export const faltanteBody = z.object({
+  fonte: z.string().min(1).max(120),
+  causa: z.enum(['sem_credencial', 'reauth_pending', 'api_recusou', 'sem_dados_no_periodo', 'fora_do_v1']),
+  detalhe: z.string().max(500).nullable().default(null),
+});
+
+export const achadoDeParidadeBody = z.object({
+  fonte: z.string().min(1).max(120),
+  tipo: z.enum(['rotulo_divergente', 'campo_ausente', 'dimensao_nova', 'escopo_ausente', 'escopo_excedente']),
+  esperado: z.string().min(1).max(500),
+  observado: z.string().max(500).nullable().default(null),
+});
+
+export const qualidadeResumoBody = z.object({
+  fontesEsperadas: z.coerce.number().int().min(0),
+  fontesColetadas: z.coerce.number().int().min(0),
+  faltantes: z.array(faltanteBody).max(500),
+  paridade: z.array(achadoDeParidadeBody).max(500),
+  volumetria: z.object({
+    linhas: z.coerce.number().int().min(0),
+    bytes: z.coerce.number().int().min(0),
+    requests: z.coerce.number().int().min(0),
+    duracaoMs: z.coerce.number().int().min(0),
+  }),
+});
+
+export const fecharColetaBody = z.object({
+  coletaId: uuid,
+  status: z.enum(['success', 'partial', 'failed']),
+  requestCount: z.coerce.number().int().min(0).max(100_000).default(0),
+  rowsReceived: z.coerce.number().int().min(0).default(0),
+  rowsWritten: z.coerce.number().int().min(0).default(0),
+  qualidadeResumo: qualidadeResumoBody.nullable().default(null),
+  errorCode: z.string().max(80).nullable().default(null),
+  errorMessage: z.string().max(1000).nullable().default(null),
+});

@@ -1,4 +1,6 @@
 import { createAuditRepository } from '@/modules/audit/infrastructure/auditRepository';
+import { createColetaService } from '@/modules/coleta/application/coletaService';
+import { createColetaRepository } from '@/modules/coleta/infrastructure/coletaRepository';
 import { createClientService } from '@/modules/clients/application/clientService';
 import { createClientRepository } from '@/modules/clients/infrastructure/clientRepository';
 import { createAuthorizationService } from '@/modules/connections/application/authorizationService';
@@ -63,6 +65,7 @@ function build() {
       adAccounts,
       audit,
     ),
+    coleta: createColetaService(createColetaRepository(), audit),
   };
 }
 
