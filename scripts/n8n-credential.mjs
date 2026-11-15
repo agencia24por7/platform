@@ -16,7 +16,7 @@ const file = join(dir, 'credential.json');
 const credential = [
   {
     id: 'triaWorkerAuth',
-    name: 'tria · worker token',
+    name: 'ORLA · worker token',
     type: 'httpHeaderAuth',
     data: { name: 'Authorization', value: `Bearer ${env.TRIA_WORKER_TOKEN}` },
   },
@@ -25,12 +25,12 @@ const credential = [
 try {
   const remote = '/home/node/credential.json';
   writeFileSync(file, JSON.stringify(credential), { mode: 0o600 });
-  execFileSync('docker', ['cp', file, `tria-n8n:${remote}`], { stdio: 'inherit' });
-  execFileSync('docker', ['exec', '-u', 'root', 'tria-n8n', 'sh', '-c', `chown node:node ${remote} && chmod 600 ${remote}`], { stdio: 'inherit' });
-  execFileSync('docker', ['exec', 'tria-n8n', 'n8n', 'import:credentials', `--input=${remote}`], {
+  execFileSync('docker', ['cp', file, `orla-n8n:${remote}`], { stdio: 'inherit' });
+  execFileSync('docker', ['exec', '-u', 'root', 'orla-n8n', 'sh', '-c', `chown node:node ${remote} && chmod 600 ${remote}`], { stdio: 'inherit' });
+  execFileSync('docker', ['exec', 'orla-n8n', 'n8n', 'import:credentials', `--input=${remote}`], {
     stdio: 'inherit',
   });
-  execFileSync('docker', ['exec', '-u', 'root', 'tria-n8n', 'rm', '-f', remote], { stdio: 'ignore' });
+  execFileSync('docker', ['exec', '-u', 'root', 'orla-n8n', 'rm', '-f', remote], { stdio: 'ignore' });
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

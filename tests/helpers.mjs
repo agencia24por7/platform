@@ -34,7 +34,7 @@ const SESSION_COOKIE = 'tria_sessao';
 function psql(sql) {
   return execFileSync(
     'docker',
-    ['exec', '-i', 'tria-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql],
+    ['exec', '-i', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql],
     { encoding: 'utf8' },
   )
     .trim()
