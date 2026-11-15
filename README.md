@@ -1,4 +1,4 @@
-# tria — v0
+# ORLA — v0
 
 Monólito modular em Next.js sobre PostgreSQL, com n8n como plano de execução.
 O protótipo navegável de telas fica em [`prototipo/`](prototipo/); a visão de produto, em
@@ -7,7 +7,7 @@ O protótipo navegável de telas fica em [`prototipo/`](prototipo/); a visão de
 ## O que a v0 entrega
 
 1. **Cadastrar cliente e depois as contas dele** — `/clientes/novo` e `/clientes/:id/contas/nova`.
-2. **Coleta pelo n8n com metadados e auditoria completa** — workflow `tria · coleta de métricas`.
+2. **Coleta pelo n8n com metadados e auditoria completa** — workflow `ORLA · coleta de métricas`.
 
 ## Princípios que o código sustenta
 

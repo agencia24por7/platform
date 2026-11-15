@@ -97,7 +97,7 @@ export function createConnectionService(
       const label = ROTULO_DA_PLATAFORMA[input.platform];
 
       const credentialRef = await vault.store({
-        label: `tria · ${label} · ${input.organizationSlug}`,
+        label: `ORLA · ${label} · ${input.organizationSlug}`,
         platform: input.platform,
         accessToken: chave,
         refreshToken: null,

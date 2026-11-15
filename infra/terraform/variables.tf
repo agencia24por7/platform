@@ -55,7 +55,7 @@ variable "app_hostname" {
 
   validation {
     condition     = can(regex("^[a-z0-9-]+\\.[a-z0-9.-]+\\.[a-z]{2,}$", var.app_hostname))
-    error_message = "Informe um nome completo, como tria.suaempresa.com.br."
+    error_message = "Informe um nome completo, como orla.suaempresa.com.br."
   }
 }
 

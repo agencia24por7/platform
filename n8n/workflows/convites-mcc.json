@@ -1,6 +1,6 @@
 {
   "id": "triaConvitesMcc",
-  "name": "tria · vínculos com a MCC",
+  "name": "ORLA · vínculos com a MCC",
   "active": false,
   "settings": {
     "executionOrder": "v1",
@@ -60,7 +60,7 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "triaWorkerAuth",
-          "name": "tria · token do worker"
+          "name": "ORLA · token do worker"
         }
       }
     },
@@ -108,7 +108,7 @@
       "credentials": {
         "googleOAuth2Api": {
           "id": "triaGoogleAds",
-          "name": "tria · Google Ads da agência"
+          "name": "ORLA · Google Ads da agência"
         }
       }
     },
@@ -136,7 +136,7 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "triaWorkerAuth",
-          "name": "tria · token do worker"
+          "name": "ORLA · token do worker"
         }
       }
     }
