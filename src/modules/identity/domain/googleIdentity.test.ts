@@ -36,6 +36,17 @@ describe('leitura do id_token', () => {
     const claims = decodeIdTokenClaims(tokenCom({ ...validas, picture: 'http://inseguro/foto' }));
     assert.equal(claims?.picture, null);
   });
+
+  it('lê o nonce quando o token traz um', () => {
+    const claims = decodeIdTokenClaims(tokenCom({ ...validas, nonce: 'n-abc' }));
+    assert.equal(claims?.nonce, 'n-abc');
+  });
+
+  it('nonce ausente ou vazio vira null — e o callback recusa', () => {
+    assert.equal(decodeIdTokenClaims(tokenCom(validas))?.nonce, null);
+    assert.equal(decodeIdTokenClaims(tokenCom({ ...validas, nonce: '' }))?.nonce, null);
+    assert.equal(decodeIdTokenClaims(tokenCom({ ...validas, nonce: 42 }))?.nonce, null);
+  });
 });
 
 describe('identidade a partir das declarações', () => {

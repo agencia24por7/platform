@@ -13,6 +13,7 @@ export type IdTokenClaims = {
   readonly emailVerified: boolean;
   readonly name: string;
   readonly picture: string | null;
+  readonly nonce: string | null;
 };
 
 export function decodeIdTokenClaims(idToken: string): IdTokenClaims | null {
@@ -40,6 +41,7 @@ export function decodeIdTokenClaims(idToken: string): IdTokenClaims | null {
 
   const picture = claims['picture'];
   const name = claims['name'];
+  const nonce = claims['nonce'];
 
   return {
     iss,
@@ -49,6 +51,7 @@ export function decodeIdTokenClaims(idToken: string): IdTokenClaims | null {
     emailVerified: claims['email_verified'] === true || claims['email_verified'] === 'true',
     name: typeof name === 'string' ? name : '',
     picture: typeof picture === 'string' && picture.startsWith('https://') ? picture : null,
+    nonce: typeof nonce === 'string' && nonce.length > 0 ? nonce : null,
   };
 }
 

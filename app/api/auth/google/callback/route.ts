@@ -9,7 +9,7 @@ import {
 import { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, issueSession } from '@/modules/identity/domain/session';
 import { env } from '@/shared/config/env';
 import { logger } from '@/shared/logging/logger';
-import { primeiroEndereco } from '@/modules/audit/domain/actor';
+import { enderecoConfiavel } from '@/modules/audit/domain/actor';
 import { newRequestId, secureCompare } from '@/shared/security/tokens';
 
 export const dynamic = 'force-dynamic';
@@ -86,13 +86,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const claims = decodeIdTokenClaims(payload.id_token);
   if (!claims) return deny('identidade_ilegivel');
 
+  const expectedNonce = request.cookies.get(NONCE_COOKIE)?.value ?? '';
+  if (!expectedNonce || !claims.nonce || !secureCompare(claims.nonce, expectedNonce)) {
+    return deny('nonce');
+  }
+
   const identity = identityFromClaims(claims, configuration.GOOGLE_OAUTH_CLIENT_ID, Date.now());
   if (!identity) return deny('identidade_invalida');
 
   const ator = {
     userId: null,
     requestId,
-    sourceIp: primeiroEndereco(request.headers.get('x-forwarded-for')),
+    sourceIp: enderecoConfiavel(request.headers.get('x-forwarded-for')),
   };
 
   const signedIn = await modules().identity.signIn(identity, ator);
