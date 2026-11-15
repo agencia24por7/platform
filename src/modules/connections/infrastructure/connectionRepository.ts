@@ -42,6 +42,7 @@ export type ConnectionRepository = {
   renew(input: NewConnection & { readonly id: string }): Promise<Connection>;
   list(organizationId: string): Promise<readonly Connection[]>;
   remove(organizationId: string, id: string): Promise<boolean>;
+  setColetorRef(organizationId: string, id: string, coletorRef: string): Promise<void>;
 };
 
 export function createConnectionRepository(): ConnectionRepository {
@@ -104,6 +105,12 @@ export function createConnectionRepository(): ConnectionRepository {
         const rows = (await tx`
           DELETE FROM integrations.connections WHERE id = ${id} RETURNING id`) as unknown as { id: string }[];
         return rows.length > 0;
+      });
+    },
+
+    async setColetorRef(organizationId, id, coletorRef) {
+      await withTenant(organizationId, async (tx) => {
+        await tx`UPDATE integrations.connections SET coletor_ref = ${coletorRef} WHERE id = ${id}`;
       });
     },
   };
