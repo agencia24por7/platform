@@ -5,10 +5,15 @@ import { CREDENTIAL_TYPE } from '@/modules/connections/infrastructure/n8nCredent
 import type { Platform } from '@/modules/connections/domain/connection';
 import coletorGoogleAds from '@/../n8n/workflows/coletores/coletor-google-ads.json';
 
+type WorkflowNode = {
+  readonly credentials?: Record<string, { id: string; name: string }>;
+  readonly [key: string]: unknown;
+};
+
 type WorkflowTemplate = {
-  readonly name: string;
+  name: string;
   readonly settings: Record<string, unknown>;
-  readonly nodes: readonly Record<string, unknown>[];
+  readonly nodes: readonly WorkflowNode[];
   readonly connections: Record<string, unknown>;
 };
 
@@ -16,13 +21,24 @@ const TEMPLATE_BY_PLATFORM: Partial<Record<Platform, WorkflowTemplate>> = {
   google: coletorGoogleAds as WorkflowTemplate,
 };
 
-const CREDENTIAL_ID_TOKEN = '__CREDENCIAL_ID__';
-const CREDENTIAL_NOME_TOKEN = '__CREDENCIAL_NOME__';
-
 export type ColetorProvisioner = {
   readonly available: boolean;
   provisionar(input: { readonly platform: Platform; readonly credentialRef: string; readonly label: string }): Promise<string | null>;
 };
+
+function montarWorkflow(template: WorkflowTemplate, tipoEsperado: string, credentialId: string, credentialNome: string): WorkflowTemplate | null {
+  const corpo = structuredClone(template);
+  corpo.name = `Coletor · ${credentialNome}`;
+
+  let encontrada = false;
+  for (const node of corpo.nodes) {
+    if (!node.credentials || !(tipoEsperado in node.credentials)) continue;
+    node.credentials[tipoEsperado] = { id: credentialId, name: credentialNome };
+    encontrada = true;
+  }
+
+  return encontrada ? corpo : null;
+}
 
 export function createColetorProvisioner(): ColetorProvisioner {
   const config = env();
@@ -40,15 +56,8 @@ export function createColetorProvisioner(): ColetorProvisioner {
       const credentialId = credentialIdOf(input.credentialRef);
       if (!credentialId) return null;
 
-      const credentialNome = `ORLA · coletor · ${input.label}`;
-      const texto = JSON.stringify(template).replaceAll(CREDENTIAL_ID_TOKEN, credentialId).replaceAll(CREDENTIAL_NOME_TOKEN, credentialNome);
-      const corpo = JSON.parse(texto) as WorkflowTemplate;
-
-      const tipoEsperado = CREDENTIAL_TYPE[input.platform];
-      const temCredencialCerta = corpo.nodes.some((node) =>
-        Object.keys((node['credentials'] as Record<string, unknown>) ?? {}).includes(tipoEsperado),
-      );
-      if (!temCredencialCerta) {
+      const corpo = montarWorkflow(template, CREDENTIAL_TYPE[input.platform], credentialId, `ORLA · coletor · ${input.label}`);
+      if (!corpo) {
         logger.error('coletor.provisionar.template_sem_credencial', { platform: input.platform });
         return null;
       }

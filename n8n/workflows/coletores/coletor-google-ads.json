@@ -1,5 +1,5 @@
 {
-  "name": "Coletor · Google Ads · __CREDENCIAL_NOME__",
+  "name": "Coletor · Google Ads (modelo)",
   "settings": {
     "executionOrder": "v1",
     "saveDataErrorExecution": "all",
@@ -35,8 +35,8 @@
       },
       "credentials": {
         "googleOAuth2Api": {
-          "id": "__CREDENCIAL_ID__",
-          "name": "__CREDENCIAL_NOME__"
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
         }
       }
     }
