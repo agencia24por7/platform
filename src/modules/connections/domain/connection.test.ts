@@ -4,8 +4,11 @@ import { grantTypesFor, missingScopes } from './connection.ts';
 
 describe('missingScopes', () => {
   it('exige adwords no Google', () => {
-    assert.deepEqual(missingScopes('google', []), ['adwords']);
-    assert.deepEqual(missingScopes('google', ['adwords', 'datamanager']), []);
+    assert.deepEqual(missingScopes('google', []), ['https://www.googleapis.com/auth/adwords']);
+    assert.deepEqual(
+      missingScopes('google', ['https://www.googleapis.com/auth/adwords', 'https://www.googleapis.com/auth/datamanager']),
+      [],
+    );
   });
 
   it('exige ads_read no Meta', () => {

@@ -139,7 +139,7 @@ export function readinessOf(connection: Pick<Connection, 'status' | 'credentialR
 }
 
 const REQUIRED_SCOPES: Record<Platform, readonly string[]> = {
-  google: ['adwords'],
+  google: ['https://www.googleapis.com/auth/adwords'],
   meta: ['ads_read'],
   rdstation: [],
   apify: [],

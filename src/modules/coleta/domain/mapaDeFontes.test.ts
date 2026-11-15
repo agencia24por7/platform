@@ -1,0 +1,49 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import { ModoColeta, fonteDe, fontesAtivasNoV1, janelaDias, limiteLinhas } from './mapaDeFontes.ts';
+
+describe('fontesAtivasNoV1', () => {
+  it('traz só as 7 fontes com série temporal ou snapshot prontos', () => {
+    const platforms = fontesAtivasNoV1()
+      .map((fonte) => fonte.platform)
+      .sort();
+    assert.deepEqual(platforms, ['gbp', 'google', 'gtm', 'ga4', 'meta', 'searchconsole', 'youtube'].sort());
+  });
+
+  it('cada fonte ativa tem motivo nulo e cada fonte inativa tem motivo', () => {
+    for (const fonte of fontesAtivasNoV1()) {
+      assert.equal(fonte.motivoForaDoV1, null);
+    }
+  });
+
+  it('rdstation, apify, zapi, pixel e whatsapp ficam fora, com motivo', () => {
+    for (const platform of ['rdstation', 'apify', 'zapi', 'pixel', 'whatsapp'] as const) {
+      const fonte = fonteDe(platform);
+      assert.equal(fonte.ativaNoV1, false);
+      assert.ok(fonte.motivoForaDoV1 && fonte.motivoForaDoV1.length > 0);
+    }
+  });
+});
+
+describe('janelaDias', () => {
+  it('amostra é sempre 7 dias nas fontes com série temporal', () => {
+    assert.equal(janelaDias('google', ModoColeta.Amostra), 7);
+    assert.equal(janelaDias('meta', ModoColeta.Amostra), 7);
+  });
+
+  it('completa é 28 dias nas fontes com série temporal', () => {
+    assert.equal(janelaDias('google', ModoColeta.Completa), 28);
+  });
+
+  it('gtm não tem janela — é snapshot', () => {
+    assert.equal(janelaDias('gtm', ModoColeta.Amostra), 0);
+    assert.equal(janelaDias('gtm', ModoColeta.Completa), 0);
+  });
+});
+
+describe('limiteLinhas', () => {
+  it('amostra limita linhas, completa não limita', () => {
+    assert.equal(limiteLinhas('google', ModoColeta.Amostra), 500);
+    assert.equal(limiteLinhas('google', ModoColeta.Completa), null);
+  });
+});
