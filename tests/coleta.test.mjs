@@ -71,6 +71,19 @@ describe('camada de coleta', { concurrency: false }, () => {
     assert.ok(result.fontes.some((fonte) => fonte.fonteId === accountId && fonte.fonteTipo === 'ad_account'));
   });
 
+  it('a janela sugerida muda com o modo e sempre termina ontem', async () => {
+    const amostra = await get('/api/v0/coleta/fontes?limit=200&modo=amostra').then((r) => r.json());
+    const completa = await get('/api/v0/coleta/fontes?limit=200&modo=completa').then((r) => r.json());
+
+    const fonteAmostra = amostra.fontes.find((fonte) => fonte.fonteId === accountId);
+    const fonteCompleta = completa.fontes.find((fonte) => fonte.fonteId === accountId);
+    const ontem = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+
+    assert.equal(fonteAmostra.janelaSugerida.end, ontem);
+    assert.equal(fonteCompleta.janelaSugerida.end, ontem);
+    assert.notEqual(fonteAmostra.janelaSugerida.start, fonteCompleta.janelaSugerida.start, 'amostra (7d) e completa (28d) devem ter início diferente');
+  });
+
   it('abre execução em modo amostra', async () => {
     const response = await post('/api/v0/coleta/abrir', {
       fonteTipo: 'ad_account',
@@ -156,6 +169,22 @@ describe('camada de coleta', { concurrency: false }, () => {
     assert.ok(result.durationMs >= 0);
     assert.equal(result.rowsWritten, 42);
     assert.deepEqual(result.qualidadeResumo, qualidadeResumo);
+  });
+
+  it('gravar recusa coleta inexistente', async () => {
+    const response = await post('/api/v0/coleta/gravar', {
+      coletaId: '00000000-0000-4000-8000-000000000000',
+      linhas: [{ externalCampaignId: 'c1', metricDate: '2026-11-01', spend: 10 }],
+    });
+    assert.equal(response.status, 404);
+  });
+
+  it('gravar recusa quando o BigQuery não está configurado neste ambiente', async () => {
+    const response = await post('/api/v0/coleta/gravar', {
+      coletaId,
+      linhas: [{ externalCampaignId: 'c1', metricDate: '2026-11-01', spend: 10 }],
+    });
+    assert.equal(response.status, 503);
   });
 
   it('não permite encerrar duas vezes', async () => {

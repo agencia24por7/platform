@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { ModoColeta, fonteDe, fontesAtivasNoV1, janelaDias, limiteLinhas } from './mapaDeFontes.ts';
+import { ModoColeta, fonteDe, fontesAtivasNoV1, janelaAteOntem, janelaDias, limiteLinhas } from './mapaDeFontes.ts';
 
 describe('fontesAtivasNoV1', () => {
   it('traz só as 7 fontes com série temporal ou snapshot prontos', () => {
@@ -38,6 +38,23 @@ describe('janelaDias', () => {
   it('gtm não tem janela — é snapshot', () => {
     assert.equal(janelaDias('gtm', ModoColeta.Amostra), 0);
     assert.equal(janelaDias('gtm', ModoColeta.Completa), 0);
+  });
+});
+
+describe('janelaAteOntem', () => {
+  it('termina ontem e cobre N dias (amostra = 7)', () => {
+    const hoje = new Date(Date.UTC(2026, 10, 15));
+    assert.deepEqual(janelaAteOntem('google', ModoColeta.Amostra, hoje), { start: '2026-11-08', end: '2026-11-14' });
+  });
+
+  it('completa cobre 28 dias', () => {
+    const hoje = new Date(Date.UTC(2026, 10, 15));
+    assert.deepEqual(janelaAteOntem('google', ModoColeta.Completa, hoje), { start: '2026-10-18', end: '2026-11-14' });
+  });
+
+  it('atravessa virada de mês/ano corretamente', () => {
+    const hoje = new Date(Date.UTC(2026, 0, 3));
+    assert.deepEqual(janelaAteOntem('google', ModoColeta.Amostra, hoje), { start: '2025-12-27', end: '2026-01-02' });
   });
 });
 

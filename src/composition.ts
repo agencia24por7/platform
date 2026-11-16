@@ -2,6 +2,7 @@ import { createAuditRepository } from '@/modules/audit/infrastructure/auditRepos
 import { createColetaService } from '@/modules/coleta/application/coletaService';
 import { createColetaRepository } from '@/modules/coleta/infrastructure/coletaRepository';
 import { createColetorProvisioner } from '@/modules/coleta/infrastructure/coletorProvisioner';
+import { createBigQueryGravador } from '@/modules/coleta/infrastructure/bigQueryGravador';
 import { createClientService } from '@/modules/clients/application/clientService';
 import { createClientRepository } from '@/modules/clients/infrastructure/clientRepository';
 import { createAuthorizationService } from '@/modules/connections/application/authorizationService';
@@ -67,7 +68,7 @@ function build() {
       adAccounts,
       audit,
     ),
-    coleta: createColetaService(createColetaRepository(), audit),
+    coleta: createColetaService(createColetaRepository(), audit, createBigQueryGravador()),
   };
 }
 

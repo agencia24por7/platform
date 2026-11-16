@@ -6,6 +6,6 @@ import { modules } from '@/composition';
 export const dynamic = 'force-dynamic';
 
 export const GET = workerQueryRoute(fontesColetaQuery, async (input, context) => {
-  const fontes = await modules().coleta.fontes(input.limit, context);
+  const fontes = await modules().coleta.fontes(input.limit, input.modo, context);
   return ok({ count: fontes.length, fontes });
 });
