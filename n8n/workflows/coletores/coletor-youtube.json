@@ -1,0 +1,57 @@
+{
+  "name": "Coletor · YouTube Analytics (modelo)",
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "timezone": "America/Sao_Paulo"
+  },
+  "nodes": [
+    {
+      "id": "entrada",
+      "name": "Entrada",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-200, 0],
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            { "name": "fonte" },
+            { "name": "janela" },
+            { "name": "modo" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "coletar",
+      "name": "Buscar métricas no YouTube Analytics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [40, 0],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const inicio = Date.now();\nconst fonte = $json.fonte;\nconst janela = $json.janela;\nconst modo = $json.modo;\nconst versaoApi = 'v2';\n\nconst channelId = String(fonte.externalId).replace(/\\D/g, '');\n\nfunction devolver(linhas, falhas, requests, bytes) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - inicio },\n      falhas,\n      requests,\n      versaoApi,\n    },\n  }];\n}\n\nlet resposta;\ntry {\n  const params = new URLSearchParams({\n    ids: `channel==${channelId}`,\n    startDate: janela.start,\n    endDate: janela.end,\n    metrics: 'views,estimatedMinutesWatched,subscribersGained,subscribersLost,estimatedRevenue',\n    dimensions: 'day',\n  });\n  const fullUrl = `https://youtubeanalytics.googleapis.com/${versaoApi}/reports?${params.toString()}`;\n  \n  resposta = await this.helpers.httpRequestWithAuthentication.call(this, 'googleOAuth2Api', {\n    method: 'GET',\n    url: fullUrl,\n    json: true,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  });\n} catch (erro) {\n  return devolver([], [{ causa: 'api_recusou', detalhe: `falha de rede: ${erro.message}` }], 1, 0);\n}\n\nif (resposta.statusCode === 401 || resposta.statusCode === 403) {\n  const detalhe = resposta.body?.error?.message || `HTTP ${resposta.statusCode}`;\n  return devolver([], [{ causa: 'reauth_pending', detalhe }], 1, 0);\n}\n\nif (resposta.statusCode < 200 || resposta.statusCode >= 300) {\n  const detalhe = resposta.body?.error?.message || `HTTP ${resposta.statusCode}`;\n  return devolver([], [{ causa: 'api_recusou', detalhe }], 1, 0);\n}\n\nconst bytes = JSON.stringify(resposta.body).length;\nconst rows = resposta.body?.rows || [];\n\nconst linhas = rows.map((linha) => ({\n  metricDate: linha[0] ?? null,\n  views: Number(linha[1] ?? 0),\n  minutesWatched: Number(linha[2] ?? 0),\n  subscribersGained: Number(linha[3] ?? 0),\n  subscribersLost: Number(linha[4] ?? 0),\n  estimatedRevenue: Number(linha[5] ?? 0),\n}));\n\nif (linhas.length === 0) {\n  return devolver([], [{ causa: 'sem_dados_no_periodo', detalhe: null }], 1, bytes);\n}\n\nreturn devolver(linhas, [], 1, bytes);"
+      },
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Entrada": {
+      "main": [
+        [
+          {
+            "node": "Buscar métricas no YouTube Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

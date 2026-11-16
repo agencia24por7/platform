@@ -1,0 +1,57 @@
+{
+  "name": "Coletor · GA4 (modelo)",
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "timezone": "America/Sao_Paulo"
+  },
+  "nodes": [
+    {
+      "id": "entrada",
+      "name": "Entrada",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-200, 0],
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            { "name": "fonte" },
+            { "name": "janela" },
+            { "name": "modo" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "coletar",
+      "name": "Buscar métricas no GA4",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [40, 0],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const inicio = Date.now();\nconst fonte = $json.fonte;\nconst janela = $json.janela;\nconst modo = $json.modo;\nconst versaoApi = 'v1beta';\n\nconst propertyId = String(fonte.externalId).replace(/\\D/g, '');\nconst limite = modo === 'amostra' ? 500 : 100000;\n\nconst body = {\n  dateRanges: [{ startDate: janela.start, endDate: janela.end }],\n  dimensions: [{ name: 'date' }, { name: 'sessionDefaultChannelGroup' }],\n  metrics: [{ name: 'sessions' }, { name: 'totalUsers' }, { name: 'newUsers' }, { name: 'keyEvents' }, { name: 'totalRevenue' }],\n  limit: limite,\n};\n\nfunction devolver(linhas, falhas, requests, bytes) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - inicio },\n      falhas,\n      requests,\n      versaoApi,\n    },\n  }];\n}\n\nlet resposta;\ntry {\n  resposta = await this.helpers.httpRequestWithAuthentication.call(this, 'googleOAuth2Api', {\n    method: 'POST',\n    url: `https://analyticsdata.googleapis.com/${versaoApi}/properties/${propertyId}:runReport`,\n    headers: { 'Content-Type': 'application/json' },\n    body,\n    json: true,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  });\n} catch (erro) {\n  return devolver([], [{ causa: 'api_recusou', detalhe: `falha de rede: ${erro.message}` }], 1, 0);\n}\n\nif (resposta.statusCode === 401 || resposta.statusCode === 403) {\n  const detalhe = resposta.body?.error?.message || `HTTP ${resposta.statusCode}`;\n  return devolver([], [{ causa: 'reauth_pending', detalhe }], 1, 0);\n}\n\nif (resposta.statusCode < 200 || resposta.statusCode >= 300) {\n  const detalhe = resposta.body?.error?.message || `HTTP ${resposta.statusCode}`;\n  return devolver([], [{ causa: 'api_recusou', detalhe }], 1, 0);\n}\n\nconst linhasBrutas = resposta.body?.rows ?? [];\nconst bytes = JSON.stringify(resposta.body).length;\n\nfunction formatarData(bruta) {\n  const s = String(bruta ?? '');\n  return s.length === 8 ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : null;\n}\n\nconst linhas = linhasBrutas.map((linha) => {\n  const dim = linha.dimensionValues ?? [];\n  const met = linha.metricValues ?? [];\n  return {\n    metricDate: formatarData(dim[0]?.value),\n    canal: dim[1]?.value ?? null,\n    sessoes: Number(met[0]?.value ?? 0),\n    usuarios: Number(met[1]?.value ?? 0),\n    novosUsuarios: Number(met[2]?.value ?? 0),\n    conversoes: Number(met[3]?.value ?? 0),\n    receita: Number(met[4]?.value ?? 0),\n  };\n});\n\nif (linhas.length === 0) {\n  return devolver([], [{ causa: 'sem_dados_no_periodo', detalhe: null }], 1, bytes);\n}\n\nreturn devolver(linhas, [], 1, bytes);"
+      },
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Entrada": {
+      "main": [
+        [
+          {
+            "node": "Buscar métricas no GA4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

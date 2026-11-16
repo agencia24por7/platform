@@ -39,6 +39,8 @@ const schema = z.object({
   N8N_OWNER_EMAIL: opcional(z.string().email()),
   N8N_OWNER_PASSWORD: opcional(z.string().min(8)),
   N8N_API_KEY: opcional(z.string().min(20)),
+  BQ_PROJECT_ID: opcional(z.string().min(3)),
+  BQ_DATASET: z.string().min(3).default('tria_dw'),
 });
 
 export type Env = z.infer<typeof schema>;

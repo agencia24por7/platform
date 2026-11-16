@@ -231,3 +231,13 @@ export function janelaDias(platform: Platform, modo: ModoColeta): number {
 export function limiteLinhas(platform: Platform, modo: ModoColeta): number | null {
   return modo === ModoColeta.Amostra ? fonteDe(platform).limiteLinhasAmostra : null;
 }
+
+export function janelaAteOntem(platform: Platform, modo: ModoColeta, hoje: Date = new Date()): { readonly start: string; readonly end: string } {
+  const dias = janelaDias(platform, modo) || 1;
+  const fim = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), hoje.getUTCDate() - 1));
+  const inicio = new Date(fim);
+  inicio.setUTCDate(inicio.getUTCDate() - (dias - 1));
+
+  const isoDate = (data: Date): string => data.toISOString().slice(0, 10);
+  return { start: isoDate(inicio), end: isoDate(fim) };
+}
