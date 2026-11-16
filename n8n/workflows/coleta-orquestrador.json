@@ -9,12 +9,12 @@
   "nodes": [
     {
       "id": "diario",
-      "name": "Diário 06:00",
+      "name": "A cada 6h",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [-900, 0],
       "parameters": {
-        "rule": { "interval": [{ "triggerAtHour": 6, "triggerAtMinute": 0 }] }
+        "rule": { "interval": [{ "field": "hours", "hoursInterval": 6 }] }
       }
     },
     {
@@ -210,7 +210,7 @@
     }
   ],
   "connections": {
-    "Diário 06:00": { "main": [[{ "node": "Ler fontes elegíveis", "type": "main", "index": 0 }]] },
+    "A cada 6h": { "main": [[{ "node": "Ler fontes elegíveis", "type": "main", "index": 0 }]] },
     "Execução manual": { "main": [[{ "node": "Ler fontes elegíveis", "type": "main", "index": 0 }]] },
     "Ler fontes elegíveis": { "main": [[{ "node": "Uma fonte por item", "type": "main", "index": 0 }]] },
     "Uma fonte por item": { "main": [[{ "node": "Processar em série", "type": "main", "index": 0 }]] },
