@@ -4,6 +4,11 @@ import { credentialIdOf } from '@/modules/connections/application/credentialVaul
 import { CREDENTIAL_TYPE } from '@/modules/connections/infrastructure/n8nCredentialVault';
 import type { Platform } from '@/modules/connections/domain/connection';
 import coletorGoogleAds from '@/../n8n/workflows/coletores/coletor-google-ads.json';
+import coletorSearchConsole from '@/../n8n/workflows/coletores/coletor-searchconsole.json';
+import coletorYoutube from '@/../n8n/workflows/coletores/coletor-youtube.json';
+import coletorGbp from '@/../n8n/workflows/coletores/coletor-gbp.json';
+import coletorGa4 from '@/../n8n/workflows/coletores/coletor-ga4.json';
+import coletorMeta from '@/../n8n/workflows/coletores/coletor-meta-insights.json';
 
 type WorkflowNode = {
   readonly credentials?: Record<string, { id: string; name: string }>;
@@ -19,6 +24,11 @@ type WorkflowTemplate = {
 
 const TEMPLATE_BY_PLATFORM: Partial<Record<Platform, WorkflowTemplate>> = {
   google: coletorGoogleAds as WorkflowTemplate,
+  searchconsole: coletorSearchConsole as WorkflowTemplate,
+  youtube: coletorYoutube as WorkflowTemplate,
+  gbp: coletorGbp as WorkflowTemplate,
+  ga4: coletorGa4 as WorkflowTemplate,
+  meta: coletorMeta as WorkflowTemplate,
 };
 
 export type ColetorProvisioner = {

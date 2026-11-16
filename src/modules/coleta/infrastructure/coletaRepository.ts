@@ -48,7 +48,7 @@ type ColetaRow = {
 
 const isoDate = (value: Date): string => value.toISOString().slice(0, 10);
 
-const toFonte = (row: FonteRow): FonteElegivel => ({
+const toFonte = (row: FonteRow): Omit<FonteElegivel, 'janelaSugerida'> => ({
   fonteTipo: row.fonte_tipo,
   fonteId: row.fonte_id,
   organizationId: row.organization_id,
@@ -89,9 +89,18 @@ const toColeta = (row: ColetaRow): Coleta => ({
   errorMessage: row.error_message,
 });
 
+export type ContextoDeGravacao = {
+  readonly organizationId: string;
+  readonly clientId: string;
+  readonly platform: Platform;
+  readonly externalId: string;
+  readonly currency: string;
+};
+
 export type ColetaRepository = {
-  fontes(limit: number): Promise<readonly FonteElegivel[]>;
+  fontes(limit: number): Promise<readonly Omit<FonteElegivel, 'janelaSugerida'>[]>;
   resolveFonte(fonteTipo: FonteTipo, fonteId: string): Promise<{ organizationId: string; clientId: string; platform: Platform } | null>;
+  resolveContextoDeGravacao(coletaId: string): Promise<ContextoDeGravacao | null>;
   findByIdempotencyKey(key: string): Promise<Coleta | null>;
   abrir(input: AbrirColetaInput, organizationId: string, clientId: string, platform: Platform): Promise<Coleta>;
   fechar(input: FecharColetaInput): Promise<Coleta | null>;
@@ -115,6 +124,21 @@ export function createColetaRepository(): ColetaRepository {
       }[];
       const found = rows[0];
       return found ? { organizationId: found.organization_id, clientId: found.client_id, platform: found.platform } : null;
+    },
+
+    async resolveContextoDeGravacao(coletaId) {
+      const rows = (await sql()`
+        SELECT organization_id, client_id, platform, external_id, currency FROM automation.resolve_coleta_contexto(${coletaId})`) as unknown as {
+        organization_id: string;
+        client_id: string;
+        platform: Platform;
+        external_id: string;
+        currency: string;
+      }[];
+      const found = rows[0];
+      return found
+        ? { organizationId: found.organization_id, clientId: found.client_id, platform: found.platform, externalId: found.external_id, currency: found.currency }
+        : null;
     },
 
     async findByIdempotencyKey(key) {

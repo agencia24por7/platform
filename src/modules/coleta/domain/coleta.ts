@@ -25,6 +25,7 @@ export type FonteElegivel = {
   readonly credentialRef: string;
   readonly coletorRef: string | null;
   readonly connectionId: string;
+  readonly janelaSugerida: Janela;
 };
 
 export type ColetaStatus = 'running' | 'success' | 'partial' | 'failed';

@@ -51,6 +51,7 @@ export const closeRunBody = z.object({
 
 export const fontesColetaQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
+  modo: z.enum(['amostra', 'completa']).default('amostra'),
 });
 
 export const janela = z.object({ start: isoDate, end: isoDate });
@@ -88,6 +89,11 @@ export const qualidadeResumoBody = z.object({
     requests: z.coerce.number().int().min(0),
     duracaoMs: z.coerce.number().int().min(0),
   }),
+});
+
+export const gravarColetaBody = z.object({
+  coletaId: uuid,
+  linhas: z.array(z.record(z.string(), z.unknown())).max(50_000),
 });
 
 export const fecharColetaBody = z.object({
