@@ -12,32 +12,88 @@
       "name": "Entrada",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
-      "position": [-200, 0],
+      "position": [
+        -200,
+        0
+      ],
       "parameters": {
         "workflowInputs": {
           "values": [
-            { "name": "fonte" },
-            { "name": "janela" },
-            { "name": "modo" }
+            {
+              "name": "fonte"
+            },
+            {
+              "name": "janela"
+            },
+            {
+              "name": "modo"
+            }
           ]
         }
       }
     },
     {
-      "id": "coletar",
-      "name": "Buscar métricas no GA4",
+      "id": "montar",
+      "name": "Montar requisição",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [40, 0],
+      "position": [
+        0,
+        0
+      ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const inicio = Date.now();\nconst fonte = $json.fonte;\nconst janela = $json.janela;\nconst modo = $json.modo;\nconst versaoApi = 'v1beta';\n\nconst propertyId = String(fonte.externalId).replace(/\\D/g, '');\nconst limite = modo === 'amostra' ? 500 : 100000;\n\nconst body = {\n  dateRanges: [{ startDate: janela.start, endDate: janela.end }],\n  dimensions: [{ name: 'date' }, { name: 'sessionDefaultChannelGroup' }],\n  metrics: [{ name: 'sessions' }, { name: 'totalUsers' }, { name: 'newUsers' }, { name: 'keyEvents' }, { name: 'totalRevenue' }],\n  limit: limite,\n};\n\nfunction devolver(linhas, falhas, requests, bytes) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - inicio },\n      falhas,\n      requests,\n      versaoApi,\n    },\n  }];\n}\n\nlet resposta;\ntry {\n  resposta = await this.helpers.httpRequestWithAuthentication.call(this, 'googleOAuth2Api', {\n    method: 'POST',\n    url: `https://analyticsdata.googleapis.com/${versaoApi}/properties/${propertyId}:runReport`,\n    headers: { 'Content-Type': 'application/json' },\n    body,\n    json: true,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  });\n} catch (erro) {\n  return devolver([], [{ causa: 'api_recusou', detalhe: `falha de rede: ${erro.message}` }], 1, 0);\n}\n\nif (resposta.statusCode === 401 || resposta.statusCode === 403) {\n  const detalhe = resposta.body?.error?.message || `HTTP ${resposta.statusCode}`;\n  return devolver([], [{ causa: 'reauth_pending', detalhe }], 1, 0);\n}\n\nif (resposta.statusCode < 200 || resposta.statusCode >= 300) {\n  const detalhe = resposta.body?.error?.message || `HTTP ${resposta.statusCode}`;\n  return devolver([], [{ causa: 'api_recusou', detalhe }], 1, 0);\n}\n\nconst linhasBrutas = resposta.body?.rows ?? [];\nconst bytes = JSON.stringify(resposta.body).length;\n\nfunction formatarData(bruta) {\n  const s = String(bruta ?? '');\n  return s.length === 8 ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : null;\n}\n\nconst linhas = linhasBrutas.map((linha) => {\n  const dim = linha.dimensionValues ?? [];\n  const met = linha.metricValues ?? [];\n  return {\n    metricDate: formatarData(dim[0]?.value),\n    canal: dim[1]?.value ?? null,\n    sessoes: Number(met[0]?.value ?? 0),\n    usuarios: Number(met[1]?.value ?? 0),\n    novosUsuarios: Number(met[2]?.value ?? 0),\n    conversoes: Number(met[3]?.value ?? 0),\n    receita: Number(met[4]?.value ?? 0),\n  };\n});\n\nif (linhas.length === 0) {\n  return devolver([], [{ causa: 'sem_dados_no_periodo', detalhe: null }], 1, bytes);\n}\n\nreturn devolver(linhas, [], 1, bytes);"
+        "jsCode": "const { fonte, janela, modo } = $json;\nconst versaoApi = 'v1beta';\nconst propertyId = String(fonte.externalId).replace(/\\D/g, '');\n\nreturn [{\n  json: {\n    inicio: Date.now(),\n    versaoApi,\n    fonte,\n    url: `https://analyticsdata.googleapis.com/${versaoApi}/properties/${propertyId}:runReport`,\n    corpo: {\n      dateRanges: [{ startDate: janela.start, endDate: janela.end }],\n      dimensions: [{ name: 'date' }, { name: 'sessionDefaultChannelGroup' }],\n      metrics: [{ name: 'sessions' }, { name: 'totalUsers' }, { name: 'newUsers' }, { name: 'keyEvents' }, { name: 'totalRevenue' }],\n      limit: modo === 'amostra' ? 500 : 100000,\n    },\n  },\n}];\n"
+      }
+    },
+    {
+      "id": "chamar",
+      "name": "Chamar API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.corpo) }}"
       },
       "credentials": {
         "googleOAuth2Api": {
           "id": "a-definir-pelo-provisioner",
           "name": "a-definir-pelo-provisioner"
         }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "normalizar",
+      "name": "Normalizar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const contexto = $('Montar requisição').first().json;\nconst respostas = $input.all().map((item) => item.json);\nconst requests = respostas.length;\nconst bytes = respostas.reduce((total, resposta) => total + JSON.stringify(resposta.body ?? {}).length, 0);\n\nfunction devolver(linhas, falhas) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - contexto.inicio },\n      falhas,\n      requests,\n      versaoApi: contexto.versaoApi,\n    },\n  }];\n}\n\nconst falhaDeRede = respostas.find((resposta) => resposta.error);\nif (falhaDeRede) {\n  const detalhe = falhaDeRede.error?.message ?? String(falhaDeRede.error);\n  return devolver([], [{ causa: 'api_recusou', detalhe: `falha de rede: ${detalhe}` }]);\n}\n\nconst recusada = respostas.find((resposta) => !(resposta.statusCode >= 200 && resposta.statusCode < 300));\nif (recusada) {\n  const erro = Array.isArray(recusada.body) ? recusada.body[0]?.error : recusada.body?.error;\n  const detalhe = erro?.message || `HTTP ${recusada.statusCode}`;\n  const semAcesso = recusada.statusCode === 401 || recusada.statusCode === 403 || erro?.code === 190;\n  return devolver([], [{ causa: semAcesso ? 'reauth_pending' : 'api_recusou', detalhe }]);\n}\n\nconst corpos = respostas.map((resposta) => resposta.body);\nconst fonte = contexto.fonte;\n\nfunction formatarData(bruta) {\n  const texto = String(bruta ?? '');\n  return texto.length === 8 ? `${texto.slice(0, 4)}-${texto.slice(4, 6)}-${texto.slice(6, 8)}` : null;\n}\n\nconst linhas = corpos.flatMap((corpo) => corpo?.rows ?? []).map((linha) => {\n  const dim = linha.dimensionValues ?? [];\n  const met = linha.metricValues ?? [];\n  return {\n    metricDate: formatarData(dim[0]?.value),\n    canal: dim[1]?.value ?? null,\n    sessoes: Number(met[0]?.value ?? 0),\n    usuarios: Number(met[1]?.value ?? 0),\n    novosUsuarios: Number(met[2]?.value ?? 0),\n    conversoes: Number(met[3]?.value ?? 0),\n    receita: Number(met[4]?.value ?? 0),\n  };\n});\n\nif (linhas.length === 0) return devolver([], [{ causa: 'sem_dados_no_periodo', detalhe: null }]);\nreturn devolver(linhas, []);\n"
       }
     }
   ],
@@ -46,7 +102,29 @@
       "main": [
         [
           {
-            "node": "Buscar métricas no GA4",
+            "node": "Montar requisição",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar requisição": {
+      "main": [
+        [
+          {
+            "node": "Chamar API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chamar API": {
+      "main": [
+        [
+          {
+            "node": "Normalizar",
             "type": "main",
             "index": 0
           }

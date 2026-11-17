@@ -33,23 +33,224 @@
       }
     },
     {
-      "id": "coletar",
-      "name": "Ler versão publicada no GTM",
+      "id": "montar",
+      "name": "Montar requisição",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        40,
+        0,
         0
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const inicio = Date.now();\nconst fonte = $json.fonte;\nconst versaoApi = 'v2';\nconst base = 'https://www.googleapis.com/tagmanager/v2';\nconst publicId = String(fonte.externalId);\nlet requests = 0;\nlet bytes = 0;\n\nfunction devolver(linhas, falhas) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - inicio },\n      falhas,\n      requests,\n      versaoApi,\n    },\n  }];\n}\n\nasync function buscar(url) {\n  requests += 1;\n  const resposta = await this.helpers.httpRequestWithAuthentication.call(this, 'googleOAuth2Api', {\n    method: 'GET',\n    url,\n    json: true,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  });\n  bytes += JSON.stringify(resposta.body ?? {}).length;\n  return resposta;\n}\n\nfunction falhaHttp(resposta) {\n  const detalhe = resposta.body?.error?.message || `HTTP ${resposta.statusCode}`;\n  const causa = resposta.statusCode === 401 || resposta.statusCode === 403 ? 'reauth_pending' : 'api_recusou';\n  return [{ causa, detalhe }];\n}\n\ntry {\n  const contas = await buscar.call(this, `${base}/accounts`);\n  if (contas.statusCode < 200 || contas.statusCode >= 300) return devolver([], falhaHttp(contas));\n\n  let container = null;\n  for (const conta of contas.body?.account ?? []) {\n    const lista = await buscar.call(this, `${base}/${conta.path}/containers`);\n    if (lista.statusCode < 200 || lista.statusCode >= 300) return devolver([], falhaHttp(lista));\n    container = (lista.body?.container ?? []).find((item) => item.publicId === publicId) ?? null;\n    if (container) break;\n  }\n\n  if (!container) {\n    return devolver([], [{ causa: 'fonte_nao_encontrada', detalhe: `contêiner ${publicId} não aparece para esta credencial` }]);\n  }\n\n  const live = await buscar.call(this, `${base}/${container.path}/versions:live`);\n  const publicada = live.statusCode >= 200 && live.statusCode < 300 ? live.body : null;\n  if (!publicada && live.statusCode !== 404) return devolver([], falhaHttp(live));\n\n  const estado = publicada\n    ? `live v${publicada.containerVersionId} · ${(publicada.tag ?? []).length} tags · ${(publicada.trigger ?? []).length} acionadores · ${(publicada.variable ?? []).length} variáveis`\n    : 'sem_versao_publicada';\n\n  return devolver([{\n    nome: container.name,\n    estado,\n    inactive: false,\n    rotuloEsperado: fonte.nome ?? null,\n    rotuloObservado: container.name,\n  }], []);\n} catch (erro) {\n  return devolver([], [{ causa: 'api_recusou', detalhe: `falha de rede: ${erro.message}` }]);\n}\n"
+        "jsCode": "const { fonte } = $json;\n\nreturn [{\n  json: {\n    inicio: Date.now(),\n    versaoApi: 'v2',\n    fonte,\n    url: 'https://www.googleapis.com/tagmanager/v2/accounts',\n  },\n}];\n"
+      }
+    },
+    {
+      "id": "listar-contas",
+      "name": "Listar contas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
       },
       "credentials": {
         "googleOAuth2Api": {
           "id": "a-definir-pelo-provisioner",
           "name": "a-definir-pelo-provisioner"
         }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "contas",
+      "name": "Contas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function falhaDe(resposta) {\n  if (resposta.error) return { causa: 'api_recusou', detalhe: `falha de rede: ${resposta.error?.message ?? resposta.error}` };\n  if (resposta.statusCode >= 200 && resposta.statusCode < 300) return null;\n  const detalhe = resposta.body?.error?.message || `HTTP ${resposta.statusCode}`;\n  const semAcesso = resposta.statusCode === 401 || resposta.statusCode === 403;\n  return { causa: semAcesso ? 'reauth_pending' : 'api_recusou', detalhe };\n}\n\nconst resposta = $input.first().json;\nconst falha = falhaDe(resposta);\nif (falha) return [{ json: { falha } }];\n\nconst contas = resposta.body?.account ?? [];\nif (contas.length === 0) return [{ json: { falha: { causa: 'fonte_nao_encontrada', detalhe: 'credencial não enxerga nenhuma conta do GTM' } } }];\nreturn contas.map((conta) => ({ json: { path: conta.path } }));\n"
+      }
+    },
+    {
+      "id": "contas-ok",
+      "name": "Contas ok?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "contas-ok-c",
+              "leftValue": "={{ !$json.falha }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "listar-conteineres",
+      "name": "Listar contêineres",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        -100
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://www.googleapis.com/tagmanager/v2/{{ $json.path }}/containers",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "encontrar",
+      "name": "Encontrar contêiner",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        -100
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function falhaDe(resposta) {\n  if (resposta.error) return { causa: 'api_recusou', detalhe: `falha de rede: ${resposta.error?.message ?? resposta.error}` };\n  if (resposta.statusCode >= 200 && resposta.statusCode < 300) return null;\n  const detalhe = resposta.body?.error?.message || `HTTP ${resposta.statusCode}`;\n  const semAcesso = resposta.statusCode === 401 || resposta.statusCode === 403;\n  return { causa: semAcesso ? 'reauth_pending' : 'api_recusou', detalhe };\n}\n\nconst publicId = String($('Montar requisição').first().json.fonte.externalId);\nconst respostas = $input.all().map((item) => item.json);\nconst falha = respostas.map(falhaDe).find(Boolean);\nif (falha) return [{ json: { falha } }];\n\nconst container = respostas.flatMap((resposta) => resposta.body?.container ?? []).find((item) => item.publicId === publicId);\nif (!container) return [{ json: { falha: { causa: 'fonte_nao_encontrada', detalhe: `contêiner ${publicId} não aparece para esta credencial` } } }];\nreturn [{ json: { path: container.path, name: container.name } }];\n"
+      }
+    },
+    {
+      "id": "conteiner-ok",
+      "name": "Contêiner achado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        -100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "conteiner-ok-c",
+              "leftValue": "={{ !$json.falha }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "versao",
+      "name": "Versão publicada",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        -200
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://www.googleapis.com/tagmanager/v2/{{ $json.path }}/versions:live",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "normalizar",
+      "name": "Normalizar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function falhaDe(resposta) {\n  if (resposta.error) return { causa: 'api_recusou', detalhe: `falha de rede: ${resposta.error?.message ?? resposta.error}` };\n  if (resposta.statusCode >= 200 && resposta.statusCode < 300) return null;\n  const detalhe = resposta.body?.error?.message || `HTTP ${resposta.statusCode}`;\n  const semAcesso = resposta.statusCode === 401 || resposta.statusCode === 403;\n  return { causa: semAcesso ? 'reauth_pending' : 'api_recusou', detalhe };\n}\n\nconst contexto = $('Montar requisição').first().json;\n\nfunction respostasDe(nome) {\n  try {\n    return $(nome).all().map((item) => item.json);\n  } catch {\n    return [];\n  }\n}\n\nconst chamadas = [...respostasDe('Listar contas'), ...respostasDe('Listar contêineres'), ...respostasDe('Versão publicada')];\nconst requests = chamadas.length;\nconst bytes = chamadas.reduce((total, resposta) => total + JSON.stringify(resposta.body ?? {}).length, 0);\n\nfunction devolver(linhas, falhas) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - contexto.inicio },\n      falhas,\n      requests,\n      versaoApi: contexto.versaoApi,\n    },\n  }];\n}\n\nconst atual = $input.first().json;\nif (atual.falha) return devolver([], [atual.falha]);\n\nconst semVersao = atual.statusCode === 404;\nconst falha = semVersao ? null : falhaDe(atual);\nif (falha) return devolver([], [falha]);\n\nconst container = $('Encontrar contêiner').first().json;\nconst versao = semVersao ? null : atual.body;\nconst estado = versao\n  ? `live v${versao.containerVersionId} · ${(versao.tag ?? []).length} tags · ${(versao.trigger ?? []).length} acionadores · ${(versao.variable ?? []).length} variáveis`\n  : 'sem_versao_publicada';\n\nreturn devolver([{\n  nome: container.name,\n  estado,\n  inactive: false,\n  rotuloEsperado: contexto.fonte.nome ?? null,\n  rotuloObservado: container.name,\n}], []);\n"
       }
     }
   ],
@@ -58,7 +259,109 @@
       "main": [
         [
           {
-            "node": "Ler versão publicada no GTM",
+            "node": "Montar requisição",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar requisição": {
+      "main": [
+        [
+          {
+            "node": "Listar contas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Listar contas": {
+      "main": [
+        [
+          {
+            "node": "Contas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contas": {
+      "main": [
+        [
+          {
+            "node": "Contas ok?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contas ok?": {
+      "main": [
+        [
+          {
+            "node": "Listar contêineres",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Listar contêineres": {
+      "main": [
+        [
+          {
+            "node": "Encontrar contêiner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Encontrar contêiner": {
+      "main": [
+        [
+          {
+            "node": "Contêiner achado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contêiner achado?": {
+      "main": [
+        [
+          {
+            "node": "Versão publicada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Versão publicada": {
+      "main": [
+        [
+          {
+            "node": "Normalizar",
             "type": "main",
             "index": 0
           }

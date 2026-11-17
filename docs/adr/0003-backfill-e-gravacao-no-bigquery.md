@@ -21,7 +21,27 @@ Em 17/11, todas as tabelas de `tria_dw` estavam vazias. Havia quatro motivos:
    gravador.** Ele é um snapshot e vai para `gov_snapshot_fontes`, não para
    um fato diário.
 
+5. **Nenhum coletor funcionava no n8n 2.46.** Todos chamavam
+   `this.helpers.httpRequestWithAuthentication` dentro do Code Node. No n8n
+   2.x o Code Node roda num *task runner* (obrigatório) que não oferece essa
+   função: `The function "helpers.httpRequestWithAuthentication" is not
+   supported in the Code Node`. Havia também bugs específicos:
+   - **YouTube:** `replace(/\D/g, '')` transformava `UCdYpKe8…` em `8990`.
+   - **Meta:** não paginava.
+   - **GBP:** podia gerar `locations/locations/…`.
+
 ## Decisão
+
+- **Coletores no formato nativo do n8n:** Montar requisição (Code, sem
+  rede) → **nó HTTP Request** com a credencial OAuth
+  (`predefinedCredentialType`, `fullResponse`, `neverError`, erro de rede
+  segue adiante) → Normalizar (Code). A credencial nunca passa pelo código.
+  O contrato de saída (`linhas`, `volumetria`, `falhas`, `requests`,
+  `versaoApi`) não mudou, então orquestrador e backfill seguem iguais.
+  - A Meta pagina por `paging.next`.
+  - O GTM encadeia contas → contêineres → `versions:live`, com nós IF que
+    levam qualquer falha direto ao Normalizar. Nenhum caminho deixa a
+    coleta presa em `running`.
 
 - `BQ_PROJECT_ID`/`BQ_DATASET` são gerados pelo startup script (Terraform)
   e repassados pelo compose.
