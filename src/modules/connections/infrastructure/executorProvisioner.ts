@@ -4,9 +4,11 @@ import { credentialIdOf } from '@/modules/connections/application/credentialVaul
 import { CREDENTIAL_TYPE } from '@/modules/connections/infrastructure/n8nCredentialVault';
 import type { Platform } from '@/modules/connections/domain/connection';
 import executorMcc from '@/../n8n/workflows/executores/executor-mcc.json';
+import executorMetaPartner from '@/../n8n/workflows/executores/executor-meta-partner.json';
 
 const TEMPLATE_BY_PLATFORM: Partial<Record<Platform, WorkflowTemplate>> = {
   google: executorMcc as WorkflowTemplate,
+  meta: executorMetaPartner as WorkflowTemplate,
 };
 
 export type ExecutorProvisioner = {
