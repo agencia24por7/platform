@@ -36,6 +36,18 @@ export const ROTULO_DO_RECURSO: Record<PlataformaComRecurso, string> = {
   gbp: 'Local',
 };
 
+const RECURSO_FEMININO: Record<PlataformaComRecurso, boolean> = {
+  ga4: true,
+  gtm: false,
+  searchconsole: false,
+  youtube: false,
+  gbp: false,
+};
+
+export function concordaComRecurso(platform: PlataformaComRecurso, masculino: string, feminino: string): string {
+  return RECURSO_FEMININO[platform] ? feminino : masculino;
+}
+
 export const ROTULO_DA_PLATAFORMA: Record<Platform, string> = {
   google: 'Google Ads',
   meta: 'Meta Ads',
