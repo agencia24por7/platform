@@ -22,6 +22,7 @@ import {
 } from '@/modules/connections/domain/oauth';
 import type { ConnectionRepository } from '@/modules/connections/infrastructure/connectionRepository';
 import type { ColetorProvisioner } from '@/modules/coleta/infrastructure/coletorProvisioner';
+import type { ExecutorProvisioner } from '@/modules/connections/infrastructure/executorProvisioner';
 import type { DiscoveredAccount } from '@/modules/connections/domain/discovery';
 import type { DiscoveredAccountRepository } from '@/modules/connections/infrastructure/discoveredAccountRepository';
 import type { PlatformDiscovery } from '@/modules/connections/application/platformDiscoveryPort';
@@ -139,6 +140,7 @@ export function createAuthorizationService(
   vault: CredentialVault,
   audit: AuditRecorder,
   coletorProvisioner: ColetorProvisioner,
+  executorProvisioner: ExecutorProvisioner,
 ): AuthorizationService {
   return {
     async complete(input) {
@@ -316,6 +318,21 @@ export function createAuthorizationService(
           if (coletorRef) await connections.setColetorRef(organizationId, connection.id, coletorRef);
         } catch (error) {
           logger.warn('coletor.provisionar.ignorado', {
+            platform: input.platform,
+            connectionId: connection.id,
+            error: error instanceof Error ? error.message : 'desconhecido',
+          });
+        }
+
+        try {
+          const executorRef = await executorProvisioner.provisionar({
+            platform: input.platform,
+            credentialRef: connection.credentialRef,
+            label: connection.label,
+          });
+          if (executorRef) await connections.setExecutorRef(organizationId, connection.id, executorRef);
+        } catch (error) {
+          logger.warn('executor.provisionar.ignorado', {
             platform: input.platform,
             connectionId: connection.id,
             error: error instanceof Error ? error.message : 'desconhecido',
