@@ -2,6 +2,7 @@ import { createAuditRepository } from '@/modules/audit/infrastructure/auditRepos
 import { createColetaService } from '@/modules/coleta/application/coletaService';
 import { createColetaRepository } from '@/modules/coleta/infrastructure/coletaRepository';
 import { createColetorProvisioner } from '@/modules/coleta/infrastructure/coletorProvisioner';
+import { createExecutorProvisioner } from '@/modules/connections/infrastructure/executorProvisioner';
 import { createBigQueryGravador } from '@/modules/coleta/infrastructure/bigQueryGravador';
 import { createClientService } from '@/modules/clients/application/clientService';
 import { createClientRepository } from '@/modules/clients/infrastructure/clientRepository';
@@ -63,6 +64,7 @@ function build() {
       vault,
       audit,
       createColetorProvisioner(),
+      createExecutorProvisioner(),
     ),
     ingestion: createIngestionService(
       createSyncRunRepository(),
