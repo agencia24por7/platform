@@ -1,0 +1,431 @@
+{
+  "name": "Executor · tarefas da MCC (modelo)",
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "timezone": "America/Sao_Paulo"
+  },
+  "nodes": [
+    {
+      "id": "entrada",
+      "name": "Entrada",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -200,
+        0
+      ],
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "tarefa"
+            },
+            {
+              "name": "validarSomente"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "planejar",
+      "name": "Planejar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const { tarefa } = $json;\nconst validar = $json.validarSomente === true || $json.validarSomente === 'true';\nconst base = 'https://googleads.googleapis.com/v26/customers';\nconst administradora = String(tarefa?.managerExternalId || '').replace(/\\D/g, '');\nconst convidada = String(tarefa?.targetExternalId || '').replace(/\\D/g, '');\n\nif (!tarefa?.taskId) return [{ json: { tarefa: tarefa ?? {}, validar, falha: 'tarefa sem identificador' } }];\nif (!administradora || !convidada) return [{ json: { tarefa, validar, falha: 'identificadores ausentes na tarefa' } }];\n\nif (tarefa.kind === 'mcc_invite') {\n  return [{\n    json: {\n      tarefa,\n      validar,\n      acao: 'convidar',\n      url: `${base}/${administradora}/customerClientLinks:mutate`,\n      loginCustomerId: administradora,\n      corpo: { validateOnly: validar, operation: { create: { clientCustomer: `customers/${convidada}`, status: 'PENDING' } } },\n    },\n  }];\n}\n\nif (tarefa.kind === 'mcc_accept') {\n  return [{\n    json: {\n      tarefa,\n      validar,\n      acao: 'aceitar',\n      administradora,\n      convidada,\n      url: `${base}/${convidada}/googleAds:search`,\n      loginCustomerId: convidada,\n      corpo: {\n        query: \"SELECT customer_manager_link.resource_name, customer_manager_link.manager_customer, customer_manager_link.status FROM customer_manager_link WHERE customer_manager_link.status = 'PENDING'\",\n      },\n    },\n  }];\n}\n\nreturn [{ json: { tarefa, validar, falha: `tipo de tarefa desconhecido: ${tarefa.kind}` } }];\n"
+      }
+    },
+    {
+      "id": "pode-chamar",
+      "name": "Pode chamar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "pode-chamar-c",
+              "leftValue": "={{ !$json.falha }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e-convite",
+      "name": "É convite?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        -100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "e-convite-c",
+              "leftValue": "={{ $json.acao === 'convidar' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "convidar",
+      "name": "Convidar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        -200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "login-customer-id",
+              "value": "={{ $json.loginCustomerId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.corpo) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "listar",
+      "name": "Listar convites pendentes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "login-customer-id",
+              "value": "={{ $json.loginCustomerId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.corpo) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "achar",
+      "name": "Achar vínculo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const plano = $('Planejar').first().json;\nconst resposta = $input.first().json;\n\nif (resposta.error) return [{ json: { falha: `falha de rede: ${resposta.error?.message ?? resposta.error}` } }];\nif (!(resposta.statusCode >= 200 && resposta.statusCode < 300)) {\n  return [{ json: { falha: `não foi possível listar convites pendentes (HTTP ${resposta.statusCode})` } }];\n}\n\nconst vinculo = (resposta.body?.results ?? []).find((linha) =>\n  String(linha?.customerManagerLink?.managerCustomer ?? '').endsWith(`/${plano.administradora}`),\n);\nif (!vinculo) return [{ json: { falha: 'nenhum convite pendente desta administradora nesta conta' } }];\n\nreturn [{\n  json: {\n    url: `https://googleads.googleapis.com/v26/customers/${plano.convidada}/customerManagerLinks:mutate`,\n    loginCustomerId: plano.convidada,\n    corpo: {\n      validateOnly: plano.validar,\n      operations: [{ update: { resourceName: vinculo.customerManagerLink.resourceName, status: 'ACTIVE' }, updateMask: 'status' }],\n    },\n  },\n}];\n"
+      }
+    },
+    {
+      "id": "achou",
+      "name": "Achou?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "achou-c",
+              "leftValue": "={{ !$json.falha }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "aceitar",
+      "name": "Aceitar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        -50
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "login-customer-id",
+              "value": "={{ $json.loginCustomerId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.corpo) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "normalizar",
+      "name": "Normalizar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        100
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const plano = $('Planejar').first().json;\nconst atual = $input.first().json;\nconst taskId = plano.tarefa?.taskId ?? null;\nconst recusar = (motivo) => [{ json: { taskId, sucesso: false, outcome: String(motivo).slice(0, 500) } }];\n\nif (plano.falha) return recusar(plano.falha);\nif (atual.falha) return recusar(atual.falha);\nif (atual.error) return recusar(`falha de rede: ${atual.error?.message ?? atual.error}`);\n\nif (atual.statusCode >= 200 && atual.statusCode < 300) {\n  const recurso = atual.body?.result?.resourceName ?? atual.body?.results?.[0]?.resourceName ?? (plano.validar ? 'nada gravado' : 'concluído');\n  const rotulo = plano.acao === 'convidar' ? 'convite pendente' : 'vínculo ativo';\n  return [{ json: { taskId, sucesso: true, outcome: `${plano.validar ? '[só validação] ' : ''}${rotulo} · ${recurso}`.slice(0, 500) } }];\n}\n\nconst erro = atual.body?.error ?? (Array.isArray(atual.body) ? atual.body[0]?.error : null);\nconst detalhe = erro?.details?.[0]?.errors?.[0];\nconst codigo = detalhe ? Object.values(detalhe.errorCode ?? {})[0] : null;\nconst mensagem = detalhe?.message || erro?.message || 'recusado sem mensagem';\nreturn recusar(`${codigo ? `${codigo} · ` : ''}${mensagem} (HTTP ${atual.statusCode})`);\n"
+      }
+    }
+  ],
+  "connections": {
+    "Entrada": {
+      "main": [
+        [
+          {
+            "node": "Planejar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Planejar": {
+      "main": [
+        [
+          {
+            "node": "Pode chamar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pode chamar?": {
+      "main": [
+        [
+          {
+            "node": "É convite?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É convite?": {
+      "main": [
+        [
+          {
+            "node": "Convidar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Listar convites pendentes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convidar": {
+      "main": [
+        [
+          {
+            "node": "Normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Listar convites pendentes": {
+      "main": [
+        [
+          {
+            "node": "Achar vínculo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Achar vínculo": {
+      "main": [
+        [
+          {
+            "node": "Achou?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Achou?": {
+      "main": [
+        [
+          {
+            "node": "Aceitar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aceitar": {
+      "main": [
+        [
+          {
+            "node": "Normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

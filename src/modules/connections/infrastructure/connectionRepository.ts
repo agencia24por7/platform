@@ -43,6 +43,7 @@ export type ConnectionRepository = {
   list(organizationId: string): Promise<readonly Connection[]>;
   remove(organizationId: string, id: string): Promise<boolean>;
   setColetorRef(organizationId: string, id: string, coletorRef: string): Promise<void>;
+  setExecutorRef(organizationId: string, id: string, executorRef: string): Promise<void>;
 };
 
 export function createConnectionRepository(): ConnectionRepository {
@@ -111,6 +112,12 @@ export function createConnectionRepository(): ConnectionRepository {
     async setColetorRef(organizationId, id, coletorRef) {
       await withTenant(organizationId, async (tx) => {
         await tx`UPDATE integrations.connections SET coletor_ref = ${coletorRef} WHERE id = ${id}`;
+      });
+    },
+
+    async setExecutorRef(organizationId, id, executorRef) {
+      await withTenant(organizationId, async (tx) => {
+        await tx`UPDATE integrations.connections SET executor_ref = ${executorRef} WHERE id = ${id}`;
       });
     },
   };

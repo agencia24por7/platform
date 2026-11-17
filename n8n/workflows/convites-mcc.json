@@ -1,7 +1,5 @@
 {
-  "id": "triaConvitesMcc",
   "name": "ORLA · vínculos com a MCC",
-  "active": false,
   "settings": {
     "executionOrder": "v1",
     "saveDataErrorExecution": "all",
@@ -50,7 +48,7 @@
         80
       ],
       "parameters": {
-        "url": "=http://app:3000/api/v0/tasks/queue?limit=10",
+        "url": "=http://app:3000/api/v0/tasks/queue?limit=10&kinds=mcc_invite,mcc_accept",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {
@@ -93,23 +91,92 @@
       }
     },
     {
-      "id": "convidar",
-      "name": "Convidar ou aceitar na MCC",
+      "id": "tem-executor",
+      "name": "Tem executor?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "tem-executor-c",
+              "leftValue": "={{ Boolean($json.executorRef) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "executar",
+      "name": "Executar tarefa",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "={{ $json.executorRef }}",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tarefa": "={{ $json }}",
+            "validarSomente": "={{ false }}"
+          }
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "resultado",
+      "name": "Conferir resultado",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        240,
-        180
+        880,
+        0
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const tarefa = $json;\nconst versao = 'v26';\nconst administradora = String(tarefa.managerExternalId || '').replace(/\\D/g, '');\nconst convidada = String(tarefa.targetExternalId || '').replace(/\\D/g, '');\n\nconst recusar = (motivo) => [{ json: { taskId: tarefa.taskId, sucesso: false, outcome: String(motivo).slice(0, 500) } }];\n\nif (!administradora || !convidada) return recusar('identificadores ausentes na tarefa');\n\nasync function chamar(url, corpo, loginCustomerId) {\n  return this.helpers.httpRequestWithAuthentication.call(this, 'googleOAuth2Api', {\n    method: 'POST',\n    url,\n    headers: { 'login-customer-id': loginCustomerId, 'Content-Type': 'application/json' },\n    body: corpo,\n    json: true,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  });\n}\n\nlet resposta;\n\ntry {\n  if (tarefa.kind === 'mcc_invite') {\n    resposta = await chamar.call(\n      this,\n      `https://googleads.googleapis.com/${versao}/customers/${administradora}/customerClientLinks:mutate`,\n      { operations: [{ create: { clientCustomer: `customers/${convidada}`, status: 'PENDING' } }] },\n      administradora,\n    );\n  } else if (tarefa.kind === 'mcc_accept') {\n    const pendentes = await this.helpers.httpRequestWithAuthentication.call(this, 'googleOAuth2Api', {\n      method: 'POST',\n      url: `https://googleads.googleapis.com/${versao}/customers/${convidada}/googleAds:search`,\n      headers: { 'login-customer-id': convidada, 'Content-Type': 'application/json' },\n      body: {\n        query: `SELECT customer_manager_link.resource_name, customer_manager_link.manager_customer, customer_manager_link.status FROM customer_manager_link WHERE customer_manager_link.status = 'PENDING'`,\n      },\n      json: true,\n      returnFullResponse: true,\n      ignoreHttpStatusErrors: true,\n    });\n\n    if (pendentes.statusCode < 200 || pendentes.statusCode >= 300) {\n      return recusar(`não foi possível listar convites pendentes (HTTP ${pendentes.statusCode})`);\n    }\n\n    const vinculo = (pendentes.body?.results || []).find(\n      (linha) => String(linha?.customerManagerLink?.managerCustomer || '').endsWith(`/${administradora}`),\n    );\n\n    if (!vinculo) return recusar('nenhum convite pendente desta administradora nesta conta');\n\n    resposta = await chamar.call(\n      this,\n      `https://googleads.googleapis.com/${versao}/customers/${convidada}/customerManagerLinks:mutate`,\n      {\n        operations: [\n          { update: { resourceName: vinculo.customerManagerLink.resourceName, status: 'ACTIVE' }, updateMask: 'status' },\n        ],\n      },\n      convidada,\n    );\n  } else {\n    return recusar(`tipo de tarefa desconhecido: ${tarefa.kind}`);\n  }\n} catch (erro) {\n  return recusar(`falha de rede: ${erro.message}`);\n}\n\nif (resposta.statusCode >= 200 && resposta.statusCode < 300) {\n  const recurso = resposta.body?.results?.[0]?.resourceName ?? 'concluído';\n  const rotulo = tarefa.kind === 'mcc_invite' ? 'convite pendente' : 'vínculo ativo';\n  return [{ json: { taskId: tarefa.taskId, sucesso: true, outcome: `${rotulo} · ${recurso}` } }];\n}\n\nconst falha = resposta.body?.error?.details?.[0]?.errors?.[0];\nconst codigo = falha ? Object.values(falha.errorCode || {})[0] : null;\nconst mensagem = falha?.message || resposta.body?.error?.message || 'recusado sem mensagem';\n\nreturn recusar(`${codigo ? codigo + ' · ' : ''}${mensagem} (HTTP ${resposta.statusCode})`);"
-      },
-      "credentials": {
-        "googleOAuth2Api": {
-          "id": "triaGoogleAds",
-          "name": "ORLA · Google Ads da agência"
-        }
+        "jsCode": "const tarefa = $('Processar em série').item.json;\nconst saida = $json ?? {};\nif (saida.taskId && typeof saida.sucesso === 'boolean') return { json: saida };\nconst motivo = saida.error?.message ?? saida.error ?? 'executor não devolveu resultado';\nreturn { json: { taskId: tarefa.taskId, sucesso: false, outcome: `falha no executor: ${motivo}`.slice(0, 500) } };\n"
+      }
+    },
+    {
+      "id": "sem-executor",
+      "name": "Sem executor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "return {\n  json: {\n    taskId: $json.taskId,\n    sucesso: false,\n    outcome: 'conexão sem executor provisionado: reautorize a conexão do Google Ads para criar o executor',\n  },\n};\n"
       }
     },
     {
@@ -118,8 +185,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        460,
-        180
+        1100,
+        0
       ],
       "parameters": {
         "method": "POST",
@@ -191,7 +258,58 @@
         [],
         [
           {
-            "node": "Convidar ou aceitar na MCC",
+            "node": "Tem executor?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem executor?": {
+      "main": [
+        [
+          {
+            "node": "Executar tarefa",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sem executor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Executar tarefa": {
+      "main": [
+        [
+          {
+            "node": "Conferir resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conferir resultado": {
+      "main": [
+        [
+          {
+            "node": "Reportar resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sem executor": {
+      "main": [
+        [
+          {
+            "node": "Reportar resultado",
             "type": "main",
             "index": 0
           }
@@ -203,17 +321,6 @@
         [
           {
             "node": "Processar em série",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Convidar ou aceitar na MCC": {
-      "main": [
-        [
-          {
-            "node": "Reportar resultado",
             "type": "main",
             "index": 0
           }

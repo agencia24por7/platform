@@ -20,6 +20,7 @@ export type ClaimedTask = {
   readonly targetExternalId: string;
   readonly credentialRef: string;
   readonly platform: string;
+  readonly executorRef: string | null;
 };
 
 type Row = {
@@ -59,7 +60,7 @@ export type TaskRepository = {
   listRecentes(organizationId: string): Promise<readonly (AccountTask & { connectionId: string })[]>;
   listByConnection(organizationId: string, connectionId: string): Promise<readonly AccountTask[]>;
   listByClient(organizationId: string, clientId: string): Promise<readonly AccountTask[]>;
-  claim(limit: number): Promise<readonly ClaimedTask[]>;
+  claim(limit: number, kinds: readonly string[] | null): Promise<readonly ClaimedTask[]>;
   report(taskId: string, sucesso: boolean, outcome: string): Promise<string | null>;
 };
 
@@ -111,10 +112,10 @@ export function createTaskRepository(): TaskRepository {
       });
     },
 
-    async claim(limit) {
+    async claim(limit, kinds) {
       return withoutTenant(async (tx) => {
         const rows = (await tx`
-          SELECT * FROM automation.task_queue(${limit})
+          SELECT * FROM automation.task_queue(${limit}, ${kinds ? [...kinds] : null}::text[])
         `) as unknown as {
           task_id: string;
           organization_id: string;
@@ -123,6 +124,7 @@ export function createTaskRepository(): TaskRepository {
           target_external_id: string;
           credential_ref: string;
           platform: string;
+          executor_ref: string | null;
         }[];
 
         return rows.map((row) => ({
@@ -133,6 +135,7 @@ export function createTaskRepository(): TaskRepository {
           targetExternalId: row.target_external_id,
           credentialRef: row.credential_ref,
           platform: row.platform,
+          executorRef: row.executor_ref,
         }));
       });
     },
