@@ -21,7 +21,50 @@ Em 17/11, todas as tabelas de `tria_dw` estavam vazias. Havia quatro motivos:
    gravador.** Ele é um snapshot e vai para `gov_snapshot_fontes`, não para
    um fato diário.
 
+5. **Nenhum coletor funcionava no n8n 2.46.** Todos chamavam
+   `this.helpers.httpRequestWithAuthentication` dentro do Code Node. No n8n
+   2.x o Code Node roda num *task runner* (obrigatório) que não oferece essa
+   função: `The function "helpers.httpRequestWithAuthentication" is not
+   supported in the Code Node`. Havia também bugs específicos:
+   - **YouTube:** `replace(/\D/g, '')` transformava `UCdYpKe8…` em `8990`.
+   - **Meta:** não paginava.
+   - **GBP:** podia gerar `locations/locations/…`.
+
+6. **O BigQuery recebia nulo em toda coluna DATE/TIMESTAMP.** Na
+   `@google-cloud/bigquery` 9.6, um parâmetro tipado como DATE ou TIMESTAMP é
+   lido como `valor.value`. Uma string ISO pura não tem `.value`, então o
+   valor vai nulo (`Required field data_dia cannot be null`). Isso afetava os
+   fatos, `gov_snapshot_fontes` e `qc_execucoes`.
+7. **Um 403 por API desligada era tratado como `reauth_pending`.** A
+   Analytics Data API não estava habilitada no projeto, e o erro marcou a
+   conexão GA4 como pendente de reautorização, o que a tirou da coleta.
+8. **O contrato do `fechar` valida `causa` contra um enum e limita
+   `detalhe` a 500 caracteres.** Uma causa fora do enum ou uma mensagem longa
+   do Google geraria 400 no `fechar` e deixaria a coleta presa em `running`.
+
 ## Decisão
+
+- `parametrosBigQuery.ts` embrulha DATE com `BigQuery.date` e TIMESTAMP com
+  `BigQuery.timestamp`, conforme o mapa de tipos de cada tabela. A
+  biblioteca só serializa esses tipos quando vêm embrulhados. Um teste de
+  regressão prova o comportamento da biblioteca e a correção.
+- Os coletores classificam 429, `SERVICE_DISABLED`, `accessNotConfigured` e
+  cota esgotada como `api_recusou`. Só 401, 403 de permissão e o código Meta
+  190 viram `reauth_pending`. `detalhe` é truncado em 500 caracteres, e o
+  `errorMessage` do nó Conferir gravação em 1000.
+- `apis.tf` declara todas as APIs de que a coleta depende, entre elas
+  `analyticsdata`.
+
+- **Coletores no formato nativo do n8n:** Montar requisição (Code, sem
+  rede) → **nó HTTP Request** com a credencial OAuth
+  (`predefinedCredentialType`, `fullResponse`, `neverError`, erro de rede
+  segue adiante) → Normalizar (Code). A credencial nunca passa pelo código.
+  O contrato de saída (`linhas`, `volumetria`, `falhas`, `requests`,
+  `versaoApi`) não mudou, então orquestrador e backfill seguem iguais.
+  - A Meta pagina por `paging.next`.
+  - O GTM encadeia contas → contêineres → `versions:live`, com nós IF que
+    levam qualquer falha direto ao Normalizar. Nenhum caminho deixa a
+    coleta presa em `running`.
 
 - `BQ_PROJECT_ID`/`BQ_DATASET` são gerados pelo startup script (Terraform)
   e repassados pelo compose.

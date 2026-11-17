@@ -12,32 +12,85 @@
       "name": "Entrada",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
-      "position": [-200, 0],
+      "position": [
+        -200,
+        0
+      ],
       "parameters": {
         "workflowInputs": {
           "values": [
-            { "name": "fonte" },
-            { "name": "janela" },
-            { "name": "modo" }
+            {
+              "name": "fonte"
+            },
+            {
+              "name": "janela"
+            },
+            {
+              "name": "modo"
+            }
           ]
         }
       }
     },
     {
-      "id": "coletar",
-      "name": "Buscar métricas no Google Business Profile",
+      "id": "montar",
+      "name": "Montar requisição",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [40, 0],
+      "position": [
+        0,
+        0
+      ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const inicio = Date.now();\nconst fonte = $json.fonte;\nconst janela = $json.janela;\nconst modo = $json.modo;\nconst versaoApi = 'v1';\n\nconst locationId = String(fonte.externalId);\nconst metrics = ['WEBSITE_CLICKS', 'CALL_CLICKS', 'BUSINESS_DIRECTION_REQUESTS', 'BUSINESS_IMPRESSIONS_DESKTOP_MAPS', 'BUSINESS_IMPRESSIONS_MOBILE_SEARCH'];\n\nfunction parseDate(dateStr) {\n  const [year, month, day] = dateStr.split('-').map(Number);\n  return { year, month, day };\n}\n\nconst startDate = parseDate(janela.start);\nconst endDate = parseDate(janela.end);\n\nconst endpoint = `https://businessprofileperformance.googleapis.com/v1/locations/${locationId}:fetchMultiDailyMetricsTimeSeries`;\nconst queryParams = `dailyRange.start_date.year=${startDate.year}&dailyRange.start_date.month=${startDate.month}&dailyRange.start_date.day=${startDate.day}&dailyRange.end_date.year=${endDate.year}&dailyRange.end_date.month=${endDate.month}&dailyRange.end_date.day=${endDate.day}` + metrics.map(m => `&dailyMetrics=${m}`).join('');\nconst fullUrl = endpoint + '?' + queryParams;\n\nfunction devolver(linhas, falhas, requests, bytes) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - inicio },\n      falhas,\n      requests,\n      versaoApi,\n    },\n  }];\n}\n\nlet resposta;\ntry {\n  resposta = await this.helpers.httpRequestWithAuthentication.call(this, 'googleOAuth2Api', {\n    method: 'GET',\n    url: fullUrl,\n    json: true,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  });\n} catch (erro) {\n  return devolver([], [{ causa: 'api_recusou', detalhe: `falha de rede: ${erro.message}` }], 1, 0);\n}\n\nif (resposta.statusCode === 401 || resposta.statusCode === 403) {\n  const detalhe = resposta.body?.error?.message || `HTTP ${resposta.statusCode}`;\n  return devolver([], [{ causa: 'reauth_pending', detalhe }], 1, 0);\n}\n\nif (resposta.statusCode < 200 || resposta.statusCode >= 300) {\n  const detalhe = resposta.body?.error?.message || `HTTP ${resposta.statusCode}`;\n  return devolver([], [{ causa: 'api_recusou', detalhe }], 1, 0);\n}\n\nconst bytes = JSON.stringify(resposta.body).length;\n\nconst multiDailyMetricTimeSeries = resposta.body?.multiDailyMetricTimeSeries ?? [];\nconst linhas = [];\n\nfor (const serie of multiDailyMetricTimeSeries) {\n  const dailyMetricTimeSeries = serie?.dailyMetricTimeSeries ?? [];\n  for (const metricSerie of dailyMetricTimeSeries) {\n    const dailyMetric = metricSerie?.dailyMetric ?? '';\n    const datedValues = metricSerie?.timeSeries?.datedValues ?? [];\n    for (const datedValue of datedValues) {\n      const date = datedValue?.date ?? {};\n      linhas.push({\n        metricDate: `${String(date.year ?? 0).padStart(4, '0')}-${String(date.month ?? 0).padStart(2, '0')}-${String(date.day ?? 0).padStart(2, '0')}`,\n        metric: dailyMetric,\n        value: Number(datedValue?.value ?? 0),\n      });\n    }\n  }\n}\n\nif (linhas.length === 0) {\n  return devolver([], [{ causa: 'sem_dados_no_periodo', detalhe: null }], 1, bytes);\n}\n\nreturn devolver(linhas, [], 1, bytes);"
+        "jsCode": "const { fonte, janela } = $json;\nconst versaoApi = 'v1';\nconst locationId = String(fonte.externalId).split('locations/').pop();\nconst metricas = ['WEBSITE_CLICKS', 'CALL_CLICKS', 'BUSINESS_DIRECTION_REQUESTS', 'BUSINESS_IMPRESSIONS_DESKTOP_MAPS', 'BUSINESS_IMPRESSIONS_MOBILE_SEARCH'];\nconst [anoInicio, mesInicio, diaInicio] = janela.start.split('-').map(Number);\nconst [anoFim, mesFim, diaFim] = janela.end.split('-').map(Number);\nconst parametros = [\n  `dailyRange.start_date.year=${anoInicio}`, `dailyRange.start_date.month=${mesInicio}`, `dailyRange.start_date.day=${diaInicio}`,\n  `dailyRange.end_date.year=${anoFim}`, `dailyRange.end_date.month=${mesFim}`, `dailyRange.end_date.day=${diaFim}`,\n  ...metricas.map((metrica) => `dailyMetrics=${metrica}`),\n].join('&');\n\nreturn [{\n  json: {\n    inicio: Date.now(),\n    versaoApi,\n    fonte,\n    url: `https://businessprofileperformance.googleapis.com/${versaoApi}/locations/${locationId}:fetchMultiDailyMetricsTimeSeries?${parametros}`,\n  },\n}];\n"
+      }
+    },
+    {
+      "id": "chamar",
+      "name": "Chamar API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
       },
       "credentials": {
         "googleOAuth2Api": {
           "id": "a-definir-pelo-provisioner",
           "name": "a-definir-pelo-provisioner"
         }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "normalizar",
+      "name": "Normalizar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const contexto = $('Montar requisição').first().json;\nconst respostas = $input.all().map((item) => item.json);\nconst requests = respostas.length;\nconst bytes = respostas.reduce((total, resposta) => total + JSON.stringify(resposta.body ?? {}).length, 0);\n\nfunction devolver(linhas, falhas) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - contexto.inicio },\n      falhas,\n      requests,\n      versaoApi: contexto.versaoApi,\n    },\n  }];\n}\n\nconst falhaDeRede = respostas.find((resposta) => resposta.error);\nif (falhaDeRede) {\n  const detalhe = falhaDeRede.error?.message ?? String(falhaDeRede.error);\n  return devolver([], [{ causa: 'api_recusou', detalhe: `falha de rede: ${detalhe}`.slice(0, 500) }]);\n}\n\nconst recusada = respostas.find((resposta) => !(resposta.statusCode >= 200 && resposta.statusCode < 300));\nif (recusada) {\n  const erro = Array.isArray(recusada.body) ? recusada.body[0]?.error : recusada.body?.error;\n  const detalhe = String(erro?.message || `HTTP ${recusada.statusCode}`).slice(0, 500);\n  const configuracaoDoProjeto = recusada.statusCode === 429 || /SERVICE_DISABLED|accessNotConfigured|has not been used in project|RESOURCE_EXHAUSTED|RATE_LIMIT/.test(JSON.stringify(erro ?? {}));\n  const semAcesso = !configuracaoDoProjeto && (recusada.statusCode === 401 || recusada.statusCode === 403 || erro?.code === 190);\n  return devolver([], [{ causa: semAcesso ? 'reauth_pending' : 'api_recusou', detalhe }]);\n}\n\nconst corpos = respostas.map((resposta) => resposta.body);\nconst fonte = contexto.fonte;\n\nconst pad = (valor, tamanho) => String(valor ?? 0).padStart(tamanho, '0');\nconst linhas = [];\nfor (const corpo of corpos) {\n  for (const serie of corpo?.multiDailyMetricTimeSeries ?? []) {\n    for (const metricaSerie of serie?.dailyMetricTimeSeries ?? []) {\n      for (const valorDatado of metricaSerie?.timeSeries?.datedValues ?? []) {\n        const data = valorDatado?.date ?? {};\n        linhas.push({\n          metricDate: `${pad(data.year, 4)}-${pad(data.month, 2)}-${pad(data.day, 2)}`,\n          metric: metricaSerie?.dailyMetric ?? '',\n          value: Number(valorDatado?.value ?? 0),\n        });\n      }\n    }\n  }\n}\n\nif (linhas.length === 0) return devolver([], [{ causa: 'sem_dados_no_periodo', detalhe: null }]);\nreturn devolver(linhas, []);\n"
       }
     }
   ],
@@ -46,7 +99,29 @@
       "main": [
         [
           {
-            "node": "Buscar métricas no Google Business Profile",
+            "node": "Montar requisição",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar requisição": {
+      "main": [
+        [
+          {
+            "node": "Chamar API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chamar API": {
+      "main": [
+        [
+          {
+            "node": "Normalizar",
             "type": "main",
             "index": 0
           }

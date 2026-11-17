@@ -3,6 +3,7 @@ import { env } from '@/shared/config/env';
 import { logger } from '@/shared/logging/logger';
 import type { Platform } from '@/modules/connections/domain/connection';
 import type { RelatorioDeExecucao } from '@/modules/coleta/domain/qualidade';
+import { linhaParaBigQuery, paraParametroBigQuery } from '@/modules/coleta/infrastructure/parametrosBigQuery';
 
 type LinhaBruta = Record<string, unknown>;
 
@@ -264,7 +265,7 @@ export function createBigQueryGravador(): BigQueryGravador {
       const [job] = await bigquery!.createQueryJob({
         query: `INSERT INTO \`${config.BQ_PROJECT_ID}.${dataset}.gov_snapshot_fontes\` (${colunas})
           SELECT ${colunas} FROM UNNEST(@linhas)`,
-        params: { linhas: snapshots },
+        params: { linhas: snapshots.map((snapshot) => linhaParaBigQuery(snapshot, TIPOS_SNAPSHOT)) },
         types: { linhas: [TIPOS_SNAPSHOT] },
       });
       await job.getQueryResults();
@@ -289,7 +290,7 @@ export function createBigQueryGravador(): BigQueryGravador {
       if (!cfg) return { ok: false, motivo: 'plataforma_sem_mapeamento' };
       if (linhas.length === 0) return { ok: true, linhasGravadas: 0 };
 
-      const linhasMapeadas = linhas.map((linha) => cfg.mapear(linha, ctx));
+      const linhasMapeadas = linhas.map((linha) => linhaParaBigQuery(cfg.mapear(linha, ctx), cfg.tipos));
 
       try {
         const colunasQuery = cfg.colunas.join(', ');
@@ -332,8 +333,8 @@ export function createBigQueryGravador(): BigQueryGravador {
             platform: execucao.platform,
             fonteId: execucao.fonteId,
             modo: execucao.modo,
-            windowStart: execucao.windowStart,
-            windowEnd: execucao.windowEnd,
+            windowStart: paraParametroBigQuery(execucao.windowStart, 'DATE'),
+            windowEnd: paraParametroBigQuery(execucao.windowEnd, 'DATE'),
             fontesEsperadas: execucao.qualidadeResumo?.fontesEsperadas ?? null,
             fontesColetadas: execucao.qualidadeResumo?.fontesColetadas ?? null,
             linhas: execucao.qualidadeResumo?.volumetria.linhas ?? null,
@@ -342,7 +343,7 @@ export function createBigQueryGravador(): BigQueryGravador {
             duracaoMs: execucao.qualidadeResumo?.volumetria.duracaoMs ?? null,
             status: execucao.status,
             qualidadeResumo: execucao.qualidadeResumo ? JSON.stringify(execucao.qualidadeResumo) : '{}',
-            criadoEm: agora(),
+            criadoEm: paraParametroBigQuery(agora(), 'TIMESTAMP'),
           },
           types: {
             windowStart: 'DATE',
