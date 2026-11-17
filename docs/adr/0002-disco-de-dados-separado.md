@@ -55,6 +55,24 @@ antigo inteiro. Só `var/lib/docker/volumes` é usado. O resto (SO antigo) fica
 inerte e pode ser limpo depois. O `e2fsck -fy` do primeiro boot repara os
 metadados corrompidos.
 
+### Revisão da causa (mesmo dia)
+
+Depois da recriação, a VM nova (imagem `debian-12-bookworm-v20261116`) repetiu
+o mesmo oops aos 706s, durante o `docker pull` do deploy. Dessa vez o crash
+foi no `flush-8:16`, o **disco de sistema recém-criado**, e não no disco de
+dados. Um ext4 novo, formatado pela imagem, não tem metadados corrompidos.
+Então a causa raiz é o kernel `6.1.0-55-cloud-amd64` (6.1.192), não o disco.
+As inconsistências que o fsck achou no disco antigo eram consequência dos
+crashes.
+
+Isso bate com uma regressão relatada na série 6.1 stable: oops em
+`ext4_mb_load_buddy_gfp` ligado ao backport da conversão
+`bd_buddy_page → bd_buddy_folio`.
+
+Decisão adicional: a imagem passa de `debian-12` para **`debian-13`** (trixie,
+kernel 6.12). O disco de dados separado continua valendo. Foi graças a ele que
+a troca de imagem não arriscou os dados.
+
 ## Consequências
 
 - Recriar a VM, trocar a imagem ou o tipo de máquina não toca mais nos dados.
