@@ -11,6 +11,7 @@ const CREDENTIAL_TYPE = {
   searchconsole: 'googleOAuth2Api',
   youtube: 'googleOAuth2Api',
   gbp: 'googleOAuth2Api',
+  gtm: 'googleOAuth2Api',
 };
 
 const TEMPLATE_FILE_BY_PLATFORM = {
@@ -20,6 +21,7 @@ const TEMPLATE_FILE_BY_PLATFORM = {
   searchconsole: 'n8n/workflows/coletores/coletor-searchconsole.json',
   youtube: 'n8n/workflows/coletores/coletor-youtube.json',
   gbp: 'n8n/workflows/coletores/coletor-gbp.json',
+  gtm: 'n8n/workflows/coletores/coletor-gtm.json',
 };
 
 const env = Object.fromEntries(

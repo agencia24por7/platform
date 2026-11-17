@@ -12,9 +12,19 @@
       "name": "A cada 6h",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [-900, 0],
+      "position": [
+        -900,
+        0
+      ],
       "parameters": {
-        "rule": { "interval": [{ "field": "hours", "hoursInterval": 6 }] }
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
       }
     },
     {
@@ -22,7 +32,10 @@
       "name": "Execução manual",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
-      "position": [-900, 180],
+      "position": [
+        -900,
+        180
+      ],
       "parameters": {}
     },
     {
@@ -30,15 +43,23 @@
       "name": "Ler fontes elegíveis",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-680, 90],
+      "position": [
+        -680,
+        90
+      ],
       "parameters": {
         "url": "=http://app:3000/api/v0/coleta/fontes?limit=50&modo=amostra",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
-        "options": { "timeout": 20000 }
+        "options": {
+          "timeout": 20000
+        }
       },
       "credentials": {
-        "httpHeaderAuth": { "id": "a-definir-pelo-provisioner", "name": "a-definir-pelo-provisioner" }
+        "httpHeaderAuth": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
       }
     },
     {
@@ -46,35 +67,59 @@
       "name": "Uma fonte por item",
       "type": "n8n-nodes-base.splitOut",
       "typeVersion": 1,
-      "position": [-460, 90],
-      "parameters": { "fieldToSplitOut": "fontes", "options": {} }
+      "position": [
+        -460,
+        90
+      ],
+      "parameters": {
+        "fieldToSplitOut": "fontes",
+        "options": {}
+      }
     },
     {
       "id": "em-serie",
       "name": "Processar em série",
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
-      "position": [-240, 90],
-      "parameters": { "batchSize": 1, "options": {} }
+      "position": [
+        -240,
+        90
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
     },
     {
       "id": "abrir",
       "name": "Abrir execução",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [20, 180],
+      "position": [
+        20,
+        180
+      ],
       "parameters": {
         "method": "POST",
         "url": "=http://app:3000/api/v0/coleta/abrir",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ fonteTipo: $json.fonteTipo, fonteId: $json.fonteId, mode: 'amostra', window: $json.janelaSugerida, idempotencyKey: `${$json.fonteId}:${$json.janelaSugerida.start}:${$json.janelaSugerida.end}:amostra`, n8nExecutionId: String($execution.id) }) }}",
-        "options": { "response": { "response": { "neverError": true } } },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth"
       },
       "credentials": {
-        "httpHeaderAuth": { "id": "a-definir-pelo-provisioner", "name": "a-definir-pelo-provisioner" }
+        "httpHeaderAuth": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
       }
     },
     {
@@ -82,20 +127,33 @@
       "name": "Tem coletor?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [240, 180],
+      "position": [
+        240,
+        180
+      ],
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
           "conditions": [
             {
               "leftValue": "={{ $('Processar em série').item.json.coletorRef }}",
               "rightValue": "",
-              "operator": { "type": "string", "operation": "notEmpty" }
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
             },
             {
               "leftValue": "={{ $json.id }}",
               "rightValue": "",
-              "operator": { "type": "string", "operation": "exists" }
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
             }
           ],
           "combinator": "and"
@@ -108,7 +166,10 @@
       "name": "Chamar coletor",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.2,
-      "position": [500, 80],
+      "position": [
+        500,
+        80
+      ],
       "onError": "continueRegularOutput",
       "parameters": {
         "workflowId": {
@@ -131,7 +192,10 @@
       "name": "Calcular qualidade",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [720, 80],
+      "position": [
+        720,
+        80
+      ],
       "parameters": {
         "mode": "runOnceForEachItem",
         "jsCode": "const fonte = $('Processar em série').item.json;\nconst coleta = $('Abrir execução').item.json;\nconst resultado = $json ?? {};\nconst linhas = Array.isArray(resultado.linhas) ? resultado.linhas : [];\nconst falhas = Array.isArray(resultado.falhas) ? resultado.falhas : [];\nconst falha = falhas[0] ?? null;\nconst semDados = falha?.causa === 'sem_dados_no_periodo';\nconst sucesso = !falha || semDados;\n\nconst qualidadeResumo = {\n  fontesEsperadas: 1,\n  fontesColetadas: sucesso ? 1 : 0,\n  faltantes: falha ? [{ fonte: fonte.nome || fonte.externalId, causa: falha.causa, detalhe: falha.detalhe ?? null }] : [],\n  paridade: [],\n  volumetria: resultado.volumetria ?? { linhas: linhas.length, bytes: 0, requests: resultado.requests ?? 0, duracaoMs: 0 },\n};\n\nreturn {\n  json: {\n    coletaId: coleta.id,\n    status: sucesso ? 'success' : 'failed',\n    errorCode: sucesso ? null : falha.causa,\n    errorMessage: sucesso ? null : (falha.detalhe ?? falha.causa),\n    requestCount: resultado.requests ?? 0,\n    linhas,\n    qualidadeResumo,\n  },\n};"
@@ -142,19 +206,31 @@
       "name": "Gravar métricas",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [940, 80],
+      "position": [
+        940,
+        80
+      ],
       "parameters": {
         "method": "POST",
         "url": "=http://app:3000/api/v0/coleta/gravar",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ coletaId: $json.coletaId, linhas: $json.linhas }) }}",
-        "options": { "response": { "response": { "neverError": true } } },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth"
       },
       "credentials": {
-        "httpHeaderAuth": { "id": "a-definir-pelo-provisioner", "name": "a-definir-pelo-provisioner" }
+        "httpHeaderAuth": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
       }
     },
     {
@@ -162,19 +238,31 @@
       "name": "Fechar execução",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1160, 80],
+      "position": [
+        1160,
+        80
+      ],
       "parameters": {
         "method": "POST",
         "url": "=http://app:3000/api/v0/coleta/fechar",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ coletaId: $('Calcular qualidade').item.json.coletaId, status: $('Calcular qualidade').item.json.status, requestCount: $('Calcular qualidade').item.json.requestCount, rowsReceived: $('Calcular qualidade').item.json.linhas.length, rowsWritten: $json.linhasGravadas ?? 0, qualidadeResumo: $('Calcular qualidade').item.json.qualidadeResumo, errorCode: $('Calcular qualidade').item.json.errorCode, errorMessage: $('Calcular qualidade').item.json.errorMessage }) }}",
-        "options": { "response": { "response": { "neverError": true } } },
+        "jsonBody": "={{ JSON.stringify({ coletaId: $json.coletaId, status: $json.status, requestCount: $json.requestCount, rowsReceived: $json.rowsReceived, rowsWritten: $json.rowsWritten, qualidadeResumo: $json.qualidadeResumo, errorCode: $json.errorCode, errorMessage: $json.errorMessage }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth"
       },
       "credentials": {
-        "httpHeaderAuth": { "id": "a-definir-pelo-provisioner", "name": "a-definir-pelo-provisioner" }
+        "httpHeaderAuth": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
       }
     },
     {
@@ -182,7 +270,10 @@
       "name": "Calcular qualidade (sem coletor)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [500, 300],
+      "position": [
+        500,
+        300
+      ],
       "parameters": {
         "mode": "runOnceForEachItem",
         "jsCode": "const fonte = $('Processar em série').item.json;\nconst coleta = $json;\nconst temColeta = Boolean(coleta?.id);\n\nconst qualidadeResumo = {\n  fontesEsperadas: 1,\n  fontesColetadas: 0,\n  faltantes: [{ fonte: fonte.nome || fonte.externalId, causa: 'sem_credencial', detalhe: 'Conexão sem coletor provisionado no n8n.' }],\n  paridade: [],\n  volumetria: { linhas: 0, bytes: 0, requests: 0, duracaoMs: 0 },\n};\n\nreturn {\n  json: {\n    coletaId: temColeta ? coleta.id : null,\n    temColeta,\n    status: 'failed',\n    errorCode: 'sem_credencial',\n    errorMessage: 'Conexão sem coletor provisionado no n8n.',\n    qualidadeResumo,\n  },\n};"
@@ -193,40 +284,210 @@
       "name": "Fechar execução (sem coletor)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [720, 300],
+      "position": [
+        720,
+        300
+      ],
       "parameters": {
         "method": "POST",
         "url": "=http://app:3000/api/v0/coleta/fechar",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ coletaId: $json.coletaId, status: $json.status, requestCount: 0, rowsReceived: 0, rowsWritten: 0, qualidadeResumo: $json.qualidadeResumo, errorCode: $json.errorCode, errorMessage: $json.errorMessage }) }}",
-        "options": { "response": { "response": { "neverError": true } } },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth"
       },
       "credentials": {
-        "httpHeaderAuth": { "id": "a-definir-pelo-provisioner", "name": "a-definir-pelo-provisioner" }
+        "httpHeaderAuth": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      }
+    },
+    {
+      "id": "conferir-gravacao",
+      "name": "Conferir gravação",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        240
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const qualidade = $('Calcular qualidade').item.json;\nconst gravacao = $json ?? {};\nconst esperadas = qualidade.linhas.length;\nconst gravadas = Number(gravacao.linhasGravadas ?? 0);\nconst falhouGravacao = qualidade.status === 'success' && esperadas > 0 && gravadas !== esperadas;\n\nreturn {\n  json: {\n    coletaId: qualidade.coletaId,\n    status: falhouGravacao ? 'failed' : qualidade.status,\n    requestCount: qualidade.requestCount,\n    rowsReceived: esperadas,\n    rowsWritten: gravadas,\n    qualidadeResumo: qualidade.qualidadeResumo,\n    errorCode: falhouGravacao ? 'gravacao_bq' : qualidade.errorCode,\n    errorMessage: falhouGravacao ? (gravacao.detail ?? gravacao.title ?? 'gravação no BigQuery incompleta') : qualidade.errorMessage,\n  },\n};"
       }
     }
   ],
   "connections": {
-    "A cada 6h": { "main": [[{ "node": "Ler fontes elegíveis", "type": "main", "index": 0 }]] },
-    "Execução manual": { "main": [[{ "node": "Ler fontes elegíveis", "type": "main", "index": 0 }]] },
-    "Ler fontes elegíveis": { "main": [[{ "node": "Uma fonte por item", "type": "main", "index": 0 }]] },
-    "Uma fonte por item": { "main": [[{ "node": "Processar em série", "type": "main", "index": 0 }]] },
-    "Processar em série": { "main": [[], [{ "node": "Abrir execução", "type": "main", "index": 0 }]] },
-    "Abrir execução": { "main": [[{ "node": "Tem coletor?", "type": "main", "index": 0 }]] },
-    "Tem coletor?": {
+    "A cada 6h": {
       "main": [
-        [{ "node": "Chamar coletor", "type": "main", "index": 0 }],
-        [{ "node": "Calcular qualidade (sem coletor)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Ler fontes elegíveis",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Chamar coletor": { "main": [[{ "node": "Calcular qualidade", "type": "main", "index": 0 }]] },
-    "Calcular qualidade": { "main": [[{ "node": "Gravar métricas", "type": "main", "index": 0 }]] },
-    "Gravar métricas": { "main": [[{ "node": "Fechar execução", "type": "main", "index": 0 }]] },
-    "Fechar execução": { "main": [[{ "node": "Processar em série", "type": "main", "index": 0 }]] },
-    "Calcular qualidade (sem coletor)": { "main": [[{ "node": "Fechar execução (sem coletor)", "type": "main", "index": 0 }]] },
-    "Fechar execução (sem coletor)": { "main": [[{ "node": "Processar em série", "type": "main", "index": 0 }]] }
+    "Execução manual": {
+      "main": [
+        [
+          {
+            "node": "Ler fontes elegíveis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler fontes elegíveis": {
+      "main": [
+        [
+          {
+            "node": "Uma fonte por item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Uma fonte por item": {
+      "main": [
+        [
+          {
+            "node": "Processar em série",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar em série": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Abrir execução",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Abrir execução": {
+      "main": [
+        [
+          {
+            "node": "Tem coletor?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem coletor?": {
+      "main": [
+        [
+          {
+            "node": "Chamar coletor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Calcular qualidade (sem coletor)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chamar coletor": {
+      "main": [
+        [
+          {
+            "node": "Calcular qualidade",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular qualidade": {
+      "main": [
+        [
+          {
+            "node": "Gravar métricas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gravar métricas": {
+      "main": [
+        [
+          {
+            "node": "Conferir gravação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fechar execução": {
+      "main": [
+        [
+          {
+            "node": "Processar em série",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular qualidade (sem coletor)": {
+      "main": [
+        [
+          {
+            "node": "Fechar execução (sem coletor)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fechar execução (sem coletor)": {
+      "main": [
+        [
+          {
+            "node": "Processar em série",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conferir gravação": {
+      "main": [
+        [
+          {
+            "node": "Fechar execução",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   }
 }

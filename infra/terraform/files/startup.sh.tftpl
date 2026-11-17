@@ -47,6 +47,8 @@ umask 077
   echo "N8N_SECURE_COOKIE=$(test -n "$N8N_HOST" && echo true || echo false)"
   echo "N8N_WEBHOOK_URL=$(test -n "$N8N_HOST" && echo "https://$N8N_HOST/" || echo "http://localhost:5678/")"
   echo "ACME_EMAIL=$ACME_EMAIL"
+  echo "BQ_PROJECT_ID=$PROJECT_ID"
+  echo "BQ_DATASET=tria_dw"
   echo "GOOGLE_OAUTH_CLIENT_ID=$(read_optional_secret google-oauth-client-id)"
   echo "GOOGLE_OAUTH_CLIENT_SECRET=$(read_optional_secret google-oauth-client-secret)"
   echo "META_APP_ID=$(read_optional_secret meta-app-id)"

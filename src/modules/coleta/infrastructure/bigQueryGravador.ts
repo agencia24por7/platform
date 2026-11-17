@@ -186,6 +186,14 @@ const CONFIG_POR_PLATAFORMA: Partial<Record<Platform, ConfiguracaoPlataforma>> =
   },
 };
 
+const PLATAFORMAS_SNAPSHOT: ReadonlySet<Platform> = new Set(['gtm']);
+
+const TIPOS_SNAPSHOT = {
+  organization_id: 'STRING', client_id: 'STRING', platform: 'STRING', fonte_tipo: 'STRING', fonte_id: 'STRING',
+  nome: 'STRING', estado: 'STRING', inactive: 'BOOL', rotulo_esperado: 'STRING', rotulo_observado: 'STRING',
+  visto_em: 'TIMESTAMP',
+} as const;
+
 export type ResultadoGravacao =
   | { readonly ok: true; readonly linhasGravadas: number }
   | { readonly ok: false; readonly motivo: string };
@@ -234,11 +242,48 @@ export function createBigQueryGravador(): BigQueryGravador {
     await job.getQueryResults();
   }
 
+  async function gravarSnapshot(platform: Platform, linhas: readonly LinhaBruta[], ctx: ContextoGravacao): Promise<ResultadoGravacao> {
+    if (linhas.length === 0) return { ok: true, linhasGravadas: 0 };
+
+    const snapshots = linhas.map((linha) => ({
+      organization_id: ctx.organizationId,
+      client_id: ctx.clientId,
+      platform,
+      fonte_tipo: 'connection_account',
+      fonte_id: ctx.externalId,
+      nome: linha.nome ?? null,
+      estado: linha.estado ?? null,
+      inactive: Boolean(linha.inactive),
+      rotulo_esperado: linha.rotuloEsperado ?? null,
+      rotulo_observado: linha.rotuloObservado ?? null,
+      visto_em: agora(),
+    }));
+
+    try {
+      const colunas = Object.keys(snapshots[0]!).join(', ');
+      const [job] = await bigquery!.createQueryJob({
+        query: `INSERT INTO \`${config.BQ_PROJECT_ID}.${dataset}.gov_snapshot_fontes\` (${colunas})
+          SELECT ${colunas} FROM UNNEST(@linhas)`,
+        params: { linhas: snapshots },
+        types: { linhas: [TIPOS_SNAPSHOT] },
+      });
+      await job.getQueryResults();
+      return { ok: true, linhasGravadas: snapshots.length };
+    } catch (error) {
+      logger.error('coleta.bigquery.snapshot.erro', {
+        platform,
+        error: error instanceof Error ? error.message : 'desconhecido',
+      });
+      return { ok: false, motivo: 'falha_ao_gravar' };
+    }
+  }
+
   return {
     available,
 
     async gravar(platform, linhas, ctx) {
       if (!available || !bigquery) return { ok: false, motivo: 'bigquery_indisponivel' };
+      if (PLATAFORMAS_SNAPSHOT.has(platform)) return gravarSnapshot(platform, linhas, ctx);
 
       const cfg = CONFIG_POR_PLATAFORMA[platform];
       if (!cfg) return { ok: false, motivo: 'plataforma_sem_mapeamento' };
