@@ -1,5 +1,5 @@
 {
-  "name": "ORLA · vínculos com a MCC",
+  "name": "ORLA · tarefas de conta",
   "settings": {
     "executionOrder": "v1",
     "saveDataErrorExecution": "all",
@@ -40,7 +40,7 @@
     },
     {
       "id": "ler-fila",
-      "name": "Ler fila de convites",
+      "name": "Ler fila de tarefas",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -48,7 +48,7 @@
         80
       ],
       "parameters": {
-        "url": "=http://app:3000/api/v0/tasks/queue?limit=10&kinds=mcc_invite,mcc_accept",
+        "url": "=http://app:3000/api/v0/tasks/queue?limit=10&kinds=mcc_invite,mcc_accept,bm_partner_request",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {
@@ -176,7 +176,7 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "return {\n  json: {\n    taskId: $json.taskId,\n    sucesso: false,\n    outcome: 'conexão sem executor provisionado: reautorize a conexão do Google Ads para criar o executor',\n  },\n};\n"
+        "jsCode": "return {\n  json: {\n    taskId: $json.taskId,\n    sucesso: false,\n    outcome: 'conexão sem executor provisionado: reautorize a conexão para criar o executor',\n  },\n};\n"
       }
     },
     {
@@ -213,7 +213,7 @@
       "main": [
         [
           {
-            "node": "Ler fila de convites",
+            "node": "Ler fila de tarefas",
             "type": "main",
             "index": 0
           }
@@ -224,14 +224,14 @@
       "main": [
         [
           {
-            "node": "Ler fila de convites",
+            "node": "Ler fila de tarefas",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Ler fila de convites": {
+    "Ler fila de tarefas": {
       "main": [
         [
           {
