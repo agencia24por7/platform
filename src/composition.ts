@@ -22,6 +22,7 @@ import { createMetricsRepository } from '@/modules/ingestion/infrastructure/metr
 import { createSyncRunRepository } from '@/modules/ingestion/infrastructure/syncRunRepository';
 import { createTeamService } from '@/modules/team/application/teamService';
 import { createTeamRepository } from '@/modules/team/infrastructure/teamRepository';
+import { createRecursoService } from '@/modules/connections/application/recursoService';
 import { createOrganizationService } from '@/modules/organizations/application/organizationService';
 import { createOrganizationRepository } from '@/modules/organizations/infrastructure/organizationRepository';
 
@@ -39,6 +40,7 @@ function build() {
   return {
     audit,
     discoveredAccounts,
+    recursos: createRecursoService(discoveredAccounts, clientRepository, audit),
     connectionInvites: createConnectionInviteRepository(),
     tasks: createTaskRepository(),
     organizations,

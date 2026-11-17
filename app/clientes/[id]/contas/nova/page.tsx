@@ -6,7 +6,11 @@ import { modules } from '@/composition';
 import {
   MARCA_DA_PLATAFORMA,
   ROTULO_DA_PLATAFORMA,
+  ROTULO_DO_RECURSO,
+  temRecursoParaVincular,
+  veiculaAnuncio,
 } from '@/modules/connections/domain/connection';
+import type { StoredDiscovery } from '@/modules/connections/infrastructure/discoveredAccountRepository';
 import { atorAtual } from '@/shared/http/ator';
 import { checkbox, requestId, text, toActionState } from '@/shared/http/actions';
 import { currentOrganization, requireContext } from '@/shared/http/currentOrganization';
@@ -36,6 +40,18 @@ async function vincularConta(formData: FormData): Promise<void> {
   if (!escolhida) {
     voltar('Conta não encontrada entre as descobertas desta organização.');
     return;
+  }
+
+  if (temRecursoParaVincular(escolhida.platform)) {
+    const fonte = await modules().recursos.vincular(
+      { organizationId: organization.id, papelDeQuemAge: ctx.role, recursoId: escolhida.id, clientId },
+      ator,
+    );
+    if (!fonte.ok) {
+      voltar(toActionState(fonte.error).error ?? 'Falha ao vincular fonte.');
+      return;
+    }
+    redirect(`/clientes/${clientId}?feito=${encodeURIComponent(`${escolhida.name} vinculada. Entra na próxima coleta.`)}`);
   }
 
   const vinculada = await modules().connections.linkAccount(
@@ -82,12 +98,31 @@ export default async function VincularConta({
   const descobertas = await modules().discoveredAccounts.listPending(organization.id);
   const disponiveis = descobertas.filter((conta) => !conta.inactive);
   const inativas = descobertas.filter((conta) => conta.inactive);
+  const contasDeAnuncio = disponiveis.filter((conta) => veiculaAnuncio(conta.platform));
+  const fontesDeDados = disponiveis.filter((conta) => temRecursoParaVincular(conta.platform));
+  const primeira = contasDeAnuncio[0]?.id ?? fontesDeDados[0]?.id;
+
+  const opcao = (conta: StoredDiscovery) => (
+    <label key={conta.id} className="conta">
+      <input type="radio" name="descobertaId" value={conta.id} defaultChecked={conta.id === primeira} required />
+      <img src={MARCA_DA_PLATAFORMA[conta.platform] ?? ''} alt="" width={22} height={22} />
+      <span className="conta__corpo">
+        <span className="conta__nome">{conta.name}</span>
+        <span className="conta__meta">
+          {ROTULO_DA_PLATAFORMA[conta.platform]}
+          {temRecursoParaVincular(conta.platform) ? ` · ${ROTULO_DO_RECURSO[conta.platform]}` : ''} ·{' '}
+          {conta.externalId}
+          {veiculaAnuncio(conta.platform) ? ` · ${conta.currency} · ${conta.timezone}` : ''}
+        </span>
+      </span>
+    </label>
+  );
 
   return (
-    <Shell title={`Vincular conta · ${cliente.value.name}`} organization={organization} active="/clientes">
+    <Shell title={`Vincular conta ou fonte · ${cliente.value.name}`} organization={organization} active="/clientes">
       <div className="page__head">
         <div>
-          <h1 className="page__title">Vincular conta a {cliente.value.name}</h1>
+          <h1 className="page__title">Vincular conta ou fonte a {cliente.value.name}</h1>
           <p className="page__sub">
             Estas são as contas que as plataformas liberaram para você. Escolha quais pertencem a este
             cliente — nada aqui é digitado à mão.
@@ -97,12 +132,12 @@ export default async function VincularConta({
 
       <Feedback message={erro} tone="error" />
 
-      {descobertas.length === 0 ? (
+      {contasDeAnuncio.length + fontesDeDados.length === 0 ? (
         <div className="vazio">
           <p className="vazio__titulo">Nenhuma conta disponível ainda</p>
           <p className="vazio__texto">
-            As contas aparecem aqui depois que você autoriza a plataforma. A Orla só enxerga o que o
-            Google ou a Meta devolvem na autorização.
+            Contas e fontes aparecem aqui depois que você autoriza a plataforma. A Orla só enxerga o
+            que cada plataforma devolve na autorização.
           </p>
           <Link className="btn btn--primary btn--pill" href="/comecar?passo=conectar">
             Conectar uma plataforma →
@@ -110,50 +145,46 @@ export default async function VincularConta({
         </div>
       ) : (
         <form action={vincularConta} className="card">
-          <input type="hidden" name="clientId" value={cliente.value.id} />
+          <div className="card__body">
+            <input type="hidden" name="clientId" value={cliente.value.id} />
 
-          <div className="contas">
-            {disponiveis.map((conta, indice) => (
-              <label key={conta.id} className="conta">
-                <input
-                  type="radio"
-                  name="descobertaId"
-                  value={conta.id}
-                  defaultChecked={indice === 0}
-                  required
-                />
-                <img src={MARCA_DA_PLATAFORMA[conta.platform] ?? ''} alt="" width={22} height={22} />
-                <span className="conta__corpo">
-                  <span className="conta__nome">{conta.name}</span>
-                  <span className="conta__meta">
-                    {ROTULO_DA_PLATAFORMA[conta.platform]} · {conta.externalId} · {conta.currency} ·{' '}
-                    {conta.timezone}
-                  </span>
-                </span>
+            {contasDeAnuncio.length > 0 ? (
+              <fieldset className="contas contas--grupo">
+                <legend className="card__title">Contas de anúncio</legend>
+                {contasDeAnuncio.map(opcao)}
+              </fieldset>
+            ) : null}
+
+            {fontesDeDados.length > 0 ? (
+              <fieldset className="contas contas--grupo">
+                <legend className="card__title">Fontes de dados</legend>
+                {fontesDeDados.map(opcao)}
+              </fieldset>
+            ) : null}
+
+            {inativas.length > 0 ? (
+              <p className="quiet-link">
+                {inativas.length} conta{inativas.length > 1 ? 's' : ''} inativa
+                {inativas.length > 1 ? 's' : ''} na plataforma não {inativas.length > 1 ? 'são' : 'é'}{' '}
+                oferecida{inativas.length > 1 ? 's' : ''} aqui.
+              </p>
+            ) : null}
+
+            {contasDeAnuncio.length > 0 ? (
+              <label className="check">
+                <input type="checkbox" name="coletar" defaultChecked />
+                Coletar métricas da conta de anúncio todo dia (fontes de dados entram na coleta assim que vinculadas)
               </label>
-            ))}
-          </div>
+            ) : null}
 
-          {inativas.length > 0 ? (
-            <p className="quiet-link">
-              {inativas.length} conta{inativas.length > 1 ? 's' : ''} inativa
-              {inativas.length > 1 ? 's' : ''} na plataforma não {inativas.length > 1 ? 'são' : 'é'}{' '}
-              oferecida{inativas.length > 1 ? 's' : ''} aqui.
-            </p>
-          ) : null}
-
-          <label className="check">
-            <input type="checkbox" name="coletar" defaultChecked />
-            Coletar métricas desta conta todo dia
-          </label>
-
-          <div className="page__actions">
-            <Link className="btn btn--pill" href={`/clientes/${cliente.value.id}`}>
-              Cancelar
-            </Link>
-            <button className="btn btn--primary btn--pill" type="submit">
-              Vincular conta
-            </button>
+            <div className="page__actions">
+              <Link className="btn btn--pill" href={`/clientes/${cliente.value.id}`}>
+                Cancelar
+              </Link>
+              <button className="btn btn--primary btn--pill" type="submit">
+                Vincular
+              </button>
+            </div>
           </div>
         </form>
       )}
