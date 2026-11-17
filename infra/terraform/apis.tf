@@ -11,6 +11,15 @@ locals {
     "oslogin.googleapis.com",
     "bigquery.googleapis.com",
     "businessprofileperformance.googleapis.com",
+    "mybusinessaccountmanagement.googleapis.com",
+    "mybusinessbusinessinformation.googleapis.com",
+    "googleads.googleapis.com",
+    "analyticsdata.googleapis.com",
+    "analyticsadmin.googleapis.com",
+    "searchconsole.googleapis.com",
+    "youtube.googleapis.com",
+    "youtubeanalytics.googleapis.com",
+    "tagmanager.googleapis.com",
   ]
 }
 

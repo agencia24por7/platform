@@ -30,7 +30,30 @@ Em 17/11, todas as tabelas de `tria_dw` estavam vazias. Havia quatro motivos:
    - **Meta:** não paginava.
    - **GBP:** podia gerar `locations/locations/…`.
 
+6. **O BigQuery recebia nulo em toda coluna DATE/TIMESTAMP.** Na
+   `@google-cloud/bigquery` 9.6, um parâmetro tipado como DATE ou TIMESTAMP é
+   lido como `valor.value`. Uma string ISO pura não tem `.value`, então o
+   valor vai nulo (`Required field data_dia cannot be null`). Isso afetava os
+   fatos, `gov_snapshot_fontes` e `qc_execucoes`.
+7. **Um 403 por API desligada era tratado como `reauth_pending`.** A
+   Analytics Data API não estava habilitada no projeto, e o erro marcou a
+   conexão GA4 como pendente de reautorização, o que a tirou da coleta.
+8. **O contrato do `fechar` valida `causa` contra um enum e limita
+   `detalhe` a 500 caracteres.** Uma causa fora do enum ou uma mensagem longa
+   do Google geraria 400 no `fechar` e deixaria a coleta presa em `running`.
+
 ## Decisão
+
+- `parametrosBigQuery.ts` embrulha DATE com `BigQuery.date` e TIMESTAMP com
+  `BigQuery.timestamp`, conforme o mapa de tipos de cada tabela. A
+  biblioteca só serializa esses tipos quando vêm embrulhados. Um teste de
+  regressão prova o comportamento da biblioteca e a correção.
+- Os coletores classificam 429, `SERVICE_DISABLED`, `accessNotConfigured` e
+  cota esgotada como `api_recusou`. Só 401, 403 de permissão e o código Meta
+  190 viram `reauth_pending`. `detalhe` é truncado em 500 caracteres, e o
+  `errorMessage` do nó Conferir gravação em 1000.
+- `apis.tf` declara todas as APIs de que a coleta depende, entre elas
+  `analyticsdata`.
 
 - **Coletores no formato nativo do n8n:** Montar requisição (Code, sem
   rede) → **nó HTTP Request** com a credencial OAuth

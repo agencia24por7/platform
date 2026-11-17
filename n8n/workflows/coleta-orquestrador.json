@@ -322,7 +322,7 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const qualidade = $('Calcular qualidade').item.json;\nconst gravacao = $json ?? {};\nconst esperadas = qualidade.linhas.length;\nconst gravadas = Number(gravacao.linhasGravadas ?? 0);\nconst falhouGravacao = qualidade.status === 'success' && esperadas > 0 && gravadas !== esperadas;\n\nreturn {\n  json: {\n    coletaId: qualidade.coletaId,\n    status: falhouGravacao ? 'failed' : qualidade.status,\n    requestCount: qualidade.requestCount,\n    rowsReceived: esperadas,\n    rowsWritten: gravadas,\n    qualidadeResumo: qualidade.qualidadeResumo,\n    errorCode: falhouGravacao ? 'gravacao_bq' : qualidade.errorCode,\n    errorMessage: falhouGravacao ? (gravacao.detail ?? gravacao.title ?? 'gravação no BigQuery incompleta') : qualidade.errorMessage,\n  },\n};"
+        "jsCode": "const qualidade = $('Calcular qualidade').item.json;\nconst gravacao = $json ?? {};\nconst esperadas = qualidade.linhas.length;\nconst gravadas = Number(gravacao.linhasGravadas ?? 0);\nconst falhouGravacao = qualidade.status === 'success' && esperadas > 0 && gravadas !== esperadas;\n\nreturn {\n  json: {\n    coletaId: qualidade.coletaId,\n    status: falhouGravacao ? 'failed' : qualidade.status,\n    requestCount: qualidade.requestCount,\n    rowsReceived: esperadas,\n    rowsWritten: gravadas,\n    qualidadeResumo: qualidade.qualidadeResumo,\n    errorCode: falhouGravacao ? 'gravacao_bq' : qualidade.errorCode,\n    errorMessage: falhouGravacao ? String(gravacao.detail ?? gravacao.title ?? 'gravação no BigQuery incompleta').slice(0, 1000) : qualidade.errorMessage,\n  },\n};"
       }
     }
   ],
