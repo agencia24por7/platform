@@ -1,0 +1,289 @@
+{
+  "name": "Executor · pedido de parceiro na Meta (modelo)",
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "timezone": "America/Sao_Paulo"
+  },
+  "nodes": [
+    {
+      "id": "entrada",
+      "name": "Entrada",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -200,
+        0
+      ],
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "tarefa"
+            },
+            {
+              "name": "validarSomente"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "planejar",
+      "name": "Planejar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const { tarefa } = $json;\nconst validar = $json.validarSomente === true || $json.validarSomente === 'true';\nconst versao = 'v21.0';\nconst TAREFAS_PEDIDAS = ['ANALYZE'];\nconst negocio = String(tarefa?.managerExternalId ?? '').trim();\nconst conta = String(tarefa?.targetExternalId ?? '').trim().toLowerCase();\n\nconst recusar = (falha) => [{ json: { tarefa: tarefa ?? {}, validar, falha } }];\nif (!tarefa?.taskId) return recusar('tarefa sem identificador');\nif (tarefa.kind !== 'bm_partner_request') return recusar(`tipo de tarefa desconhecido: ${tarefa.kind}`);\nif (!/^\\d{5,25}$/.test(negocio)) return recusar('Business Manager da agência ausente ou fora do formato numérico');\nif (!/^act_\\d{4,20}$/.test(conta)) return recusar('conta de anúncio fora do formato act_1234567890');\n\nif (validar) {\n  return [{ json: { tarefa, validar, conta, permitidas: TAREFAS_PEDIDAS, url: `https://graph.facebook.com/${versao}/${negocio}?fields=id,name,verification_status` } }];\n}\n\nreturn [{\n  json: {\n    tarefa,\n    validar,\n    conta,\n    permitidas: TAREFAS_PEDIDAS,\n    url: `https://graph.facebook.com/${versao}/${negocio}/client_ad_accounts`,\n  },\n}];\n"
+      }
+    },
+    {
+      "id": "pode-chamar",
+      "name": "Pode chamar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "pode-chamar-c",
+              "leftValue": "={{ !$json.falha }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "so-validar",
+      "name": "Só validar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        -100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "so-validar-c",
+              "leftValue": "={{ $json.validar === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "conferir-bm",
+      "name": "Conferir Business Manager",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        -200
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "facebookGraphApi",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "pedir-acesso",
+      "name": "Pedir acesso à conta do cliente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "facebookGraphApi",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "adaccount_id",
+              "value": "={{ $json.conta }}"
+            },
+            {
+              "name": "permitted_tasks",
+              "value": "={{ JSON.stringify($json.permitidas) }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "normalizar",
+      "name": "Normalizar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        100
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const plano = $('Planejar').first().json;\nconst atual = $input.first().json;\nconst taskId = plano.tarefa?.taskId ?? null;\nconst recusar = (motivo) => [{ json: { taskId, sucesso: false, outcome: String(motivo).slice(0, 500) } }];\n\nif (plano.falha) return recusar(plano.falha);\nif (atual.error) return recusar(`falha de rede: ${atual.error?.message ?? atual.error}`);\n\nif (atual.statusCode >= 200 && atual.statusCode < 300) {\n  if (plano.validar) {\n    const nome = atual.body?.name ?? atual.body?.id ?? 'sem nome';\n    return [{ json: { taskId, sucesso: true, outcome: `[só validação] Business Manager acessível · ${nome} · pediria ${plano.permitidas.join(',')} em ${plano.conta}`.slice(0, 500) } }];\n  }\n  const situacao = atual.body?.access_status ?? (atual.body?.success === true ? 'PENDING' : 'desconhecida');\n  const outcome = situacao === 'CONFIRMED'\n    ? `acesso confirmado · ${plano.conta} · ${plano.permitidas.join(',')}`\n    : `pedido enviado · ${plano.conta} · ${plano.permitidas.join(',')} · aguardando aprovação do cliente no Business Manager dele (${situacao})`;\n  return [{ json: { taskId, sucesso: true, outcome: outcome.slice(0, 500) } }];\n}\n\nconst erro = atual.body?.error ?? {};\nif (erro.code === 190) return recusar('credencial da Meta expirada ou revogada: reautorize o Meta Ads (código 190)');\nconst titulo = erro.error_user_title || erro.message || 'recusado sem mensagem';\nconst codigo = erro.code ? ` (código ${erro.code}${erro.error_subcode ? `/${erro.error_subcode}` : ''})` : '';\nreturn recusar(`${titulo}${codigo} · HTTP ${atual.statusCode}`);\n"
+      }
+    }
+  ],
+  "connections": {
+    "Entrada": {
+      "main": [
+        [
+          {
+            "node": "Planejar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Planejar": {
+      "main": [
+        [
+          {
+            "node": "Pode chamar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pode chamar?": {
+      "main": [
+        [
+          {
+            "node": "Só validar?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Só validar?": {
+      "main": [
+        [
+          {
+            "node": "Conferir Business Manager",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pedir acesso à conta do cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conferir Business Manager": {
+      "main": [
+        [
+          {
+            "node": "Normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pedir acesso à conta do cliente": {
+      "main": [
+        [
+          {
+            "node": "Normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
