@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { modules } from '@/composition';
 import { montarChaveZapi, usaChaveDeApi } from '@/modules/connections/domain/chaveDeApi';
 import { isSafeReturnPath } from '@/modules/connections/domain/oauth';
-import type { Platform } from '@/modules/connections/domain/connection';
+import { concordaComRecurso, temRecursoParaVincular, type Platform } from '@/modules/connections/domain/connection';
 import { checkbox, text, toActionState } from '@/shared/http/actions';
 import { atorAtual } from '@/shared/http/ator';
 import { requireContext } from '@/shared/http/currentOrganization';
@@ -14,6 +14,10 @@ async function contextoDeConexoes() {
   const contexto = await requireContext();
   if (contexto.clientIds !== null) redirect('/clientes');
   return contexto;
+}
+
+function concordar(platform: Platform, masculino: string, feminino: string): string {
+  return temRecursoParaVincular(platform) ? concordaComRecurso(platform, masculino, feminino) : masculino;
 }
 
 function destinoDoRetorno(formData: FormData): string {
@@ -203,7 +207,9 @@ export async function vincularRecurso(formData: FormData): Promise<void> {
     await atorAtual(),
   );
 
-  const aviso = resultado.ok ? `${resultado.value.name} vinculado.` : toActionState(resultado.error).error ?? 'Falha ao vincular.';
+  const aviso = resultado.ok
+    ? `${resultado.value.name} ${concordar(resultado.value.platform, 'vinculado', 'vinculada')}.`
+    : toActionState(resultado.error).error ?? 'Falha ao vincular.';
   redirect(`${destino}?aviso=${encodeURIComponent(aviso)}`);
 }
 
@@ -221,7 +227,7 @@ export async function desvincularRecurso(formData: FormData): Promise<void> {
   );
 
   const aviso = resultado.ok
-    ? `${resultado.value.name} desvinculado. Ele volta para a lista de recursos sem dono.`
+    ? `${resultado.value.name} ${concordar(resultado.value.platform, 'desvinculado', 'desvinculada')}. Volta para a lista de recursos sem dono.`
     : toActionState(resultado.error).error ?? 'Falha ao desvincular.';
   redirect(`${destino}?aviso=${encodeURIComponent(aviso)}`);
 }
