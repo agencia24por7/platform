@@ -22,6 +22,7 @@ import { canAdminister, canOperate } from '@/modules/identity/domain/user';
 import {
   aceitarConvite,
   convidarParaMcc,
+  desvincularRecurso,
   guardarChave,
   removerChave,
   vincularAlcancavel,
@@ -559,6 +560,7 @@ export default async function ConectorPage({
                     <tr>
                       <th>{ROTULO_DO_RECURSO[plataforma]}</th>
                       <th>{agencia ? 'Cliente' : 'Negócio'}</th>
+                      {podeVincular ? <th aria-label="Ações" /> : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -577,6 +579,17 @@ export default async function ConectorPage({
                             '—'
                           )}
                         </td>
+                        {podeVincular ? (
+                          <td>
+                            <form className="form--inline" action={desvincularRecurso}>
+                              <input type="hidden" name="recursoId" value={recurso.id} />
+                              <input type="hidden" name="voltarPara" value={voltarPara} />
+                              <button className="btn btn--compacto" type="submit">
+                                Desvincular
+                              </button>
+                            </form>
+                          </td>
+                        ) : null}
                       </tr>
                     ))}
                   </tbody>

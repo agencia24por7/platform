@@ -191,34 +191,39 @@ export async function vincularAlcancavel(formData: FormData): Promise<void> {
 
 export async function vincularRecurso(formData: FormData): Promise<void> {
   const contexto = await contextoDeConexoes();
-  const organization = contexto.organization;
   const destino = destinoDoRetorno(formData);
-  const voltar = (aviso: string): never =>
-    redirect(`${destino}?aviso=${encodeURIComponent(aviso)}`);
 
-  if (!canOperate(contexto.role)) {
-    voltar('Seu papel não permite vincular recursos.');
-    return;
-  }
-
-  const descobertas = await modules().discoveredAccounts.listPending(organization.id);
-  const escolhido = descobertas.find((recurso) => recurso.id === text(formData, 'recursoId'));
-  if (!escolhido) {
-    voltar('Recurso não encontrado entre os que você alcança.');
-    return;
-  }
-
-  const clientId = text(formData, 'clientId');
-  const dono = (await modules().clients.list(organization.id)).find(
-    (cliente) => cliente.id === clientId && cliente.status === 'active',
+  const resultado = await modules().recursos.vincular(
+    {
+      organizationId: contexto.organization.id,
+      papelDeQuemAge: contexto.role,
+      recursoId: text(formData, 'recursoId'),
+      clientId: text(formData, 'clientId'),
+    },
+    await atorAtual(),
   );
-  if (!dono) {
-    voltar('Escolha um cliente ativo desta organização. É ele que dá dono ao recurso.');
-    return;
-  }
 
-  await modules().discoveredAccounts.markLinkedToClient(organization.id, escolhido.id, clientId);
-  voltar(`${escolhido.name} vinculado.`);
+  const aviso = resultado.ok ? `${resultado.value.name} vinculado.` : toActionState(resultado.error).error ?? 'Falha ao vincular.';
+  redirect(`${destino}?aviso=${encodeURIComponent(aviso)}`);
+}
+
+export async function desvincularRecurso(formData: FormData): Promise<void> {
+  const contexto = await contextoDeConexoes();
+  const destino = destinoDoRetorno(formData);
+
+  const resultado = await modules().recursos.desvincular(
+    {
+      organizationId: contexto.organization.id,
+      papelDeQuemAge: contexto.role,
+      recursoId: text(formData, 'recursoId'),
+    },
+    await atorAtual(),
+  );
+
+  const aviso = resultado.ok
+    ? `${resultado.value.name} desvinculado. Ele volta para a lista de recursos sem dono.`
+    : toActionState(resultado.error).error ?? 'Falha ao desvincular.';
+  redirect(`${destino}?aviso=${encodeURIComponent(aviso)}`);
 }
 
 export async function guardarChave(formData: FormData): Promise<void> {
