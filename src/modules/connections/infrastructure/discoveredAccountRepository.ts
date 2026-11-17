@@ -50,6 +50,10 @@ export type DiscoveredAccountRepository = {
   markLinked(organizationId: string, id: string, adAccountId: string): Promise<void>;
   markLinkedToClient(organizationId: string, id: string, clientId: string): Promise<void>;
   markIgnored(organizationId: string, id: string): Promise<void>;
+  findById(organizationId: string, id: string): Promise<StoredDiscovery | null>;
+  listByClient(organizationId: string, clientId: string): Promise<readonly StoredDiscovery[]>;
+  unlinkFromClient(organizationId: string, id: string): Promise<StoredDiscovery | null>;
+  reassignClient(organizationId: string, id: string, clientId: string): Promise<StoredDiscovery | null>;
 };
 
 export function createDiscoveredAccountRepository(): DiscoveredAccountRepository {
@@ -134,6 +138,45 @@ export function createDiscoveredAccountRepository(): DiscoveredAccountRepository
     async markIgnored(organizationId, id) {
       await withTenant(organizationId, async (tx) => {
         await tx`UPDATE integrations.connection_accounts SET state = 'ignored' WHERE id = ${id}`;
+      });
+    },
+
+    async findById(organizationId, id) {
+      return withTenant(organizationId, async (tx) => {
+        const rows = (await tx`SELECT * FROM integrations.connection_accounts WHERE id = ${id}`) as unknown as Row[];
+        return rows[0] ? toStored(rows[0]) : null;
+      });
+    },
+
+    async listByClient(organizationId, clientId) {
+      return withTenant(organizationId, async (tx) => {
+        const rows = (await tx`
+          SELECT * FROM integrations.connection_accounts
+          WHERE client_id = ${clientId} AND state = 'linked'
+          ORDER BY platform, name`) as unknown as Row[];
+        return rows.map(toStored);
+      });
+    },
+
+    async unlinkFromClient(organizationId, id) {
+      return withTenant(organizationId, async (tx) => {
+        const rows = (await tx`
+          UPDATE integrations.connection_accounts
+          SET state = 'discovered', client_id = NULL
+          WHERE id = ${id} AND state = 'linked'
+          RETURNING *`) as unknown as Row[];
+        return rows[0] ? toStored(rows[0]) : null;
+      });
+    },
+
+    async reassignClient(organizationId, id, clientId) {
+      return withTenant(organizationId, async (tx) => {
+        const rows = (await tx`
+          UPDATE integrations.connection_accounts
+          SET client_id = ${clientId}
+          WHERE id = ${id} AND state = 'linked'
+          RETURNING *`) as unknown as Row[];
+        return rows[0] ? toStored(rows[0]) : null;
       });
     },
   };

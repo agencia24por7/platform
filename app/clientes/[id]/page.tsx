@@ -14,7 +14,11 @@ import { atorAtual } from '@/shared/http/ator';
 import { text, toActionState } from '@/shared/http/actions';
 import { requireContext } from '@/shared/http/currentOrganization';
 import { env } from '@/shared/config/env';
-import { ROTULO_DA_PLATAFORMA } from '@/modules/connections/domain/connection';
+import {
+  ROTULO_DA_PLATAFORMA,
+  ROTULO_DO_RECURSO,
+  temRecursoParaVincular,
+} from '@/modules/connections/domain/connection';
 import { pedirAcessoMetaPartner, revogarConviteDeIntegracao } from '@/../app/clientes/[id]/acoes';
 import { CopyButton } from '@/../app/_components/CopyButton';
 
@@ -89,6 +93,51 @@ async function alternarColeta(formData: FormData): Promise<void> {
   redirect(`${destino}?feito=${encodeURIComponent('Coleta atualizada.')}`);
 }
 
+async function moverFonte(formData: FormData): Promise<void> {
+  'use server';
+
+  const ctx = await requireContext();
+  const origem = text(formData, 'clientId');
+
+  const resultado = await modules().recursos.mover(
+    {
+      organizationId: ctx.organization.id,
+      papelDeQuemAge: ctx.role,
+      recursoId: text(formData, 'recursoId'),
+      clientId: text(formData, 'destinoId'),
+    },
+    await atorAtual(),
+  );
+
+  const destino = `/clientes/${origem}`;
+  if (!resultado.ok) {
+    redirect(`${destino}?erro=${encodeURIComponent(toActionState(resultado.error).error ?? '')}`);
+  }
+  redirect(`${destino}?feito=${encodeURIComponent('Fonte movida. A próxima coleta já grava no novo cliente.')}`);
+}
+
+async function desvincularFonte(formData: FormData): Promise<void> {
+  'use server';
+
+  const ctx = await requireContext();
+  const origem = text(formData, 'clientId');
+
+  const resultado = await modules().recursos.desvincular(
+    {
+      organizationId: ctx.organization.id,
+      papelDeQuemAge: ctx.role,
+      recursoId: text(formData, 'recursoId'),
+    },
+    await atorAtual(),
+  );
+
+  const destino = `/clientes/${origem}`;
+  if (!resultado.ok) {
+    redirect(`${destino}?erro=${encodeURIComponent(toActionState(resultado.error).error ?? '')}`);
+  }
+  redirect(`${destino}?feito=${encodeURIComponent('Fonte desvinculada. Ela sai da coleta e volta para a lista sem dono.')}`);
+}
+
 const statusTone: Record<string, string> = {
   linked: 'pill--ok',
   pending: 'pill--warn',
@@ -111,8 +160,9 @@ export default async function ClientPage({
   if (!found.ok) notFound();
 
   const client = found.value;
-  const [accounts, irmaos, convites, pedidosDePartner, organizacao, conexoes] = await Promise.all([
+  const [accounts, fontes, irmaos, convites, pedidosDePartner, organizacao, conexoes] = await Promise.all([
     modules().connections.listAccountsByClient(organization.id, client.id),
+    modules().recursos.listarPorCliente(organization.id, client.id),
     modules().clients.list(organization.id),
     modules().connectionInvites.listByClient(organization.id, client.id),
     modules().tasks.listByClient(organization.id, client.id),
@@ -122,6 +172,7 @@ export default async function ClientPage({
   const podeMexer = canOperate(ctx.role);
   const podeAdministrar = canAdminister(ctx.role);
   const destinos = irmaos.filter((item) => item.id !== client.id);
+  const destinosAtivos = destinos.filter((item) => item.status === 'active');
   const temConexaoMeta = conexoes.some(
     (conexao) =>
       conexao.platform === 'meta' && conexao.grantType === 'oauth_user' && conexao.authorizedVia === 'staff',
@@ -185,8 +236,8 @@ export default async function ClientPage({
 
       <div className="steps">
         <span className="step step--done">1 · Dados do cliente</span>
-        <span className={accounts.length > 0 ? 'step step--done' : 'step step--active'}>
-          2 · Contas de anúncio
+        <span className={accounts.length + fontes.length > 0 ? 'step step--done' : 'step step--active'}>
+          2 · Contas e fontes de dados
         </span>
       </div>
 
@@ -280,6 +331,100 @@ export default async function ClientPage({
             </table>
           </div>
         )}
+      </div>
+
+      <div className="card">
+        <div className="card__head">
+          <span className="card__title">Fontes de dados</span>
+          <span className="card__sub">
+            {fontes.length === 0
+              ? 'Nenhuma propriedade, site, canal, contêiner ou local vinculado'
+              : `${fontes.length} vinculada(s) · entram na coleta junto com as contas de anúncio`}
+          </span>
+        </div>
+        {fontes.length === 0 ? (
+          <div className="empty">
+            GA4, Search Console, YouTube, Tag Manager e Perfil da Empresa aparecem aqui depois de
+            vinculados ao cliente. É o vínculo que dá dono ao dado coletado.
+          </div>
+        ) : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Fonte</th>
+                  <th>Plataforma</th>
+                  <th>Tipo</th>
+                  {podeMexer ? <th>Mover para</th> : null}
+                  {podeMexer ? <th aria-label="Desvincular" /> : null}
+                </tr>
+              </thead>
+              <tbody>
+                {fontes.map((fonte) => (
+                  <tr key={fonte.id}>
+                    <td>
+                      <div className="strong">{fonte.name}</div>
+                      <div className="mono subtle">{fonte.externalId}</div>
+                    </td>
+                    <td>{ROTULO_DA_PLATAFORMA[fonte.platform]}</td>
+                    <td className="muted">
+                      {temRecursoParaVincular(fonte.platform) ? ROTULO_DO_RECURSO[fonte.platform] : '—'}
+                    </td>
+                    {podeMexer ? (
+                      <td>
+                        {destinosAtivos.length === 0 ? (
+                          <span className="muted">—</span>
+                        ) : (
+                          <form className="form--inline" action={moverFonte}>
+                            <input type="hidden" name="clientId" value={client.id} />
+                            <input type="hidden" name="recursoId" value={fonte.id} />
+                            <select
+                              className="select select--compacto"
+                              name="destinoId"
+                              defaultValue=""
+                              required
+                              aria-label={`Cliente que passa a ser dono de ${fonte.name}`}
+                            >
+                              <option value="" disabled>
+                                escolher cliente
+                              </option>
+                              {destinosAtivos.map((destino) => (
+                                <option key={destino.id} value={destino.id}>
+                                  {destino.name}
+                                </option>
+                              ))}
+                            </select>
+                            <button className="btn btn--compacto" type="submit">
+                              Mover
+                            </button>
+                          </form>
+                        )}
+                      </td>
+                    ) : null}
+                    {podeMexer ? (
+                      <td>
+                        <form className="form--inline" action={desvincularFonte}>
+                          <input type="hidden" name="clientId" value={client.id} />
+                          <input type="hidden" name="recursoId" value={fonte.id} />
+                          <button className="btn btn--compacto" type="submit">
+                            Desvincular
+                          </button>
+                        </form>
+                      </td>
+                    ) : null}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {podeMexer ? (
+          <div className="card__foot">
+            <Link className="btn btn--pill" href={`/clientes/${client.id}/contas/nova`}>
+              Vincular conta ou fonte →
+            </Link>
+          </div>
+        ) : null}
       </div>
 
       <div className="card">

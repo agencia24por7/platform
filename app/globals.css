@@ -374,6 +374,8 @@ table { border-collapse: collapse; width: 100%; }
 }
 
 .contas { display: grid; gap: 10px; }
+.contas--grupo { border: 0; padding: 0; margin: 0; min-inline-size: 0; }
+.contas--grupo > legend { padding: 0; margin-bottom: 10px; }
 .conta {
   display: flex; align-items: center; gap: 12px; cursor: pointer;
   border: 1px solid var(--border); border-radius: var(--radius);
