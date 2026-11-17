@@ -1,3 +1,41 @@
+resource "google_compute_resource_policy" "backup_dados" {
+  name   = "${local.prefix}-backup-dados"
+  region = var.region
+
+  snapshot_schedule_policy {
+    schedule {
+      daily_schedule {
+        days_in_cycle = 1
+        start_time    = "06:00"
+      }
+    }
+
+    retention_policy {
+      max_retention_days    = var.backup_retention_days
+      on_source_disk_delete = "KEEP_AUTO_SNAPSHOTS"
+    }
+  }
+}
+
+resource "google_compute_disk" "dados" {
+  name     = "${local.prefix}-dados"
+  zone     = var.zone
+  type     = "pd-balanced"
+  size     = var.data_disk_gb
+  snapshot = var.data_disk_source_snapshot
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [snapshot]
+  }
+}
+
+resource "google_compute_disk_resource_policy_attachment" "backup_dados" {
+  name = google_compute_resource_policy.backup_dados.name
+  disk = google_compute_disk.dados.name
+  zone = var.zone
+}
+
 resource "google_compute_instance" "app" {
   name         = "${local.prefix}-vm"
   machine_type = var.machine_type
@@ -8,8 +46,13 @@ resource "google_compute_instance" "app" {
     initialize_params {
       image = "debian-cloud/debian-12"
       size  = var.boot_disk_gb
-      type  = "pd-standard"
+      type  = "pd-balanced"
     }
+  }
+
+  attached_disk {
+    source      = google_compute_disk.dados.id
+    device_name = "dados"
   }
 
   network_interface {
