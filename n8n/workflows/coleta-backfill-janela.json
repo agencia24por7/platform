@@ -1,0 +1,405 @@
+{
+  "name": "ORLA · coleta · backfill · janela",
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "timezone": "America/Sao_Paulo",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "nodes": [
+    {
+      "id": "entrada",
+      "name": "Entrada",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -700,
+        0
+      ],
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "fonte"
+            },
+            {
+              "name": "janela"
+            },
+            {
+              "name": "tentativa"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "abrir",
+      "name": "Abrir execução",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        20,
+        180
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=http://app:3000/api/v0/coleta/abrir",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ fonteTipo: $('Entrada').item.json.fonte.fonteTipo, fonteId: $('Entrada').item.json.fonte.fonteId, mode: 'completa', window: $('Entrada').item.json.janela, idempotencyKey: `${$('Entrada').item.json.fonte.fonteId}:${$('Entrada').item.json.janela.start}:${$('Entrada').item.json.janela.end}:completa:t${$('Entrada').item.json.tentativa}`, n8nExecutionId: String($execution.id) }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      }
+    },
+    {
+      "id": "tem-coletor",
+      "name": "Tem coletor?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        240,
+        180
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Entrada').item.json.fonte.coletorRef }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            },
+            {
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "chamar-coletor",
+      "name": "Chamar coletor",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        500,
+        80
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "={{ $('Entrada').item.json.fonte.coletorRef }}",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "fonte": "={{ $('Entrada').item.json.fonte }}",
+            "janela": "={{ $('Entrada').item.json.janela }}",
+            "modo": "completa"
+          }
+        }
+      }
+    },
+    {
+      "id": "calcular-qualidade-ok",
+      "name": "Calcular qualidade",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        80
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const fonte = $('Entrada').item.json.fonte;\nconst coleta = $('Abrir execução').item.json;\nconst resultado = $json ?? {};\nconst linhas = Array.isArray(resultado.linhas) ? resultado.linhas : [];\nconst falhas = Array.isArray(resultado.falhas) ? resultado.falhas : [];\nconst falha = falhas[0] ?? null;\nconst semDados = falha?.causa === 'sem_dados_no_periodo';\nconst sucesso = !falha || semDados;\n\nconst qualidadeResumo = {\n  fontesEsperadas: 1,\n  fontesColetadas: sucesso ? 1 : 0,\n  faltantes: falha ? [{ fonte: fonte.nome || fonte.externalId, causa: falha.causa, detalhe: falha.detalhe ?? null }] : [],\n  paridade: [],\n  volumetria: resultado.volumetria ?? { linhas: linhas.length, bytes: 0, requests: resultado.requests ?? 0, duracaoMs: 0 },\n};\n\nreturn {\n  json: {\n    coletaId: coleta.id,\n    status: sucesso ? 'success' : 'failed',\n    errorCode: sucesso ? null : falha.causa,\n    errorMessage: sucesso ? null : (falha.detalhe ?? falha.causa),\n    requestCount: resultado.requests ?? 0,\n    linhas,\n    qualidadeResumo,\n  },\n};"
+      }
+    },
+    {
+      "id": "gravar",
+      "name": "Gravar métricas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        940,
+        80
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=http://app:3000/api/v0/coleta/gravar",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ coletaId: $json.coletaId, linhas: $json.linhas }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      }
+    },
+    {
+      "id": "fechar-ok",
+      "name": "Fechar execução",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1160,
+        80
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=http://app:3000/api/v0/coleta/fechar",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ coletaId: $json.coletaId, status: $json.status, requestCount: $json.requestCount, rowsReceived: $json.rowsReceived, rowsWritten: $json.rowsWritten, qualidadeResumo: $json.qualidadeResumo, errorCode: $json.errorCode, errorMessage: $json.errorMessage }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      }
+    },
+    {
+      "id": "calcular-sem-coletor",
+      "name": "Calcular qualidade (sem coletor)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const fonte = $('Entrada').item.json.fonte;\nconst coleta = $json;\nconst temColeta = Boolean(coleta?.id);\n\nconst qualidadeResumo = {\n  fontesEsperadas: 1,\n  fontesColetadas: 0,\n  faltantes: [{ fonte: fonte.nome || fonte.externalId, causa: 'sem_credencial', detalhe: 'Conexão sem coletor provisionado no n8n.' }],\n  paridade: [],\n  volumetria: { linhas: 0, bytes: 0, requests: 0, duracaoMs: 0 },\n};\n\nreturn {\n  json: {\n    coletaId: temColeta ? coleta.id : null,\n    temColeta,\n    status: 'failed',\n    errorCode: 'sem_credencial',\n    errorMessage: 'Conexão sem coletor provisionado no n8n.',\n    qualidadeResumo,\n  },\n};"
+      }
+    },
+    {
+      "id": "fechar-sem-coletor",
+      "name": "Fechar execução (sem coletor)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=http://app:3000/api/v0/coleta/fechar",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ coletaId: $json.coletaId, status: $json.status, requestCount: 0, rowsReceived: 0, rowsWritten: 0, qualidadeResumo: $json.qualidadeResumo, errorCode: $json.errorCode, errorMessage: $json.errorMessage }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      }
+    },
+    {
+      "id": "conferir-gravacao",
+      "name": "Conferir gravação",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        240
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const qualidade = $('Calcular qualidade').item.json;\nconst gravacao = $json ?? {};\nconst esperadas = qualidade.linhas.length;\nconst gravadas = Number(gravacao.linhasGravadas ?? 0);\nconst falhouGravacao = qualidade.status === 'success' && esperadas > 0 && gravadas !== esperadas;\n\nreturn {\n  json: {\n    coletaId: qualidade.coletaId,\n    status: falhouGravacao ? 'failed' : qualidade.status,\n    requestCount: qualidade.requestCount,\n    rowsReceived: esperadas,\n    rowsWritten: gravadas,\n    qualidadeResumo: qualidade.qualidadeResumo,\n    errorCode: falhouGravacao ? 'gravacao_bq' : qualidade.errorCode,\n    errorMessage: falhouGravacao ? (gravacao.detail ?? gravacao.title ?? 'gravação no BigQuery incompleta') : qualidade.errorMessage,\n  },\n};"
+      }
+    },
+    {
+      "id": "resumo",
+      "name": "Resumo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const entrada = $('Entrada').item.json;\nconst coleta = $json ?? {};\nconst ok = coleta.status === 'success';\nreturn {\n  json: {\n    fonteId: entrada.fonte.fonteId,\n    platform: entrada.fonte.platform,\n    nome: entrada.fonte.nome,\n    janela: entrada.janela,\n    tentativa: entrada.tentativa,\n    ok,\n    coletaId: coleta.id ?? null,\n    status: coleta.status ?? 'erro_api',\n    rowsReceived: coleta.rowsReceived ?? 0,\n    rowsWritten: coleta.rowsWritten ?? 0,\n    errorCode: coleta.errorCode ?? (ok ? null : coleta.title ?? 'erro_api'),\n    errorMessage: coleta.errorMessage ?? (ok ? null : coleta.detail ?? null),\n  },\n};"
+      }
+    }
+  ],
+  "connections": {
+    "Abrir execução": {
+      "main": [
+        [
+          {
+            "node": "Tem coletor?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem coletor?": {
+      "main": [
+        [
+          {
+            "node": "Chamar coletor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Calcular qualidade (sem coletor)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chamar coletor": {
+      "main": [
+        [
+          {
+            "node": "Calcular qualidade",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular qualidade": {
+      "main": [
+        [
+          {
+            "node": "Gravar métricas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gravar métricas": {
+      "main": [
+        [
+          {
+            "node": "Conferir gravação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fechar execução": {
+      "main": [
+        [
+          {
+            "node": "Resumo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular qualidade (sem coletor)": {
+      "main": [
+        [
+          {
+            "node": "Fechar execução (sem coletor)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fechar execução (sem coletor)": {
+      "main": [
+        [
+          {
+            "node": "Resumo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conferir gravação": {
+      "main": [
+        [
+          {
+            "node": "Fechar execução",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Entrada": {
+      "main": [
+        [
+          {
+            "node": "Abrir execução",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

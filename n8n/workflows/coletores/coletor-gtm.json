@@ -1,0 +1,69 @@
+{
+  "name": "Coletor · Google Tag Manager (modelo)",
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "timezone": "America/Sao_Paulo"
+  },
+  "nodes": [
+    {
+      "id": "entrada",
+      "name": "Entrada",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -200,
+        0
+      ],
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "fonte"
+            },
+            {
+              "name": "janela"
+            },
+            {
+              "name": "modo"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "coletar",
+      "name": "Ler versão publicada no GTM",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        40,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const inicio = Date.now();\nconst fonte = $json.fonte;\nconst versaoApi = 'v2';\nconst base = 'https://www.googleapis.com/tagmanager/v2';\nconst publicId = String(fonte.externalId);\nlet requests = 0;\nlet bytes = 0;\n\nfunction devolver(linhas, falhas) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - inicio },\n      falhas,\n      requests,\n      versaoApi,\n    },\n  }];\n}\n\nasync function buscar(url) {\n  requests += 1;\n  const resposta = await this.helpers.httpRequestWithAuthentication.call(this, 'googleOAuth2Api', {\n    method: 'GET',\n    url,\n    json: true,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  });\n  bytes += JSON.stringify(resposta.body ?? {}).length;\n  return resposta;\n}\n\nfunction falhaHttp(resposta) {\n  const detalhe = resposta.body?.error?.message || `HTTP ${resposta.statusCode}`;\n  const causa = resposta.statusCode === 401 || resposta.statusCode === 403 ? 'reauth_pending' : 'api_recusou';\n  return [{ causa, detalhe }];\n}\n\ntry {\n  const contas = await buscar.call(this, `${base}/accounts`);\n  if (contas.statusCode < 200 || contas.statusCode >= 300) return devolver([], falhaHttp(contas));\n\n  let container = null;\n  for (const conta of contas.body?.account ?? []) {\n    const lista = await buscar.call(this, `${base}/${conta.path}/containers`);\n    if (lista.statusCode < 200 || lista.statusCode >= 300) return devolver([], falhaHttp(lista));\n    container = (lista.body?.container ?? []).find((item) => item.publicId === publicId) ?? null;\n    if (container) break;\n  }\n\n  if (!container) {\n    return devolver([], [{ causa: 'fonte_nao_encontrada', detalhe: `contêiner ${publicId} não aparece para esta credencial` }]);\n  }\n\n  const live = await buscar.call(this, `${base}/${container.path}/versions:live`);\n  const publicada = live.statusCode >= 200 && live.statusCode < 300 ? live.body : null;\n  if (!publicada && live.statusCode !== 404) return devolver([], falhaHttp(live));\n\n  const estado = publicada\n    ? `live v${publicada.containerVersionId} · ${(publicada.tag ?? []).length} tags · ${(publicada.trigger ?? []).length} acionadores · ${(publicada.variable ?? []).length} variáveis`\n    : 'sem_versao_publicada';\n\n  return devolver([{\n    nome: container.name,\n    estado,\n    inactive: false,\n    rotuloEsperado: fonte.nome ?? null,\n    rotuloObservado: container.name,\n  }], []);\n} catch (erro) {\n  return devolver([], [{ causa: 'api_recusou', detalhe: `falha de rede: ${erro.message}` }]);\n}\n"
+      },
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Entrada": {
+      "main": [
+        [
+          {
+            "node": "Ler versão publicada no GTM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
