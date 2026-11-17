@@ -26,9 +26,9 @@ variable "zone" {
 }
 
 variable "machine_type" {
-  description = "e2-micro é o único coberto pelo free tier. e2-small custa, mas tem 2 GB de RAM."
+  description = "e2-medium (4 GB). O e2-micro (1 GB) não comporta n8n + app + postgres. Veja o ADR 0002."
   type        = string
-  default     = "e2-micro"
+  default     = "e2-medium"
 }
 
 variable "environment" {
@@ -83,12 +83,25 @@ variable "budget_notification_emails" {
 }
 
 variable "boot_disk_gb" {
-  description = "O free tier cobre 30 GB-mês de disco padrão."
+  description = "Disco de sistema, descartável: só SO, Docker e imagens. Os dados ficam no disco de dados."
+  type        = number
+  default     = 20
+}
+
+variable "data_disk_gb" {
+  description = "Disco de dados persistente: volumes Docker (postgres, n8n, caddy). Não pode ser menor que o snapshot de origem."
   type        = number
   default     = 30
+}
 
-  validation {
-    condition     = var.boot_disk_gb <= 30
-    error_message = "Acima de 30 GB o disco deixa de ser coberto pelo free tier."
-  }
+variable "data_disk_source_snapshot" {
+  description = "Snapshot usado só na criação do disco de dados. null cria um disco vazio. Mudanças posteriores são ignoradas."
+  type        = string
+  default     = "tria-producao-pre-fsck-20261117"
+}
+
+variable "backup_retention_days" {
+  description = "Por quantos dias os snapshots diários do disco de dados são mantidos."
+  type        = number
+  default     = 7
 }

@@ -60,6 +60,45 @@ umask 077
 if [ -n "$IMAGEM_ATUAL" ]; then echo "$IMAGEM_ATUAL" >> .env; fi
 chmod 600 .env
 
+readonly DISCO_DADOS=/dev/disk/by-id/google-dados
+readonly DADOS=/srv/dados
+readonly VOLUMES=/var/lib/docker/volumes
+
+particao_dados() {
+  if [ -e "$DISCO_DADOS-part1" ]; then echo "$DISCO_DADOS-part1"; else echo "$DISCO_DADOS"; fi
+}
+
+montar_disco_dados() {
+  udevadm settle
+  local particao
+  particao=$(particao_dados)
+
+  if ! mountpoint -q "$DADOS"; then
+    if ! blkid "$particao" > /dev/null 2>&1; then
+      mkfs.ext4 -F "$particao"
+    fi
+    e2fsck -fy "$particao" || [ $? -le 2 ]
+    mkdir -p "$DADOS"
+    mount -o defaults,discard "$particao" "$DADOS"
+  fi
+
+  mkdir -p "$DADOS$VOLUMES" "$VOLUMES"
+  if ! mountpoint -q "$VOLUMES"; then
+    mount --bind "$DADOS$VOLUMES" "$VOLUMES"
+  fi
+
+  grep -qF " $DADOS " /etc/fstab \
+    || echo "$particao $DADOS ext4 defaults,discard,nofail 0 2" >> /etc/fstab
+  grep -qF " $VOLUMES " /etc/fstab \
+    || echo "$DADOS$VOLUMES $VOLUMES none bind,nofail,x-systemd.requires-mounts-for=$DADOS 0 0" >> /etc/fstab
+
+  mkdir -p /etc/systemd/system/docker.service.d
+  printf '[Unit]\nRequiresMountsFor=%s\n' "$VOLUMES" > /etc/systemd/system/docker.service.d/dados.conf
+  systemctl daemon-reload
+}
+
+montar_disco_dados
+
 if [ -f /var/lib/tria-provisioned ]; then
   echo "Ja provisionado. Ambiente regravado a partir dos segredos. Subindo a pilha."
   cd "$STACK" && docker compose -f docker-compose.prod.yml up -d
