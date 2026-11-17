@@ -9,6 +9,7 @@ import {
   Platform,
   ROTULO_DA_PLATAFORMA,
   ROTULO_DO_RECURSO,
+  concordaComRecurso,
   temRecursoParaVincular,
   veiculaAnuncio,
   type Connection,
@@ -548,11 +549,18 @@ export default async function ConectorPage({
         <>
           <div className="card">
             <div className="card__head">
-              <span className="card__title">{ROTULO_DO_RECURSO[plataforma]}s vinculados</span>
-              <span className="card__sub">{recursosVinculados.length} vinculado(s)</span>
+              <span className="card__title">
+                {ROTULO_DO_RECURSO[plataforma]}s {concordaComRecurso(plataforma, 'vinculados', 'vinculadas')}
+              </span>
+              <span className="card__sub">
+                {recursosVinculados.length} {concordaComRecurso(plataforma, 'vinculado(s)', 'vinculada(s)')}
+              </span>
             </div>
             {recursosVinculados.length === 0 ? (
-              <div className="empty">Nenhum {ROTULO_DO_RECURSO[plataforma].toLowerCase()} vinculado ainda.</div>
+              <div className="empty">
+                {concordaComRecurso(plataforma, 'Nenhum', 'Nenhuma')} {ROTULO_DO_RECURSO[plataforma].toLowerCase()}{' '}
+                {concordaComRecurso(plataforma, 'vinculado', 'vinculada')} ainda.
+              </div>
             ) : (
               <div className="table-wrap">
                 <table className="table">

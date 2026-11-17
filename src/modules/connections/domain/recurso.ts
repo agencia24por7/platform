@@ -1,5 +1,5 @@
 import { canOperate, type MemberRole } from '../../identity/domain/user.ts';
-import { ROTULO_DO_RECURSO, temRecursoParaVincular, type Platform } from './connection.ts';
+import { ROTULO_DO_RECURSO, concordaComRecurso, temRecursoParaVincular, type Platform } from './connection.ts';
 
 export type EstadoDoRecurso = 'discovered' | 'linked' | 'ignored' | 'lost';
 
@@ -21,6 +21,10 @@ export type Recusa = {
 
 function nomeDoRecurso(recurso: RecursoAvaliado): string {
   return temRecursoParaVincular(recurso.platform) ? ROTULO_DO_RECURSO[recurso.platform] : 'Recurso';
+}
+
+function concordar(recurso: RecursoAvaliado, masculino: string, feminino: string): string {
+  return temRecursoParaVincular(recurso.platform) ? concordaComRecurso(recurso.platform, masculino, feminino) : masculino;
 }
 
 function exigirRecurso(recurso: RecursoAvaliado | null): Recusa | null {
@@ -53,7 +57,7 @@ export function recusaParaVincular(
   if (recurso!.state === 'linked') {
     return {
       codigo: 'conflict',
-      mensagem: `${nomeDoRecurso(recurso!)} já tem dono. Abra o cliente atual e use Mover para trocá-lo.`,
+      mensagem: `${nomeDoRecurso(recurso!)} já tem dono. Abra o cliente atual e use Mover para trocar o dono.`,
     };
   }
   if (recurso!.state !== 'discovered') {
@@ -71,7 +75,10 @@ export function recusaParaMover(
   const semRecurso = exigirRecurso(recurso);
   if (semRecurso) return semRecurso;
   if (recurso!.state !== 'linked' || !recurso!.clientId) {
-    return { codigo: 'conflict', mensagem: `${nomeDoRecurso(recurso!)} não está vinculado a nenhum cliente.` };
+    return {
+      codigo: 'conflict',
+      mensagem: `${nomeDoRecurso(recurso!)} não está ${concordar(recurso!, 'vinculado', 'vinculada')} a nenhum cliente.`,
+    };
   }
   return exigirClienteAtivo(destino);
 }

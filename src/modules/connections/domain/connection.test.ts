@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { grantTypesFor, missingScopes } from './connection.ts';
+import { concordaComRecurso, grantTypesFor, missingScopes } from './connection.ts';
 
 describe('missingScopes', () => {
   it('exige adwords no Google', () => {
@@ -21,5 +21,14 @@ describe('grantTypesFor', () => {
   it('não mistura caminhos entre plataformas', () => {
     assert.ok(!grantTypesFor('google').includes('bm_partner'));
     assert.ok(!grantTypesFor('meta').includes('mcc'));
+  });
+});
+
+describe('concordaComRecurso', () => {
+  it('propriedade do GA4 é feminino; contêiner, site, canal e local são masculinos', () => {
+    assert.equal(concordaComRecurso('ga4', 'vinculado', 'vinculada'), 'vinculada');
+    for (const platform of ['gtm', 'searchconsole', 'youtube', 'gbp'] as const) {
+      assert.equal(concordaComRecurso(platform, 'vinculado', 'vinculada'), 'vinculado');
+    }
   });
 });
