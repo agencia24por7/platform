@@ -12,32 +12,88 @@
       "name": "Entrada",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
-      "position": [-200, 0],
+      "position": [
+        -200,
+        0
+      ],
       "parameters": {
         "workflowInputs": {
           "values": [
-            { "name": "fonte" },
-            { "name": "janela" },
-            { "name": "modo" }
+            {
+              "name": "fonte"
+            },
+            {
+              "name": "janela"
+            },
+            {
+              "name": "modo"
+            }
           ]
         }
       }
     },
     {
-      "id": "coletar",
-      "name": "Buscar métricas no Search Console",
+      "id": "montar",
+      "name": "Montar requisição",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [40, 0],
+      "position": [
+        0,
+        0
+      ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const inicio = Date.now();\nconst fonte = $json.fonte;\nconst janela = $json.janela;\nconst modo = $json.modo;\nconst versaoApi = 'v3';\n\nconst siteUrl = encodeURIComponent(fonte.externalId);\nconst rowLimit = modo === 'amostra' ? 500 : 25000;\n\nconst body = {\n  startDate: janela.start,\n  endDate: janela.end,\n  dimensions: ['date', 'device'],\n  rowLimit,\n  dataState: 'all'\n};\n\nfunction devolver(linhas, falhas, requests, bytes) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - inicio },\n      falhas,\n      requests,\n      versaoApi,\n    },\n  }];\n}\n\nlet resposta;\ntry {\n  resposta = await this.helpers.httpRequestWithAuthentication.call(this, 'googleOAuth2Api', {\n    method: 'POST',\n    url: `https://www.googleapis.com/webmasters/${versaoApi}/sites/${siteUrl}/searchAnalytics/query`,\n    headers: { 'Content-Type': 'application/json' },\n    body,\n    json: true,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  });\n} catch (erro) {\n  return devolver([], [{ causa: 'api_recusou', detalhe: `falha de rede: ${erro.message}` }], 1, 0);\n}\n\nif (resposta.statusCode === 401 || resposta.statusCode === 403) {\n  const detalhe = resposta.body?.error?.message || `HTTP ${resposta.statusCode}`;\n  return devolver([], [{ causa: 'reauth_pending', detalhe }], 1, 0);\n}\n\nif (resposta.statusCode < 200 || resposta.statusCode >= 300) {\n  const detalhe = resposta.body?.error?.message || `HTTP ${resposta.statusCode}`;\n  return devolver([], [{ causa: 'api_recusou', detalhe }], 1, 0);\n}\n\nconst linhasBrutas = resposta.body?.rows || [];\nconst bytes = JSON.stringify(resposta.body).length;\n\nconst linhas = linhasBrutas.map((linha) => ({\n  metricDate: linha.keys?.[0] ?? null,\n  device: linha.keys?.[1] ?? null,\n  clicks: Number(linha.clicks ?? 0),\n  impressions: Number(linha.impressions ?? 0),\n  ctr: Number(linha.ctr ?? 0),\n  position: Number(linha.position ?? 0),\n}));\n\nif (linhas.length === 0) {\n  return devolver([], [{ causa: 'sem_dados_no_periodo', detalhe: null }], 1, bytes);\n}\n\nreturn devolver(linhas, [], 1, bytes);"
+        "jsCode": "const { fonte, janela, modo } = $json;\nconst versaoApi = 'v3';\n\nreturn [{\n  json: {\n    inicio: Date.now(),\n    versaoApi,\n    fonte,\n    url: `https://www.googleapis.com/webmasters/${versaoApi}/sites/${encodeURIComponent(fonte.externalId)}/searchAnalytics/query`,\n    corpo: {\n      startDate: janela.start,\n      endDate: janela.end,\n      dimensions: ['date', 'device'],\n      rowLimit: modo === 'amostra' ? 500 : 25000,\n      dataState: 'all',\n    },\n  },\n}];\n"
+      }
+    },
+    {
+      "id": "chamar",
+      "name": "Chamar API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.corpo) }}"
       },
       "credentials": {
         "googleOAuth2Api": {
           "id": "a-definir-pelo-provisioner",
           "name": "a-definir-pelo-provisioner"
         }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "normalizar",
+      "name": "Normalizar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const contexto = $('Montar requisição').first().json;\nconst respostas = $input.all().map((item) => item.json);\nconst requests = respostas.length;\nconst bytes = respostas.reduce((total, resposta) => total + JSON.stringify(resposta.body ?? {}).length, 0);\n\nfunction devolver(linhas, falhas) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - contexto.inicio },\n      falhas,\n      requests,\n      versaoApi: contexto.versaoApi,\n    },\n  }];\n}\n\nconst falhaDeRede = respostas.find((resposta) => resposta.error);\nif (falhaDeRede) {\n  const detalhe = falhaDeRede.error?.message ?? String(falhaDeRede.error);\n  return devolver([], [{ causa: 'api_recusou', detalhe: `falha de rede: ${detalhe}`.slice(0, 500) }]);\n}\n\nconst recusada = respostas.find((resposta) => !(resposta.statusCode >= 200 && resposta.statusCode < 300));\nif (recusada) {\n  const erro = Array.isArray(recusada.body) ? recusada.body[0]?.error : recusada.body?.error;\n  const detalhe = String(erro?.message || `HTTP ${recusada.statusCode}`).slice(0, 500);\n  const configuracaoDoProjeto = recusada.statusCode === 429 || /SERVICE_DISABLED|accessNotConfigured|has not been used in project|RESOURCE_EXHAUSTED|RATE_LIMIT/.test(JSON.stringify(erro ?? {}));\n  const semAcesso = !configuracaoDoProjeto && (recusada.statusCode === 401 || recusada.statusCode === 403 || erro?.code === 190);\n  return devolver([], [{ causa: semAcesso ? 'reauth_pending' : 'api_recusou', detalhe }]);\n}\n\nconst corpos = respostas.map((resposta) => resposta.body);\nconst fonte = contexto.fonte;\n\nconst linhas = corpos.flatMap((corpo) => corpo?.rows ?? []).map((linha) => ({\n  metricDate: linha.keys?.[0] ?? null,\n  device: linha.keys?.[1] ?? null,\n  clicks: Number(linha.clicks ?? 0),\n  impressions: Number(linha.impressions ?? 0),\n  ctr: Number(linha.ctr ?? 0),\n  position: Number(linha.position ?? 0),\n}));\n\nif (linhas.length === 0) return devolver([], [{ causa: 'sem_dados_no_periodo', detalhe: null }]);\nreturn devolver(linhas, []);\n"
       }
     }
   ],
@@ -46,7 +102,29 @@
       "main": [
         [
           {
-            "node": "Buscar métricas no Search Console",
+            "node": "Montar requisição",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar requisição": {
+      "main": [
+        [
+          {
+            "node": "Chamar API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chamar API": {
+      "main": [
+        [
+          {
+            "node": "Normalizar",
             "type": "main",
             "index": 0
           }
