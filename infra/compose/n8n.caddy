@@ -10,6 +10,14 @@
 		}
 	}
 
+	@webhooks_publicos path /webhook/meta-leads-36b523ec1f6f6c03a3ef /webhook/credaz-rd-WQMJzJWbDcykuWO3qV8EU6E
+
+	handle @webhooks_publicos {
+		reverse_proxy n8n:5678 {
+			header_up X-Forwarded-Proto https
+		}
+	}
+
 	handle {
 		forward_auth app:3000 {
 			uri /api/portaria
