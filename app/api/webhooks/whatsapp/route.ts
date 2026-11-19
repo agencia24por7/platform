@@ -4,7 +4,7 @@ import { sql } from '@/shared/db/client';
 import { logger } from '@/shared/logging/logger';
 import { consume } from '@/shared/security/rateLimit';
 import {
-  assinaturaDoWhatsappValida,
+  assinaturaDaMetaValida,
   referenciaExternaDoWhatsapp,
 } from '@/modules/connections/domain/whatsappWebhook';
 
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'corpo_invalido' }, { status: 400 });
   }
 
-  if (!assinaturaDoWhatsappValida(raw, request.headers.get('x-hub-signature-256'), appSecret)) {
+  if (!assinaturaDaMetaValida(raw, request.headers.get('x-hub-signature-256'), appSecret)) {
     logger.warn('webhook.whatsapp.assinatura_invalida', { sourceIp });
     return NextResponse.json({ error: 'assinatura_invalida' }, { status: 401 });
   }

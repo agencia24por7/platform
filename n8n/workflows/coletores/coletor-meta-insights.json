@@ -43,7 +43,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const { fonte, janela, modo } = $json;\nconst versaoApi = 'v21.0';\nconst limite = modo === 'amostra' ? 500 : 5000;\nconst campos = ['campaign_id', 'campaign_name', 'date_start', 'spend', 'impressions', 'clicks', 'actions', 'action_values'].join(',');\nconst timeRange = encodeURIComponent(JSON.stringify({ since: janela.start, until: janela.end }));\n\nreturn [{\n  json: {\n    inicio: Date.now(),\n    versaoApi,\n    fonte,\n    url: `https://graph.facebook.com/${versaoApi}/${fonte.externalId}/insights?level=campaign&time_increment=1&time_range=${timeRange}&fields=${campos}&limit=${limite}`,\n  },\n}];\n"
+        "jsCode": "const { fonte, janela, modo } = $json;\nconst versaoApi = 'v23.0';\nconst limite = modo === 'amostra' ? 500 : 5000;\nconst campos = ['campaign_id', 'campaign_name', 'date_start', 'spend', 'impressions', 'clicks', 'actions', 'action_values'].join(',');\nconst timeRange = encodeURIComponent(JSON.stringify({ since: janela.start, until: janela.end }));\n\nreturn [{\n  json: {\n    inicio: Date.now(),\n    versaoApi,\n    fonte,\n    url: `https://graph.facebook.com/${versaoApi}/${fonte.externalId}/insights?level=campaign&time_increment=1&time_range=${timeRange}&fields=${campos}&limit=${limite}`,\n  },\n}];\n"
       }
     },
     {

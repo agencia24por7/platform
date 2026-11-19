@@ -290,55 +290,6 @@
       }
     },
     {
-      "id": "ler-segredo",
-      "name": "Ler segredo",
-      "type": "n8n-nodes-base.dataTable",
-      "typeVersion": 1.1,
-      "position": [
-        300,
-        260
-      ],
-      "parameters": {
-        "resource": "row",
-        "operation": "get",
-        "dataTableId": {
-          "__rl": true,
-          "mode": "id",
-          "value": "NB32IZRtC4iMOMOd"
-        },
-        "matchType": "allConditions",
-        "filters": {
-          "conditions": [
-            {
-              "keyName": "chave",
-              "condition": "eq",
-              "keyValue": "META_APP_SECRET"
-            }
-          ]
-        },
-        "limit": 1
-      },
-      "alwaysOutputData": true
-    },
-    {
-      "id": "calcular-assinatura",
-      "name": "Calcular assinatura",
-      "type": "n8n-nodes-base.crypto",
-      "typeVersion": 1,
-      "position": [
-        480,
-        260
-      ],
-      "parameters": {
-        "action": "hmac",
-        "type": "SHA256",
-        "value": "={{ $('Corpo bruto').first().json.bruto }}",
-        "dataPropertyName": "calculada",
-        "secret": "={{ $json.valor }}",
-        "encoding": "hex"
-      }
-    },
-    {
       "id": "assinatura-confere",
       "name": "Assinatura confere?",
       "type": "n8n-nodes-base.if",
@@ -357,16 +308,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ 'sha256=' + $json.calculada }}",
-              "rightValue": "={{ $('Corpo bruto').first().json.assinatura }}",
-              "operator": {
-                "type": "string",
-                "operation": "equals"
-              }
-            },
-            {
-              "id": "c2",
-              "leftValue": "={{ String($('Ler segredo').first().json.valor || '').length >= 16 && $('Ler segredo').first().json.valor !== 'COLE_AQUI' }}",
+              "leftValue": "={{ $json.valida === true }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",
@@ -392,6 +334,42 @@
         "errorType": "errorMessage",
         "errorMessage": "Aviso de lead recusado: assinatura X-Hub-Signature-256 não confere. Se for aviso legítimo, confira o META_APP_SECRET na tabela segredos; a conciliação de hora em hora recupera os leads."
       }
+    },
+    {
+      "id": "validar-assinatura",
+      "name": "Validar assinatura no app",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        390,
+        260
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://app:3000/api/v0/webhooks/meta/assinatura",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ corpo: $json.bruto, assinatura: $json.assinatura }) }}",
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "yILgq315YGx2tGhH",
+          "name": "ORLA · worker token"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
     }
   ],
   "connections": {
@@ -468,29 +446,7 @@
       "main": [
         [
           {
-            "node": "Ler segredo",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Ler segredo": {
-      "main": [
-        [
-          {
-            "node": "Calcular assinatura",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Calcular assinatura": {
-      "main": [
-        [
-          {
-            "node": "Assinatura confere?",
+            "node": "Validar assinatura no app",
             "type": "main",
             "index": 0
           }
@@ -509,6 +465,17 @@
         [
           {
             "node": "Assinatura inválida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar assinatura no app": {
+      "main": [
+        [
+          {
+            "node": "Assinatura confere?",
             "type": "main",
             "index": 0
           }
