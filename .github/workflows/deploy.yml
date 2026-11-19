@@ -20,6 +20,7 @@ jobs:
 
   publicar:
     needs: qualidade
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     environment: producao

@@ -30,6 +30,11 @@ output "tunnel_commands" {
   }
 }
 
+output "backup_bucket" {
+  description = "Bucket dos dumps lógicos do Postgres, gravados a cada desligamento da VM."
+  value       = google_storage_bucket.backups.name
+}
+
 output "secret_names" {
   description = "Preencha os valores antes do primeiro boot."
   value       = [for secret in google_secret_manager_secret.app : secret.secret_id]

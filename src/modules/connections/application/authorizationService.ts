@@ -1,4 +1,5 @@
 import { failure, type Failure } from '@/shared/result/failure';
+import { executarComCompensacao } from '@/shared/result/compensacao';
 import { err, ok, type Result } from '@/shared/result/result';
 import { logger } from '@/shared/logging/logger';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
@@ -282,7 +283,22 @@ export function createAuthorizationService(
       }
 
       const externalId = identidade.id;
-      const already = await connections.findByExternalId(organizationId, input.platform, externalId);
+      const descartarCredencialNova = async (): Promise<void> => {
+        if (credentialRef === CREDENCIAL_SEM_COFRE) return;
+        try {
+          await vault.discard(credentialRef);
+        } catch (erro) {
+          logger.error('oauth.authorize.credencial_orfa', {
+            platform: input.platform,
+            error: erro instanceof Error ? erro.message : 'desconhecido',
+          });
+        }
+      };
+
+      const already = await executarComCompensacao(
+        () => connections.findByExternalId(organizationId, input.platform, externalId),
+        descartarCredencialNova,
+      );
 
       const proposta = {
         organizationId,
@@ -300,9 +316,10 @@ export function createAuthorizationService(
         authorizedVia: input.autorizadoPor.via === 'invite' ? ('invite' as const) : ('staff' as const),
       };
 
-      const connection = already
-        ? await connections.renew({ ...proposta, id: already.id })
-        : await connections.insert(proposta);
+      const connection = await executarComCompensacao(
+        () => (already ? connections.renew({ ...proposta, id: already.id }) : connections.insert(proposta)),
+        descartarCredencialNova,
+      );
 
       const credencialTrocada =
         already && already.credentialRef !== credentialRef ? already.credentialRef : null;

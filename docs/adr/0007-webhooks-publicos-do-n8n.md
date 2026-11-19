@@ -34,3 +34,5 @@ Os fluxos de leads da Credaz dependem de dois avisos externos:
 - Cada novo webhook externo exige uma linha neste arquivo e um deploy.
 - A entrada de leads valida a assinatura `X-Hub-Signature-256` da Meta com o App
   Secret da tabela `segredos` do n8n e recusa o aviso se o segredo estiver ausente.
+  **Substituído pelo ADR 0008:** a validação passou para o app
+  (`/api/v0/webhooks/meta/assinatura`) e o segredo saiu do n8n.

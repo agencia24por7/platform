@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-export function assinaturaDoWhatsappValida(
+export function assinaturaDaMetaValida(
   rawBody: string,
   header: string | null,
   appSecret: string,
