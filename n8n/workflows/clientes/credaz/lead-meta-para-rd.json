@@ -393,6 +393,28 @@
       "maxTries": 3,
       "waitBetweenTries": 3000,
       "onError": "continueRegularOutput"
+    },
+    {
+      "id": "avisar-conversoes",
+      "name": "Avisar conversões",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        80
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.agencia24por7.com/webhook/credaz-rd-conversoes-c41d9e7a2b",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ event_name: 'deal_created_by_n8n', document: { id: $('Criar negociação no RD').item.json._id } }) }}",
+        "options": {}
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
     }
   ],
   "connections": {
@@ -486,6 +508,11 @@
           },
           {
             "node": "Gerar tarefa inicial",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Avisar conversões",
             "type": "main",
             "index": 0
           }

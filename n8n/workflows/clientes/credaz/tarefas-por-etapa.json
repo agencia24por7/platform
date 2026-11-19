@@ -80,46 +80,12 @@
       }
     },
     {
-      "id": "ja-tem-tarefa",
-      "name": "Etapa ainda sem tarefa?",
-      "type": "n8n-nodes-base.dataTable",
-      "typeVersion": 1.1,
-      "position": [
-        880,
-        0
-      ],
-      "parameters": {
-        "resource": "row",
-        "operation": "rowNotExists",
-        "dataTableId": {
-          "__rl": true,
-          "mode": "id",
-          "value": "H4F5z1rDBjHcU3S3"
-        },
-        "matchType": "allConditions",
-        "filters": {
-          "conditions": [
-            {
-              "keyName": "deal_id",
-              "condition": "eq",
-              "keyValue": "={{ $json.deal_id }}"
-            },
-            {
-              "keyName": "etapa_id",
-              "condition": "eq",
-              "keyValue": "={{ $json.etapa_id }}"
-            }
-          ]
-        }
-      }
-    },
-    {
       "id": "criar-tarefa",
       "name": "Criar tarefa no RD",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1100,
+        1540,
         0
       ],
       "parameters": {
@@ -143,12 +109,12 @@
       "waitBetweenTries": 3000
     },
     {
-      "id": "registrar-tarefa",
-      "name": "Registrar tarefa",
+      "id": "reservar-etapa",
+      "name": "Reservar etapa",
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        1320,
+        880,
         0
       ],
       "parameters": {
@@ -162,9 +128,9 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "deal_id": "={{ $('Escolher tarefa da etapa').item.json.deal_id }}",
-            "etapa_id": "={{ $('Escolher tarefa da etapa').item.json.etapa_id }}",
-            "task_id": "={{ $json._id || $json.id }}"
+            "deal_id": "={{ $json.deal_id }}",
+            "etapa_id": "={{ $json.etapa_id }}",
+            "task_id": "={{ 'reserva-' + $execution.id }}"
           },
           "matchingColumns": [],
           "schema": [
@@ -198,6 +164,57 @@
           ]
         },
         "options": {}
+      }
+    },
+    {
+      "id": "ver-reservas",
+      "name": "Ver reservas",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "H4F5z1rDBjHcU3S3"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "deal_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Escolher tarefa da etapa').first().json.deal_id }}"
+            },
+            {
+              "keyName": "etapa_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Escolher tarefa da etapa').first().json.etapa_id }}"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "id": "sou-o-primeiro",
+      "name": "Sou o primeiro?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const minhaReserva = `reserva-${$execution.id}`;\nconst reservas = $input.all().map((item) => item.json).filter((linha) => linha.id !== undefined).sort((a, b) => Number(a.id) - Number(b.id));\nif (!reservas.length || reservas[0].task_id !== minhaReserva) return [];\nreturn [{ json: $('Escolher tarefa da etapa').first().json }];"
       }
     }
   ],
@@ -239,29 +256,40 @@
       "main": [
         [
           {
-            "node": "Etapa ainda sem tarefa?",
+            "node": "Reservar etapa",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Etapa ainda sem tarefa?": {
+    "Reservar etapa": {
+      "main": [
+        [
+          {
+            "node": "Ver reservas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ver reservas": {
+      "main": [
+        [
+          {
+            "node": "Sou o primeiro?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sou o primeiro?": {
       "main": [
         [
           {
             "node": "Criar tarefa no RD",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Criar tarefa no RD": {
-      "main": [
-        [
-          {
-            "node": "Registrar tarefa",
             "type": "main",
             "index": 0
           }
