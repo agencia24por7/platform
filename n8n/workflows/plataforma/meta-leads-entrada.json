@@ -1,0 +1,519 @@
+{
+  "name": "24/7 · Meta Lead Ads (entrada)",
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "timezone": "America/Recife",
+    "errorWorkflow": "a-definir-alertas-de-falha"
+  },
+  "nodes": [
+    {
+      "id": "verificacao-meta",
+      "name": "Verificação da Meta",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        -200
+      ],
+      "webhookId": "meta-leads-36b523ec1f6f6c03a3ef-get",
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "meta-leads-36b523ec1f6f6c03a3ef",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "token-confere",
+      "name": "Token confere?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        240,
+        -200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.query['hub.verify_token'] }}",
+              "rightValue": "2bd0a8847f39c35d08f14a8bad53caa5",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "responder-desafio",
+      "name": "Responder desafio",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        -280
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.query['hub.challenge'] }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "recusar",
+      "name": "Recusar",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        -120
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "forbidden",
+        "options": {
+          "responseCode": 403
+        }
+      }
+    },
+    {
+      "id": "aviso-lead",
+      "name": "Aviso de lead",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        100
+      ],
+      "webhookId": "meta-leads-36b523ec1f6f6c03a3ef-post",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "meta-leads-36b523ec1f6f6c03a3ef",
+        "responseMode": "onReceived",
+        "options": {
+          "rawBody": true
+        }
+      }
+    },
+    {
+      "id": "separar-leads",
+      "name": "Separar leads e escolher cliente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        100
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const CLIENTES = {\n  '1000117996519094': { cliente: 'credaz', workflowId: 'TkrchseIkpszaY1D' }\n};\nconst saida = [];\nfor (const corpo of [$('Corpo bruto').first().json.body || {}]) {\n  for (const entrada of corpo.entry || []) {\n    for (const mudanca of entrada.changes || []) {\n      if (mudanca.field !== 'leadgen') continue;\n      const valor = mudanca.value || {};\n      const pageId = String(valor.page_id || entrada.id || '');\n      const destino = CLIENTES[pageId];\n      saida.push({\n        json: {\n          leadgen_id: String(valor.leadgen_id || ''),\n          page_id: pageId,\n          form_id: String(valor.form_id || ''),\n          ad_id: String(valor.ad_id || ''),\n          origem: 'webhook',\n          cliente: destino ? destino.cliente : 'desconhecido',\n          workflowId: destino ? destino.workflowId : ''\n        }\n      });\n    }\n  }\n}\nconst soDigitos = (valor) => /^\\d+$/.test(valor);\nreturn saida.filter((item) => soDigitos(item.json.leadgen_id) && soDigitos(item.json.page_id) && (item.json.form_id === '' || soDigitos(item.json.form_id)));"
+      }
+    },
+    {
+      "id": "tem-cliente",
+      "name": "Página tem cliente?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.workflowId }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "chamar-cliente",
+      "name": "Chamar fluxo do cliente",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        720,
+        20
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.workflowId }}"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      }
+    },
+    {
+      "id": "pagina-desconhecida",
+      "name": "Guardar lead sem cliente",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        200
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "EEDEcCIvLQ8td4be"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "leadgen_id": "={{ $json.leadgen_id }}",
+            "cliente": "desconhecido",
+            "page_id": "={{ $json.page_id }}",
+            "form_id": "={{ $json.form_id }}",
+            "motivo": "pagina_sem_cliente_configurado",
+            "tentativas": 0,
+            "status": "pendente"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "leadgen_id",
+              "displayName": "leadgen_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "cliente",
+              "displayName": "cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "page_id",
+              "displayName": "page_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "form_id",
+              "displayName": "form_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "motivo",
+              "displayName": "motivo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tentativas",
+              "displayName": "tentativas",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "corpo-bruto",
+      "name": "Corpo bruto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        120,
+        260
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const entrada = $input.first();\nconst bruto = await this.helpers.getBinaryDataBuffer(0, 'data');\nreturn [{ json: { bruto: bruto.toString('utf8'), assinatura: String((entrada.json.headers || {})['x-hub-signature-256'] || ''), body: entrada.json.body || {} } }];"
+      }
+    },
+    {
+      "id": "ler-segredo",
+      "name": "Ler segredo",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        300,
+        260
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "NB32IZRtC4iMOMOd"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "chave",
+              "condition": "eq",
+              "keyValue": "META_APP_SECRET"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "calcular-assinatura",
+      "name": "Calcular assinatura",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [
+        480,
+        260
+      ],
+      "parameters": {
+        "action": "hmac",
+        "type": "SHA256",
+        "value": "={{ $('Corpo bruto').first().json.bruto }}",
+        "dataPropertyName": "calculada",
+        "secret": "={{ $json.valor }}",
+        "encoding": "hex"
+      }
+    },
+    {
+      "id": "assinatura-confere",
+      "name": "Assinatura confere?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        260
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ 'sha256=' + $json.calculada }}",
+              "rightValue": "={{ $('Corpo bruto').first().json.assinatura }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "c2",
+              "leftValue": "={{ String($('Ler segredo').first().json.valor || '').length >= 16 && $('Ler segredo').first().json.valor !== 'COLE_AQUI' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "assinatura-invalida",
+      "name": "Assinatura inválida",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        860,
+        360
+      ],
+      "parameters": {
+        "errorType": "errorMessage",
+        "errorMessage": "Aviso de lead recusado: assinatura X-Hub-Signature-256 não confere. Se for aviso legítimo, confira o META_APP_SECRET na tabela segredos; a conciliação de hora em hora recupera os leads."
+      }
+    }
+  ],
+  "connections": {
+    "Verificação da Meta": {
+      "main": [
+        [
+          {
+            "node": "Token confere?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token confere?": {
+      "main": [
+        [
+          {
+            "node": "Responder desafio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Recusar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aviso de lead": {
+      "main": [
+        [
+          {
+            "node": "Corpo bruto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Separar leads e escolher cliente": {
+      "main": [
+        [
+          {
+            "node": "Página tem cliente?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Página tem cliente?": {
+      "main": [
+        [
+          {
+            "node": "Chamar fluxo do cliente",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Guardar lead sem cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Corpo bruto": {
+      "main": [
+        [
+          {
+            "node": "Ler segredo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler segredo": {
+      "main": [
+        [
+          {
+            "node": "Calcular assinatura",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular assinatura": {
+      "main": [
+        [
+          {
+            "node": "Assinatura confere?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assinatura confere?": {
+      "main": [
+        [
+          {
+            "node": "Separar leads e escolher cliente",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Assinatura inválida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
