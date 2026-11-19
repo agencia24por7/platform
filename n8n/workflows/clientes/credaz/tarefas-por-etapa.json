@@ -1,0 +1,272 @@
+{
+  "name": "Credaz · Tarefas por etapa",
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none",
+    "timezone": "America/Recife",
+    "errorWorkflow": "im3mfvd9pUI79e74"
+  },
+  "nodes": [
+    {
+      "id": "aviso-rd",
+      "name": "Aviso do RD",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "credaz-rd-WQMJzJWbDcykuWO3qV8EU6E",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "credaz-rd-WQMJzJWbDcykuWO3qV8EU6E",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "ler-aviso",
+      "name": "Ler aviso",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const corpo = $input.first().json.body || {};\nconst documento = corpo.document || corpo.deal || {};\nconst dealId = String(documento.id || documento._id || '');\nif (!/^[0-9a-f]{24}$/.test(dealId)) return [];\nreturn [{ json: { deal_id: dealId, evento: String(corpo.event_name || '') } }];"
+      }
+    },
+    {
+      "id": "buscar-negociacao",
+      "name": "Buscar negociação",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://crm.rdstation.com/api/v1/deals/{{ $json.deal_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "options": {}
+      },
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "ZFOcin1thKRgcPkP",
+          "name": "Credaz · RD Station CRM"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "id": "escolher-tarefa",
+      "name": "Escolher tarefa da etapa",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const negociacao = $input.first().json;\nconst ETAPAS = {\n  '6afe1d632fbf58001fcfc512': { assunto: 'Fazer o primeiro contato e confirmar o canal', tipo: 'call' },\n  '6afe1d632fbf58001fcfc513': { assunto: 'Definir o produto de interesse', tipo: 'whatsapp' },\n  '6afe1d632fbf58001fcfc514': { assunto: 'Analisar o crédito (se houver problema, acionar o grupo de apoio no WhatsApp)', tipo: 'task' },\n  '6afe1d632fbf58001fcfc515': { assunto: 'Apresentar as condições comerciais e obter o aceite', tipo: 'whatsapp' },\n  '6afe1d632fbf58001fcfc516': { assunto: 'Coletar os dados e documentos do cliente', tipo: 'whatsapp' },\n  '6afe242c643baa001fed117b': { assunto: 'Enviar a proposta ao banco e acompanhar a liberação', tipo: 'task' },\n  '6afe3f78712e04001dd6f435': { assunto: 'Confirmar a liberação, preencher o valor liberado e marcar a venda', tipo: 'task' }\n};\nconst encerrada = negociacao.win === true || negociacao.win === false || Boolean(negociacao.closed_at);\nconst etapaId = String((negociacao.deal_stage || {}).id || (negociacao.deal_stage || {})._id || '');\nconst tarefa = ETAPAS[etapaId];\nif (encerrada || !tarefa) return [];\nconst agora = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Recife' }));\nconst prazo = new Date(agora.getTime() + 2 * 60 * 60 * 1000);\nif (prazo.getHours() >= 18 || prazo.getDate() !== agora.getDate()) {\n  prazo.setDate(agora.getDate() + 1);\n  prazo.setHours(9, 0, 0, 0);\n}\nconst doisDigitos = (n) => String(n).padStart(2, '0');\nreturn [{\n  json: {\n    deal_id: String(negociacao.id || negociacao._id),\n    etapa_id: etapaId,\n    body: {\n      task: {\n        deal_id: String(negociacao.id || negociacao._id),\n        user_ids: [String((negociacao.user || {}).id || (negociacao.user || {})._id || '')].filter(Boolean),\n        subject: tarefa.assunto,\n        type: tarefa.tipo,\n        date: `${prazo.getFullYear()}-${doisDigitos(prazo.getMonth() + 1)}-${doisDigitos(prazo.getDate())}`,\n        hour: `${doisDigitos(prazo.getHours())}:${doisDigitos(prazo.getMinutes())}`\n      }\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "ja-tem-tarefa",
+      "name": "Etapa ainda sem tarefa?",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "rowNotExists",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "H4F5z1rDBjHcU3S3"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "deal_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.deal_id }}"
+            },
+            {
+              "keyName": "etapa_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.etapa_id }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "criar-tarefa",
+      "name": "Criar tarefa no RD",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://crm.rdstation.com/api/v1/tasks",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Escolher tarefa da etapa').item.json.body) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "ZFOcin1thKRgcPkP",
+          "name": "Credaz · RD Station CRM"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "id": "registrar-tarefa",
+      "name": "Registrar tarefa",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1320,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "H4F5z1rDBjHcU3S3"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "deal_id": "={{ $('Escolher tarefa da etapa').item.json.deal_id }}",
+            "etapa_id": "={{ $('Escolher tarefa da etapa').item.json.etapa_id }}",
+            "task_id": "={{ $json._id || $json.id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "deal_id",
+              "displayName": "deal_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "etapa_id",
+              "displayName": "etapa_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "task_id",
+              "displayName": "task_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Aviso do RD": {
+      "main": [
+        [
+          {
+            "node": "Ler aviso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler aviso": {
+      "main": [
+        [
+          {
+            "node": "Buscar negociação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar negociação": {
+      "main": [
+        [
+          {
+            "node": "Escolher tarefa da etapa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escolher tarefa da etapa": {
+      "main": [
+        [
+          {
+            "node": "Etapa ainda sem tarefa?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Etapa ainda sem tarefa?": {
+      "main": [
+        [
+          {
+            "node": "Criar tarefa no RD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Criar tarefa no RD": {
+      "main": [
+        [
+          {
+            "node": "Registrar tarefa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

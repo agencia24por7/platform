@@ -1,0 +1,85 @@
+{
+  "name": "Credaz · Conciliação de leads (de hora em hora)",
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none",
+    "timezone": "America/Recife",
+    "errorWorkflow": "a-definir-alertas-de-falha"
+  },
+  "nodes": [
+    {
+      "id": "a-cada-hora",
+      "name": "A cada hora",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "parameters": {
+        "rule": { "interval": [{ "field": "hours", "hoursInterval": 1 }] }
+      }
+    },
+    {
+      "id": "listar-leads",
+      "name": "Listar leads do formulário",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 0],
+      "parameters": {
+        "method": "GET",
+        "url": "https://graph.facebook.com/v23.0/2394588564644506/leads",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "facebookGraphApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "fields", "value": "id,created_time" },
+            { "name": "limit", "value": "100" }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "facebookGraphApi": { "id": "a-definir-usuario-de-sistema-leads", "name": "24/7 · Meta usuário de sistema (leads)" }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
+    },
+    {
+      "id": "um-por-lead",
+      "name": "Um item por lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 0],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const leads = ($input.first().json.data || []);\nreturn leads.map((lead) => ({\n  json: {\n    leadgen_id: String(lead.id),\n    page_id: '1000117996519094',\n    form_id: '2394588564644506',\n    origem: 'conciliacao'\n  }\n}));"
+      }
+    },
+    {
+      "id": "processar",
+      "name": "Processar lead (ignora os já processados)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [720, 0],
+      "parameters": {
+        "source": "database",
+        "workflowId": { "__rl": true, "mode": "id", "value": "TkrchseIkpszaY1D" },
+        "mode": "each",
+        "options": { "waitForSubWorkflow": true }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "A cada hora": {
+      "main": [[{ "node": "Listar leads do formulário", "type": "main", "index": 0 }]]
+    },
+    "Listar leads do formulário": {
+      "main": [[{ "node": "Um item por lead", "type": "main", "index": 0 }]]
+    },
+    "Um item por lead": {
+      "main": [[{ "node": "Processar lead (ignora os já processados)", "type": "main", "index": 0 }]]
+    }
+  }
+}

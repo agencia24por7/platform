@@ -1,0 +1,270 @@
+{
+  "name": "Credaz · RD → Meta (conversões)",
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "timezone": "America/Recife"
+  },
+  "nodes": [
+    {
+      "id": "webhook-rd",
+      "name": "Negociação atualizada no RD",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "credaz-rd-WQMJzJWbDcykuWO3qV8EU6E",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "credaz-rd-conversoes-c41d9e7a2b",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "id-da-negociacao",
+      "name": "Pegar ID da negociação",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const corpo = $json.body || $json;\nconst documento = corpo.document || corpo.data || corpo;\nconst dealId = documento.id || documento._id || corpo.id || '';\nif (!dealId) return { json: { ignorar: true, motivo: 'sem_deal_id' } };\nreturn { json: { ignorar: false, dealId: String(dealId) } };"
+      }
+    },
+    {
+      "id": "tem-id",
+      "name": "Tem negociação?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.ignorar }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "buscar-negociacao",
+      "name": "Buscar negociação no RD",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        -100
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://crm.rdstation.com/api/v1/deals/{{ $json.dealId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "options": {}
+      },
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "ZFOcin1thKRgcPkP",
+          "name": "Credaz · RD Station CRM"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "montar-evento",
+      "name": "Montar evento da Meta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        -100
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const negociacao = $json;\nconst CAMPO_LEAD_ID = '6afe21ef2fbf58001fcfc746';\nconst ETAPAS_QUE_VIRAM_EVENTO = { 'Definição do produto': 'Definição do produto', 'Análise de crédito': 'Análise de crédito', 'Condições comerciais': 'Condições comerciais', 'Coleta de dados': 'Coleta de dados', 'Proposta no banco': 'Proposta no banco', 'Aprovado': 'Aprovado' };\nconst campos = negociacao.deal_custom_fields || [];\nconst campoLead = campos.find((c) => c.custom_field_id === CAMPO_LEAD_ID || (c.custom_field || {})._id === CAMPO_LEAD_ID || (c.custom_field || {}).id === CAMPO_LEAD_ID);\nconst leadId = campoLead && campoLead.value ? String(campoLead.value) : '';\nif (!leadId) return { json: { enviar: false, motivo: 'sem_lead_id_meta' } };\nconst ganha = negociacao.win === true;\nconst etapa = (negociacao.deal_stage || {}).name || '';\nconst nomeDoEvento = ganha ? 'Purchase' : ETAPAS_QUE_VIRAM_EVENTO[etapa];\nif (!nomeDoEvento) return { json: { enviar: false, motivo: 'etapa_sem_evento' } };\nconst dealId = String(negociacao.id || negociacao._id);\nconst chave = `${dealId}:${nomeDoEvento}`;\nconst memoria = $getWorkflowStaticData('global');\nmemoria.enviados = memoria.enviados || {};\nif (memoria.enviados[chave]) return { json: { enviar: false, motivo: 'ja_enviado', chave } };\nconst quando = ganha && negociacao.closed_at ? new Date(negociacao.closed_at) : new Date();\nconst evento = {\n  event_name: nomeDoEvento,\n  event_time: Math.floor(quando.getTime() / 1000),\n  event_id: `rdcrm_${chave}`,\n  action_source: 'system_generated',\n  user_data: { lead_id: Number(leadId) },\n  custom_data: { event_source: 'crm', lead_event_source: 'RD Station CRM' }\n};\nif (ganha) {\n  evento.custom_data.currency = 'BRL';\n  evento.custom_data.value = Number(negociacao.amount_total) || 0;\n}\nreturn { json: { enviar: true, chave, body: { data: [evento] } } };"
+      }
+    },
+    {
+      "id": "deve-enviar",
+      "name": "Enviar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1200,
+        -100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.enviar }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "enviar-meta",
+      "name": "Enviar à API de Conversões",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        -200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v23.0/2507447436450170/events",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "facebookGraphApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {}
+      },
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "SFaoFI3MWs7aZsHj",
+          "name": "Credaz · Meta CAPI (pixel)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "id": "registrar-envio",
+      "name": "Registrar envio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        -200
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const chave = $('Montar evento da Meta').item.json.chave;\nconst memoria = $getWorkflowStaticData('global');\nmemoria.enviados = memoria.enviados || {};\nmemoria.enviados[chave] = new Date().toISOString();\nreturn { json: { chave, eventos_recebidos: $json.events_received, fbtrace_id: $json.fbtrace_id } };"
+      }
+    }
+  ],
+  "connections": {
+    "Negociação atualizada no RD": {
+      "main": [
+        [
+          {
+            "node": "Pegar ID da negociação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pegar ID da negociação": {
+      "main": [
+        [
+          {
+            "node": "Tem negociação?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem negociação?": {
+      "main": [
+        [
+          {
+            "node": "Buscar negociação no RD",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Buscar negociação no RD": {
+      "main": [
+        [
+          {
+            "node": "Montar evento da Meta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar evento da Meta": {
+      "main": [
+        [
+          {
+            "node": "Enviar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar?": {
+      "main": [
+        [
+          {
+            "node": "Enviar à API de Conversões",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Enviar à API de Conversões": {
+      "main": [
+        [
+          {
+            "node": "Registrar envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
