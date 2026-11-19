@@ -10,7 +10,7 @@
 		}
 	}
 
-	@webhooks_publicos path /webhook/meta-leads-36b523ec1f6f6c03a3ef /webhook/credaz-rd-WQMJzJWbDcykuWO3qV8EU6E
+	@webhooks_publicos path /webhook/meta-leads-36b523ec1f6f6c03a3ef /webhook/credaz-rd-WQMJzJWbDcykuWO3qV8EU6E /webhook/credaz-rd-conversoes-c41d9e7a2b
 
 	handle @webhooks_publicos {
 		reverse_proxy n8n:5678 {
