@@ -4,7 +4,8 @@
     "executionOrder": "v1",
     "saveDataErrorExecution": "all",
     "saveDataSuccessExecution": "all",
-    "timezone": "America/Recife"
+    "timezone": "America/Recife",
+    "errorWorkflow": "im3mfvd9pUI79e74"
   },
   "nodes": [
     {

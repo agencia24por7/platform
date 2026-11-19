@@ -12,7 +12,10 @@
       "name": "Falha em algum fluxo",
       "type": "n8n-nodes-base.errorTrigger",
       "typeVersion": 1,
-      "position": [0, 0],
+      "position": [
+        0,
+        0
+      ],
       "parameters": {}
     },
     {
@@ -20,7 +23,10 @@
       "name": "Montar alerta",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [240, 0],
+      "position": [
+        240,
+        0
+      ],
       "parameters": {
         "mode": "runOnceForEachItem",
         "jsCode": "const execucao = $json.execution || {};\nconst fluxo = $json.workflow || {};\nconst erro = execucao.error || $json.trigger?.error || {};\nconst quando = new Date().toLocaleString('pt-BR', { timeZone: 'America/Recife' });\nconst linhas = [\n  `Fluxo: ${fluxo.name || fluxo.id || 'desconhecido'}`,\n  `Quando: ${quando}`,\n  `Etapa que falhou: ${execucao.lastNodeExecuted || 'n/d'}`,\n  `Erro: ${erro.message || 'sem mensagem'}`,\n  execucao.url ? `Execução: ${execucao.url}` : 'Execução: n/d',\n  '',\n  'Leads com falha ficam na tabela leads_pendentes e são reprocessados pela conciliação de hora em hora.'\n];\nreturn { json: { assunto: `[n8n] Falha em ${fluxo.name || 'fluxo'}`, texto: linhas.join('\\n') } };"
@@ -29,16 +35,28 @@
     {
       "id": "enviar-email",
       "name": "Avisar por e-mail",
-      "type": "n8n-nodes-base.emailSend",
+      "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
-      "position": [480, 0],
+      "position": [
+        480,
+        0
+      ],
       "parameters": {
-        "fromEmail": "contato@agencia24por7.com",
-        "toEmail": "contato@agencia24por7.com",
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "contato@agencia24por7.com",
         "subject": "={{ $json.assunto }}",
-        "emailFormat": "text",
-        "text": "={{ $json.texto }}",
-        "options": {}
+        "emailType": "text",
+        "message": "={{ $json.texto }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "zPYRhxZvc6jESfPE",
+          "name": "24/7 · E-mail alertas"
+        }
       },
       "retryOnFail": true,
       "maxTries": 3,
@@ -47,10 +65,26 @@
   ],
   "connections": {
     "Falha em algum fluxo": {
-      "main": [[{ "node": "Montar alerta", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Montar alerta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Montar alerta": {
-      "main": [[{ "node": "Avisar por e-mail", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Avisar por e-mail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   }
 }
