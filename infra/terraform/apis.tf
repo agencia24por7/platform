@@ -20,6 +20,7 @@ locals {
     "youtube.googleapis.com",
     "youtubeanalytics.googleapis.com",
     "tagmanager.googleapis.com",
+    "storage.googleapis.com",
   ]
 }
 

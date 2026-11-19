@@ -21,7 +21,7 @@ import { GOOGLE_ADS_VERSION } from '@/modules/connections/domain/googleAdsVersio
 import { resumirFalha } from '@/modules/connections/domain/falhaDescoberta';
 
 const GOOGLE_API = `https://googleads.googleapis.com/${GOOGLE_ADS_VERSION}`;
-const GRAPH_API = 'https://graph.facebook.com/v21.0';
+const GRAPH_API = 'https://graph.facebook.com/v23.0';
 const TIMEOUT_MS = 15_000;
 
 const CLIENT_QUERY = [

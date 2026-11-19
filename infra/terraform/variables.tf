@@ -97,7 +97,13 @@ variable "data_disk_gb" {
 variable "data_disk_source_snapshot" {
   description = "Snapshot usado só na criação do disco de dados. null cria um disco vazio. Mudanças posteriores são ignoradas."
   type        = string
-  default     = "tria-producao-pre-fsck-20261117"
+  default     = null
+}
+
+variable "backup_logico_retencao_dias" {
+  description = "Por quantos dias os dumps lógicos do Postgres (feitos a cada desligamento da VM) ficam no bucket de backups."
+  type        = number
+  default     = 30
 }
 
 variable "backup_retention_days" {
