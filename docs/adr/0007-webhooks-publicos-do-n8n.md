@@ -14,8 +14,10 @@ Os fluxos de leads da Credaz dependem de dois avisos externos:
 
 - `/webhook/meta-leads-36b523ec1f6f6c03a3ef`: aviso `leadgen` da Meta (Página,
   app Agencia24/7 Ads). É a entrada geral de leads de todos os clientes.
-- `/webhook/credaz-rd-WQMJzJWbDcykuWO3qV8EU6E`: mudança de etapa no RD Station
-  CRM da Credaz (conversões de volta para a Meta).
+- `/webhook/credaz-rd-WQMJzJWbDcykuWO3qV8EU6E`: negociação criada ou atualizada
+  no RD Station CRM da Credaz (tarefa automática por etapa do funil).
+- `/webhook/credaz-rd-conversoes-c41d9e7a2b`: negociação atualizada no RD da
+  Credaz (etapas e vendas enviadas à API de Conversões da Meta).
 
 ## Decisão
 
@@ -30,5 +32,5 @@ Os fluxos de leads da Credaz dependem de dois avisos externos:
 ## Consequências
 
 - Cada novo webhook externo exige uma linha neste arquivo e um deploy.
-- Pendente: validar a assinatura `X-Hub-Signature-256` da Meta com o App Secret
-  guardado no n8n.
+- A entrada de leads valida a assinatura `X-Hub-Signature-256` da Meta com o App
+  Secret da tabela `segredos` do n8n e recusa o aviso se o segredo estiver ausente.
