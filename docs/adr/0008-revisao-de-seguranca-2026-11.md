@@ -114,3 +114,20 @@ ao sair.
 descartável. As contagens bateram com produção (10 conexões, 1.884 registros
 de auditoria, 600 coletas, 19 workflows e 15 credenciais do n8n) e o RLS ficou
 ativo em 17 tabelas.
+
+## Adendo: reautorização deixava workflows quebrados (2026-11-20)
+
+Ao reautorizar a Meta, a Orla trocou a credencial, como deve, e descartou a
+antiga. Mas ela criou um coletor e um executor **novos sem publicar**, e
+manteve os **antigos ativos apontando para a credencial apagada**. A coleta só
+continuou porque corrigimos à mão: publicamos os novos e removemos os antigos.
+
+Correção:
+
+- O cliente do n8n (`shared/n8n/clienteN8n.ts`, testável com um servidor
+  falso) **publica** o workflow logo depois de criar.
+- `trocarColetorRef`/`trocarExecutorRef` gravam a referência nova e devolvem a
+  anterior na mesma operação.
+- A autorização **remove** o workflow anterior: desativa e apaga, tentando de
+  novo enquanto o n8n responde 409. Uma falha nessa remoção vai para o log e
+  não derruba a autorização.
