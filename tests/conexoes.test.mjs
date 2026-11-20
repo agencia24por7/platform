@@ -174,7 +174,7 @@ describe('conta do RD Station guardada por chave ganha cliente dono', { concurre
     assert.equal(fonte.clientId, cliente);
   });
 
-  it('remover a conexão revoga a chave e mantém o vínculo como histórico, fora da coleta', async () => {
+  it('remover a conexão revoga a chave, solta a conta do cliente e tira a conta da tela e da coleta', async () => {
     const remover = await acaoComCampo(tela, 'connectionId');
     const resultado = await submitAction(tela, remover, { connectionId: conexao, voltarPara: tela });
     assert.ok([200, 303].includes(resultado.status), `status inesperado: ${resultado.status}`);
@@ -184,13 +184,24 @@ describe('conta do RD Station guardada por chave ganha cliente dono', { concurre
       'revoked|descartada',
     );
     assert.equal(
-      umaLinha(dono(`SELECT state || '|' || client_id FROM integrations.connection_accounts WHERE id = '${recurso}'`)),
-      `linked|${cliente}`,
+      umaLinha(dono(
+        `SELECT state || '|' || coalesce(client_id::text, '-') FROM integrations.connection_accounts WHERE id = '${recurso}'`,
+      )),
+      'discovered|-',
+    );
+    assert.equal(
+      umaLinha(dono(
+        `SELECT metadata ->> 'de' || '|' || (metadata ->> 'motivo') FROM audit.audit_log
+          WHERE action = 'connection_account.unlink' AND target_id = '${recurso}'`,
+      )),
+      'Credaz|connection.removed',
     );
     assert.equal(
       umaLinha(dono(`SELECT count(*) FROM automation.fontes_de_coleta(200) WHERE fonte_id = '${recurso}'`)),
       '0',
     );
+    const depois = await (await browse(tela)).text();
+    assert.ok(!depois.includes(`value="${recurso}"`), 'a conta da conexão removida continua na tela');
     signOut();
   });
 });

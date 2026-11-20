@@ -27,6 +27,7 @@ import type { ConnectionRepository } from '@/modules/connections/infrastructure/
 import type { DiscoveredAccountRepository } from '@/modules/connections/infrastructure/discoveredAccountRepository';
 import { logger } from '@/shared/logging/logger';
 import { avisarMudancaDePosse, semAvisoDePosse, type AvisoDePosse } from '@/modules/connections/application/avisoDePosse';
+import { liberarContasDaConexao } from '@/modules/connections/application/liberacaoDeContas';
 import { randomBytes } from 'node:crypto';
 
 export type LinkAccountInput = Omit<NewAdAccount, 'organizationId'> & {
@@ -88,7 +89,7 @@ export function createConnectionService(
   vault: CredentialVault,
   tester: CredentialTester,
   workflows: ProvisionadorDeColetor,
-  contasDescobertas: Pick<DiscoveredAccountRepository, 'replace'>,
+  contasDescobertas: Pick<DiscoveredAccountRepository, 'replace' | 'liberarDaConexao'>,
   aviso: AvisoDePosse = semAvisoDePosse,
 ): ConnectionService {
   async function provisionarColetor(organizationId: string, connection: Connection): Promise<string | null> {
@@ -216,6 +217,14 @@ export function createConnectionService(
       const revogada = await connections.revogar(input.organizationId, conexao.id);
       if (!revogada) return err(failure('not_found', 'Conexão não encontrada.'));
 
+      const liberadas = await liberarContasDaConexao(
+        contasDescobertas,
+        clients,
+        audit,
+        { organizationId: input.organizationId, connectionId: conexao.id },
+        ator,
+      );
+
       for (const workflowId of [revogada.coletorRef, revogada.executorRef]) {
         if (workflowId) await workflows.remover(workflowId);
       }
@@ -229,9 +238,10 @@ export function createConnectionService(
         targetId: conexao.id,
         requestId: ator.requestId,
         sourceIp: ator.sourceIp,
-        metadata: { platform: conexao.platform },
+        metadata: { platform: conexao.platform, contasLiberadas: liberadas.length },
       });
 
+      if (liberadas.length > 0) avisarMudancaDePosse(aviso, 'connection_account.unlink');
       return ok(undefined);
     },
 
