@@ -198,7 +198,8 @@ export default function Privacidade() {
           </li>
           <li>
             Você pode pedir confirmação do tratamento, acesso, correção, portabilidade, anonimização ou exclusão dos
-            seus dados, e informações sobre compartilhamento, conforme o art. 18 da LGPD, por{' '}
+            seus dados (passo a passo em <Link href="/exclusao-de-dados">Exclusão de dados</Link>), e informações
+            sobre compartilhamento, conforme o art. 18 da LGPD, por{' '}
             <a href="mailto:contato@agencia24por7.com">contato@agencia24por7.com</a>. Respondemos em até 15 dias.
           </li>
           <li>
