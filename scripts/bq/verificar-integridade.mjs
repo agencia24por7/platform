@@ -324,13 +324,18 @@ function verificarViews(ctx) {
   (SELECT ${contagemBase} FROM ${consultor.ref(base)}) AS linhas_base`;
   })));
   let divergentes = 0;
+  let ocultas = 0;
   for (const linha of linhas) {
-    if (Number(linha.linhas_view) !== Number(linha.linhas_base)) {
+    const naView = Number(linha.linhas_view);
+    const naBase = Number(linha.linhas_base);
+    if (naView > naBase) {
       divergentes += 1;
-      rel.grave(`${linha.view}: ${linha.linhas_view} linhas na view x ${linha.linhas_base} na base ${linha.base}`);
+      rel.grave(`${linha.view}: ${naView} linhas na view x ${naBase} na base ${linha.base} (a view multiplica linhas)`);
     }
+    if (naView < naBase) ocultas += naBase - naView;
   }
-  if (linhas.length && divergentes === 0) rel.ok(`${linhas.length} views com a mesma contagem da base`);
+  if (linhas.length && divergentes === 0) rel.ok(`${linhas.length} views sem multiplicar linhas da base`);
+  if (ocultas > 0) rel.ok(`${ocultas} linhas de cliente excluído ocultas pelas views (exclusão lógica, ADR 0022)`);
 }
 
 function ladoDaSoma(consultor, lado, metricas, grao, desde) {

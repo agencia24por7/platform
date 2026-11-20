@@ -65,8 +65,10 @@ SELECT
   f.*,
   epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM fatos f
@@ -80,7 +82,9 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_google_anuncio_diario` (
   organization_id             STRING NOT NULL,
@@ -143,8 +147,10 @@ SELECT
   f.*,
   epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM fatos f
@@ -158,7 +164,9 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_google_palavra_chave_diario` (
   organization_id             STRING NOT NULL,
@@ -221,8 +229,10 @@ SELECT
   f.*,
   epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM fatos f
@@ -236,7 +246,9 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_google_termo_pesquisa_diario` (
   organization_id             STRING NOT NULL,
@@ -301,8 +313,10 @@ SELECT
   f.*,
   epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM fatos f
@@ -316,7 +330,9 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_google_conversao_diario` (
   organization_id             STRING NOT NULL,
@@ -371,8 +387,10 @@ SELECT
   f.*,
   epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM fatos f
@@ -386,7 +404,9 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_google_dispositivo_diario` (
   organization_id             STRING NOT NULL,
@@ -447,8 +467,10 @@ SELECT
   f.*,
   epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM fatos f
@@ -462,7 +484,9 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_google_rede_diario` (
   organization_id             STRING NOT NULL,
@@ -523,8 +547,10 @@ SELECT
   f.*,
   epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM fatos f
@@ -538,7 +564,9 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_google_geo_diario` (
   organization_id             STRING NOT NULL,
@@ -601,8 +629,10 @@ SELECT
   f.*,
   epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM fatos f
@@ -616,7 +646,9 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_google_idade_diario` (
   organization_id             STRING NOT NULL,
@@ -679,8 +711,10 @@ SELECT
   f.*,
   epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM fatos f
@@ -694,7 +728,9 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_google_genero_diario` (
   organization_id             STRING NOT NULL,
@@ -757,8 +793,10 @@ SELECT
   f.*,
   epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM fatos f
@@ -772,7 +810,9 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_google_grupo_ativos_diario` (
   organization_id             STRING NOT NULL,
@@ -831,8 +871,10 @@ SELECT
   f.*,
   epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM fatos f
@@ -846,7 +888,9 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.dim_google_campanha_scd2` (
   organization_id             STRING NOT NULL,
@@ -891,6 +935,7 @@ SELECT
   f.*,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM `{{DATASET}}.dim_google_campanha_scd2` f
@@ -898,7 +943,8 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
   ON atual.organization_id = f.organization_id AND atual.platform = 'google' AND atual.external_id = f.ad_account_id
   AND atual.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.dim_google_grupo_anuncios_scd2` (
   organization_id             STRING NOT NULL,
@@ -937,6 +983,7 @@ SELECT
   f.*,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM `{{DATASET}}.dim_google_grupo_anuncios_scd2` f
@@ -944,7 +991,8 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
   ON atual.organization_id = f.organization_id AND atual.platform = 'google' AND atual.external_id = f.ad_account_id
   AND atual.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.dim_google_anuncio_scd2` (
   organization_id             STRING NOT NULL,
@@ -987,6 +1035,7 @@ SELECT
   f.*,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM `{{DATASET}}.dim_google_anuncio_scd2` f
@@ -994,7 +1043,8 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
   ON atual.organization_id = f.organization_id AND atual.platform = 'google' AND atual.external_id = f.ad_account_id
   AND atual.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.dim_google_palavra_chave_scd2` (
   organization_id             STRING NOT NULL,
@@ -1039,6 +1089,7 @@ SELECT
   f.*,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM `{{DATASET}}.dim_google_palavra_chave_scd2` f
@@ -1046,7 +1097,8 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
   ON atual.organization_id = f.organization_id AND atual.platform = 'google' AND atual.external_id = f.ad_account_id
   AND atual.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.dim_google_grupo_ativos_scd2` (
   organization_id             STRING NOT NULL,
@@ -1083,6 +1135,7 @@ SELECT
   f.*,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM `{{DATASET}}.dim_google_grupo_ativos_scd2` f
@@ -1090,5 +1143,6 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
   ON atual.organization_id = f.organization_id AND atual.platform = 'google' AND atual.external_id = f.ad_account_id
   AND atual.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_atual.status, '') != 'excluido';
 

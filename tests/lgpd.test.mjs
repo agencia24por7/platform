@@ -94,12 +94,12 @@ describe('retenção e direitos do titular', { concurrency: false }, () => {
     assert.equal(typeof (corpo.data ?? corpo).usuariosApagados, 'number');
   });
 
-  it('o papel do app não consegue anonimizar titular nem excluir cliente', () => {
+  it('o papel do app não consegue anonimizar titular nem excluir, restaurar ou expurgar cliente', () => {
+    const nenhum = `'00000000-0000-0000-0000-000000000000'`;
     assert.throws(() => comoApp(`SELECT core.anonimizar_titular('alguem@x.test')`), /permission denied/);
-    assert.throws(
-      () => comoApp(`SELECT core.excluir_cliente('00000000-0000-0000-0000-000000000000')`),
-      /permission denied/,
-    );
+    assert.throws(() => comoApp(`SELECT core.excluir_cliente(${nenhum}, 'app')`), /permission denied/);
+    assert.throws(() => comoApp(`SELECT core.restaurar_cliente(${nenhum}, 'app')`), /permission denied/);
+    assert.throws(() => comoApp(`SELECT core.expurgar_cliente(${nenhum})`), /permission denied/);
   });
 
   it('anonimizar o titular revoga o acesso e tira o e-mail de usuário, convites, conexões e auditoria', () => {
@@ -123,20 +123,74 @@ describe('retenção e direitos do titular', { concurrency: false }, () => {
       `SELECT count(*) FROM audit.audit_log WHERE metadata::text LIKE '%${email}%' OR (actor_id = '${titular}' AND source_ip IS NOT NULL)`)), '0');
   });
 
-  it('excluir o cliente leva junto contas, acessos e coletas, e deixa um registro sem dado pessoal', () => {
+  const clienteComConta = (nome, sufixo) => {
     const cliente = umaLinha(dono(
-      `INSERT INTO core.clients (organization_id, name, business_model) VALUES ('${org}', 'Saindo', 'leads') RETURNING id`,
+      `INSERT INTO core.clients (organization_id, name, business_model) VALUES ('${org}', '${nome}', 'leads') RETURNING id`,
     ));
     const conexao = umaLinha(dono(
       `INSERT INTO integrations.connections (organization_id, platform, grant_type, label, external_id, scopes, credential_ref)
-       VALUES ('${org}', 'google', 'mcc', 'MCC saindo', '999-${String(marca).slice(-3)}-0001', ARRAY['adwords'], 'cred') RETURNING id`,
+       VALUES ('${org}', 'google', 'mcc', 'MCC ${nome}', '999-${String(marca).slice(-3)}-${sufixo}', ARRAY['adwords'], 'cred') RETURNING id`,
     ));
-    dono(
+    const conta = umaLinha(dono(
       `INSERT INTO integrations.ad_accounts (organization_id, client_id, connection_id, platform, external_id, name)
-       VALUES ('${org}', '${cliente}', '${conexao}', 'google', '123-${String(marca).slice(-3)}-0001', 'Conta saindo')`,
-    );
+       VALUES ('${org}', '${cliente}', '${conexao}', 'google', '123-${String(marca).slice(-3)}-${sufixo}', 'Conta ${nome}')
+       RETURNING id`,
+    ));
+    return { cliente, conta };
+  };
 
-    const resumo = JSON.parse(dono(`SELECT core.excluir_cliente('${cliente}')`));
+  const naOrganizacao = (sql) => comoApp(`SET app.organization_id = '${org}'; SET app.client_ids = '*'; ${sql}`);
+
+  it('excluir o cliente é lógico: some do app, sai da coleta, revoga convites e nada é apagado', () => {
+    const { cliente, conta } = clienteComConta('Saindo', '0001');
+    const convite = umaLinha(dono(
+      `INSERT INTO integrations.connection_invites (organization_id, client_id, kind, token, expires_at)
+       VALUES ('${org}', '${cliente}', 'oauth_self_service', 'tok-${marca}-saindo', now() + interval '7 days') RETURNING id`,
+    ));
+    assert.equal(umaLinha(naOrganizacao(`SELECT count(*) FROM integrations.ad_accounts WHERE id = '${conta}'`)), '1');
+
+    const resumo = JSON.parse(dono(`SELECT core.excluir_cliente('${cliente}', 'teste')`));
+    assert.equal(resumo.contas, 1);
+    assert.equal(resumo.convitesRevogados, 1);
+
+    assert.equal(umaLinha(dono(
+      `SELECT status || '|' || (excluido_em IS NOT NULL) || '|' || excluido_por FROM core.clients WHERE id = '${cliente}'`)),
+      'archived|true|teste');
+    assert.equal(umaLinha(dono(`SELECT count(*) FROM integrations.ad_accounts WHERE client_id = '${cliente}'`)), '1');
+    assert.equal(umaLinha(dono(`SELECT status FROM integrations.connection_invites WHERE id = '${convite}'`)), 'revoked');
+    assert.equal(umaLinha(dono(
+      `SELECT count(*) FROM audit.audit_log WHERE action = 'client.excluded' AND target_id = '${cliente}'`)), '1');
+
+    assert.equal(umaLinha(naOrganizacao(`SELECT count(*) FROM core.clients WHERE id = '${cliente}'`)), '0');
+    assert.equal(umaLinha(naOrganizacao(`SELECT count(*) FROM integrations.ad_accounts WHERE id = '${conta}'`)), '0');
+    assert.equal(umaLinha(naOrganizacao(`SELECT count(*) FROM integrations.connection_invites WHERE id = '${convite}'`)), '0');
+    assert.equal(umaLinha(dono(`SELECT count(*) FROM automation.fontes_de_coleta(200) WHERE client_id = '${cliente}'`)), '0');
+    assert.equal(umaLinha(dono(
+      `SELECT status FROM automation.dimensao_clientes() WHERE client_id = '${cliente}' AND excluido_em IS NOT NULL`)), 'archived');
+
+    assert.throws(() => dono(`SELECT core.excluir_cliente('${cliente}', 'teste')`), /já foi excluído/);
+  });
+
+  it('um cliente excluído não impede cadastrar outro com o mesmo nome, e restaurar confere a colisão', () => {
+    const { cliente } = clienteComConta('Volta', '0002');
+    dono(`SELECT core.excluir_cliente('${cliente}', 'teste')`);
+    const homonimo = umaLinha(dono(
+      `INSERT INTO core.clients (organization_id, name, business_model) VALUES ('${org}', 'Volta', 'leads') RETURNING id`,
+    ));
+    assert.throws(() => dono(`SELECT core.restaurar_cliente('${cliente}', 'teste')`), /já existe cliente ativo/);
+
+    dono(`UPDATE core.clients SET name = 'Volta (novo)' WHERE id = '${homonimo}'`);
+    const resumo = JSON.parse(dono(`SELECT core.restaurar_cliente('${cliente}', 'teste')`));
+    assert.equal(resumo.status, 'paused');
+    assert.equal(umaLinha(naOrganizacao(`SELECT status FROM core.clients WHERE id = '${cliente}'`)), 'paused');
+    assert.equal(umaLinha(dono(
+      `SELECT count(*) FROM audit.audit_log WHERE action = 'client.restored' AND target_id = '${cliente}'`)), '1');
+  });
+
+  it('expurgar o cliente leva junto contas, acessos e coletas, e deixa um registro sem dado pessoal', () => {
+    const { cliente } = clienteComConta('Expurgo', '0003');
+
+    const resumo = JSON.parse(dono(`SELECT core.expurgar_cliente('${cliente}')`));
     assert.equal(resumo.contas, 1);
 
     assert.equal(umaLinha(dono(`SELECT count(*) FROM core.clients WHERE id = '${cliente}'`)), '0');

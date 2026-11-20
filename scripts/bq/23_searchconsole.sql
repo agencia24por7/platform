@@ -140,8 +140,10 @@ SELECT
   f.*,
   epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM fatos f
@@ -155,7 +157,9 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE OR REPLACE VIEW `{{DATASET}}.vw_search_console_pagina_diario` AS
 WITH fatos AS (
@@ -171,8 +175,10 @@ SELECT
   f.*,
   epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM fatos f
@@ -186,7 +192,9 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE OR REPLACE VIEW `{{DATASET}}.vw_search_console_pais_dispositivo_diario` AS
 WITH fatos AS (
@@ -202,8 +210,10 @@ SELECT
   f.*,
   epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM fatos f
@@ -217,7 +227,9 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE OR REPLACE VIEW `{{DATASET}}.vw_search_console_aparencia_diario` AS
 WITH fatos AS (
@@ -233,8 +245,10 @@ SELECT
   f.*,
   epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM fatos f
@@ -248,4 +262,6 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';
