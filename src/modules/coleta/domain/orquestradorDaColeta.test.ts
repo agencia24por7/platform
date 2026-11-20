@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
-import { GRAVAR_COLETA_MAX_LINHAS } from '../../../shared/config/contracts.ts';
+import { fecharColetaBody, GRAVAR_COLETA_MAX_LINHAS } from '../../../shared/config/contracts.ts';
 
 type No = { id: string; name: string; parameters: { jsCode?: string } };
 type Modelo = { nodes: No[]; connections: Record<string, { main: { node: string }[][] }> };
@@ -37,6 +37,19 @@ for (const arquivo of FLUXOS) {
       const falha = qualidade([{ causa: 'coleta_incompleta', detalhe: 'x' }, { causa: 'reauth_pending', detalhe: 'token' }]);
       assert.equal(falha.status, 'failed');
       assert.equal(falha.errorCode, 'reauth_pending');
+    });
+
+    it('coleta parcial fecha com um corpo aceito pela API', () => {
+      const parcial = qualidade([{ causa: 'coleta_incompleta', detalhe: 'aparencia: HTTP 400' }]);
+      const corpo = {
+        coletaId: '00000000-0000-4000-8000-000000000001',
+        status: parcial.status,
+        requestCount: parcial.requestCount,
+        qualidadeResumo: parcial.qualidadeResumo,
+        errorCode: parcial.errorCode,
+        errorMessage: parcial.errorMessage,
+      };
+      assert.equal(fecharColetaBody.safeParse(corpo).success, true);
     });
 
     it('divide as linhas em lotes de até 10.000 e sempre grava ao menos um lote', () => {
