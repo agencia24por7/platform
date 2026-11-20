@@ -18,6 +18,12 @@ export const MODELO_DE_EXECUTOR: Readonly<Record<string, string>> = {
   meta: 'n8n/workflows/executores/executor-meta-partner.json',
 };
 
+export const WORKFLOWS_DA_PLATAFORMA = [
+  'n8n/workflows/plataforma/retencao-diaria.json',
+  'n8n/workflows/plataforma/dimensoes-diarias.json',
+  'n8n/workflows/plataforma/contexto-brain-diario.json',
+] as const;
+
 export const PASTAS_DE_MODELO = ['n8n/workflows/coletores/', 'n8n/workflows/executores/'];
 
 export const ehModelo = (caminho: string) => PASTAS_DE_MODELO.some((pasta) => caminho.startsWith(pasta));

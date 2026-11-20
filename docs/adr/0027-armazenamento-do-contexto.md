@@ -105,8 +105,11 @@ bytes iniciais, cabeçalhos de download), `armazenamentoGcs.ts`, `armazenamentoN
 toda operação rejeita com `ArmazenamentoIndisponivelError` e `saudavel()` devolve `false`) e
 `criarArmazenamentoDeContexto.ts`.
 
-Tipos aceitos: png, jpeg, webp, gif, pdf, csv, txt, xlsx, docx e, para ativos de marca, zip e fontes
-(ttf, otf, woff2). Recusados: html, svg, js e executáveis. O tipo é decidido pelos bytes iniciais; extensão e
+Tipos aceitos: png, jpeg, webp, gif, pdf, csv, txt, xlsx, docx, vídeo mp4/mov (depoimentos e criativos) e,
+para ativos de marca, fontes (ttf, otf, woff2). Recusados: html, svg, js, executáveis e **zip** — o pacote pode
+levar qualquer coisa (executável, html, bomba de descompressão) que a checagem por bytes iniciais não enxerga, e
+nenhum indexador do brain lê o conteúdo; pasta grande vai como link (revisto no ADR 0026). Esta é a única lista
+de tipos: o domínio do contexto (`domain/contexto/arquivos.ts`) só mapeia cada tipo para a categoria do campo. O tipo é decidido pelos bytes iniciais; extensão e
 `Content-Type` declarado só podem confirmar, nunca promover. CSV/TXT precisam ser UTF-8 sem NUL e sem marcadores
 ativos (`<script`, `<html`, `<svg`...). Download sempre como `attachment`, com `nosniff`, `Content-Security-Policy:
 sandbox` e `Cache-Control: private, no-store`.
