@@ -36,6 +36,8 @@ export type ConfiguracaoScd2 = Mapeamento & {
 export type ConfiguracaoSnapshot = Mapeamento & {
   readonly tipo: 'snapshot';
   readonly tabela: string;
+  readonly chave: readonly string[];
+  readonly colunaMomento: string;
   readonly tipos: TiposDasColunas;
 };
 

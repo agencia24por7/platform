@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
-import { appIsUp, ensureUser, get, makeOwner, post, signIn, submitForm } from './helpers.mjs';
+import { BASE, appIsUp, ensureUser, get, makeOwner, post, signIn, submitForm, workerHeaders } from './helpers.mjs';
 
 const query = (sql) =>
   execFileSync('docker', ['exec', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
@@ -54,7 +54,18 @@ async function ensureAccount(userId) {
 describe('camada de coleta', { concurrency: false }, () => {
   let accountId = '';
   let connectionId = '';
+  let clientId = '';
   let coletaId = '';
+
+  const abrirNova = (prefixo) =>
+    post('/api/v0/coleta/abrir', {
+      fonteTipo: 'ad_account',
+      fonteId: accountId,
+      mode: 'amostra',
+      window: WINDOW,
+      idempotencyKey: `${prefixo}-${Date.now()}`,
+      n8nExecutionId: null,
+    }).then((r) => r.json());
 
   before(async () => {
     if (!(await appIsUp())) throw new Error('App não está no ar');
@@ -63,6 +74,7 @@ describe('camada de coleta', { concurrency: false }, () => {
     const conta = await ensureAccount(usuario);
     accountId = conta.accountId;
     connectionId = conta.connectionId;
+    clientId = conta.clientId;
     assert.match(accountId, /^[a-f0-9-]{36}$/);
   });
 
@@ -179,12 +191,12 @@ describe('camada de coleta', { concurrency: false }, () => {
     assert.equal(response.status, 404);
   });
 
-  it('gravar recusa quando o BigQuery não está configurado neste ambiente', async () => {
+  it('gravar recusa coleta já fechada, antes de tocar no BigQuery', async () => {
     const response = await post('/api/v0/coleta/gravar', {
       coletaId,
       linhas: [{ externalCampaignId: 'c1', metricDate: '2026-11-01', spend: 10 }],
     });
-    assert.equal(response.status, 503);
+    assert.equal(response.status, 409);
   });
 
   it('não permite encerrar duas vezes', async () => {
@@ -199,6 +211,43 @@ describe('camada de coleta', { concurrency: false }, () => {
       errorMessage: null,
     });
     assert.equal(response.status, 409);
+  });
+
+  it('gravar em coleta running de cliente ativo passa pelo contexto e chega ao BigQuery (503 sem BigQuery aqui)', async () => {
+    const aberta = await abrirNova('coleta-grava');
+    assert.match(aberta.id ?? '', /^[a-f0-9-]{36}$/, `abrir falhou: ${JSON.stringify(aberta)}`);
+    const response = await post('/api/v0/coleta/gravar', {
+      coletaId: aberta.id,
+      linhas: [{ externalCampaignId: 'c1', metricDate: '2026-11-01', spend: 10 }],
+    });
+    assert.equal(response.status, 503);
+    const corpo = await response.json();
+    assert.match(corpo.title, /bigquery_indisponivel/);
+  });
+
+  it('reabrir a mesma chave depois de fechada abre outra execução; em running devolve a mesma', async () => {
+    const key = `coleta-reabre-${Date.now()}`;
+    const payload = { fonteTipo: 'ad_account', fonteId: accountId, mode: 'amostra', window: WINDOW, idempotencyKey: key, n8nExecutionId: null };
+    const primeira = await post('/api/v0/coleta/abrir', payload).then((r) => r.json());
+    await post('/api/v0/coleta/fechar', {
+      coletaId: primeira.id, status: 'failed', requestCount: 0, rowsReceived: 0, rowsWritten: 0,
+      qualidadeResumo: null, errorCode: null, errorMessage: null,
+    });
+    const segunda = await post('/api/v0/coleta/abrir', payload).then((r) => r.json());
+    const repetida = await post('/api/v0/coleta/abrir', payload).then((r) => r.json());
+    assert.notEqual(segunda.id, primeira.id);
+    assert.equal(segunda.status, 'running');
+    assert.equal(repetida.id, segunda.id);
+    assert.equal(query(`select idempotency_key from automation.coletas where id = '${segunda.id}'`), `${key}#2`);
+  });
+
+  it('rota de worker recusa com 413 corpo acima do limite', async () => {
+    const response = await fetch(`${BASE}/api/v0/coleta/abrir`, {
+      method: 'POST',
+      headers: workerHeaders(),
+      body: JSON.stringify({ lixo: 'x'.repeat(1_100_000) }),
+    });
+    assert.equal(response.status, 413);
   });
 
   it('erro de reautorização marca a conexão como reauth_pending', async () => {
@@ -224,6 +273,18 @@ describe('camada de coleta', { concurrency: false }, () => {
     });
 
     assert.equal(query(`select status from integrations.connections where id = '${connectionId}'`), 'reauth_pending');
+  });
+
+  it('gravar recusa com 404 cliente excluído, mesmo com a coleta aberta', async () => {
+    query(`update integrations.connections set status = 'active' where id = '${connectionId}'`);
+    const aberta = await abrirNova('coleta-excluido');
+    assert.match(aberta.id ?? '', /^[a-f0-9-]{36}$/, `abrir falhou: ${JSON.stringify(aberta)}`);
+    query(`select core.excluir_cliente('${clientId}', 'teste')`);
+    const response = await post('/api/v0/coleta/gravar', {
+      coletaId: aberta.id,
+      linhas: [{ externalCampaignId: 'c1', metricDate: '2026-11-01', spend: 10 }],
+    });
+    assert.equal(response.status, 404);
   });
 
   it('registra toda a trilha do worker', async () => {

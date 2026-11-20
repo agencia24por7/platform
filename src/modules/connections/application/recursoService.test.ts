@@ -130,6 +130,8 @@ for (const plataforma of PLATAFORMAS_COM_RECURSO) {
       assert.equal(evento!.action, 'connection_account.reassigned');
       assert.equal(evento!.metadata?.de, 'Credaz');
       assert.equal(evento!.metadata?.para, 'Outro');
+      assert.equal(evento!.metadata?.deId, 'cli-a');
+      assert.equal(evento!.metadata?.paraId, 'cli-b');
       assert.equal(evento!.metadata?.historico, 'scd2');
       assert.deepEqual(c.avisos, ['connection_account.reassigned']);
       assert.equal((await c.servico.listarPorCliente(ORGANIZACAO, 'cli-a')).length, 0);
@@ -161,6 +163,7 @@ for (const plataforma of PLATAFORMAS_COM_RECURSO) {
       const [evento] = c.eventos;
       assert.equal(evento!.action, 'connection_account.unlink');
       assert.equal(evento!.metadata?.de, 'Credaz');
+      assert.equal(evento!.metadata?.deId, 'cli-a');
       assert.deepEqual(c.avisos, ['connection_account.unlink']);
 
       const repetida = await c.servico.desvincular(

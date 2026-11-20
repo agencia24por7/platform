@@ -16,10 +16,12 @@ export const TABELAS_GTM: TabelasDaPlataforma = {
   padrao: {
     tipo: 'snapshot',
     tabela: 'gov_snapshot_fontes',
+    chave: ['organization_id', 'fonte_id', 'execucao_id'],
+    colunaMomento: 'visto_em',
     tipos: {
       organization_id: 'STRING', platform: 'STRING', fonte_tipo: 'STRING', fonte_id: 'STRING',
       nome: 'STRING', estado: 'STRING', inactive: 'BOOL', rotulo_esperado: 'STRING', rotulo_observado: 'STRING',
-      visto_em: 'TIMESTAMP',
+      visto_em: 'TIMESTAMP', execucao_id: 'STRING',
     },
     mapear: (linha, ctx) => ({
       organization_id: ctx.organizationId,
@@ -32,6 +34,7 @@ export const TABELAS_GTM: TabelasDaPlataforma = {
       rotulo_esperado: linha.rotuloEsperado ?? null,
       rotulo_observado: linha.rotuloObservado ?? null,
       visto_em: agora(),
+      execucao_id: ctx.execucaoId,
     }),
   },
   [TabelaGtm.Conteiner]: dimensaoScd2({

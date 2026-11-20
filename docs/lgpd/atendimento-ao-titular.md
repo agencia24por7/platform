@@ -37,10 +37,28 @@ Fica um `client.excluded` na auditoria. `restaurar-cliente` desfaz: o cliente vo
 coleta é decisão de quem opera) e fica um `client.restored`.
 
 `expurgar-cliente` é o **expurgo**: apaga de vez no Postgres contas, métricas, coletas, convites e acessos do
-cliente, e no BigQuery as linhas do período de posse (manifesto) e as linhas com aquele `client_id`. Não tem
-volta. Use só quando houver obrigação legal de eliminar (pedido do titular sem base legal para manter os dados,
-art. 16 e 18, VI), registrando o motivo no pedido. Fica um `client.purged` na auditoria, sem dado pessoal. Os
-backups expiram sozinhos em até 30 dias.
+cliente, e no BigQuery as linhas do período de posse (manifesto), as das fontes que só foram dele e as linhas com
+aquele `client_id`. Não tem volta. Use só quando houver obrigação legal de eliminar (pedido do titular sem base
+legal para manter os dados, art. 16 e 18, VI), registrando o motivo no pedido. Fica um `client.purged` na
+auditoria, sem dado pessoal; o nome do cliente sai das linhas antigas da trilha (`de`, `para`, `cliente`, `name`
+viram `[cliente expurgado]`) e os recursos que eram dele voltam a `discovered`, sem cliente. Os backups expiram
+sozinhos em até 30 dias; o time travel do BigQuery, em até 7 (mais 7 de fail-safe do Google).
+
+Ordem e retomada (ADR 0023):
+
+1. O cliente precisa estar **excluído logicamente** antes (`excluir-cliente`): assim ele já saiu da coleta e
+   nenhuma gravação nova entra no meio do expurgo (`/coleta/gravar` recusa cliente excluído).
+2. O script sincroniza as dimensões do BigQuery e **aborta sem apagar nada** se a sincronização falhar: o
+   expurgo dos fatos depende do período de posse em `dim_fonte_scd2`.
+3. Apaga no **BigQuery primeiro** (período de posse, sobras das fontes só do cliente, `client_id`) e só depois
+   chama `core.expurgar_cliente` no Postgres, que é irreversível. Por fim repete a limpeza por `client_id` e
+   sincroniza de novo.
+4. Se um passo do BigQuery falhar, o script mostra o passo e a lista dos pendentes e sai com erro. Todo passo é
+   idempotente: **rode o mesmo comando de novo**. Se a falha foi depois do Postgres (o cliente já não existe
+   lá), o mesmo comando só repete a limpeza por `client_id`.
+
+As `stg_*` do BigQuery não são apagadas pelo expurgo: não têm `client_id` e expiram em 7 dias
+(`docs/lgpd/retencao.md`).
 
 `anonimizar` não muda: trata dado pessoal de um usuário, não exclusão de cliente.
 

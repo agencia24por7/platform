@@ -1,6 +1,7 @@
 import { agora, type TabelasDaPlataforma } from '@/modules/coleta/infrastructure/tabelas/tipos';
 import { configuracoesDosRecortes } from '@/modules/coleta/infrastructure/tabelas/recortes';
 import { RECORTES_GA4 } from '@/modules/coleta/domain/recortesGa4';
+import { textoDaDimensao } from '@/modules/coleta/domain/fatosDiarios';
 
 export const TABELAS_GA4: TabelasDaPlataforma = {
   padrao: {
@@ -17,7 +18,7 @@ export const TABELAS_GA4: TabelasDaPlataforma = {
     mapear: (linha, ctx) => ({
       organization_id: ctx.organizationId,
       property_id: ctx.externalId,
-      canal: linha.canal ?? null,
+      canal: textoDaDimensao(linha.canal),
       data_dia: linha.metricDate,
       sessoes: Number(linha.sessoes ?? 0),
       usuarios: Number(linha.usuarios ?? 0),
