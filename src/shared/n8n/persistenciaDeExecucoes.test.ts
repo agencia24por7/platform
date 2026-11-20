@@ -6,7 +6,7 @@ import { PASTA_DOS_WORKFLOWS } from './modelos.ts';
 
 type Modelo = { settings: Record<string, unknown> };
 
-const PASTAS_SEM_PERSISTENCIA = ['coletores', 'executores'];
+const PASTAS_SEM_PERSISTENCIA = ['coletores', 'executores', 'plataforma'];
 const FLUXOS_SEM_PERSISTENCIA = ['coleta-orquestrador.json', 'coleta-backfill-janela.json', 'coleta-backfill.json', 'coleta-metricas.json', 'tarefas-de-conta.json'];
 
 function arquivosJson(pasta: string): string[] {
@@ -27,7 +27,7 @@ describe('execuções do n8n não guardam resposta de API externa', () => {
 
   it('cobre coletores, executores, orquestrador e backfill', () => {
     const nomes = alvos.map(relativo);
-    for (const esperado of ['coleta-orquestrador.json', 'coleta-backfill-janela.json', 'coletores/coletor-meta-insights.json', 'executores/executor-meta-partner.json']) {
+    for (const esperado of ['coleta-orquestrador.json', 'coleta-backfill-janela.json', 'coletores/coletor-meta-insights.json', 'executores/executor-meta-partner.json', 'plataforma/retencao-diaria.json', 'plataforma/dimensoes-diarias.json']) {
       assert.ok(nomes.includes(esperado), `faltou ${esperado}`);
     }
   });

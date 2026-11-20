@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
 type No = { name: string; type: string; parameters: Record<string, unknown> & { jsCode?: string; options?: Record<string, unknown> } };
@@ -11,9 +11,10 @@ const carregar = (arquivo: string): Modelo => JSON.parse(readFileSync(`n8n/workf
 
 function executar(modelo: Modelo, nome: string, entrada: Item[], nos: Record<string, Item[]>): Item[] {
   const codigo = modelo.nodes.find((candidato) => candidato.name === nome)!.parameters.jsCode!;
-  const referenciar = (outro: string) => ({ all: () => nos[outro]!, first: () => nos[outro]![0]! });
-  const corpo = new Function('$input', '$json', '$', codigo) as (...argumentos: unknown[]) => Item[];
-  return corpo({ all: () => entrada, first: () => entrada[0] }, entrada[0]?.json, referenciar);
+  const referenciar = (outro: string) => ({ all: () => nos[outro]!, first: () => nos[outro]![0]!, item: nos[outro]?.[0] });
+  const corpo = new Function('$input', '$json', '$', codigo) as (...argumentos: unknown[]) => Item[] | Item;
+  const resultado = corpo({ all: () => entrada, first: () => entrada[0] }, entrada[0]?.json, referenciar);
+  return Array.isArray(resultado) ? resultado : [resultado];
 }
 
 const ok = (corpo: unknown): Item => ({ json: { statusCode: 200, body: corpo } });
@@ -49,11 +50,11 @@ describe('coletor Google Ads: só a consulta de campanha é obrigatória', () =>
     assert.equal(resultado.falhas[0]!.causa, 'api_recusou');
   });
 
-  it('cota diária esgotada vira limite_de_uso marcado como cota_diaria', () => {
+  it('cota diária esgotada vira limite_de_uso com pausa estruturada cota_diaria', () => {
     const erro = { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'Number of operations for basic access exceeded' };
     const resultado = saida(executar(modelo, 'Normalizar', responder('fato_google_rede_diario', recusa(429, erro)), { 'Montar requisição': pedidos }));
     assert.equal(resultado.falhas[0]!.causa, 'limite_de_uso');
-    assert.ok(resultado.falhas[0]!.detalhe!.startsWith('cota_diaria: '));
+    assert.equal((resultado.falhas[0] as { pausa?: string }).pausa, 'cota_diaria');
   });
 
   it('API desligada no projeto continua api_recusou, não limite', () => {
@@ -121,4 +122,83 @@ describe('orquestrador incremental', () => {
       assert.ok(!readFileSync(`n8n/workflows/coletores/${arquivo}`, 'utf8').includes("'amostra'"), arquivo);
     }
   });
+});
+
+describe('coletor GA4: endereço sem query string', () => {
+  const modelo = carregar('coletores/coletor-ga4.json');
+  const pedidos = executar(modelo, 'Montar requisição', [{ json: { fonte: { externalId: 'properties/1' }, janela: { start: '2026-11-01', end: '2026-11-01' } } }], {});
+  const pagina = pedidos.find((pedido) => (pedido.json.recorte as { tabela: string }).tabela === 'pagina')!;
+
+  it('remove ? e # de pagePath e soma as linhas que só diferiam pela consulta', () => {
+    const cabecalhos = (pagina.json.corpo as { dimensions: { name: string }[] }).dimensions.map(({ name }) => ({ name }));
+    const linha = (caminho: string, visualizacoes: number) => ({
+      dimensionValues: [{ value: '20261101' }, { value: caminho }],
+      metricValues: [visualizacoes, 1, 1, 1, 0, 10].map((valor) => ({ value: String(valor) })),
+    });
+    const resposta = ok({ dimensionHeaders: cabecalhos, rows: [linha('/a?email=x@y.com', 3), linha('/a#topo', 2), linha('/b', 1)], rowCount: 3 });
+    const respostas = pedidos.map((pedido) => (pedido === pagina ? resposta : ok({ rows: [] })));
+    const resultado = saida(executar(modelo, 'Normalizar', respostas, { 'Montar requisição': pedidos }));
+    const paginas = resultado.linhas.filter((item) => item._tabela === 'pagina');
+    assert.deepEqual(paginas.map((item) => [item.pagina, item.visualizacoes]), [['/a', 5], ['/b', 1]]);
+    assert.ok(!JSON.stringify(resultado.linhas).includes('email='));
+  });
+});
+
+describe('orquestrador e janela do backfill: robustez', () => {
+  for (const arquivo of ['coleta-orquestrador.json', 'coleta-backfill-janela.json']) {
+    const modelo = carregar(arquivo) as Modelo & { connections: Record<string, { main: { node: string }[][] }>; settings: Record<string, unknown> };
+    const no = (nome: string) => modelo.nodes.find((candidato) => candidato.name === nome)! as No & { retryOnFail?: boolean; maxTries?: number; onError?: string };
+
+    it(`${arquivo}: fonte ocupada é pulada antes de qualquer outro passo`, () => {
+      assert.equal(modelo.connections['Abrir execução']!.main[0]![0]!.node, 'Fonte ocupada?');
+      assert.equal(modelo.connections['Fonte ocupada?']!.main[1]![0]!.node, 'Tem coletor?');
+      assert.ok(String(JSON.stringify(no('Fonte ocupada?').parameters)).includes('fonte_ocupada'));
+    });
+
+    it(`${arquivo}: nós Code críticos fecham a coleta como failed quando quebram`, () => {
+      for (const nome of ['Calcular qualidade', 'Dividir em lotes', 'Conferir gravação']) {
+        assert.equal(no(nome).onError, 'continueErrorOutput', nome);
+        assert.equal(modelo.connections[nome]!.main[1]![0]!.node, 'Falha interna', nome);
+      }
+      assert.equal(modelo.connections['Falha interna']!.main[0]![0]!.node, 'Fechar execução');
+      const [item] = executar(modelo, 'Falha interna', [{ json: { error: { message: 'quebrou token=abc' } } }], { 'Abrir execução': [{ json: { id: 'k' } }] });
+      assert.equal(item!.json.status, 'failed');
+      assert.equal(item!.json.coletaId, 'k');
+      assert.ok(!String(item!.json.errorMessage).includes('abc'));
+    });
+
+    it(`${arquivo}: gravar e fechar retentam e o fluxo tem timeout`, () => {
+      for (const nome of ['Gravar métricas', 'Fechar execução', 'Fechar execução (sem coletor)']) {
+        assert.equal(no(nome).retryOnFail, true, nome);
+        assert.ok((no(nome).maxTries ?? 0) >= 2, nome);
+      }
+      assert.ok(Number(modelo.settings.executionTimeout) > 0);
+      assert.ok(String(no('Fechar execução').parameters.jsonBody).includes('pausa: $json.pausa'));
+    });
+
+    it(`${arquivo}: abrir recusado não vira sem_credencial nem tenta fechar`, () => {
+      const fonteAtual = { nome: 'F', externalId: 'x', fonte: { nome: 'F' } };
+      const nos = { 'Processar em série': [{ json: fonteAtual }], Entrada: [{ json: { fonte: fonteAtual } }] };
+      const recusado = executar(modelo, 'Calcular qualidade (sem coletor)', [{ json: { status: 422, title: 'Janela inválida' } }], nos);
+      assert.equal(recusado[0]!.json.errorCode, 'abrir_recusado');
+      assert.equal(recusado[0]!.json.temColeta, false);
+      const semCredencial = executar(modelo, 'Calcular qualidade (sem coletor)', [{ json: { id: 'k' } }], nos);
+      assert.equal(semCredencial[0]!.json.errorCode, 'sem_credencial');
+      assert.equal(modelo.connections['Calcular qualidade (sem coletor)']!.main[0]![0]!.node, 'Tem coleta aberta?');
+    });
+  }
+});
+
+describe('todo nó Code dos workflows compila', () => {
+  const pastas = ['', 'coletores/', 'executores/', 'plataforma/'];
+  for (const pasta of pastas) {
+    for (const arquivo of readdirSync(`n8n/workflows/${pasta}`).filter((nome) => nome.endsWith('.json'))) {
+      it(`${pasta}${arquivo}`, () => {
+        for (const no of carregar(`${pasta}${arquivo}`).nodes) {
+          if (typeof no.parameters.jsCode !== 'string') continue;
+          assert.doesNotThrow(() => new Function('$input', '$json', '$', '$execution', `return (async () => {${no.parameters.jsCode}\n})()`), no.name);
+        }
+      });
+    }
+  }
 });

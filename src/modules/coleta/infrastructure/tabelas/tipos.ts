@@ -22,6 +22,7 @@ export type ConfiguracaoFato = Mapeamento & {
   readonly chave: readonly string[];
   readonly colunas: readonly string[];
   readonly tipos: TiposDasColunas;
+  readonly preservarSeNulo?: readonly string[];
 };
 
 export type ConfiguracaoScd2 = Mapeamento & {
