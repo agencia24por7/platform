@@ -20,6 +20,8 @@ const VM = process.env.VM ?? 'tria-producao-vm';
 const ZONE = process.env.ZONE ?? 'us-central1-a';
 const PROJETO = process.env.PROJETO ?? 'tria-platform';
 const DATASET = process.env.DATASET ?? 'tria_dw';
+const APP_URL = process.env.APP_URL ?? 'https://platform.agencia24por7.com';
+const SEGREDO_DO_WORKER = process.env.SEGREDO_DO_WORKER ?? 'tria-producao-worker-token';
 const PSQL = ['docker', 'exec', '-i', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-tA', '-v', 'ON_ERROR_STOP=1'];
 
 const [comando, alvo, ...resto] = process.argv.slice(2);
@@ -172,9 +174,37 @@ function resumoDoCliente(id) {
 }
 
 const AVISO_BIGQUERY =
-  'BigQuery: nada é apagado. A sincronização diária de dimensões grava a nova versão do cliente em dim_cliente_scd2 e as views vw_* passam a refletir o estado (ADR 0022).';
+  'BigQuery: nada é apagado. Depois da mudança no Postgres o script dispara a sincronização de dimensões, que grava a nova versão do cliente em dim_cliente_scd2; as views vw_* refletem na hora (ADR 0022).';
 
-function excluirCliente(clientId) {
+function tokenDoWorker() {
+  if (local) return process.env.WORKER_TOKEN ?? process.env.TRIA_WORKER_TOKEN ?? '';
+  return execFileSync('gcloud', ['secrets', 'versions', 'access', 'latest', '--secret', SEGREDO_DO_WORKER, '--project', PROJETO], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+}
+
+async function sincronizarDimensoes() {
+  const base = local ? 'http://localhost:3000' : APP_URL;
+  try {
+    const token = tokenDoWorker();
+    if (!token) throw new Error(local ? 'WORKER_TOKEN ausente no ambiente' : `segredo ${SEGREDO_DO_WORKER} vazio`);
+    const resposta = await fetch(`${base}/api/v0/manutencao/dimensoes`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: '{}',
+      signal: AbortSignal.timeout(120_000),
+    });
+    const corpo = await resposta.text();
+    if (!resposta.ok) throw new Error(`HTTP ${resposta.status}: ${corpo.slice(0, 500)}`);
+    console.log(`Dimensões sincronizadas no BigQuery: ${corpo.slice(0, 500)}`);
+  } catch (erro) {
+    console.warn(`AVISO: a mudança no Postgres foi feita, mas a sincronização de dimensões falhou (${erro.message}).`);
+    console.warn('As views vw_* refletem na próxima sincronização diária, ou rode de novo pelo workflow de dimensões.');
+  }
+}
+
+async function excluirCliente(clientId) {
   const id = literal(clientId);
   const quem = literal(exigirPor(por));
   console.log(resumoDoCliente(id));
@@ -184,10 +214,11 @@ function excluirCliente(clientId) {
     return;
   }
   console.log(consultar(`SELECT jsonb_pretty(core.excluir_cliente(${id}::uuid, ${quem}));`));
+  await sincronizarDimensoes();
   console.log(`Cliente excluído logicamente. Para desfazer: node scripts/titular.mjs restaurar-cliente ${clientId} --confirmar`);
 }
 
-function restaurarCliente(clientId) {
+async function restaurarCliente(clientId) {
   const id = literal(clientId);
   const quem = literal(exigirPor(por));
   console.log(resumoDoCliente(id));
@@ -197,10 +228,11 @@ function restaurarCliente(clientId) {
     return;
   }
   console.log(consultar(`SELECT jsonb_pretty(core.restaurar_cliente(${id}::uuid, ${quem}));`));
+  await sincronizarDimensoes();
   console.log('Cliente restaurado e pausado. Retome a coleta na tela do cliente.');
 }
 
-function expurgarCliente(clientId) {
+async function expurgarCliente(clientId) {
   const id = literal(clientId);
   console.log(resumoDoCliente(id));
   const tabelas = local ? [] : tabelasComCliente();
@@ -223,6 +255,7 @@ function expurgarCliente(clientId) {
       `DELETE FROM \`${PROJETO}.${DATASET}.${tabela}\` WHERE CAST(client_id AS STRING) = @id`,
     ], { stdio: 'inherit' });
   }
+  await sincronizarDimensoes();
   console.log('Cliente expurgado. Os backups expiram em até 30 dias (docs/lgpd/retencao.md).');
 }
 
@@ -234,13 +267,13 @@ switch (comando) {
     anonimizar(exigirEmail(alvo));
     break;
   case 'excluir-cliente':
-    excluirCliente(exigirUuid(alvo));
+    await excluirCliente(exigirUuid(alvo));
     break;
   case 'restaurar-cliente':
-    restaurarCliente(exigirUuid(alvo));
+    await restaurarCliente(exigirUuid(alvo));
     break;
   case 'expurgar-cliente':
-    expurgarCliente(exigirUuid(alvo));
+    await expurgarCliente(exigirUuid(alvo));
     break;
   default:
     falhar(USO);

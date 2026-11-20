@@ -66,7 +66,8 @@ BY` do `QUALIFY` da view. Sem granularidade declarada a tabela não entra.
 ### Exclusão de cliente: lógica, nunca DELETE (ADR 0022)
 
 - Excluir um cliente (`scripts/titular.mjs excluir-cliente`) **não apaga
-  nada** no BigQuery. A sincronização diária de dimensões grava em
+  nada** no BigQuery. A sincronização de dimensões, disparada pelo próprio
+  script logo após a mudança no Postgres, grava em
   `dim_cliente_scd2` uma versão nova com `status = 'excluido'`; restaurar
   grava outra versão com o status de volta. `dim_fonte_scd2` não muda: a
   fonte continua do cliente excluído, e o histórico de posse fica verdadeiro.

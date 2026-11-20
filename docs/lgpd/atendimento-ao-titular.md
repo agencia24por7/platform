@@ -30,7 +30,9 @@ dela da trilha de auditoria. Os registros de auditoria continuam (sem identifica
 `excluir-cliente` é **lógico** e é o caminho padrão: marca o cliente como excluído (`core.clients.excluido_em`,
 `excluido_por`) e arquivado, o que o tira da coleta; revoga convites e cancela tarefas pendentes. Nada é apagado.
 O cliente e tudo o que pende dele (contas, métricas, coletas, convites) somem do app pela RLS, e as views `vw_*`
-do BigQuery escondem as linhas dele assim que a sincronização diária de dimensões gravar o status `excluido`.
+do BigQuery escondem as linhas dele na hora: o script dispara a sincronização de dimensões logo depois da
+mudança no Postgres (token do worker lido via `gcloud secrets`; em `--local`, `localhost:3000` e `WORKER_TOKEN`).
+Se a sincronização falhar, o script só avisa; a exclusão fica e a sincronização diária completa.
 Fica um `client.excluded` na auditoria. `restaurar-cliente` desfaz: o cliente volta **pausado** (retomar a
 coleta é decisão de quem opera) e fica um `client.restored`.
 

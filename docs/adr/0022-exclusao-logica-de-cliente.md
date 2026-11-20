@@ -79,6 +79,11 @@ de exclusão de cliente no app; o atendimento é pelo `titular.mjs`.
   `vw_dim_*`). Esconder pelo dono na época espelha o que o expurgo apagaria
   (o período de posse); esconder pelo dono atual cobre a fonte que hoje é de
   um cliente excluído. `registro.test.ts` recusa view sem o filtro.
+- `titular.mjs` dispara a sincronização de dimensões
+  (`POST /api/v0/manutencao/dimensoes`, token do worker lido do Secret Manager;
+  em `--local`, `localhost:3000` e `WORKER_TOKEN`) logo depois de excluir,
+  restaurar ou expurgar, e as views refletem na hora. Falha na sincronização
+  só avisa: a mudança no Postgres fica, e a sincronização diária completa.
 - `bq:verificar` deixa de exigir contagem igual entre view e base: falha se a
   view tiver **mais** linhas (multiplicação) e informa quantas ficaram ocultas.
 
@@ -89,7 +94,5 @@ de exclusão de cliente no app; o atendimento é pelo `titular.mjs`.
   ele: para dá-la a outro cliente, restaure e mova, ou expurgue.
 - Consulta direta em `fato_*`/`dim_*` (fora das views) vê o histórico de
   clientes excluídos; a convenção é ler as `vw_*` (README do BigQuery).
-- Entre a exclusão e a próxima sincronização de dimensões (diária) as views
-  ainda mostram o cliente. Rodar a sincronização manualmente encurta a janela.
 - Ordem de aplicação: migração 0043, deploy do app (repositório de dimensões),
   `node scripts/bq-ddl.mjs` (views).
