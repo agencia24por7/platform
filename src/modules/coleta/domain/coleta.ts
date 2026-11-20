@@ -26,7 +26,13 @@ export type FonteElegivel = {
   readonly coletorRef: string | null;
   readonly connectionId: string;
   readonly janelaSugerida: Janela;
+  readonly marcaDagua: string | null;
+  readonly comDimensoes: boolean;
 };
+
+export type FonteBruta = Omit<FonteElegivel, 'janelaSugerida' | 'marcaDagua' | 'comDimensoes'>;
+
+export const chaveDaFonte = (fonteTipo: FonteTipo, fonteId: string): string => `${fonteTipo}:${fonteId}`;
 
 export type ColetaStatus = 'running' | 'success' | 'partial' | 'failed';
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { ModoColeta, fonteDe, fontesAtivasNoV1, janelaAteOntem, janelaDias, limiteLinhas, plataformasColetaveis } from './mapaDeFontes.ts';
+import { ModoColeta, fonteDe, fontesAtivasNoV1, janelaAteOntem, janelaDias, plataformasColetaveis } from './mapaDeFontes.ts';
 
 describe('fontesAtivasNoV1', () => {
   it('traz só as 10 fontes com série temporal ou snapshot prontos', () => {
@@ -96,9 +96,25 @@ describe('janelaAteOntem', () => {
   });
 });
 
-describe('limiteLinhas', () => {
-  it('amostra limita linhas, completa não limita', () => {
-    assert.equal(limiteLinhas('google', ModoColeta.Amostra), 500);
-    assert.equal(limiteLinhas('google', ModoColeta.Completa), null);
+describe('coleta incremental no mapa', () => {
+  it('lookback por plataforma: 7 dias para mídia paga, 3 para as demais séries', () => {
+    assert.equal(fonteDe('meta').lookbackDias, 7);
+    assert.equal(fonteDe('google').lookbackDias, 7);
+    for (const platform of ['ga4', 'searchconsole', 'youtube', 'gbp', 'pixel', 'leadads'] as const) assert.equal(fonteDe(platform).lookbackDias, 3);
+  });
+
+  it('atraso: Search Console e GBP terminam 3 dias antes de hoje, o resto ontem', () => {
+    assert.equal(fonteDe('searchconsole').atrasoDias, 3);
+    assert.equal(fonteDe('gbp').atrasoDias, 3);
+    assert.equal(fonteDe('google').atrasoDias, 1);
+  });
+
+  it('incremental usa o mesmo teto de 28 dias da completa', () => {
+    assert.equal(janelaDias('google', ModoColeta.Incremental), 28);
+    assert.equal(janelaDias('rdstation', ModoColeta.Incremental), 0);
+  });
+
+  it('o mapa não tem mais teto de linhas', () => {
+    for (const fonte of fontesAtivasNoV1()) assert.ok(!('limiteLinhasAmostra' in fonte));
   });
 });

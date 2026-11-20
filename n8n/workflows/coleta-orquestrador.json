@@ -49,7 +49,7 @@
         90
       ],
       "parameters": {
-        "url": "=http://app:3000/api/v0/coleta/fontes?limit=50&modo=amostra",
+        "url": "=http://app:3000/api/v0/coleta/fontes?limit=50&modo=incremental",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {
@@ -105,7 +105,7 @@
         "url": "=http://app:3000/api/v0/coleta/abrir",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ fonteTipo: $json.fonteTipo, fonteId: $json.fonteId, mode: 'amostra', window: $json.janelaSugerida, idempotencyKey: `${$json.fonteId}:${$json.janelaSugerida.start}:${$json.janelaSugerida.end}:amostra`, n8nExecutionId: String($execution.id) }) }}",
+        "jsonBody": "={{ JSON.stringify({ fonteTipo: $json.fonteTipo, fonteId: $json.fonteId, mode: 'incremental', window: $json.janelaSugerida, idempotencyKey: `${$json.fonteId}:${$json.janelaSugerida.start}:${$json.janelaSugerida.end}:incremental:${$execution.id}`, n8nExecutionId: String($execution.id) }) }}",
         "options": {
           "response": {
             "response": {
@@ -183,7 +183,7 @@
           "value": {
             "fonte": "={{ $('Processar em série').item.json }}",
             "janela": "={{ $('Processar em série').item.json.janelaSugerida }}",
-            "modo": "amostra"
+            "modo": "incremental"
           }
         }
       }
@@ -199,7 +199,7 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const fonte = $('Processar em série').item.json;\nconst coleta = $('Abrir execução').item.json;\nconst resultado = $json ?? {};\nconst removerSegredos = (texto) => String(texto)\n  .replace(/(access_token|refresh_token|client_secret|developer_token|api_key|key|token)=[^&\\s\"']+/gi, '$1=[removido]')\n  .replace(/Bearer\\s+[A-Za-z0-9._~+\\/-]+=*/g, 'Bearer [removido]');\nconst mensagemDoErro = (erro) => removerSegredos(typeof erro === 'string' ? erro : erro?.message ?? JSON.stringify(erro)).slice(0, 500);\nconst respostaInvalida = Boolean(resultado.error)\n  || !Array.isArray(resultado.linhas)\n  || !resultado.volumetria\n  || typeof resultado.volumetria !== 'object';\nconst linhas = respostaInvalida ? [] : resultado.linhas;\nconst falhas = respostaInvalida\n  ? [{ causa: 'falha_coletor', detalhe: resultado.error ? mensagemDoErro(resultado.error) : 'o coletor devolveu uma resposta sem linhas ou volumetria' }]\n  : Array.isArray(resultado.falhas) ? resultado.falhas.filter((falha) => falha && falha.causa) : [];\nconst NAO_FATAIS = new Set(['sem_dados_no_periodo', 'coleta_incompleta']);\nconst fatal = falhas.find((falha) => !NAO_FATAIS.has(falha.causa)) ?? null;\nconst incompletas = falhas.filter((falha) => falha.causa === 'coleta_incompleta');\nconst status = fatal ? 'failed' : incompletas.length > 0 ? 'partial' : 'success';\nconst detalhes = (lista) => removerSegredos(lista.map((falha) => falha.detalhe ?? falha.causa).join(' | ')).slice(0, 1000);\n\nconst qualidadeResumo = {\n  fontesEsperadas: 1,\n  fontesColetadas: fatal ? 0 : 1,\n  faltantes: falhas.slice(0, 500).map((falha) => ({\n    fonte: fonte.nome || fonte.externalId,\n    causa: String(falha.causa).slice(0, 80),\n    detalhe: falha.detalhe == null ? null : removerSegredos(falha.detalhe).slice(0, 500),\n  })),\n  paridade: [],\n  volumetria: respostaInvalida ? { linhas: 0, bytes: 0, requests: 0, duracaoMs: 0 } : resultado.volumetria,\n};\n\nreturn {\n  json: {\n    coletaId: coleta.id,\n    status,\n    errorCode: fatal ? fatal.causa : incompletas.length > 0 ? 'coleta_incompleta' : null,\n    errorMessage: fatal ? removerSegredos(fatal.detalhe ?? fatal.causa).slice(0, 1000) : incompletas.length > 0 ? detalhes(incompletas) : null,\n    requestCount: respostaInvalida ? 0 : resultado.requests ?? 0,\n    linhas,\n    qualidadeResumo,\n  },\n};"
+        "jsCode": "const fonte = $('Processar em série').item.json;\nconst coleta = $('Abrir execução').item.json;\nconst resultado = $json ?? {};\nconst removerSegredos = (texto) => String(texto)\n  .replace(/(access_token|refresh_token|client_secret|developer_token|api_key|key|token)=[^&\\s\"']+/gi, '$1=[removido]')\n  .replace(/Bearer\\s+[A-Za-z0-9._~+\\/-]+=*/g, 'Bearer [removido]');\nconst mensagemDoErro = (erro) => removerSegredos(typeof erro === 'string' ? erro : erro?.message ?? JSON.stringify(erro)).slice(0, 500);\nconst respostaInvalida = Boolean(resultado.error)\n  || !Array.isArray(resultado.linhas)\n  || !resultado.volumetria\n  || typeof resultado.volumetria !== 'object';\nconst linhas = respostaInvalida ? [] : resultado.linhas;\nconst falhas = respostaInvalida\n  ? [{ causa: 'falha_coletor', detalhe: resultado.error ? mensagemDoErro(resultado.error) : 'o coletor devolveu uma resposta sem linhas ou volumetria' }]\n  : Array.isArray(resultado.falhas) ? resultado.falhas.filter((falha) => falha && falha.causa) : [];\nconst TIPOS_DE_AVISO = new Set(['versao_da_api', 'uso_de_cota', 'limiar_de_privacidade', 'linhas_agrupadas', 'alcance_omitido', 'receita_indisponivel']);\nconst avisos = respostaInvalida || !Array.isArray(resultado.avisos)\n  ? []\n  : resultado.avisos.filter((aviso) => aviso && TIPOS_DE_AVISO.has(aviso.tipo)).slice(0, 50).map((aviso) => ({\n    fonte: String(fonte.nome || fonte.externalId).slice(0, 120),\n    tipo: aviso.tipo,\n    detalhe: aviso.detalhe == null ? null : removerSegredos(aviso.detalhe).slice(0, 500),\n  }));\nconst NAO_FATAIS = new Set(['sem_dados_no_periodo', 'coleta_incompleta']);\nconst fatal = falhas.find((falha) => !NAO_FATAIS.has(falha.causa)) ?? null;\nconst incompletas = falhas.filter((falha) => falha.causa === 'coleta_incompleta');\nconst status = fatal ? 'failed' : incompletas.length > 0 ? 'partial' : 'success';\nconst detalhes = (lista) => removerSegredos(lista.map((falha) => falha.detalhe ?? falha.causa).join(' | ')).slice(0, 1000);\n\nconst qualidadeResumo = {\n  fontesEsperadas: 1,\n  fontesColetadas: fatal ? 0 : 1,\n  faltantes: falhas.slice(0, 500).map((falha) => ({\n    fonte: fonte.nome || fonte.externalId,\n    causa: String(falha.causa).slice(0, 80),\n    detalhe: falha.detalhe == null ? null : removerSegredos(falha.detalhe).slice(0, 500),\n  })),\n  paridade: [],\n  avisos,\n  volumetria: respostaInvalida ? { linhas: 0, bytes: 0, requests: 0, duracaoMs: 0 } : resultado.volumetria,\n};\n\nreturn {\n  json: {\n    coletaId: coleta.id,\n    status,\n    errorCode: fatal ? fatal.causa : incompletas.length > 0 ? 'coleta_incompleta' : null,\n    errorMessage: fatal ? removerSegredos(fatal.detalhe ?? fatal.causa).slice(0, 1000) : incompletas.length > 0 ? detalhes(incompletas) : null,\n    requestCount: respostaInvalida ? 0 : resultado.requests ?? 0,\n    linhas,\n    qualidadeResumo,\n  },\n};"
       }
     },
     {

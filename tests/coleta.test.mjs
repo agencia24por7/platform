@@ -163,6 +163,7 @@ describe('camada de coleta', { concurrency: false }, () => {
       fontesColetadas: 1,
       faltantes: [],
       paridade: [],
+      avisos: [],
       volumetria: { linhas: 42, bytes: 2048, requests: 1, duracaoMs: 350 },
     };
 

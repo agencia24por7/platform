@@ -2,14 +2,16 @@ import { failure, type Failure } from '@/shared/result/failure';
 import { err, ok, type Result } from '@/shared/result/result';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import type { AbrirColetaInput, Coleta, FecharColetaInput, FonteElegivel } from '@/modules/coleta/domain/coleta';
-import { isJanelaSana } from '@/modules/coleta/domain/coleta';
+import { chaveDaFonte, isJanelaSana } from '@/modules/coleta/domain/coleta';
 import { recusaDaGravacao } from '@/modules/coleta/domain/gravacaoPermitida';
+import { HISTORICO_VAZIO, planejarColetaIncremental } from '@/modules/coleta/domain/janelaIncremental';
 import { resolverAbertura } from '@/modules/coleta/domain/tentativaDeColeta';
-import { fonteDe, janelaAteOntem, janelaDias, plataformasColetaveis, type ModoColeta } from '@/modules/coleta/domain/mapaDeFontes';
+import { ModoColeta, fonteDe, janelaAteOntem, janelaDias, plataformasColetaveis } from '@/modules/coleta/domain/mapaDeFontes';
 import type { ColetaRepository } from '@/modules/coleta/infrastructure/coletaRepository';
 import type { BigQueryGravador } from '@/modules/coleta/infrastructure/bigQueryGravador';
 
 const MAX_WINDOW_DAYS = 28;
+const TETO_DE_FONTES_DA_ROTINA = 200;
 
 export type WorkerIdentity = { readonly requestId: string; readonly callerFingerprint: string; readonly sourceIp: string | null };
 
@@ -26,10 +28,25 @@ export type ColetaService = {
 };
 
 export function createColetaService(coletas: ColetaRepository, audit: AuditRecorder, bigQuery: BigQueryGravador): ColetaService {
+  async function fontesPorJanelaFixa(limit: number, modo: ModoColeta): Promise<FonteElegivel[]> {
+    const brutas = await coletas.fontes(limit, plataformasColetaveis());
+    return brutas.map((fonte) => ({ ...fonte, janelaSugerida: janelaAteOntem(fonte.platform, modo), marcaDagua: null, comDimensoes: true }));
+  }
+
+  async function fontesIncrementais(limit: number): Promise<FonteElegivel[]> {
+    const [brutas, historicos] = await Promise.all([coletas.fontes(TETO_DE_FONTES_DA_ROTINA, plataformasColetaveis()), coletas.historicos()]);
+    const agora = new Date();
+    return brutas
+      .map((fonte) => ({ fonte, plano: planejarColetaIncremental(fonte.platform, historicos.get(chaveDaFonte(fonte.fonteTipo, fonte.fonteId)) ?? HISTORICO_VAZIO, agora) }))
+      .filter(({ plano }) => !plano.emDia && !plano.pausadaPorCota)
+      .sort((a, b) => b.plano.diasAtrasada - a.plano.diasAtrasada)
+      .slice(0, limit)
+      .map(({ fonte, plano }) => ({ ...fonte, janelaSugerida: plano.janela, marcaDagua: plano.marcaDagua, comDimensoes: plano.comDimensoes }));
+  }
+
   return {
     async fontes(limit, modo, worker) {
-      const brutas = await coletas.fontes(limit, plataformasColetaveis());
-      const entries = brutas.map((fonte) => ({ ...fonte, janelaSugerida: janelaAteOntem(fonte.platform, modo) }));
+      const entries = modo === ModoColeta.Incremental ? await fontesIncrementais(limit) : await fontesPorJanelaFixa(limit, modo);
       await audit.record({
         organizationId: null,
         actorType: 'worker',

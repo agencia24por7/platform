@@ -27,7 +27,7 @@ const RELATORIOS_CONCLUIDOS = ['anuncio', 'idade_genero', 'posicionamento', 'reg
 }));
 
 function executarNormalizar(nos: Record<string, Linha[]>, relatorios: Linha[] = RELATORIOS_CONCLUIDOS): Linha {
-  const contexto = { inicio: Date.now(), versaoApi: 'v23.0', fonte: { externalId: 'act_1', currency: 'BRL' } };
+  const contexto = { inicio: Date.now(), versaoApi: 'v26.0', fonte: { externalId: 'act_1', currency: 'BRL' } };
   const todos: Record<string, Linha[]> = {
     'Montar requisição': [contexto],
     'Preparar downloads': [{ relatorios, tentativa: 2, urls: {} }],
@@ -234,16 +234,16 @@ describe('coletor Meta Ads', () => {
     assert.equal((saida.falhas as Linha[])[0]!.causa, 'reauth_pending');
   });
 
-  it('resposta HTTP recusada no download de anúncios vira falha, com limite de uso como api_recusou', () => {
+  it('resposta HTTP recusada no download de anúncios vira falha, com limite de uso como limite_de_uso', () => {
     const cenario = { ...cenarioCompleto(), 'Baixar anúncios': [resposta({ error: { code: 190, message: 'expirou' } }, 400)] };
     assert.equal(((executarNormalizar(cenario).falhas as Linha[])[0]!).causa, 'reauth_pending');
     const limite = { ...cenarioCompleto(), 'Baixar anúncios': [resposta({ error: { code: 17, message: 'User request limit reached' } }, 400)] };
-    assert.equal(((executarNormalizar(limite).falhas as Linha[])[0]!).causa, 'api_recusou');
+    assert.equal(((executarNormalizar(limite).falhas as Linha[])[0]!).causa, 'limite_de_uso');
   });
 });
 
 describe('laço de relatórios assíncronos', () => {
-  const contexto = { base: 'https://graph.facebook.com/v23.0', conta: 'act_1', relatorios: [{ chave: 'anuncio' }, { chave: 'regiao' }] };
+  const contexto = { base: 'https://graph.facebook.com/v26.0', conta: 'act_1', relatorios: [{ chave: 'anuncio' }, { chave: 'regiao' }] };
 
   function executar(nome: string, indiceDaRodada: number, nos: Record<string, Linha[]>, entrada: Linha[]): Linha {
     const buscar = (no: string) => {
@@ -290,7 +290,7 @@ describe('laço de relatórios assíncronos', () => {
     });
     const montar = new Function('$', '$runIndex', codigoDo('Montar consulta')) as (...argumentos: unknown[]) => { json: Linha }[];
     const itens = montar(buscar, 0);
-    assert.equal(itens[0]!.json.consultaUrl, 'https://graph.facebook.com/v23.0/act_1?fields=id');
+    assert.equal(itens[0]!.json.consultaUrl, 'https://graph.facebook.com/v26.0/act_1?fields=id');
     assert.match(String(itens[1]!.json.consultaUrl), /\/2\?fields=id,async_status/);
   });
 });
