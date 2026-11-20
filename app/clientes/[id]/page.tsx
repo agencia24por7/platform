@@ -93,6 +93,28 @@ async function alternarColeta(formData: FormData): Promise<void> {
   redirect(`${destino}?feito=${encodeURIComponent('Coleta atualizada.')}`);
 }
 
+async function desvincularContaDeAnuncio(formData: FormData): Promise<void> {
+  'use server';
+
+  const ctx = await requireContext();
+  const origem = text(formData, 'clientId');
+
+  const resultado = await modules().connections.unlinkAccount(
+    {
+      organizationId: ctx.organization.id,
+      papelDeQuemAge: ctx.role,
+      accountId: text(formData, 'accountId'),
+    },
+    await atorAtual(),
+  );
+
+  const destino = `/clientes/${origem}`;
+  if (!resultado.ok) {
+    redirect(`${destino}?erro=${encodeURIComponent(toActionState(resultado.error).error ?? '')}`);
+  }
+  redirect(`${destino}?feito=${encodeURIComponent('Conta desvinculada. Sai da coleta; o histórico coletado continua no BigQuery.')}`);
+}
+
 async function moverFonte(formData: FormData): Promise<void> {
   'use server';
 
@@ -267,6 +289,7 @@ export default async function ClientPage({
                   <th>Última coleta</th>
                   <th>Status</th>
                   {podeMexer ? <th>Mover para</th> : null}
+                  {podeMexer ? <th aria-label="Desvincular" /> : null}
                 </tr>
               </thead>
               <tbody>
@@ -323,6 +346,17 @@ export default async function ClientPage({
                             </button>
                           </form>
                         )}
+                      </td>
+                    ) : null}
+                    {podeMexer ? (
+                      <td>
+                        <form className="form--inline" action={desvincularContaDeAnuncio}>
+                          <input type="hidden" name="clientId" value={client.id} />
+                          <input type="hidden" name="accountId" value={account.id} />
+                          <button className="btn btn--compacto" type="submit" aria-label={`Desvincular ${account.name}`}>
+                            Desvincular
+                          </button>
+                        </form>
                       </td>
                     ) : null}
                   </tr>

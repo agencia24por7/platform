@@ -5,7 +5,7 @@ import { failure, type Failure } from '@/shared/result/failure';
 import { err, ok, type Result } from '@/shared/result/result';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import type { AdAccount, NewAdAccount } from '@/modules/connections/domain/adAccount';
-import { isValidExternalId, normalizeExternalId } from '@/modules/connections/domain/adAccount';
+import { isValidExternalId, normalizeExternalId, recusaParaDesvincularConta } from '@/modules/connections/domain/adAccount';
 import type { Connection, NewConnection, Platform } from '@/modules/connections/domain/connection';
 import {
   ROTULO_DA_PLATAFORMA,
@@ -59,6 +59,11 @@ export type ConnectionService = {
     papelDeQuemAge: MemberRole;
     accountId: string;
     enabled: boolean;
+  }, ator: Ator): Promise<Result<AdAccount, Failure>>;
+  unlinkAccount(input: {
+    organizationId: string;
+    papelDeQuemAge: MemberRole;
+    accountId: string;
   }, ator: Ator): Promise<Result<AdAccount, Failure>>;
 };
 
@@ -245,7 +250,7 @@ export function createConnectionService(
       }
 
       const jaVinculada = await accounts.findByExternalId(input.organizationId, input.platform, externalId);
-      if (jaVinculada) {
+      if (jaVinculada && jaVinculada.status !== 'unlinked') {
         const dono = await clients.findById(input.organizationId, jaVinculada.clientId);
         return err(
           failure(
@@ -257,13 +262,17 @@ export function createConnectionService(
         );
       }
 
-      const account = await accounts.insert({ ...input, externalId });
+      const reativada = jaVinculada !== null;
+      const account = reativada
+        ? await accounts.reativar(input.organizationId, jaVinculada.id, { ...input, externalId })
+        : await accounts.insert({ ...input, externalId });
+      if (!account) return err(failure('conflict', 'A conta mudou enquanto você vinculava. Recarregue a página.'));
 
       await audit.record({
         organizationId: account.organizationId,
         actorType: 'user',
         actorId: ator.userId,
-        action: 'ad_account.link',
+        action: reativada ? 'ad_account.relinked' : 'ad_account.link',
         targetType: 'ad_account',
         targetId: account.id,
         requestId: ator.requestId,
@@ -316,6 +325,35 @@ export function createConnectionService(
       });
 
       return ok(movida);
+    },
+
+    async unlinkAccount(input, ator) {
+      const conta = await accounts.findById(input.organizationId, input.accountId);
+      const recusa = recusaParaDesvincularConta(input.papelDeQuemAge, conta);
+      if (recusa) return err(failure(recusa.codigo, recusa.mensagem));
+
+      const solta = await accounts.desvincular(input.organizationId, input.accountId);
+      if (!solta) return err(failure('conflict', 'A conta mudou enquanto você desvinculava. Recarregue a página.'));
+
+      const cliente = await clients.findById(input.organizationId, conta!.clientId);
+      await audit.record({
+        organizationId: input.organizationId,
+        actorType: 'user',
+        actorId: ator.userId,
+        action: 'ad_account.unlinked',
+        targetType: 'ad_account',
+        targetId: solta.id,
+        requestId: ator.requestId,
+        sourceIp: ator.sourceIp,
+        metadata: {
+          platform: solta.platform,
+          externalId: solta.externalId,
+          de: cliente?.name ?? conta!.clientId,
+          historicoPreservado: true,
+        },
+      });
+
+      return ok(solta);
     },
 
     async setAccountSync(input, ator) {

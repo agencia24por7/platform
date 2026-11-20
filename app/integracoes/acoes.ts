@@ -213,6 +213,25 @@ export async function vincularRecurso(formData: FormData): Promise<void> {
   redirect(`${destino}?aviso=${encodeURIComponent(aviso)}`);
 }
 
+export async function desvincularConta(formData: FormData): Promise<void> {
+  const contexto = await contextoDeConexoes();
+  const destino = destinoDoRetorno(formData);
+
+  const resultado = await modules().connections.unlinkAccount(
+    {
+      organizationId: contexto.organization.id,
+      papelDeQuemAge: contexto.role,
+      accountId: text(formData, 'contaId'),
+    },
+    await atorAtual(),
+  );
+
+  const aviso = resultado.ok
+    ? `${resultado.value.name} desvinculada. Sai da coleta e volta para "Conectar conta"; o histórico coletado continua no BigQuery.`
+    : toActionState(resultado.error).error ?? 'Falha ao desvincular.';
+  redirect(`${destino}?aviso=${encodeURIComponent(aviso)}`);
+}
+
 export async function desvincularRecurso(formData: FormData): Promise<void> {
   const contexto = await contextoDeConexoes();
   const destino = destinoDoRetorno(formData);

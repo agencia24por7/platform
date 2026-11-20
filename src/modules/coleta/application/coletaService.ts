@@ -123,6 +123,11 @@ export function createColetaService(coletas: ColetaRepository, audit: AuditRecor
       const closed = await coletas.fechar(input);
       if (!closed) return err(failure('conflict', 'Execução já encerrada.'));
 
+      if (closed.status === 'success') {
+        const fonteConcluida = closed.fonteTipo === 'ad_account' ? closed.adAccountId : closed.connectionAccountId;
+        if (fonteConcluida) await coletas.marcarColetaConcluida(closed.fonteTipo, fonteConcluida, closed.finishedAt ?? new Date());
+      }
+
       if (input.errorCode === 'reauth_pending') {
         const fonteId = closed.fonteTipo === 'ad_account' ? closed.adAccountId : closed.connectionAccountId;
         if (fonteId) await coletas.marcarFalhaDeAuth(closed.fonteTipo, fonteId);
