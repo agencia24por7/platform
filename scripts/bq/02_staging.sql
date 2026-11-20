@@ -107,36 +107,3 @@ CREATE TABLE IF NOT EXISTS `{{DATASET}}.stg_rd_negociacoes` (
 PARTITION BY DATE(inserido_em)
 CLUSTER BY execucao_id
 OPTIONS (partition_expiration_days = 7);
-
-CREATE TABLE IF NOT EXISTS `{{DATASET}}.stg_meta_eventos_dataset` (
-  organization_id  STRING NOT NULL,
-  client_id        STRING NOT NULL,
-  dataset_id       STRING NOT NULL,
-  data_dia         DATE NOT NULL,
-  evento           STRING NOT NULL,
-  origem           STRING NOT NULL,
-  quantidade       INT64 NOT NULL,
-  execucao_id      STRING NOT NULL,
-  inserido_em      TIMESTAMP NOT NULL
-)
-PARTITION BY DATE(inserido_em)
-CLUSTER BY execucao_id
-OPTIONS (partition_expiration_days = 7);
-
-CREATE TABLE IF NOT EXISTS `{{DATASET}}.stg_meta_formularios` (
-  organization_id  STRING NOT NULL,
-  client_id        STRING NOT NULL,
-  page_id          STRING NOT NULL,
-  form_id          STRING NOT NULL,
-  data_snapshot    DATE NOT NULL,
-  nome             STRING,
-  status           STRING,
-  leads_total      INT64,
-  leads_expirados  INT64,
-  criado_em        TIMESTAMP,
-  execucao_id      STRING NOT NULL,
-  inserido_em      TIMESTAMP NOT NULL
-)
-PARTITION BY DATE(inserido_em)
-CLUSTER BY execucao_id
-OPTIONS (partition_expiration_days = 7);

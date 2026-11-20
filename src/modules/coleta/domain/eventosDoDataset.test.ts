@@ -138,10 +138,11 @@ describe('linha do fato de eventos', () => {
   it('preenche todas as colunas do fato', () => {
     const linha = linhaDoFatoEventos(
       { dataDia: '2026-11-01', evento: 'Lead', origem: 'total', quantidade: 3 },
-      { organizationId: 'o', clientId: 'c', datasetId: '123456', execucaoId: 'e', inseridoEm: '2026-11-02T00:00:00.000Z' },
+      { organizationId: 'o', datasetId: '123456', execucaoId: 'e', inseridoEm: '2026-11-02T00:00:00.000Z' },
     );
     assert.deepEqual(Object.keys(linha).sort(), [...COLUNAS_DO_FATO_EVENTOS].sort());
     assert.equal(linha.dataset_id, '123456');
+    assert.ok(!(COLUNAS_DO_FATO_EVENTOS as readonly string[]).includes('client_id'), 'o dono vem de dim_fonte_scd2');
   });
 });
 

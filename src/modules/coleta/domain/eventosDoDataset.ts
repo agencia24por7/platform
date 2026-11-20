@@ -131,25 +131,23 @@ export function eventosUnicos(linhas: readonly Readonly<Record<string, unknown>>
 
 export type ContextoDoFatoEventos = {
   readonly organizationId: string;
-  readonly clientId: string;
   readonly datasetId: string;
   readonly execucaoId: string;
   readonly inseridoEm: string;
 };
 
 export const COLUNAS_DO_FATO_EVENTOS = [
-  'organization_id', 'client_id', 'dataset_id', 'data_dia', 'evento', 'origem', 'quantidade', 'execucao_id', 'inserido_em',
+  'organization_id', 'dataset_id', 'data_dia', 'evento', 'origem', 'quantidade', 'execucao_id', 'inserido_em',
 ] as const;
 
 export const TIPOS_DO_FATO_EVENTOS: Readonly<Record<(typeof COLUNAS_DO_FATO_EVENTOS)[number], string>> = {
-  organization_id: 'STRING', client_id: 'STRING', dataset_id: 'STRING', data_dia: 'DATE', evento: 'STRING',
+  organization_id: 'STRING', dataset_id: 'STRING', data_dia: 'DATE', evento: 'STRING',
   origem: 'STRING', quantidade: 'INT64', execucao_id: 'STRING', inserido_em: 'TIMESTAMP',
 };
 
 export function linhaDoFatoEventos(evento: EventoDoDia, ctx: ContextoDoFatoEventos): Record<(typeof COLUNAS_DO_FATO_EVENTOS)[number], unknown> {
   return {
     organization_id: ctx.organizationId,
-    client_id: ctx.clientId,
     dataset_id: ctx.datasetId,
     data_dia: evento.dataDia,
     evento: evento.evento,

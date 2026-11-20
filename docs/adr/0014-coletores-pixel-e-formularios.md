@@ -86,7 +86,8 @@ Gerenciador de Negócios e reconectar.
   recorte falhar e o total vier, o coletor entrega o total e marca
   `coleta_incompleta`.
 - Grão do fato: `(organization_id, client_id, dataset_id, data_dia, evento,
-  origem)`. O fato é série temporal, como os outros diários.
+  origem)`, sem `client_id` (ver "Dono da linha", abaixo). O fato é série
+  temporal, como os outros diários.
 
 **Histórico.** A referência de `/stats` não diz até quando `start_time` pode
 voltar; diz só que `end_time` alcança até sete dias do momento da chamada. O
@@ -131,7 +132,7 @@ Nenhuma chamada lê `/leads`, `field_data` ou a expansão `leads{}`: o teste do
 modelo falha se alguma aparecer.
 
 Grão do fato: snapshot diário, como o do RD Station. Chave
-`(organization_id, client_id, page_id, form_id, data_snapshot)`, com
+`(organization_id, page_id, form_id, data_snapshot)`, sem `client_id`, com
 `data_snapshot` = dia da coleta em `America/Sao_Paulo`, calculado no servidor. A
 janela é ignorada (janela 0 no mapa de fontes, uma janela só no backfill).
 Leads por dia saem da diferença entre snapshots de `leads_total`.
@@ -146,14 +147,28 @@ fechada (`eventosUnicos`, `formulariosUnicos`) e deduplica pela chave, para que
 o número de linhas gravadas bata com o que o orquestrador confere. O
 `dataset_id` e o `page_id` vêm da fonte (`ctx.externalId`), não do n8n.
 
+### Dono da linha: só pelas dimensões SCD2
+
+Os dois fatos não têm `client_id`, nem nas colunas nem na chave do MERGE. A
+linha guarda `organization_id` e a chave da fonte: `dataset_id` (plataforma
+`pixel`) e `page_id` (plataforma `leadads`), iguais ao
+`connection_accounts.external_id`. O cliente sai de `dim_fonte_scd2`
+(0013), que já cobre toda `connection_accounts` fora de `google` e `meta`.
+As views `vw_meta_eventos_dataset` e `vw_meta_formularios` seguem o molde de
+`05_dimensoes_scd2.sql`: deduplicam o fato pela chave e trazem
+`cliente_na_epoca_*` (dono no dia do fato) e `cliente_atual_*`. Clusterização
+por `organization_id` e pela chave da fonte.
+
 ## Consequências
 
 - **Migração**: `db/migrations/0042_plataforma_leadads.sql` (`ALTER TYPE ...
   ADD VALUE IF NOT EXISTS 'leadads'`), sem transação, como a `0024` e a `0025`.
 - **BigQuery**: `fato_meta_eventos_dataset`, `fato_meta_formularios`,
-  `stg_meta_eventos_dataset` e `stg_meta_formularios` em
-  `scripts/bq/01_fatos.sql` e `02_staging.sql` (`node scripts/bq-ddl.mjs`,
-  idempotente).
+  `stg_meta_eventos_dataset`, `stg_meta_formularios` e as views
+  `vw_meta_eventos_dataset` e `vw_meta_formularios` num arquivo próprio,
+  `scripts/bq/06_meta_dataset_formularios.sql` (`node scripts/bq-ddl.mjs`,
+  idempotente; depende de `dim_fonte_scd2` e `dim_cliente_scd2` do
+  `05_dimensoes_scd2.sql`).
 - **Meta Login for Business**: as permissões vêm da configuração do
   `META_LOGIN_CONFIG_ID`, não do parâmetro `scope`. Para os formulários, ela
   precisa incluir `pages_show_list`, `pages_read_engagement`,

@@ -172,7 +172,6 @@ describe('linha do fato de formulários', () => {
     const formulario = formularioDaLinha({ formId: '123456', nome: 'Form', status: 'ACTIVE', leadsTotal: '7', criadoEm: '2026-10-01T12:00:00+0000' })!;
     const linha = linhaDoFatoFormularios(formulario, {
       organizationId: 'o',
-      clientId: 'c',
       pageId: '999888777',
       dataSnapshot: '2026-11-20',
       execucaoId: 'e',
@@ -181,5 +180,6 @@ describe('linha do fato de formulários', () => {
     assert.deepEqual(Object.keys(linha).sort(), [...COLUNAS_DO_FATO_FORMULARIOS].sort());
     assert.equal(linha.leads_total, 7);
     assert.equal(linha.page_id, '999888777');
+    assert.ok(!(COLUNAS_DO_FATO_FORMULARIOS as readonly string[]).includes('client_id'), 'o dono vem de dim_fonte_scd2');
   });
 });

@@ -56,7 +56,6 @@ export function formulariosUnicos(linhas: readonly Readonly<Record<string, unkno
 
 export type ContextoDoFatoFormularios = {
   readonly organizationId: string;
-  readonly clientId: string;
   readonly pageId: string;
   readonly dataSnapshot: string;
   readonly execucaoId: string;
@@ -64,12 +63,12 @@ export type ContextoDoFatoFormularios = {
 };
 
 export const COLUNAS_DO_FATO_FORMULARIOS = [
-  'organization_id', 'client_id', 'page_id', 'form_id', 'data_snapshot', 'nome', 'status', 'leads_total',
+  'organization_id', 'page_id', 'form_id', 'data_snapshot', 'nome', 'status', 'leads_total',
   'leads_expirados', 'criado_em', 'execucao_id', 'inserido_em',
 ] as const;
 
 export const TIPOS_DO_FATO_FORMULARIOS: Readonly<Record<(typeof COLUNAS_DO_FATO_FORMULARIOS)[number], string>> = {
-  organization_id: 'STRING', client_id: 'STRING', page_id: 'STRING', form_id: 'STRING', data_snapshot: 'DATE',
+  organization_id: 'STRING', page_id: 'STRING', form_id: 'STRING', data_snapshot: 'DATE',
   nome: 'STRING', status: 'STRING', leads_total: 'INT64', leads_expirados: 'INT64', criado_em: 'TIMESTAMP',
   execucao_id: 'STRING', inserido_em: 'TIMESTAMP',
 };
@@ -80,7 +79,6 @@ export function linhaDoFatoFormularios(
 ): Record<(typeof COLUNAS_DO_FATO_FORMULARIOS)[number], unknown> {
   return {
     organization_id: ctx.organizationId,
-    client_id: ctx.clientId,
     page_id: ctx.pageId,
     form_id: formulario.formId,
     data_snapshot: ctx.dataSnapshot,
