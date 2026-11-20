@@ -53,7 +53,12 @@ const formularioComDadosPessoais = (sobrescrever: Record<string, unknown> = {}) 
 
 type SaidaDoColetor = { linhas: Record<string, unknown>[]; falhas: { causa: string; detalhe: string | null }[] };
 
-function rodarNormalizar(respostaDoToken: unknown, paginas: readonly unknown[], pageId = '999888777'): SaidaDoColetor {
+function rodarNormalizar(
+  respostaDoToken: unknown,
+  paginas: readonly unknown[],
+  pageId = '999888777',
+  paginasDeLeads: readonly unknown[] = [],
+): SaidaDoColetor {
   const montar = new Function('$json', String(no('Montar requisição').parameters.jsCode)) as (
     entrada: unknown,
   ) => { json: Record<string, unknown> }[];
@@ -61,8 +66,11 @@ function rodarNormalizar(respostaDoToken: unknown, paginas: readonly unknown[], 
     'Montar requisição': montar({ fonte: { externalId: pageId }, janela: { start: '2026-11-19', end: '2026-11-19' } })[0]!.json,
     'Token da Página': respostaDoToken,
   };
-  const $ = (nome: string) => ({ first: () => ({ json: porNo[nome] }) });
-  const $input = { all: () => paginas.map((json) => ({ json })) };
+  const $ = (nome: string) => ({
+    first: () => ({ json: porNo[nome] }),
+    all: () => paginas.map((json) => ({ json })),
+  });
+  const $input = { all: () => paginasDeLeads.map((json) => ({ json })) };
   const executar = new Function('$', '$input', String(no('Normalizar').parameters.jsCode)) as (
     seletor: typeof $,
     entrada: typeof $input,
@@ -88,13 +96,18 @@ describe('coletor de formulários da Meta (modelo do n8n)', () => {
     assert.ok(query.find((parametro) => parametro.name === 'access_token')!.value.includes("$('Token da Página')"));
     assert.deepEqual(
       query.find((parametro) => parametro.name === 'fields')!.value.split(',').sort(),
-      ['created_time', 'expired_leads_count', 'id', 'leads_count', 'name', 'status'],
+      ['created_time', 'expired_leads_count', 'id', 'leads_count', 'locale', 'name', 'questions{type}', 'status'],
     );
   });
 
-  it('nunca lê leads nem respostas: nenhuma chamada a /leads ou a field_data', () => {
-    const serializado = JSON.stringify(modelo.nodes.filter((candidato) => candidato.type === 'n8n-nodes-base.httpRequest'));
-    assert.ok(!/\/leads\b|field_data|leads\{|leads\.limit/.test(serializado));
+  it('nunca lê as respostas dos leads: só id de anúncio, de campanha e de formulário e a data', () => {
+    const chamadas = modelo.nodes.filter((candidato) => candidato.type === 'n8n-nodes-base.httpRequest');
+    assert.ok(!/field_data|leads\{|leads\.limit/.test(JSON.stringify(chamadas)));
+    const leads = no('Leads do formulário');
+    const query = (leads.parameters.queryParameters as { parameters: { name: string; value: string }[] }).parameters;
+    assert.deepEqual(query.find((parametro) => parametro.name === 'fields')!.value.split(',').sort(), ['ad_id', 'campaign_id', 'created_time', 'form_id']);
+    assert.equal(leads.parameters.authentication, 'none');
+    assert.equal(leads.credentials, undefined);
   });
 
   it('o n8n não guarda a execução: o token da Página só existe em memória', () => {
@@ -105,10 +118,11 @@ describe('coletor de formulários da Meta (modelo do n8n)', () => {
   it('projeta só metadados e contagens: sem dado pessoal e sem token', () => {
     const saida = rodarNormalizar(comToken, [resposta({ data: [formularioComDadosPessoais()], paging: {} })]);
     assert.deepEqual(saida.falhas, []);
-    assert.equal(saida.linhas.length, 1);
-    assert.deepEqual(Object.keys(saida.linhas[0]!).sort(), [...CAMPOS_DO_FORMULARIO].sort());
-    assert.equal(saida.linhas[0]!.leadsTotal, 42);
-    assert.equal(saida.linhas[0]!.leadsExpirados, 3);
+    const padrao = saida.linhas.filter((linha) => !linha._tabela);
+    assert.equal(padrao.length, 1);
+    assert.deepEqual(Object.keys(padrao[0]!).sort(), [...CAMPOS_DO_FORMULARIO].sort());
+    assert.equal(padrao[0]!.leadsTotal, 42);
+    assert.equal(padrao[0]!.leadsExpirados, 3);
 
     const serializado = JSON.stringify(saida);
     assert.ok(!serializado.includes(TOKEN_DA_PAGINA));
@@ -120,7 +134,7 @@ describe('coletor de formulários da Meta (modelo do n8n)', () => {
       resposta({ data: [formularioComDadosPessoais()], paging: { next: `${BASE_DO_GRAPH}x?access_token=${TOKEN_DA_PAGINA}` } }),
       resposta({ data: [formularioComDadosPessoais({ id: '111222333555', status: 'ARCHIVED', expired_leads_count: undefined })] }),
     ]);
-    const formularios = formulariosUnicos(saida.linhas);
+    const formularios = formulariosUnicos(saida.linhas.filter((linha) => !linha._tabela));
     assert.equal(formularios.length, 2);
     assert.equal(formularios[0]!.criadoEm, '2026-10-01T12:00:00.000Z');
     assert.equal(formularios[1]!.status, 'ARCHIVED');

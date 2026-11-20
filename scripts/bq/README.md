@@ -586,12 +586,81 @@ Configuração: `tabelas/rdstation.ts`. Manifesto: `manifesto/rdstation.json`. D
 - Partição `data_snapshot`; cluster `organization_id, conta_id`.
 - Staging `stg_rd_negociacoes`; view `vw_rd_negociacoes`.
 
+### Dimensões do RD Station e fatos de negociação (ADR 0016)
+
+`fato_rd_negociacoes` ganhou `responsavel_id` (id opaco do usuário), `fonte_id` e `campanha_id`
+(DDL: `26_rdstation.sql`, com `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`). Todas as dimensões abaixo têm chave
+`organization_id`, `conta_id` e o id da entidade.
+
+### `dim_rd_funil_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conta_id`, `funil_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`.
+- Cluster pela chave; staging `stg_dim_rd_funil`; view `vw_dim_rd_funil` (`cliente_atual_*`).
+- Origem: `GET /deal_pipelines`.
+
+### `dim_rd_etapa_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conta_id`, `etapa_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `funil_id`, `nome`, `ordem`.
+- Cluster pela chave; staging `stg_dim_rd_etapa`; view `vw_dim_rd_etapa` (`cliente_atual_*`).
+- Origem: `deal_stages` embutidos em `GET /deal_pipelines`.
+
+### `dim_rd_fonte_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conta_id`, `fonte_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`.
+- Cluster pela chave; staging `stg_dim_rd_fonte`; view `vw_dim_rd_fonte` (`cliente_atual_*`).
+- Origem: `GET /deal_sources`.
+
+### `dim_rd_campanha_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conta_id`, `campanha_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`.
+- Cluster pela chave; staging `stg_dim_rd_campanha`; view `vw_dim_rd_campanha` (`cliente_atual_*`).
+- Origem: `GET /campaigns`.
+
+### `dim_rd_produto_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conta_id`, `produto_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`, `preco`, `ativo`.
+- Cluster pela chave; staging `stg_dim_rd_produto`; view `vw_dim_rd_produto` (`cliente_atual_*`).
+- Origem: `GET /products` (`base_price`, `visible`).
+
+### `dim_rd_usuario_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conta_id`, `usuario_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `ativo`.
+- Cluster pela chave; staging `stg_dim_rd_usuario`; view `vw_dim_rd_usuario` (`cliente_atual_*`).
+- Origem: `GET /users`, só `id` e `active`. Sem nome nem e-mail (LGPD).
+
+### `fato_rd_negociacao_produtos`
+
+- Granularidade: uma linha por `organization_id`, `conta_id`, `deal_id`, `deal_produto_id`, `data_snapshot`.
+- Colunas: `produto_id`, `quantidade`, `preco`, `desconto`, `total`, `execucao_id`, `inserido_em`.
+- Partição `data_snapshot` (cluster `organization_id, conta_id, deal_id`); staging `stg_rd_negociacao_produtos`; view `vw_rd_negociacao_produtos` (`cliente_na_epoca_*` e `cliente_atual_*`).
+- Origem: `deal_products` de cada negociação em `GET /deals`.
+
+### `fato_rd_negociacao_etapas`
+
+- Granularidade: uma linha por `organization_id`, `conta_id`, `deal_id`, `etapa_id`, `entrou_em`.
+- Colunas: `data_dia` (dia de São Paulo da entrada), `execucao_id`, `inserido_em`.
+- Partição `data_dia` (cluster `organization_id, conta_id, deal_id`); staging `stg_rd_negociacao_etapas`; view `vw_rd_negociacao_etapas` (`cliente_na_epoca_*` e `cliente_atual_*`).
+- Origem: `deal_stage_histories` de cada negociação em `GET /deals` (formato a confirmar, ADR 0016). Evento de mudança de etapa: dá o tempo em cada etapa e a conversão entre etapas.
+
+### `fato_rd_tarefas_diarias`
+
+- Granularidade: uma linha por `organization_id`, `conta_id`, `data_dia`, `tipo`, `status`.
+- Colunas: `quantidade`, `execucao_id`, `inserido_em`.
+- Partição `data_dia`; staging `stg_rd_tarefas_diarias`; view `vw_rd_tarefas_diarias` (`cliente_na_epoca_*` e `cliente_atual_*`).
+- Origem: `GET /tasks` com `date_start`/`date_end` (30 dias para cada lado), contado no n8n; `status` é `concluida` ou `pendente`. Assunto, notas, negociação e responsáveis não saem.
+
 <!-- RD Station: novas tabelas acima desta linha -->
 
 ## Meta Pixel e Lead Ads
 
 Configuração: `tabelas/pixel.ts` e `tabelas/leadads.ts`. Manifesto:
-`manifesto/pixel.json` e `manifesto/leadads.json`. DDL: `27_*.sql`. ADR 0014.
+`manifesto/pixel.json` e `manifesto/leadads.json`. DDL: `27_*.sql` e `27b_*.sql`. ADRs 0014 e 0016.
 
 ### `fato_meta_eventos_dataset` (pixel)
 
@@ -612,6 +681,45 @@ Configuração: `tabelas/pixel.ts` e `tabelas/leadads.ts`. Manifesto:
 - Staging `stg_meta_formularios`; view `vw_meta_formularios`.
 - DDL: `06_meta_dataset_formularios.sql`.
 
+### `dim_meta_dataset_scd2` e `fato_meta_eventos_dataset_recortes` (ADR 0016)
+
+### `dim_meta_dataset_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `dataset_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`, `indisponivel`, `correspondencia_automatica`, `cookie_primeira_parte`, `uso_de_dados`.
+- Cluster pela chave; staging `stg_dim_meta_dataset`; view `vw_dim_meta_dataset` (`cliente_atual_*`).
+- Origem: `GET /{dataset}?fields=id,name,is_unavailable,enable_automatic_matching,first_party_cookie_status,data_use_setting`.
+
+### `fato_meta_eventos_dataset_recortes`
+
+- Granularidade: uma linha por `organization_id`, `dataset_id`, `data_dia`, `recorte`, `valor`.
+- Colunas: `quantidade`, `execucao_id`, `inserido_em`.
+- Partição `data_dia` (cluster `organization_id, dataset_id, recorte`); staging `stg_meta_eventos_dataset_recortes`; view `vw_meta_eventos_dataset_recortes` (`cliente_na_epoca_*` e `cliente_atual_*`).
+- Origem: `GET /{dataset}/stats?aggregation=<recorte>`, uma chamada por recorte. Recortes (`recorte` → agregação): `dispositivo` → `device_type`, `sistema_operacional` → `device_os`, `navegador_do_visitante` → `browser_type`, `host` → `host` (só o nome do servidor), `chave_de_correspondencia` → `match_keys` (qualidade: quantos eventos trazem cada chave, só o nome da chave), `resultado_do_processamento` → `event_processing_results`. Recortes não se combinam entre si nem com o evento. `url` não é coletada (parâmetros podem trazer dado pessoal).
+
+### Dimensões e leads diários do Lead Ads (ADR 0016)
+
+### `dim_meta_pagina_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `page_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`, `categoria`.
+- Cluster pela chave; staging `stg_dim_meta_pagina`; view `vw_dim_meta_pagina` (`cliente_atual_*`).
+- Origem: `GET /{page}?fields=name,category`.
+
+### `dim_meta_formulario_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `page_id`, `form_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`, `status`, `idioma`, `perguntas_total`, `tipos_de_pergunta`.
+- Cluster pela chave; staging `stg_dim_meta_formulario`; view `vw_dim_meta_formulario` (`cliente_atual_*`).
+- Origem: `GET /{page}/leadgen_forms?fields=...,locale,questions{type}`. `tipos_de_pergunta` é a lista ordenada de tipos (`EMAIL`, `CUSTOM`...); texto e chave das perguntas não saem.
+
+### `fato_meta_leads_diario`
+
+- Granularidade: uma linha por `organization_id`, `page_id`, `form_id`, `data_dia`, `anuncio_id`, `campanha_id`.
+- Colunas: `leads`, `execucao_id`, `inserido_em`.
+- Partição `data_dia` (cluster `organization_id, page_id, form_id`); staging `stg_meta_leads_diario`; view `vw_meta_leads_diario` (`cliente_na_epoca_*` e `cliente_atual_*`).
+- Origem: `GET /{form}/leads?fields=ad_id,campaign_id,form_id,created_time` com filtro `time_created` (30 dias), contado no n8n. Sem `field_data`; lead sem anúncio ou campanha usa `sem_anuncio` e `sem_campanha`. DDL: `27b_meta_leadads.sql`.
+
 <!-- Meta Pixel e Lead Ads: novas tabelas acima desta linha -->
 
 ## Google Tag Manager
@@ -621,6 +729,52 @@ Configuração: `tabelas/gtm.ts`. Manifesto: `manifesto/gtm.json`. DDL: `28_gtm*
 GTM não é série temporal: hoje só alimenta `gov_snapshot_fontes` (seção
 Transversais) com `platform = 'gtm'`, via `tipo: 'snapshot'` (append, sem
 staging).
+
+### Dimensões do contêiner (ADR 0016)
+
+Todas com chave `organization_id` e `conteiner_id` (o ID público `GTM-XXXX`). DDL: `28_gtm.sql`.
+
+### `dim_gtm_conteiner_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conteiner_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`, `conta_gtm_id`, `conteiner_gtm_id`, `contexto_de_uso`, `dominios`.
+- Cluster pela chave; staging `stg_dim_gtm_conteiner`; view `vw_dim_gtm_conteiner` (`cliente_atual_*`).
+- Origem: `GET /accounts/{a}/containers`.
+
+### `dim_gtm_workspace_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conteiner_id`, `workspace_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`.
+- Cluster pela chave; staging `stg_dim_gtm_workspace`; view `vw_dim_gtm_workspace` (`cliente_atual_*`).
+- Origem: `GET /{container}/workspaces`.
+
+### `dim_gtm_versao_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conteiner_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `versao_id`, `nome`, `total_tags`, `total_acionadores`, `total_variaveis`.
+- Cluster pela chave; staging `stg_dim_gtm_versao`; view `vw_dim_gtm_versao` (`cliente_atual_*`).
+- Origem: `GET /{container}/versions:live`. Cada publicação abre uma versão; permite datar quando uma tag mudou.
+
+### `dim_gtm_tag_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conteiner_id`, `tag_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`, `tipo`, `acionadores_disparo`, `acionadores_bloqueio`, `pausada`.
+- Cluster pela chave; staging `stg_dim_gtm_tag`; view `vw_dim_gtm_tag` (`cliente_atual_*`).
+- Origem: `tag[]` de `versions:live`. Sem parâmetros da tag.
+
+### `dim_gtm_acionador_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conteiner_id`, `acionador_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`, `tipo`.
+- Cluster pela chave; staging `stg_dim_gtm_acionador`; view `vw_dim_gtm_acionador` (`cliente_atual_*`).
+- Origem: `trigger[]` de `versions:live`.
+
+### `dim_gtm_variavel_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conteiner_id`, `variavel_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`, `tipo`.
+- Cluster pela chave; staging `stg_dim_gtm_variavel`; view `vw_dim_gtm_variavel` (`cliente_atual_*`).
+- Origem: `variable[]` de `versions:live`. Sem valores (podem ser IDs e códigos). Entidade removida do contêiner não fecha a versão (ADR 0015).
 
 <!-- Google Tag Manager: novas tabelas acima desta linha -->
 

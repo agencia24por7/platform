@@ -1,3 +1,45 @@
 [
-  { "tabela": "gov_snapshot_fontes", "chave": "fonte_id", "plataforma": "gtm", "colunaPlataforma": "platform", "momento": "visto_em" }
+  {
+    "tabela": "gov_snapshot_fontes",
+    "chave": "fonte_id",
+    "plataforma": "gtm",
+    "colunaPlataforma": "platform",
+    "momento": "visto_em"
+  },
+  {
+    "tabela": "dim_gtm_conteiner_scd2",
+    "chave": "conteiner_id",
+    "plataforma": "gtm",
+    "todoPeriodo": true
+  },
+  {
+    "tabela": "dim_gtm_workspace_scd2",
+    "chave": "conteiner_id",
+    "plataforma": "gtm",
+    "todoPeriodo": true
+  },
+  {
+    "tabela": "dim_gtm_versao_scd2",
+    "chave": "conteiner_id",
+    "plataforma": "gtm",
+    "todoPeriodo": true
+  },
+  {
+    "tabela": "dim_gtm_tag_scd2",
+    "chave": "conteiner_id",
+    "plataforma": "gtm",
+    "todoPeriodo": true
+  },
+  {
+    "tabela": "dim_gtm_acionador_scd2",
+    "chave": "conteiner_id",
+    "plataforma": "gtm",
+    "todoPeriodo": true
+  },
+  {
+    "tabela": "dim_gtm_variavel_scd2",
+    "chave": "conteiner_id",
+    "plataforma": "gtm",
+    "todoPeriodo": true
+  }
 ]
