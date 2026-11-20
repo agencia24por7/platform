@@ -298,7 +298,7 @@ describe('vínculos de conta exigem papel e não confiam no formulário', { conc
     const cliente = query(
       `INSERT INTO core.clients (organization_id, name, business_model)
        VALUES ('${organizacao}', 'Cliente do papel', 'leads')
-       ON CONFLICT (organization_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id`,
+       ON CONFLICT (organization_id, name) WHERE excluido_em IS NULL DO UPDATE SET name = EXCLUDED.name RETURNING id`,
     );
     const leitor = ensureUser('leitor-papel@tria.local');
     query(
