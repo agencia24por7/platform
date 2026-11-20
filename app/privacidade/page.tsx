@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { DocumentoPublico } from '@/../app/_components/DocumentoPublico';
 
 export const metadata: Metadata = {
-  title: 'Política de Privacidade · orla',
+  title: 'Política de Privacidade',
   description: 'Quais dados a orla acessa, por que, como guarda e como você revoga o acesso.',
 };
 

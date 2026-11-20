@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { DocumentoPublico } from '@/../app/_components/DocumentoPublico';
 
 export const metadata: Metadata = {
-  title: 'Sobre a orla',
+  title: 'Sobre',
   description: 'Plataforma da Agência 24/7 que reúne os dados de marketing dos clientes num só lugar.',
 };
 

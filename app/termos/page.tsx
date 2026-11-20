@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { DocumentoPublico } from '@/../app/_components/DocumentoPublico';
 
 export const metadata: Metadata = {
-  title: 'Termos de Serviço · orla',
+  title: 'Termos de Serviço',
   description: 'Regras de uso da orla, a plataforma de dados de marketing da Agência 24/7.',
 };
 

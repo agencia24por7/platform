@@ -42,20 +42,20 @@ export function generateMetadata(): Metadata {
 
   return {
     metadataBase: base,
-    title: { default: 'orla', template: '%s · orla' },
+    title: { default: 'Orla - Ads Platform', template: '%s · Orla - Ads Platform' },
     description: DESCRICAO,
     robots: { index: false, follow: false },
     openGraph: {
-      title: 'orla',
+      title: 'Orla - Ads Platform',
       description: DESCRICAO,
       url: base,
-      siteName: 'orla',
+      siteName: 'Orla - Ads Platform',
       locale: 'pt_BR',
       type: 'website',
     },
     twitter: {
       card: 'summary_large_image',
-      title: 'orla',
+      title: 'Orla - Ads Platform',
       description: DESCRICAO,
     },
   };
