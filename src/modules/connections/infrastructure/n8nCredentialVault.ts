@@ -58,7 +58,7 @@ export function createN8nCredentialVault(): CredentialVault {
           { method: 'DELETE', headers: { 'X-N8N-API-KEY': config.N8N_API_KEY! } },
         );
 
-        if (response.ok) return 'descartada' as const;
+        if (response.ok || response.status === 404) return 'descartada' as const;
         if (response.status === 401 || response.status === 403) return 'sem_permissao' as const;
         return 'falhou' as const;
       } catch {

@@ -26,7 +26,7 @@ import {
   desvincularConta,
   desvincularRecurso,
   guardarChave,
-  removerChave,
+  removerConexao,
   vincularAlcancavel,
   vincularRecurso,
 } from '@/../app/integracoes/acoes';
@@ -83,7 +83,9 @@ export default async function ConectorPage({
     modules().clients.list(organization.id),
   ]);
 
-  const conexoes = todasConexoes.filter((conexao) => conexao.platform === plataforma);
+  const conexoes = todasConexoes.filter(
+    (conexao) => conexao.platform === plataforma && conexao.status !== 'revoked',
+  );
   const accounts = todasContas.filter((conta) => conta.platform === plataforma);
   const alcancaveis = todasAlcancaveis.filter((conta) => conta.platform === plataforma);
 
@@ -177,7 +179,7 @@ export default async function ConectorPage({
                     <th>Caminho</th>
                     <th>Estado</th>
                     <th>Autorizada em</th>
-                    {usaChaveDeApi(plataforma) && canAdminister(ctx.role) ? <th /> : null}
+                    {canAdminister(ctx.role) ? <th /> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -198,13 +200,17 @@ export default async function ConectorPage({
                         </span>
                       </td>
                       <td className="muted">{conexao.authorizedAt.toLocaleString('pt-BR')}</td>
-                      {usaChaveDeApi(plataforma) && canAdminister(ctx.role) ? (
+                      {canAdminister(ctx.role) ? (
                         <td>
-                          <form action={removerChave}>
+                          <form action={removerConexao}>
                             <input type="hidden" name="connectionId" value={conexao.id} />
                             <input type="hidden" name="voltarPara" value={voltarPara} />
-                            <button className="btn btn--compacto" type="submit">
-                              Excluir
+                            <button
+                              className="btn btn--compacto"
+                              type="submit"
+                              title="Apaga a credencial do cofre e para a coleta. O histórico de métricas fica."
+                            >
+                              Remover
                             </button>
                           </form>
                         </td>

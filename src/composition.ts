@@ -26,6 +26,8 @@ import { createTeamRepository } from '@/modules/team/infrastructure/teamReposito
 import { createRecursoService } from '@/modules/connections/application/recursoService';
 import { createOrganizationService } from '@/modules/organizations/application/organizationService';
 import { createOrganizationRepository } from '@/modules/organizations/infrastructure/organizationRepository';
+import { createRetencaoService } from '@/modules/privacidade/application/retencaoService';
+import { createRetencaoRepository } from '@/modules/privacidade/infrastructure/retencaoRepository';
 
 function build() {
   const audit = createAuditRepository();
@@ -55,6 +57,7 @@ function build() {
       clientRepository,
       vault,
       credentialTester,
+      createColetorProvisioner(),
     ),
     authorization: createAuthorizationService(
       organizations,
@@ -73,6 +76,7 @@ function build() {
       audit,
     ),
     coleta: createColetaService(createColetaRepository(), audit, createBigQueryGravador()),
+    retencao: createRetencaoService(createRetencaoRepository(), audit),
   };
 }
 

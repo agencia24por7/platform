@@ -111,6 +111,14 @@ export async function Shell({ title, organization, active, children }: Props) {
           ) : (
             <div>Nenhuma organização criada</div>
           )}
+
+          <nav className="side__legal" aria-label="Privacidade">
+            <Link href="/privacidade">Privacidade</Link>
+            <Link href="/termos">Termos</Link>
+            <a href="mailto:contato@agencia24por7.com" title="Encarregado pelo tratamento de dados">
+              Encarregado
+            </a>
+          </nav>
         </div>
       </aside>
       <main className="main">

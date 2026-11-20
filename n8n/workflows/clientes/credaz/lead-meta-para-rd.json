@@ -2,8 +2,8 @@
   "name": "Credaz · Lead Meta → RD",
   "settings": {
     "executionOrder": "v1",
-    "saveDataErrorExecution": "all",
-    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
     "timezone": "America/Recife",
     "errorWorkflow": "im3mfvd9pUI79e74"
   },

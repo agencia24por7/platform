@@ -11,7 +11,7 @@ export default function Privacidade() {
   return (
     <DocumentoPublico
       titulo="Política de Privacidade"
-      resumo="Quais dados a orla acessa, por que, onde ficam guardados, com quem são compartilhados e como você controla tudo isso."
+      resumo="Quais dados a orla acessa, por que, onde ficam guardados, com quem são compartilhados, por quanto tempo e como você controla tudo isso."
       atualizadoEm="20 de novembro de 2026"
     >
       <section>
@@ -22,26 +22,33 @@ export default function Privacidade() {
           <a href="mailto:contato@agencia24por7.com">contato@agencia24por7.com</a>. Esta política será atualizada com
           a razão social e o CNPJ assim que a empresa estiver constituída.
         </p>
+        <p>
+          Para os dados da equipe que usa a orla, a Agência 24/7 é controladora. Para os dados que pertencem aos
+          clientes da agência, como métricas de campanha e leads, a Agência 24/7 atua como operadora, seguindo as
+          instruções de cada cliente.
+        </p>
       </section>
 
       <section>
-        <h2>2. Dados que coletamos</h2>
+        <h2>2. Dados que tratamos</h2>
         <h3>Para você entrar na orla</h3>
         <p>
-          Ao entrar com Google, recebemos seu nome, e-mail e o identificador da sua conta Google (escopos{' '}
-          <code>openid</code>, <code>email</code> e <code>profile</code>). Usamos esses dados só para identificar você
-          e mostrar os clientes a que você tem acesso. Mantemos um cookie de sessão, necessário para o login; não
-          usamos cookies de publicidade nem de rastreamento.
+          Ao entrar com Google, recebemos seu nome, e-mail, foto de perfil e o identificador da sua conta Google
+          (escopos <code>openid</code>, <code>email</code> e <code>profile</code>). Usamos esses dados para identificar
+          você e mostrar os clientes a que você tem acesso. Registramos as ações feitas na plataforma, com o endereço
+          IP de origem, numa trilha de auditoria.
         </p>
 
-        <h3>Quando você conecta uma conta</h3>
+        <h3>Quando uma conta é conectada</h3>
         <p>
-          Cada conexão pede só o acesso necessário para aquela fonte, e você autoriza uma a uma:
+          Cada conexão pede só o acesso necessário para aquela fonte e é autorizada pelo dono da conta. Nas conexões do
+          Google também recebemos o e-mail de quem autorizou (<code>userinfo.email</code>), para mostrar quem concedeu
+          o acesso.
         </p>
         <ul>
           <li>
             <strong>Google Ads</strong> (<code>adwords</code>): lista das contas, métricas de campanhas e anúncios e,
-            quando você pede, o convite para vincular sua conta à conta de administrador da agência.
+            quando o cliente pede, o convite para vincular a conta dele à conta de administrador da agência.
           </li>
           <li>
             <strong>Google Analytics</strong> (<code>analytics.readonly</code>, só leitura): propriedades e relatórios
@@ -52,7 +59,9 @@ export default function Privacidade() {
             pesquisa.
           </li>
           <li>
-            <strong>YouTube</strong> (<code>yt-analytics.readonly</code>, só leitura): canais e métricas dos vídeos.
+            <strong>YouTube</strong> (<code>youtube.readonly</code>, <code>yt-analytics.readonly</code> e{' '}
+            <code>yt-analytics-monetary.readonly</code>, só leitura): canais, vídeos e métricas de audiência e de
+            receita.
           </li>
           <li>
             <strong>Google Tag Manager</strong> (<code>tagmanager.readonly</code>, só leitura): contêineres e tags.
@@ -62,17 +71,40 @@ export default function Privacidade() {
             de desempenho do perfil. A orla não publica nem altera nada no perfil.
           </li>
           <li>
-            <strong>Meta Ads</strong>: contas de anúncio, métricas de campanhas e leads de formulários.
+            <strong>Meta</strong> (<code>ads_read</code>, <code>ads_management</code>,{' '}
+            <code>business_management</code> e <code>leads_retrieval</code>): contas de anúncio, métricas, eventos do
+            Pixel, leads de formulários e, quando o cliente pede, o pedido de acesso de parceiro para a agência.
+          </li>
+          <li>
+            <strong>WhatsApp Business</strong>: avisos de mensagens recebidas, usados para atribuir conversas aos
+            anúncios que as originaram.
+          </li>
+          <li>
+            <strong>RD Station CRM, Z-API e Apify</strong>, por chave de API fornecida pelo cliente: negociações do
+            funil, mensagens de WhatsApp e coleta de dados públicos, respectivamente.
           </li>
         </ul>
+
+        <h3>Leads dos clientes</h3>
+        <p>
+          Quando um cliente contrata a automação de leads, os dados que a pessoa preencheu no formulário do anúncio
+          (nome, telefone, e-mail e o produto de interesse) são enviados ao CRM do cliente. A orla guarda só os
+          identificadores do lead e da negociação, para não duplicar envios, e nunca o conteúdo do formulário.
+        </p>
       </section>
 
       <section>
-        <h2>3. Como usamos os dados</h2>
+        <h2>3. Para que usamos e com qual base legal</h2>
         <ul>
-          <li>Para montar relatórios e painéis de desempenho para a agência e para o cliente dono da conta.</li>
-          <li>Para executar as tarefas que você pede, como vincular sua conta de anúncios à agência.</li>
-          <li>Para manter a segurança e a auditoria de quem acessou o quê.</li>
+          <li>
+            Relatórios e painéis de desempenho para a agência e para o cliente dono da conta: execução do contrato com
+            o cliente (LGPD, art. 7º, V).
+          </li>
+          <li>
+            Tarefas pedidas pelo cliente, como vincular contas à agência ou enviar leads ao CRM dele: execução do
+            contrato, sob as instruções do cliente.
+          </li>
+          <li>Login, segurança e trilha de auditoria: legítimo interesse e obrigação legal (art. 7º, II e IX).</li>
         </ul>
         <p>
           Não vendemos dados, não os usamos para publicidade e não os usamos para treinar modelos de inteligência
@@ -87,70 +119,120 @@ export default function Privacidade() {
           <a href="https://developers.google.com/terms/api-services-user-data-policy" rel="noopener noreferrer">
             Política de Dados do Usuário dos Serviços de API do Google
           </a>
-          , incluindo os requisitos de Uso Limitado. Os dados do Google só servem para oferecer e melhorar os recursos
-          da orla visíveis a você; pessoas só os leem com seu consentimento, para segurança, por obrigação legal ou
-          quando agregados para a operação.
+          , incluindo os requisitos de Uso Limitado. Os dados do Google só servem para oferecer os recursos da orla
+          visíveis a você; pessoas só os leem com seu consentimento, para segurança, por obrigação legal ou quando
+          agregados para a operação. Eles não são transferidos a terceiros, exceto quando necessário para esses
+          recursos ou por obrigação legal.
         </p>
       </section>
 
       <section>
         <h2>5. Onde os dados ficam e como os protegemos</h2>
         <ul>
-          <li>Tudo fica na infraestrutura da Agência 24/7 no Google Cloud, nos Estados Unidos.</li>
+          <li>A plataforma roda na infraestrutura da Agência 24/7 no Google Cloud, nos Estados Unidos.</li>
           <li>
             Os tokens de acesso ficam cifrados num cofre de credenciais e nunca são mostrados nas telas nem enviados a
             terceiros.
           </li>
           <li>As métricas ficam no banco de dados da plataforma e no data warehouse da agência (BigQuery).</li>
           <li>
-            O tráfego é sempre cifrado (HTTPS). Cada organização só enxerga os próprios dados, e as ações ficam
-            registradas numa trilha de auditoria.
+            O tráfego é sempre cifrado (HTTPS). Cada organização só enxerga os próprios dados, cada pessoa só enxerga os
+            clientes a que tem acesso, e as ações ficam registradas numa trilha de auditoria.
           </li>
         </ul>
       </section>
 
       <section>
         <h2>6. Com quem compartilhamos</h2>
+        <p>Só com quem é necessário para operar o serviço:</p>
+        <ul>
+          <li>Google Cloud: hospedagem da plataforma, do banco de dados, do data warehouse e dos backups.</li>
+          <li>Google e Meta: recebem as chamadas autorizadas para coletar métricas e executar tarefas.</li>
+          <li>RD Station: recebe os leads, quando o cliente contrata a automação de leads para o CRM dele.</li>
+          <li>Z-API e Apify: quando o cliente conecta esses serviços com a própria chave.</li>
+          <li>Google Workspace (Gmail): envio dos alertas de falha para a equipe da agência, sem dados de leads.</li>
+        </ul>
         <p>
-          Com ninguém além do necessário para operar: o Google Cloud, que hospeda a plataforma, e as próprias
-          plataformas (Google e Meta), que recebem as chamadas autorizadas por você. Os relatórios de um cliente só são
-          vistos pela equipe da agência e pelas pessoas que esse cliente indicar.
+          Os relatórios de um cliente só são vistos pela equipe da agência e pelas pessoas que esse cliente indicar.
         </p>
       </section>
 
       <section>
-        <h2>7. Por quanto tempo guardamos</h2>
+        <h2>7. Transferência internacional</h2>
+        <p>
+          Os dados são processados nos Estados Unidos pelos fornecedores acima. Essas transferências se apoiam nas
+          cláusulas contratuais de proteção de dados dos fornecedores, incluindo as cláusulas-padrão aprovadas pela
+          ANPD quando disponíveis, e são necessárias para executar o serviço contratado (LGPD, art. 33).
+        </p>
+      </section>
+
+      <section>
+        <h2>8. Por quanto tempo guardamos</h2>
         <ul>
-          <li>Os tokens de acesso ficam guardados enquanto a conexão existir e são apagados quando ela é removida.</li>
+          <li>Tokens de acesso: enquanto a conexão existir; são apagados quando ela é removida.</li>
+          <li>Métricas: enquanto o cliente usar a orla; apagadas em até 30 dias depois de um pedido de exclusão.</li>
+          <li>Registros de execução das automações: 14 dias. Os fluxos de leads não guardam o conteúdo dos leads.</li>
+          <li>Avisos de mensagens do WhatsApp: 90 dias.</li>
+          <li>Convites de equipe vencidos ou cancelados: o e-mail é apagado depois de 90 dias.</li>
+          <li>Contas Google que entraram sem ter acesso liberado: apagadas depois de 30 dias.</li>
           <li>
-            As métricas coletadas ficam enquanto o cliente usar a orla, para formar o histórico dos relatórios, e são
-            apagadas em até 30 dias depois de um pedido de exclusão.
+            Trilha de auditoria: o endereço IP é apagado depois de 6 meses e o registro, depois de 2 anos.
           </li>
-          <li>A trilha de auditoria é guardada pelo tempo exigido por lei.</li>
+          <li>
+            Backups: 30 dias. Um dado excluído some dos backups quando o backup mais antigo que o contém expira.
+          </li>
         </ul>
       </section>
 
       <section>
-        <h2>8. Como você controla o acesso</h2>
+        <h2>9. Seus direitos e como controlar o acesso</h2>
         <ul>
-          <li>Remova uma conexão a qualquer momento na tela de conectores da orla.</li>
+          <li>A equipe da agência remove uma conexão a qualquer momento na tela de conectores da orla.</li>
           <li>
-            Revogue o acesso direto no Google, em{' '}
+            Você pode revogar o acesso direto no Google, em{' '}
             <a href="https://myaccount.google.com/permissions" rel="noopener noreferrer">
               myaccount.google.com/permissions
             </a>
             , ou na Meta, em Configurações → Integrações comerciais.
           </li>
           <li>
-            Peça acesso, correção, portabilidade ou exclusão dos seus dados, conforme a Lei Geral de Proteção de Dados
-            (LGPD), por <a href="mailto:contato@agencia24por7.com">contato@agencia24por7.com</a>. Respondemos em até
-            15 dias.
+            Você pode pedir confirmação do tratamento, acesso, correção, portabilidade, anonimização ou exclusão dos
+            seus dados, e informações sobre compartilhamento, conforme o art. 18 da LGPD, por{' '}
+            <a href="mailto:contato@agencia24por7.com">contato@agencia24por7.com</a>. Respondemos em até 15 dias.
+          </li>
+          <li>
+            Se um pedido envolver dados de um cliente da agência, como um lead, encaminhamos ao cliente, que é o
+            controlador, e apoiamos o atendimento.
+          </li>
+          <li>
+            Você também pode reclamar à Autoridade Nacional de Proteção de Dados (ANPD), em{' '}
+            <a href="https://www.gov.br/anpd" rel="noopener noreferrer">
+              gov.br/anpd
+            </a>
+            .
           </li>
         </ul>
       </section>
 
       <section>
-        <h2>9. Mudanças nesta política</h2>
+        <h2>10. Cookies</h2>
+        <p>
+          Usamos só cookies essenciais: o da sessão de login, os temporários da autorização com Google e Meta e o que
+          lembra a organização escolhida. Não usamos cookies de publicidade nem de rastreamento. A preferência de tema
+          claro ou escuro fica guardada no seu navegador.
+        </p>
+      </section>
+
+      <section>
+        <h2>11. Incidentes de segurança</h2>
+        <p>
+          Se um incidente puder trazer risco ou dano relevante, comunicamos a ANPD e as pessoas afetadas no prazo da
+          regulamentação, com o que aconteceu, quais dados foram envolvidos e o que fizemos.
+        </p>
+      </section>
+
+      <section>
+        <h2>12. Mudanças nesta política</h2>
         <p>
           Quando a política mudar, atualizamos a data no topo e avisamos quem usa a orla. Veja também os{' '}
           <Link href="/termos">Termos de Serviço</Link>.

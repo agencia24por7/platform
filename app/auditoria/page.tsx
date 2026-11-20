@@ -10,6 +10,7 @@ import {
   resumoPorFamilia,
 } from '@/modules/audit/domain/auditView';
 import { requireContext } from '@/shared/http/currentOrganization';
+import { canAdminister } from '@/modules/identity/domain/user';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,6 +52,7 @@ export default async function Auditoria({ searchParams }: { searchParams: Promis
   const ctx = await requireContext();
   if (ctx.clientIds !== null) redirect('/clientes');
   const organization = ctx.organization;
+  const veOrigem = canAdminister(ctx.role);
 
   const busca = await searchParams;
   const limite = LIMITES.includes(Number(busca.limite) as (typeof LIMITES)[number])
@@ -201,7 +203,7 @@ export default async function Auditoria({ searchParams }: { searchParams: Promis
                   <th>Autor</th>
                   <th>Alvo</th>
                   <th>Requisição</th>
-                  <th>Origem</th>
+                  {veOrigem ? <th>Origem</th> : null}
                   {colunas.map((coluna) => (
                     <th key={coluna.chave} className={coluna.numerica ? 'num' : undefined}>
                       {coluna.rotulo}
@@ -240,7 +242,7 @@ export default async function Auditoria({ searchParams }: { searchParams: Promis
                     <td className="mono subtle" title={entrada.requestId ?? ''}>
                       {entrada.requestId ? entrada.requestId.slice(0, 8) : '—'}
                     </td>
-                    <td className="mono subtle">{entrada.sourceIp ?? '—'}</td>
+                    {veOrigem ? <td className="mono subtle">{entrada.sourceIp ?? '—'}</td> : null}
 
                     {colunas.map((coluna) => {
                       const celula = celulaDe((entrada.metadata ?? {})[coluna.chave]);
