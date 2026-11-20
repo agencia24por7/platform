@@ -26,6 +26,7 @@ import type { AdAccountRepository } from '@/modules/connections/infrastructure/a
 import type { ConnectionRepository } from '@/modules/connections/infrastructure/connectionRepository';
 import type { DiscoveredAccountRepository } from '@/modules/connections/infrastructure/discoveredAccountRepository';
 import { logger } from '@/shared/logging/logger';
+import { avisarMudancaDePosse, semAvisoDePosse, type AvisoDePosse } from '@/modules/connections/application/avisoDePosse';
 import { randomBytes } from 'node:crypto';
 
 export type LinkAccountInput = Omit<NewAdAccount, 'organizationId'> & {
@@ -88,6 +89,7 @@ export function createConnectionService(
   tester: CredentialTester,
   workflows: ProvisionadorDeColetor,
   contasDescobertas: Pick<DiscoveredAccountRepository, 'replace'>,
+  aviso: AvisoDePosse = semAvisoDePosse,
 ): ConnectionService {
   async function provisionarColetor(organizationId: string, connection: Connection): Promise<string | null> {
     try {
@@ -335,6 +337,7 @@ export function createConnectionService(
         },
       });
 
+      avisarMudancaDePosse(aviso, reativada ? 'ad_account.relinked' : 'ad_account.link');
       return ok(account);
     },
 
@@ -369,10 +372,11 @@ export function createConnectionService(
           externalId: movida.externalId,
           de: origem?.name ?? conta.clientId,
           para: destino.name,
-          historicoSegue: true,
+          historico: 'scd2',
         },
       });
 
+      avisarMudancaDePosse(aviso, 'ad_account.reassigned');
       return ok(movida);
     },
 
@@ -398,10 +402,11 @@ export function createConnectionService(
           platform: solta.platform,
           externalId: solta.externalId,
           de: cliente?.name ?? conta!.clientId,
-          historicoPreservado: true,
+          historico: 'scd2',
         },
       });
 
+      avisarMudancaDePosse(aviso, 'ad_account.unlinked');
       return ok(solta);
     },
 

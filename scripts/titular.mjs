@@ -87,7 +87,7 @@ function anonimizar(email) {
 function tabelasComCliente() {
   const saida = execFileSync('bq', [
     '--project_id', PROJETO, 'query', '--use_legacy_sql=false', '--format=csv',
-    `SELECT table_name FROM \`${PROJETO}.${DATASET}.INFORMATION_SCHEMA.COLUMNS\` WHERE column_name = 'client_id'`,
+    `SELECT c.table_name FROM \`${PROJETO}.${DATASET}.INFORMATION_SCHEMA.COLUMNS\` c JOIN \`${PROJETO}.${DATASET}.INFORMATION_SCHEMA.TABLES\` t ON t.table_name = c.table_name WHERE c.column_name = 'client_id' AND t.table_type = 'BASE TABLE'`,
   ], { encoding: 'utf8' });
   return saida.split('\n').slice(1).map((linha) => linha.trim()).filter(Boolean);
 }
