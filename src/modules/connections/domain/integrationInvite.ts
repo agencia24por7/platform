@@ -7,6 +7,7 @@ export const PLATAFORMAS_CONVIDAVEIS = [
   'ga4',
   'gtm',
   'pixel',
+  'leadads',
   'searchconsole',
   'youtube',
   'gbp',

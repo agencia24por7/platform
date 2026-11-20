@@ -13,6 +13,11 @@ import {
   parseGbpAccounts,
   urlDosLocaisDoGbp,
   parseGbpLocations,
+  parseMetaPixels,
+  parseMetaPages,
+  proximaPaginaDoGraph,
+  urlDasPaginasDaMeta,
+  urlsDosConjuntosDeDadosDaMeta,
   sortForSelection,
   type DiscoveredAccount,
 } from '@/modules/connections/domain/discovery';
@@ -86,6 +91,20 @@ async function fetchTodasAsPaginas(
   return paginas;
 }
 
+async function fetchPaginasDoGraph(url: string, accessToken: string): Promise<readonly unknown[]> {
+  const paginas: unknown[] = [];
+  let proxima: string | null = url;
+
+  for (let i = 0; i < MAX_PAGINAS && proxima; i++) {
+    const payload = await fetchJson(proxima, { method: 'GET', headers: { Authorization: `Bearer ${accessToken}` } });
+    if (payload === null || typeof payload !== 'object') break;
+    paginas.push(payload);
+    proxima = proximaPaginaDoGraph(payload);
+  }
+
+  return paginas;
+}
+
 async function reasonOf(response: Response): Promise<string> {
   try {
     return redactText((await response.text()).slice(0, MOTIVO_MAX));
@@ -106,6 +125,7 @@ const ONDE_SE_IDENTIFICA: Partial<Record<Platform, OndeSeIdentifica>> = {
   ga4: { url: 'https://www.googleapis.com/oauth2/v3/userinfo', camposDoId: ['sub'] },
   gtm: { url: 'https://www.googleapis.com/oauth2/v3/userinfo', camposDoId: ['sub'] },
   pixel: { url: `${GRAPH_API}/me?fields=id,email`, camposDoId: ['id'] },
+  leadads: { url: `${GRAPH_API}/me?fields=id,email`, camposDoId: ['id'] },
   searchconsole: { url: 'https://www.googleapis.com/oauth2/v3/userinfo', camposDoId: ['sub'] },
   youtube: { url: 'https://www.googleapis.com/oauth2/v3/userinfo', camposDoId: ['sub'] },
   gbp: { url: 'https://www.googleapis.com/oauth2/v3/userinfo', camposDoId: ['sub'] },
@@ -228,6 +248,26 @@ export function createPlatformDiscovery(): PlatformDiscovery {
       const accounts = parseMetaAdAccounts(owned);
       logger.info('discovery.meta.done', { accounts: accounts.length });
       return sortForSelection(dedupe(accounts));
+    },
+
+    async pixel(accessToken) {
+      esquecerFalhas();
+      const conjuntos: DiscoveredAccount[] = [];
+      for (const url of urlsDosConjuntosDeDadosDaMeta()) {
+        const paginas = await fetchPaginasDoGraph(url, accessToken);
+        conjuntos.push(...paginas.flatMap((pagina) => parseMetaPixels(pagina)));
+      }
+      const unicos = sortForSelection(dedupe(conjuntos));
+      logger.info('discovery.pixel.done', { brutos: conjuntos.length, conjuntos: unicos.length });
+      return unicos;
+    },
+
+    async leadads(accessToken) {
+      esquecerFalhas();
+      const paginas = await fetchPaginasDoGraph(urlDasPaginasDaMeta(), accessToken);
+      const paginasDoFacebook = sortForSelection(dedupe(paginas.flatMap((pagina) => parseMetaPages(pagina))));
+      logger.info('discovery.leadads.done', { paginas: paginasDoFacebook.length });
+      return paginasDoFacebook;
     },
 
     async ga4(accessToken) {

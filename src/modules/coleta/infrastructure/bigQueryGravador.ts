@@ -5,6 +5,14 @@ import type { Platform } from '@/modules/connections/domain/connection';
 import type { RelatorioDeExecucao } from '@/modules/coleta/domain/qualidade';
 import { linhaParaBigQuery, paraParametroBigQuery } from '@/modules/coleta/infrastructure/parametrosBigQuery';
 import { COLUNAS_DO_FATO_RD, dataDoSnapshot, linhaDoFatoRd, negociacoesUnicas, type NegociacaoRd } from '@/modules/coleta/domain/negociacoesRd';
+import { COLUNAS_DO_FATO_EVENTOS, TIPOS_DO_FATO_EVENTOS, eventosUnicos, linhaDoFatoEventos, type EventoDoDia } from '@/modules/coleta/domain/eventosDoDataset';
+import {
+  COLUNAS_DO_FATO_FORMULARIOS,
+  TIPOS_DO_FATO_FORMULARIOS,
+  formulariosUnicos,
+  linhaDoFatoFormularios,
+  type FormularioMeta,
+} from '@/modules/coleta/domain/formulariosMeta';
 
 type LinhaBruta = Record<string, unknown>;
 
@@ -27,7 +35,7 @@ type ConfiguracaoPlataforma = {
 };
 
 const TIPOS_ADS = {
-  organization_id: 'STRING', client_id: 'STRING', platform: 'STRING', ad_account_id: 'STRING',
+  organization_id: 'STRING', platform: 'STRING', ad_account_id: 'STRING',
   external_campaign_id: 'STRING', campaign_name: 'STRING', data_dia: 'DATE', investimento: 'NUMERIC',
   impressoes: 'INT64', cliques: 'INT64', conversoes: 'NUMERIC', receita: 'NUMERIC', moeda: 'STRING',
   versao_api: 'STRING', execucao_id: 'STRING', inserido_em: 'TIMESTAMP',
@@ -36,7 +44,7 @@ const TIPOS_ADS = {
 const agora = () => new Date().toISOString();
 
 const TIPOS_RD = {
-  organization_id: 'STRING', client_id: 'STRING', deal_id: 'STRING', data_snapshot: 'DATE', pipeline_id: 'STRING',
+  organization_id: 'STRING', conta_id: 'STRING', deal_id: 'STRING', data_snapshot: 'DATE', pipeline_id: 'STRING',
   pipeline_nome: 'STRING', etapa_id: 'STRING', etapa_nome: 'STRING', etapa_ordem: 'INT64', situacao: 'STRING',
   valor_total: 'NUMERIC', valor_mensal: 'NUMERIC', valor_unico: 'NUMERIC', moeda: 'STRING', criada_em: 'TIMESTAMP',
   atualizada_em: 'TIMESTAMP', fechada_em: 'TIMESTAMP', fonte_nome: 'STRING', campanha_nome: 'STRING',
@@ -45,20 +53,21 @@ const TIPOS_RD = {
 
 type NegociacaoDoDia = NegociacaoRd & { readonly dataSnapshot: string };
 
+type FormularioDoDia = FormularioMeta & { readonly dataSnapshot: string };
+
 const CONFIG_POR_PLATAFORMA: Partial<Record<Platform, ConfiguracaoPlataforma>> = {
   google: {
     staging: 'stg_ads_diario',
     fato: 'fato_ads_diario',
-    chave: ['organization_id', 'client_id', 'ad_account_id', 'external_campaign_id', 'data_dia'],
+    chave: ['organization_id', 'ad_account_id', 'external_campaign_id', 'data_dia'],
     colunas: [
-      'organization_id', 'client_id', 'platform', 'ad_account_id', 'external_campaign_id', 'campaign_name',
+      'organization_id', 'platform', 'ad_account_id', 'external_campaign_id', 'campaign_name',
       'data_dia', 'investimento', 'impressoes', 'cliques', 'conversoes', 'receita', 'moeda', 'versao_api',
       'execucao_id', 'inserido_em',
     ],
     tipos: TIPOS_ADS,
     mapear: (linha, ctx) => ({
       organization_id: ctx.organizationId,
-      client_id: ctx.clientId,
       platform: 'google',
       ad_account_id: ctx.externalId,
       external_campaign_id: linha.externalCampaignId,
@@ -78,16 +87,15 @@ const CONFIG_POR_PLATAFORMA: Partial<Record<Platform, ConfiguracaoPlataforma>> =
   meta: {
     staging: 'stg_ads_diario',
     fato: 'fato_ads_diario',
-    chave: ['organization_id', 'client_id', 'ad_account_id', 'external_campaign_id', 'data_dia'],
+    chave: ['organization_id', 'ad_account_id', 'external_campaign_id', 'data_dia'],
     colunas: [
-      'organization_id', 'client_id', 'platform', 'ad_account_id', 'external_campaign_id', 'campaign_name',
+      'organization_id', 'platform', 'ad_account_id', 'external_campaign_id', 'campaign_name',
       'data_dia', 'investimento', 'impressoes', 'cliques', 'conversoes', 'receita', 'moeda', 'versao_api',
       'execucao_id', 'inserido_em',
     ],
     tipos: TIPOS_ADS,
     mapear: (linha, ctx) => ({
       organization_id: ctx.organizationId,
-      client_id: ctx.clientId,
       platform: 'meta',
       ad_account_id: ctx.externalId,
       external_campaign_id: linha.externalCampaignId,
@@ -107,16 +115,15 @@ const CONFIG_POR_PLATAFORMA: Partial<Record<Platform, ConfiguracaoPlataforma>> =
   ga4: {
     staging: 'stg_ga4_diario',
     fato: 'fato_ga4_diario',
-    chave: ['organization_id', 'client_id', 'property_id', 'canal', 'data_dia'],
-    colunas: ['organization_id', 'client_id', 'property_id', 'canal', 'data_dia', 'sessoes', 'usuarios', 'novos_usuarios', 'conversoes', 'receita', 'execucao_id', 'inserido_em'],
+    chave: ['organization_id', 'property_id', 'canal', 'data_dia'],
+    colunas: ['organization_id', 'property_id', 'canal', 'data_dia', 'sessoes', 'usuarios', 'novos_usuarios', 'conversoes', 'receita', 'execucao_id', 'inserido_em'],
     tipos: {
-      organization_id: 'STRING', client_id: 'STRING', property_id: 'STRING', canal: 'STRING', data_dia: 'DATE',
+      organization_id: 'STRING', property_id: 'STRING', canal: 'STRING', data_dia: 'DATE',
       sessoes: 'INT64', usuarios: 'INT64', novos_usuarios: 'INT64', conversoes: 'NUMERIC', receita: 'NUMERIC',
       execucao_id: 'STRING', inserido_em: 'TIMESTAMP',
     },
     mapear: (linha, ctx) => ({
       organization_id: ctx.organizationId,
-      client_id: ctx.clientId,
       property_id: ctx.externalId,
       canal: linha.canal ?? null,
       data_dia: linha.metricDate,
@@ -132,16 +139,15 @@ const CONFIG_POR_PLATAFORMA: Partial<Record<Platform, ConfiguracaoPlataforma>> =
   searchconsole: {
     staging: 'stg_search_console_diario',
     fato: 'fato_search_console_diario',
-    chave: ['organization_id', 'client_id', 'site', 'device', 'data_dia'],
-    colunas: ['organization_id', 'client_id', 'site', 'device', 'data_dia', 'cliques', 'impressoes', 'ctr', 'posicao_media', 'execucao_id', 'inserido_em'],
+    chave: ['organization_id', 'site', 'device', 'data_dia'],
+    colunas: ['organization_id', 'site', 'device', 'data_dia', 'cliques', 'impressoes', 'ctr', 'posicao_media', 'execucao_id', 'inserido_em'],
     tipos: {
-      organization_id: 'STRING', client_id: 'STRING', site: 'STRING', device: 'STRING', data_dia: 'DATE',
+      organization_id: 'STRING', site: 'STRING', device: 'STRING', data_dia: 'DATE',
       cliques: 'INT64', impressoes: 'INT64', ctr: 'NUMERIC', posicao_media: 'NUMERIC',
       execucao_id: 'STRING', inserido_em: 'TIMESTAMP',
     },
     mapear: (linha, ctx) => ({
       organization_id: ctx.organizationId,
-      client_id: ctx.clientId,
       site: ctx.externalId,
       device: linha.device ?? null,
       data_dia: linha.metricDate,
@@ -156,16 +162,15 @@ const CONFIG_POR_PLATAFORMA: Partial<Record<Platform, ConfiguracaoPlataforma>> =
   youtube: {
     staging: 'stg_youtube_diario',
     fato: 'fato_youtube_diario',
-    chave: ['organization_id', 'client_id', 'channel_id', 'data_dia'],
-    colunas: ['organization_id', 'client_id', 'channel_id', 'data_dia', 'views', 'minutos_assistidos', 'inscritos_ganhos', 'inscritos_perdidos', 'receita_estimada', 'execucao_id', 'inserido_em'],
+    chave: ['organization_id', 'channel_id', 'data_dia'],
+    colunas: ['organization_id', 'channel_id', 'data_dia', 'views', 'minutos_assistidos', 'inscritos_ganhos', 'inscritos_perdidos', 'receita_estimada', 'execucao_id', 'inserido_em'],
     tipos: {
-      organization_id: 'STRING', client_id: 'STRING', channel_id: 'STRING', data_dia: 'DATE', views: 'INT64',
+      organization_id: 'STRING', channel_id: 'STRING', data_dia: 'DATE', views: 'INT64',
       minutos_assistidos: 'NUMERIC', inscritos_ganhos: 'INT64', inscritos_perdidos: 'INT64', receita_estimada: 'NUMERIC',
       execucao_id: 'STRING', inserido_em: 'TIMESTAMP',
     },
     mapear: (linha, ctx) => ({
       organization_id: ctx.organizationId,
-      client_id: ctx.clientId,
       channel_id: ctx.externalId,
       data_dia: linha.metricDate,
       views: Number(linha.views ?? 0),
@@ -180,15 +185,14 @@ const CONFIG_POR_PLATAFORMA: Partial<Record<Platform, ConfiguracaoPlataforma>> =
   gbp: {
     staging: 'stg_gbp_diario',
     fato: 'fato_gbp_diario',
-    chave: ['organization_id', 'client_id', 'location_id', 'data_dia', 'metrica'],
-    colunas: ['organization_id', 'client_id', 'location_id', 'data_dia', 'metrica', 'valor', 'execucao_id', 'inserido_em'],
+    chave: ['organization_id', 'location_id', 'data_dia', 'metrica'],
+    colunas: ['organization_id', 'location_id', 'data_dia', 'metrica', 'valor', 'execucao_id', 'inserido_em'],
     tipos: {
-      organization_id: 'STRING', client_id: 'STRING', location_id: 'STRING', data_dia: 'DATE', metrica: 'STRING',
+      organization_id: 'STRING', location_id: 'STRING', data_dia: 'DATE', metrica: 'STRING',
       valor: 'NUMERIC', execucao_id: 'STRING', inserido_em: 'TIMESTAMP',
     },
     mapear: (linha, ctx) => ({
       organization_id: ctx.organizationId,
-      client_id: ctx.clientId,
       location_id: ctx.externalId,
       data_dia: linha.metricDate,
       metrica: linha.metric,
@@ -200,7 +204,7 @@ const CONFIG_POR_PLATAFORMA: Partial<Record<Platform, ConfiguracaoPlataforma>> =
   rdstation: {
     staging: 'stg_rd_negociacoes',
     fato: 'fato_rd_negociacoes',
-    chave: ['organization_id', 'client_id', 'deal_id', 'data_snapshot'],
+    chave: ['organization_id', 'conta_id', 'deal_id', 'data_snapshot'],
     colunas: COLUNAS_DO_FATO_RD,
     tipos: TIPOS_RD,
     preparar: (linhas) => {
@@ -211,9 +215,45 @@ const CONFIG_POR_PLATAFORMA: Partial<Record<Platform, ConfiguracaoPlataforma>> =
       const negociacao = linha as unknown as NegociacaoDoDia;
       return linhaDoFatoRd(negociacao, {
         organizationId: ctx.organizationId,
-        clientId: ctx.clientId,
+        contaId: ctx.externalId,
         dataSnapshot: negociacao.dataSnapshot,
         moeda: ctx.currency,
+        execucaoId: ctx.execucaoId,
+        inseridoEm: agora(),
+      });
+    },
+  },
+  pixel: {
+    staging: 'stg_meta_eventos_dataset',
+    fato: 'fato_meta_eventos_dataset',
+    chave: ['organization_id', 'dataset_id', 'data_dia', 'evento', 'origem'],
+    colunas: COLUNAS_DO_FATO_EVENTOS,
+    tipos: TIPOS_DO_FATO_EVENTOS,
+    preparar: (linhas) => eventosUnicos(linhas),
+    mapear: (linha, ctx) =>
+      linhaDoFatoEventos(linha as unknown as EventoDoDia, {
+        organizationId: ctx.organizationId,
+        datasetId: ctx.externalId,
+        execucaoId: ctx.execucaoId,
+        inseridoEm: agora(),
+      }),
+  },
+  leadads: {
+    staging: 'stg_meta_formularios',
+    fato: 'fato_meta_formularios',
+    chave: ['organization_id', 'page_id', 'form_id', 'data_snapshot'],
+    colunas: COLUNAS_DO_FATO_FORMULARIOS,
+    tipos: TIPOS_DO_FATO_FORMULARIOS,
+    preparar: (linhas) => {
+      const dataSnapshot = dataDoSnapshot(new Date());
+      return formulariosUnicos(linhas).map((formulario) => ({ ...formulario, dataSnapshot }));
+    },
+    mapear: (linha, ctx) => {
+      const formulario = linha as unknown as FormularioDoDia;
+      return linhaDoFatoFormularios(formulario, {
+        organizationId: ctx.organizationId,
+        pageId: ctx.externalId,
+        dataSnapshot: formulario.dataSnapshot,
         execucaoId: ctx.execucaoId,
         inseridoEm: agora(),
       });
@@ -224,7 +264,7 @@ const CONFIG_POR_PLATAFORMA: Partial<Record<Platform, ConfiguracaoPlataforma>> =
 const PLATAFORMAS_SNAPSHOT: ReadonlySet<Platform> = new Set(['gtm']);
 
 const TIPOS_SNAPSHOT = {
-  organization_id: 'STRING', client_id: 'STRING', platform: 'STRING', fonte_tipo: 'STRING', fonte_id: 'STRING',
+  organization_id: 'STRING', platform: 'STRING', fonte_tipo: 'STRING', fonte_id: 'STRING',
   nome: 'STRING', estado: 'STRING', inactive: 'BOOL', rotulo_esperado: 'STRING', rotulo_observado: 'STRING',
   visto_em: 'TIMESTAMP',
 } as const;
@@ -285,7 +325,6 @@ export function createBigQueryGravador(): BigQueryGravador {
 
     const snapshots = linhas.map((linha) => ({
       organization_id: ctx.organizationId,
-      client_id: ctx.clientId,
       platform,
       fonte_tipo: 'connection_account',
       fonte_id: ctx.externalId,

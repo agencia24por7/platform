@@ -17,6 +17,7 @@ export const PLATAFORMAS_OAUTH = [
   'ga4',
   'gtm',
   'pixel',
+  'leadads',
   'searchconsole',
   'youtube',
   'gbp',
@@ -38,7 +39,7 @@ export function usaOauthDoGoogle(platform: PlataformaOauth): platform is Platafo
   return (FAMILIA_GOOGLE as readonly string[]).includes(platform);
 }
 
-export const FAMILIA_META = ['meta', 'pixel', 'whatsapp'] as const satisfies readonly PlataformaOauth[];
+export const FAMILIA_META = ['meta', 'pixel', 'leadads', 'whatsapp'] as const satisfies readonly PlataformaOauth[];
 export type PlataformaMeta = (typeof FAMILIA_META)[number];
 
 export function usaOauthDaMeta(platform: PlataformaOauth): platform is PlataformaMeta {
@@ -103,6 +104,15 @@ export const PROVIDERS: Readonly<Record<PlataformaOauth, OauthProvider>> = {
     authorizeUrl: 'https://www.facebook.com/v23.0/dialog/oauth',
     tokenUrl: 'https://graph.facebook.com/v23.0/oauth/access_token',
     scopes: ['ads_read', 'business_management'],
+    usesPkce: false,
+    usesConfigId: true,
+  },
+  leadads: {
+    platform: 'leadads',
+    label: 'Meta Lead Ads',
+    authorizeUrl: 'https://www.facebook.com/v23.0/dialog/oauth',
+    tokenUrl: 'https://graph.facebook.com/v23.0/oauth/access_token',
+    scopes: ['pages_show_list', 'pages_read_engagement', 'pages_manage_ads', 'leads_retrieval', 'ads_management'],
     usesPkce: false,
     usesConfigId: true,
   },
@@ -218,6 +228,7 @@ const FORMATO_DO_CORPO: Record<PlataformaOauth, FormatoDoCorpo> = {
   rdstation: 'json',
   gtm: 'form',
   pixel: 'form',
+  leadads: 'form',
   searchconsole: 'form',
   youtube: 'form',
   gbp: 'form',
@@ -322,6 +333,7 @@ const ESCOPOS_EXIGIDOS: Record<PlataformaOauth, readonly string[]> = {
   ga4: PROVIDERS.ga4.scopes,
   gtm: PROVIDERS.gtm.scopes,
   pixel: ['ads_read'],
+  leadads: ['leads_retrieval'],
   searchconsole: PROVIDERS.searchconsole.scopes,
   youtube: ['https://www.googleapis.com/auth/yt-analytics.readonly'],
   gbp: PROVIDERS.gbp.scopes,

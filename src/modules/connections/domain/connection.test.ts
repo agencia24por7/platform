@@ -43,6 +43,15 @@ describe('temRecursoParaVincular', () => {
     assert.equal(ROTULO_DO_RECURSO.zapi, 'Instância');
   });
 
+  it('conjunto de dados do pixel e Página de formulários são recursos vinculáveis a cliente', () => {
+    assert.equal(temRecursoParaVincular('pixel'), true);
+    assert.equal(temRecursoParaVincular('leadads'), true);
+    assert.equal(ROTULO_DO_RECURSO.pixel, 'Conjunto de dados');
+    assert.equal(ROTULO_DO_RECURSO.leadads, 'Página');
+    assert.equal(concordaComRecurso('pixel', 'vinculado', 'vinculada'), 'vinculado');
+    assert.equal(concordaComRecurso('leadads', 'vinculado', 'vinculada'), 'vinculada');
+  });
+
   it('contas de anúncio seguem fora: o vínculo delas passa por ad_accounts', () => {
     assert.equal(temRecursoParaVincular('google'), false);
     assert.equal(temRecursoParaVincular('meta'), false);

@@ -12,6 +12,11 @@ import {
   parseGtmAccountIds,
   parseGtmContainers,
   parseMetaAdAccounts,
+  parseMetaPages,
+  parseMetaPixels,
+  proximaPaginaDoGraph,
+  urlDasPaginasDaMeta,
+  urlsDosConjuntosDeDadosDaMeta,
   parseSearchConsoleSites,
   parseYoutubeChannels,
   sortForSelection,
@@ -261,5 +266,80 @@ describe('parseGbpAccounts e parseGbpLocations', () => {
   it('ignora entradas sem o prefixo esperado', () => {
     assert.deepEqual(parseGbpAccounts({ accounts: [{ name: 'algo-estranho' }] }), []);
     assert.deepEqual(parseGbpLocations({ locations: [{ name: 'algo-estranho' }] }), []);
+  });
+});
+
+describe('parseMetaPixels', () => {
+  it('lê os pixels expandidos das contas de anúncio e das empresas, com o dono como administradora', () => {
+    const contas = parseMetaPixels({
+      data: [
+        { id: 'act_111', adspixels: { data: [{ id: '123456789012', name: ' Pixel do site ', last_fired_time: '2026-11-19T10:00:00+0000' }] } },
+        { id: 'act_222' },
+        { id: 'act_333', adspixels: { data: [{ id: '999999999999', name: 'Antigo', is_unavailable: true }] } },
+      ],
+    });
+    const empresas = parseMetaPixels({ data: [{ id: '777', owned_pixels: { data: [{ id: '123456789012', name: 'Pixel do site' }] } }] });
+
+    assert.deepEqual(
+      contas.map((pixel) => [pixel.platform, pixel.externalId, pixel.name, pixel.managerExternalId, pixel.inactive]),
+      [
+        ['pixel', '123456789012', 'Pixel do site', 'act_111', false],
+        ['pixel', '999999999999', 'Antigo', 'act_333', true],
+      ],
+    );
+    assert.equal(empresas[0]!.managerExternalId, '777');
+    assert.equal(dedupe([...contas, ...empresas]).length, 2);
+  });
+
+  it('ignora id que não é numérico e payload inesperado', () => {
+    assert.deepEqual(parseMetaPixels({ data: [{ id: 'act_1', adspixels: { data: [{ id: '../me' }, { name: 'sem id' }] } }] }), []);
+    assert.deepEqual(parseMetaPixels(null), []);
+    assert.deepEqual(parseMetaPixels({ error: { code: 190 } }), []);
+  });
+
+  it('as URLs expandem os pixels nas contas de anúncio e nas empresas, sem pedir token', () => {
+    const urls = urlsDosConjuntosDeDadosDaMeta();
+    assert.equal(urls.length, 2);
+    assert.ok(urls[0]!.includes('/me/adaccounts?fields=id,adspixels'));
+    assert.ok(urls[1]!.includes('/me/businesses?fields=id,owned_pixels'));
+    for (const url of urls) assert.ok(!url.includes('access_token'));
+  });
+});
+
+describe('parseMetaPages', () => {
+  it('lê as Páginas e marca como inativa a que não tem tarefa que leia formulários', () => {
+    const paginas = parseMetaPages({
+      data: [
+        { id: '100200300', name: 'Loja', tasks: ['ANALYZE', 'ADVERTISE'], access_token: 'EAA-nunca-guardar' },
+        { id: '100200301', name: 'Só análise', tasks: ['ANALYZE'] },
+        { id: '100200302', name: 'Sem tarefas informadas' },
+        { id: 'abc', name: 'Inválida', tasks: ['MANAGE'] },
+      ],
+    });
+    assert.deepEqual(
+      paginas.map((pagina) => [pagina.platform, pagina.externalId, pagina.name, pagina.inactive]),
+      [
+        ['leadads', '100200300', 'Loja', false],
+        ['leadads', '100200301', 'Só análise', true],
+        ['leadads', '100200302', 'Sem tarefas informadas', false],
+      ],
+    );
+    assert.ok(!JSON.stringify(paginas).includes('EAA-nunca-guardar'));
+  });
+
+  it('a URL de descoberta não pede o token da Página', () => {
+    const url = urlDasPaginasDaMeta();
+    assert.ok(url.includes('/me/accounts?fields=id,name,tasks'));
+    assert.ok(!url.includes('access_token'));
+  });
+});
+
+describe('proximaPaginaDoGraph', () => {
+  it('segue só paging.next do próprio Graph', () => {
+    const graph = 'https:' + '/'.repeat(2) + 'graph.facebook.com/v23.0/me/accounts?after=x';
+    assert.equal(proximaPaginaDoGraph({ paging: { next: graph } }), graph);
+    assert.equal(proximaPaginaDoGraph({ paging: { next: 'https:' + '/'.repeat(2) + 'exemplo.com/x' } }), null);
+    assert.equal(proximaPaginaDoGraph({ paging: {} }), null);
+    assert.equal(proximaPaginaDoGraph(null), null);
   });
 });
