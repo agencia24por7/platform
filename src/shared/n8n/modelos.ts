@@ -18,3 +18,7 @@ export const MODELO_DE_EXECUTOR: Readonly<Record<string, string>> = {
 export const PASTAS_DE_MODELO = ['n8n/workflows/coletores/', 'n8n/workflows/executores/'];
 
 export const ehModelo = (caminho: string) => PASTAS_DE_MODELO.some((pasta) => caminho.startsWith(pasta));
+
+export const PASTAS_FORA_DA_PLATAFORMA = ['n8n/workflows/clientes/', 'n8n/workflows/agencia/'];
+
+export const ehDaPlataforma = (caminho: string) => !PASTAS_FORA_DA_PLATAFORMA.some((pasta) => caminho.startsWith(pasta));

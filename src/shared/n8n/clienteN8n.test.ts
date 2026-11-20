@@ -41,9 +41,16 @@ const cliente = () => criarClienteN8n({ url, apiKey: 'chave-de-teste', esperarMs
 
 describe('cliente do n8n', () => {
   it('cria e publica o workflow, mandando a chave de API', async () => {
-    responder = (c) => (c.metodo === 'POST' && c.caminho === '/api/v1/workflows' ? { status: 200, corpo: { id: 'wf1' } } : { status: 200 });
+    responder = (c) => {
+      if (c.metodo === 'POST' && c.caminho === '/api/v1/workflows') return { status: 200, corpo: { id: 'wf1' } };
+      if (c.metodo === 'GET' && c.caminho.startsWith('/api/v1/tags')) return { status: 200, corpo: { data: [{ id: 't1', name: 'platform' }] } };
+      return { status: 200 };
+    };
     assert.equal(await cliente().criar(corpo, {}), 'wf1');
-    assert.deepEqual(chamadas.map((c) => `${c.metodo} ${c.caminho}`), ['POST /api/v1/workflows', 'POST /api/v1/workflows/wf1/activate']);
+    const feitas = chamadas.map((c) => `${c.metodo} ${c.caminho}`);
+    assert.equal(feitas[0], 'POST /api/v1/workflows');
+    assert.ok(feitas.includes('PUT /api/v1/workflows/wf1/tags'), 'workflow criado sem a tag platform');
+    assert.ok(feitas.includes('POST /api/v1/workflows/wf1/activate'));
     assert.ok(chamadas.every((c) => c.chave === 'chave-de-teste'));
   });
 
@@ -83,5 +90,17 @@ describe('cliente do n8n', () => {
     };
     assert.equal(await cliente().remover('protegido', {}), false);
     assert.equal(deletes, 1);
+  });
+  it('cria a tag platform quando ela ainda não existe e a aplica ao workflow', async () => {
+    responder = (c) => {
+      if (c.metodo === 'GET' && c.caminho.startsWith('/api/v1/tags')) return { status: 200, corpo: { data: [{ id: 'x', name: 'credaz' }] } };
+      if (c.metodo === 'POST' && c.caminho === '/api/v1/tags') return { status: 200, corpo: { id: 'nova' } };
+      return { status: 200 };
+    };
+    assert.equal(await cliente().marcarDaPlataforma('wf9'), true);
+    assert.deepEqual(
+      chamadas.map((c) => `${c.metodo} ${c.caminho}`),
+      ['GET /api/v1/tags?limit=250', 'POST /api/v1/tags', 'PUT /api/v1/workflows/wf9/tags'],
+    );
   });
 });
