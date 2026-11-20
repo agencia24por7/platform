@@ -6,6 +6,12 @@ import {
   type ProviderCredentials,
 } from '@/modules/connections/domain/oauth';
 
+function configuracaoDeLoginDaMeta(platform: PlataformaOauth, config: ReturnType<typeof env>): string | undefined {
+  if (platform === 'whatsapp') return config.WHATSAPP_LOGIN_CONFIG_ID;
+  if (platform === 'leadads') return config.LEADADS_LOGIN_CONFIG_ID;
+  return config.META_LOGIN_CONFIG_ID;
+}
+
 export function credenciaisDaPlataforma(platform: PlataformaOauth): ProviderCredentials {
   const config = env();
 
@@ -20,7 +26,7 @@ export function credenciaisDaPlataforma(platform: PlataformaOauth): ProviderCred
     return {
       clientId: config.META_APP_ID,
       clientSecret: config.META_APP_SECRET,
-      configId: platform === 'whatsapp' ? config.WHATSAPP_LOGIN_CONFIG_ID : config.META_LOGIN_CONFIG_ID,
+      configId: configuracaoDeLoginDaMeta(platform, config),
     };
   }
 
