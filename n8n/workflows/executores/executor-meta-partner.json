@@ -2,9 +2,10 @@
   "name": "Executor · pedido de parceiro na Meta (modelo)",
   "settings": {
     "executionOrder": "v1",
-    "saveDataErrorExecution": "all",
-    "saveDataSuccessExecution": "all",
-    "timezone": "America/Sao_Paulo"
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "timezone": "America/Sao_Paulo",
+    "saveManualExecutions": false
   },
   "nodes": [
     {

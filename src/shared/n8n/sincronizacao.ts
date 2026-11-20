@@ -116,6 +116,27 @@ export function localizarImplantado<W extends Workflow>(
   return semOrigem[0] ? { workflow: semOrigem[0], por: 'nome' } : null;
 }
 
+export const TAGS_INTOCAVEIS = ['credaz', 'agencia'];
+
+export type EtiquetaDoWorkflow = { readonly name: string };
+
+export type AvaliacaoDoAlvo = { readonly permitido: true } | { readonly permitido: false; readonly motivo: string };
+
+export function avaliarAlvo(
+  implantado: Workflow & { readonly tags?: readonly EtiquetaDoWorkflow[] },
+  opcoes: { readonly adotar: boolean; readonly tagDaPlataforma: string },
+): AvaliacaoDoAlvo {
+  const nomesDasTags = (implantado.tags ?? []).map((tag) => tag.name.toLowerCase());
+  const intocavel = TAGS_INTOCAVEIS.find((tag) => nomesDasTags.includes(tag));
+  if (intocavel) return { permitido: false, motivo: `workflow com a tag ${intocavel} nunca é alterado pela sincronização` };
+
+  const conhecido = arquivoDeOrigem(implantado) !== null || nomesDasTags.includes(opcoes.tagDaPlataforma);
+  if (!conhecido && !opcoes.adotar) {
+    return { permitido: false, motivo: `sem nota de origem nem a tag ${opcoes.tagDaPlataforma}: use --adotar para assumi-lo` };
+  }
+  return { permitido: true };
+}
+
 function notaDeOrigem(arquivo: string, versao: string): No {
   return {
     name: NOTA_DE_ORIGEM,

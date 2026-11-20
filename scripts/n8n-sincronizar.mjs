@@ -2,10 +2,11 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { TAG_DA_PLATAFORMA, criarClienteN8n } from '../src/shared/n8n/clienteN8n.ts';
 import { MODELO_DE_COLETOR, MODELO_DE_EXECUTOR, PASTA_DOS_WORKFLOWS, ehDaPlataforma, ehModelo } from '../src/shared/n8n/modelos.ts';
-import { localizarImplantado, mesclar, versaoDoModelo, versaoImplantada } from '../src/shared/n8n/sincronizacao.ts';
+import { avaliarAlvo, localizarImplantado, mesclar, versaoDoModelo, versaoImplantada } from '../src/shared/n8n/sincronizacao.ts';
 
 const argumentos = process.argv.slice(2);
 const aplicar = argumentos.includes('--aplicar');
+const adotar = argumentos.includes('--adotar');
 const indiceDasConexoes = argumentos.indexOf('--conexoes');
 const arquivoDeConexoes = indiceDasConexoes >= 0 ? argumentos[indiceDasConexoes + 1] : null;
 
@@ -40,6 +41,9 @@ function alvosDasConexoes() {
 const temTagDaPlataforma = (implantado) => (implantado.tags ?? []).some((tag) => tag.name === TAG_DA_PLATAFORMA);
 
 async function sincronizar(arquivo, implantado) {
+  const avaliacao = avaliarAlvo(implantado, { adotar, tagDaPlataforma: TAG_DA_PLATAFORMA });
+  if (!avaliacao.permitido) return { acao: 'bloqueado', detalhe: avaliacao.motivo };
+
   const modelo = lerJson(arquivo);
   if (versaoImplantada(implantado) === versaoDoModelo(modelo)) {
     if (temTagDaPlataforma(implantado)) return { acao: 'igual' };
