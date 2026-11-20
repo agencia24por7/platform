@@ -16,7 +16,7 @@ export function executorDeRevogacaoDoAmbiente(): ExecutorDeRevogacao {
       criar: (corpo, contexto) => clienteN8nDoAmbiente().criar(corpo, contexto),
       remover: (workflowId, contexto) => clienteN8nDoAmbiente().remover(workflowId, contexto),
     },
-    urlDoN8n: config.N8N_API_URL ?? 'http://127.0.0.1:5678',
+    urlDoN8n: config.N8N_API_URL ?? '',
     tokenDoWorker: config.TRIA_WORKER_TOKEN,
     chamar: fetch,
     logger,
