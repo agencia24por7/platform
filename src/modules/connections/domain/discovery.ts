@@ -271,6 +271,81 @@ export function parseGtmAccountIds(payload: unknown): readonly string[] {
     .filter((id): id is string => typeof id === 'string');
 }
 
+export const META_GRAPH_VERSION = 'v23.0';
+
+const CAMPOS_DO_PIXEL = 'id,name,last_fired_time,is_unavailable';
+
+export function urlsDosConjuntosDeDadosDaMeta(): readonly string[] {
+  const base = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
+  return [
+    `${base}/me/adaccounts?fields=id,adspixels.limit(50){${CAMPOS_DO_PIXEL}}&limit=100`,
+    `${base}/me/businesses?fields=id,owned_pixels.limit(100){${CAMPOS_DO_PIXEL}}&limit=100`,
+  ];
+}
+
+export function urlDasPaginasDaMeta(): string {
+  return `https://graph.facebook.com/${META_GRAPH_VERSION}/me/accounts?fields=id,name,tasks&limit=100`;
+}
+
+type PixelDaMeta = { id?: unknown; name?: unknown; is_unavailable?: unknown };
+type DonoDePixels = { id?: unknown; adspixels?: { data?: unknown }; owned_pixels?: { data?: unknown } };
+
+const ID_NUMERICO_DA_META = /^\d{5,25}$/;
+
+export function parseMetaPixels(payload: unknown): readonly DiscoveredAccount[] {
+  if (payload === null || typeof payload !== 'object') return [];
+  const donos = (payload as { data?: unknown }).data;
+  if (!Array.isArray(donos)) return [];
+
+  const pixels: DiscoveredAccount[] = [];
+  for (const dono of donos as DonoDePixels[]) {
+    const lista = dono?.adspixels?.data ?? dono?.owned_pixels?.data;
+    if (!Array.isArray(lista)) continue;
+    const administradora = typeof dono.id === 'string' ? dono.id : null;
+
+    for (const pixel of lista as PixelDaMeta[]) {
+      const id = typeof pixel?.id === 'string' || typeof pixel?.id === 'number' ? String(pixel.id) : '';
+      if (!ID_NUMERICO_DA_META.test(id)) continue;
+      pixels.push({
+        ...recurso('pixel', id, typeof pixel.name === 'string' ? pixel.name : id, pixel.is_unavailable === true),
+        managerExternalId: administradora,
+      });
+    }
+  }
+  return pixels;
+}
+
+const TAREFAS_QUE_LEEM_FORMULARIOS = ['ADVERTISE', 'MANAGE', 'MANAGE_LEADS'];
+
+type PaginaDaMeta = { id?: unknown; name?: unknown; tasks?: unknown };
+
+export function parseMetaPages(payload: unknown): readonly DiscoveredAccount[] {
+  if (payload === null || typeof payload !== 'object') return [];
+  const paginas = (payload as { data?: unknown }).data;
+  if (!Array.isArray(paginas)) return [];
+
+  return (paginas as PaginaDaMeta[])
+    .filter((pagina) => typeof pagina?.id === 'string' && ID_NUMERICO_DA_META.test(pagina.id))
+    .map((pagina) => {
+      const tarefas = Array.isArray(pagina.tasks) ? pagina.tasks.filter((tarefa): tarefa is string => typeof tarefa === 'string') : null;
+      const semTarefaDeLeitura = tarefas !== null && !tarefas.some((tarefa) => TAREFAS_QUE_LEEM_FORMULARIOS.includes(tarefa));
+      const id = pagina.id as string;
+      return recurso('leadads', id, typeof pagina.name === 'string' ? pagina.name : id, semTarefaDeLeitura);
+    });
+}
+
+export function proximaPaginaDoGraph(payload: unknown): string | null {
+  if (payload === null || typeof payload !== 'object') return null;
+  const proxima = (payload as { paging?: { next?: unknown } }).paging?.next;
+  if (typeof proxima !== 'string') return null;
+  try {
+    const url = new URL(proxima);
+    return url.protocol === 'https:' && url.hostname === 'graph.facebook.com' ? proxima : null;
+  } catch {
+    return null;
+  }
+}
+
 export function sortForSelection(accounts: readonly DiscoveredAccount[]): readonly DiscoveredAccount[] {
   return [...accounts].sort((left, right) => {
     if (left.inactive !== right.inactive) return left.inactive ? 1 : -1;

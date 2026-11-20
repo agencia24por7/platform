@@ -23,6 +23,7 @@ const ORDEM_DOS_CONECTORES: readonly Platform[] = [
   'ga4',
   'gtm',
   'pixel',
+  'leadads',
   'searchconsole',
   'youtube',
   'gbp',

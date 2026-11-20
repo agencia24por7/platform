@@ -7,6 +7,7 @@ export const Platform = {
   ZApi: 'zapi',
   Gtm: 'gtm',
   Pixel: 'pixel',
+  LeadAds: 'leadads',
   SearchConsole: 'searchconsole',
   Youtube: 'youtube',
   Gbp: 'gbp',
@@ -21,7 +22,18 @@ export function veiculaAnuncio(platform: Platform): platform is PlataformaDeAnun
   return (PLATAFORMAS_DE_ANUNCIO as readonly string[]).includes(platform);
 }
 
-export const PLATAFORMAS_COM_RECURSO = ['ga4', 'gtm', 'searchconsole', 'youtube', 'gbp', 'rdstation', 'apify', 'zapi'] as const;
+export const PLATAFORMAS_COM_RECURSO = [
+  'ga4',
+  'gtm',
+  'searchconsole',
+  'youtube',
+  'gbp',
+  'pixel',
+  'leadads',
+  'rdstation',
+  'apify',
+  'zapi',
+] as const;
 export type PlataformaComRecurso = (typeof PLATAFORMAS_COM_RECURSO)[number];
 
 export function temRecursoParaVincular(platform: Platform): platform is PlataformaComRecurso {
@@ -34,6 +46,8 @@ export const ROTULO_DO_RECURSO: Record<PlataformaComRecurso, string> = {
   searchconsole: 'Site',
   youtube: 'Canal',
   gbp: 'Local',
+  pixel: 'Conjunto de dados',
+  leadads: 'Página',
   rdstation: 'Conta',
   apify: 'Conta',
   zapi: 'Instância',
@@ -45,6 +59,8 @@ const RECURSO_FEMININO: Record<PlataformaComRecurso, boolean> = {
   searchconsole: false,
   youtube: false,
   gbp: false,
+  pixel: false,
+  leadads: true,
   rdstation: true,
   apify: true,
   zapi: true,
@@ -63,6 +79,7 @@ export const ROTULO_DA_PLATAFORMA: Record<Platform, string> = {
   zapi: 'Z-API',
   gtm: 'Google Tag Manager',
   pixel: 'Meta Pixel',
+  leadads: 'Meta Lead Ads',
   searchconsole: 'Search Console',
   youtube: 'YouTube',
   gbp: 'Google Minha Empresa',
@@ -78,6 +95,7 @@ export const MARCA_DA_PLATAFORMA: Record<Platform, string | null> = {
   zapi: '/marcas/zapi.png',
   gtm: '/marcas/gtm.png',
   pixel: '/marcas/meta.png',
+  leadads: '/marcas/meta.png',
   searchconsole: '/marcas/searchconsole.png',
   youtube: '/marcas/youtube.png',
   gbp: '/marcas/gbp.png',
@@ -93,6 +111,7 @@ export const PARA_QUE_SERVE: Record<Platform, string> = {
   zapi: 'Mensagens de WhatsApp por chave de API. Entra como conexão; ainda não alimenta relatório.',
   gtm: 'Tags e gatilhos dos contêineres do site, só leitura. Audita o que dispara em cada página.',
   pixel: 'Eventos do Pixel e das Conversions API da Meta. Mede o que o site devolve para os anúncios.',
+  leadads: 'Formulários de cadastro das Páginas no Facebook e Instagram: quantos leads cada formulário recebeu, sem ler os leads.',
   searchconsole: 'Consultas, cliques e impressões da busca orgânica dos sites verificados.',
   youtube: 'Relatórios do canal no YouTube Analytics, inclusive receita, só leitura.',
   gbp: 'Visualizações, buscas e ações no Google Minha Empresa. A API do Google só oferece escopo de gestão.',
@@ -165,6 +184,7 @@ const REQUIRED_SCOPES: Record<Platform, readonly string[]> = {
   zapi: [],
   gtm: ['https://www.googleapis.com/auth/tagmanager.readonly'],
   pixel: ['ads_read'],
+  leadads: ['leads_retrieval'],
   searchconsole: ['https://www.googleapis.com/auth/webmasters.readonly'],
   youtube: ['https://www.googleapis.com/auth/yt-analytics.readonly'],
   gbp: ['https://www.googleapis.com/auth/business.manage'],
@@ -184,6 +204,7 @@ const GRANTS_BY_PLATFORM: Record<Platform, readonly GrantType[]> = {
   zapi: ['api_key'],
   gtm: ['oauth_user'],
   pixel: ['oauth_user'],
+  leadads: ['oauth_user'],
   searchconsole: ['oauth_user'],
   youtube: ['oauth_user'],
   gbp: ['oauth_user'],
