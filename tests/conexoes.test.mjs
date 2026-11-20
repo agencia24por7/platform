@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { before, describe, it } from 'node:test';
-import { BASE, acaoComCampo, appIsUp, browse, ensureUser, makeOwner, signIn, signOut, submitAction } from './helpers.mjs';
+import { BASE, acaoComCampo, appIsUp, browse, ensureUser, get, makeOwner, signIn, signOut, submitAction } from './helpers.mjs';
 
 const dono = (sql) =>
   execFileSync('docker', ['exec', '-i', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
@@ -9,6 +10,13 @@ const dono = (sql) =>
   }).trim();
 
 const umaLinha = (saida) => saida.split('\n')[0].trim();
+
+const aplicarMigracao = (arquivo) =>
+  execFileSync(
+    'docker',
+    ['exec', '-i', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-v', 'ON_ERROR_STOP=1', '-q'],
+    { input: readFileSync(arquivo), encoding: 'utf8' },
+  );
 
 describe('remover uma conexão', { concurrency: false }, () => {
   let org = '';
@@ -85,6 +93,101 @@ describe('sair encerra a sessão de verdade', { concurrency: false }, () => {
 
     const depois = await browse('/clientes');
     assert.ok([302, 307].includes(depois.status), `sessão antiga ainda vale: ${depois.status}`);
+    signOut();
+  });
+});
+
+describe('conta do RD Station guardada por chave ganha cliente dono', { concurrency: false }, () => {
+  const tela = '/integracoes/conector/rdstation';
+  let org = '';
+  let cliente = '';
+  let conexao = '';
+  let recurso = '';
+
+  before(async () => {
+    if (!(await appIsUp())) throw new Error('App não está no ar');
+
+    org = umaLinha(dono(
+      `INSERT INTO core.organizations (name, slug, type) VALUES ('Agência RD', 'agencia-rd-${Date.now()}', 'agency') RETURNING id`,
+    ));
+    const pessoa = ensureUser('rdstation@tria.local');
+    dono(`UPDATE core.members SET revoked_at = now() WHERE user_id = '${pessoa}' AND organization_id <> '${org}'`);
+    makeOwner(pessoa, org);
+    cliente = umaLinha(dono(
+      `INSERT INTO core.clients (organization_id, name, business_model) VALUES ('${org}', 'Credaz', 'leads') RETURNING id`,
+    ));
+    conexao = umaLinha(dono(
+      `INSERT INTO integrations.connections
+         (organization_id, platform, grant_type, label, external_id, scopes, credential_ref)
+       VALUES ('${org}', 'rdstation', 'api_key', 'RD Station CRM · abcd••••wxyz', 'principal',
+               ARRAY[]::text[], 'n8n:credential:rd-teste')
+       RETURNING id`,
+    ));
+    signIn(pessoa);
+  });
+
+  it('a migração dá à chave já guardada uma conta vinculável, sem duplicar se rodar de novo', () => {
+    aplicarMigracao('db/migrations/0040_conta_da_chave_de_api.sql');
+    aplicarMigracao('db/migrations/0040_conta_da_chave_de_api.sql');
+
+    const linhas = dono(
+      `SELECT id || '|' || state || '|' || external_id || '|' || name || '|' || coalesce(client_id::text, '-')
+         FROM integrations.connection_accounts WHERE connection_id = '${conexao}'`,
+    ).split('\n').filter(Boolean);
+    assert.equal(linhas.length, 1);
+    const [id, ...resto] = linhas[0].split('|');
+    recurso = id;
+    assert.deepEqual(resto, ['discovered', 'principal', 'RD Station CRM · abcd••••wxyz', '-']);
+  });
+
+  it('a tela do RD Station oferece a conta e vincula ao cliente escolhido', async () => {
+    const antes = (await (await browse(tela)).text()).replaceAll('<!-- -->', '');
+    assert.ok(antes.includes('Conectar conta'), 'a tela não oferece vincular a conta');
+    assert.ok(antes.includes(`value="${recurso}"`), 'a conta da chave não aparece para vincular');
+
+    const vincular = await acaoComCampo(tela, 'recursoId');
+    const resultado = await submitAction(tela, vincular, { recursoId: recurso, clientId: cliente, voltarPara: tela });
+    assert.ok([200, 303].includes(resultado.status), `status inesperado: ${resultado.status}`);
+
+    const linha = umaLinha(dono(
+      `SELECT state || '|' || coalesce(client_id::text, '-') FROM integrations.connection_accounts WHERE id = '${recurso}'`,
+    ));
+    assert.equal(linha, `linked|${cliente}`);
+
+    const auditado = umaLinha(dono(
+      `SELECT count(*) FROM audit.audit_log WHERE action = 'connection_account.link' AND target_id = '${recurso}'`,
+    ));
+    assert.equal(auditado, '1');
+
+    const depois = (await (await browse(tela)).text()).replaceAll('<!-- -->', '');
+    assert.ok(depois.includes('Contas vinculadas'));
+    assert.ok(depois.includes(`/clientes/${cliente}`), 'o cliente dono não aparece ao lado da conta');
+  });
+
+  it('a conta vinculada não entra na fila do orquestrador: o RD Station ainda não tem coletor', async () => {
+    const resposta = await get('/api/v0/coleta/fontes?limit=200').then((r) => r.json());
+    assert.ok(Array.isArray(resposta.fontes));
+    assert.ok(!resposta.fontes.some((fonte) => fonte.fonteId === recurso));
+    assert.ok(!resposta.fontes.some((fonte) => fonte.platform === 'rdstation'));
+  });
+
+  it('remover a conexão revoga a chave e mantém o vínculo como histórico, fora da coleta', async () => {
+    const remover = await acaoComCampo(tela, 'connectionId');
+    const resultado = await submitAction(tela, remover, { connectionId: conexao, voltarPara: tela });
+    assert.ok([200, 303].includes(resultado.status), `status inesperado: ${resultado.status}`);
+
+    assert.equal(
+      umaLinha(dono(`SELECT status || '|' || credential_ref FROM integrations.connections WHERE id = '${conexao}'`)),
+      'revoked|descartada',
+    );
+    assert.equal(
+      umaLinha(dono(`SELECT state || '|' || client_id FROM integrations.connection_accounts WHERE id = '${recurso}'`)),
+      `linked|${cliente}`,
+    );
+    assert.equal(
+      umaLinha(dono(`SELECT count(*) FROM automation.fontes_de_coleta(200) WHERE fonte_id = '${recurso}'`)),
+      '0',
+    );
     signOut();
   });
 });

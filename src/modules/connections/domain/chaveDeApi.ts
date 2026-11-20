@@ -1,4 +1,5 @@
 import type { Platform } from './connection.ts';
+import type { DiscoveredAccount } from './discovery.ts';
 
 export const PLATAFORMAS_POR_CHAVE = ['apify', 'zapi', 'rdstation'] as const;
 export type PlataformaPorChave = (typeof PLATAFORMAS_POR_CHAVE)[number];
@@ -52,4 +53,23 @@ export const CONTA_UNICA = 'principal';
 
 export function identidadeDaConexao(): string {
   return CONTA_UNICA;
+}
+
+export type ConexaoPorChave = {
+  readonly platform: PlataformaPorChave;
+  readonly externalId: string;
+  readonly label: string;
+};
+
+export function contaDaChave(conexao: ConexaoPorChave): DiscoveredAccount {
+  return {
+    platform: conexao.platform,
+    externalId: conexao.externalId,
+    name: conexao.label,
+    currency: 'BRL',
+    timezone: 'America/Sao_Paulo',
+    managerExternalId: null,
+    spendingLast30Days: null,
+    inactive: false,
+  };
 }

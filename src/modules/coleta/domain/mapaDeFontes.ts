@@ -219,6 +219,10 @@ export function fontesAtivasNoV1(): readonly FonteDeColeta[] {
   return (Object.values(MAPA_DE_FONTES) as FonteDeColeta[]).filter((fonte) => fonte.ativaNoV1);
 }
 
+export function plataformasColetaveis(): readonly Platform[] {
+  return fontesAtivasNoV1().map((fonte) => fonte.platform);
+}
+
 export function fonteDe(platform: Platform): FonteDeColeta {
   return MAPA_DE_FONTES[platform];
 }

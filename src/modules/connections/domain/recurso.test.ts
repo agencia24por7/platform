@@ -21,6 +21,13 @@ describe('vincular recurso', () => {
     assert.equal(recusa?.codigo, 'validation');
   });
 
+  it('a conta do RD Station guardada por chave vincula a cliente ativo', () => {
+    const conta: RecursoAvaliado = { platform: 'rdstation', state: 'discovered', clientId: null };
+    assert.equal(recusaParaVincular('operator', conta, ativo), null);
+    const jaVinculada = recusaParaVincular('admin', { ...conta, state: 'linked', clientId: 'c1' }, ativo);
+    assert.match(jaVinculada!.mensagem, /^Conta já tem dono/);
+  });
+
   it('recurso já vinculado pede Mover, com o rótulo da plataforma', () => {
     const recusa = recusaParaVincular('admin', vinculado, ativo);
     assert.equal(recusa?.codigo, 'conflict');

@@ -15,6 +15,7 @@ import { atorAtual } from '@/shared/http/ator';
 import { checkbox, requestId, text, toActionState } from '@/shared/http/actions';
 import { currentOrganization, requireContext } from '@/shared/http/currentOrganization';
 import { canOperate } from '@/modules/identity/domain/user';
+import { fonteDe } from '@/modules/coleta/domain/mapaDeFontes';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,7 +52,8 @@ async function vincularConta(formData: FormData): Promise<void> {
       voltar(toActionState(fonte.error).error ?? 'Falha ao vincular fonte.');
       return;
     }
-    redirect(`/clientes/${clientId}?feito=${encodeURIComponent(`${escolhida.name} vinculada. Entra na próxima coleta.`)}`);
+    const proximoPasso = fonteDe(escolhida.platform).ativaNoV1 ? ' Entra na próxima coleta.' : '';
+    redirect(`/clientes/${clientId}?feito=${encodeURIComponent(`${escolhida.name} vinculada.${proximoPasso}`)}`);
   }
 
   const vinculada = await modules().connections.linkAccount(
