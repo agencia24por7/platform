@@ -1,15 +1,17 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { HANDOFF_COOKIE, SEM_AUTOMACAO_COOKIE } from '@/modules/identity/domain/handoff';
+import { modules } from '@/composition';
 import { readSession } from '@/modules/identity/domain/session';
 import { env } from '@/shared/config/env';
 
 export const dynamic = 'force-dynamic';
 
-export function GET(request: NextRequest): NextResponse {
+export async function GET(request: NextRequest): Promise<NextResponse> {
   const configuration = env();
   const token = request.cookies.get(HANDOFF_COOKIE)?.value ?? '';
 
-  const temSessaoDaTria = Boolean(readSession(token, configuration.TRIA_SESSION_SECRET, Date.now()));
+  const sessao = readSession(token, configuration.TRIA_SESSION_SECRET, Date.now());
+  const temSessaoDaTria = Boolean(sessao && (await modules().identity.sessaoValida(sessao.userId, sessao.issuedAt)));
   const temSessaoDaAutomacao = request.cookies
     .getAll()
     .some((cookie) => cookie.name.startsWith('n8n-auth') && cookie.value.length > 0);

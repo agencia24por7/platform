@@ -1,6 +1,7 @@
 import type { Ator } from '@/modules/audit/domain/actor';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import type { FederatedIdentity, MemberRole, Membership, User } from '@/modules/identity/domain/user';
+import { sessaoAindaValida } from '@/modules/identity/domain/user';
 import type { UserRepository } from '@/modules/identity/infrastructure/userRepository';
 import { failure, type Failure } from '@/shared/result/failure';
 import { err, ok, type Result } from '@/shared/result/result';
@@ -12,7 +13,9 @@ export type SignedInUser = {
 
 export type IdentityService = {
   signIn(identity: FederatedIdentity, ator: Ator): Promise<Result<SignedInUser, Failure>>;
-  resolve(userId: string): Promise<SignedInUser | null>;
+  resolve(userId: string, sessaoEmitidaEm: number): Promise<SignedInUser | null>;
+  encerrarSessoes(userId: string): Promise<void>;
+  sessaoValida(userId: string, sessaoEmitidaEm: number): Promise<boolean>;
   membershipsOf(userId: string): Promise<readonly Membership[]>;
   joinAsOwner(organizationId: string, ator: Ator): Promise<Result<void, Failure>>;
   grantMembership(organizationId: string, userId: string, role: MemberRole, ator: Ator): Promise<Result<void, Failure>>;
@@ -54,9 +57,18 @@ export function createIdentityService(users: UserRepository, audit: AuditRecorde
 
     membershipsOf: (userId) => users.membershipsOf(userId),
 
-    async resolve(userId) {
+    async resolve(userId, sessaoEmitidaEm) {
       const user = await users.findById(userId);
-      return user ? withMemberships(user) : null;
+      if (!user || !sessaoAindaValida(user, sessaoEmitidaEm)) return null;
+      return withMemberships(user);
+    },
+
+    async encerrarSessoes(userId) {
+      await users.encerrarSessoes(userId);
+    },
+
+    async sessaoValida(userId, sessaoEmitidaEm) {
+      return users.sessaoValida(userId, new Date(sessaoEmitidaEm));
     },
 
     async joinAsOwner(organizationId, ator) {

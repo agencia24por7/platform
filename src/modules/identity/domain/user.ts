@@ -7,6 +7,7 @@ export type User = {
   readonly pictureUrl: string | null;
   readonly createdAt: Date;
   readonly lastLoginAt: Date | null;
+  readonly sessoesValidasDesde?: Date | null;
 };
 
 export type Membership = {
@@ -65,4 +66,8 @@ export function membershipFor(
   organizationId: string,
 ): Membership | null {
   return memberships.find((item) => item.organizationId === organizationId) ?? null;
+}
+
+export function sessaoAindaValida(user: Pick<User, 'sessoesValidasDesde'>, sessaoEmitidaEm: number): boolean {
+  return !user.sessoesValidasDesde || sessaoEmitidaEm >= user.sessoesValidasDesde.getTime();
 }

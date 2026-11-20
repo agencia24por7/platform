@@ -17,7 +17,7 @@ que altere o que é tratado, por quê, com quem ou por quanto tempo exige atuali
 | Conexões com plataformas | Quem autoriza a conexão | e-mail da conta que autorizou, token (cifrado no n8n) | `integrations.connections.account_email`, cofre do n8n | coletar métricas e executar tarefas pedidas | execução de contrato | operadora |
 | Métricas de marketing | Em regra nenhum (dados agregados de campanha) | métricas e nomes de campanhas, locais, canais | `metrics.*`, BigQuery `tria_dw` | relatórios | execução de contrato | operadora |
 | Leads (Meta Lead Ads → RD Station) | Pessoas que preenchem formulários de anúncio | nome, telefone, e-mail, produto de interesse | só em trânsito no n8n; n8n Data Tables guardam IDs | entregar o lead ao CRM do cliente | instrução do cliente (controlador) | operadora |
-| Avisos do WhatsApp | Contatos que escrevem ao cliente | payload do webhook (telefone, nome, mensagem) | `integrations.whatsapp_inbound_events` | atribuir conversa ao anúncio | instrução do cliente | operadora |
+| Avisos do WhatsApp | Contatos que escrevem ao cliente | resumo: id e horário da mensagem, origem do anúncio, HMAC do telefone (sem texto nem nome) | `integrations.whatsapp_inbound_events` | atribuir conversa ao anúncio | instrução do cliente | operadora |
 | Alertas de falha | Equipe da agência | mensagem de erro do fluxo | Gmail | operação | legítimo interesse | controladora |
 
 ## Operadores e suboperadores

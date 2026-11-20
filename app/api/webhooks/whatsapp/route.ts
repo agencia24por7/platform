@@ -6,6 +6,7 @@ import { consume } from '@/shared/security/rateLimit';
 import {
   assinaturaDaMetaValida,
   referenciaExternaDoWhatsapp,
+  resumirAvisoDoWhatsapp,
 } from '@/modules/connections/domain/whatsappWebhook';
 
 export const dynamic = 'force-dynamic';
@@ -72,7 +73,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const externalRef = referenciaExternaDoWhatsapp(payload) ?? 'desconhecido';
 
   await sql()`
-    SELECT integrations.record_whatsapp_inbound(NULL, 'cloud_api', ${externalRef}, ${sql().json(payload as object)})
+    SELECT integrations.record_whatsapp_inbound(NULL, 'cloud_api', ${externalRef}, ${sql().json(resumirAvisoDoWhatsapp(payload, env().TRIA_SESSION_SECRET) as never)})
   `;
 
   return NextResponse.json({ recebido: true });

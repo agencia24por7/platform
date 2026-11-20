@@ -1,5 +1,6 @@
 import type { FederatedIdentity, MemberRole, Membership, User } from '@/modules/identity/domain/user';
 import { displayName, normalizeEmail } from '@/modules/identity/domain/user';
+import { sql } from '@/shared/db/client';
 import { withTenant, withoutTenant } from '@/shared/db/tenant';
 
 type Row = {
@@ -9,6 +10,7 @@ type Row = {
   picture_url: string | null;
   created_at: Date;
   last_login_at: Date | null;
+  sessoes_validas_desde?: Date | null;
 };
 
 const toUser = (row: Row): User => ({
@@ -18,6 +20,7 @@ const toUser = (row: Row): User => ({
   pictureUrl: row.picture_url,
   createdAt: row.created_at,
   lastLoginAt: row.last_login_at,
+  sessoesValidasDesde: row.sessoes_validas_desde ?? null,
 });
 
 export type UserRepository = {
@@ -26,6 +29,8 @@ export type UserRepository = {
   membershipsOf(userId: string): Promise<readonly Membership[]>;
   addMember(organizationId: string, userId: string, role: MemberRole): Promise<void>;
   countMembers(organizationId: string): Promise<number>;
+  encerrarSessoes(userId: string): Promise<void>;
+  sessaoValida(userId: string, emitidaEm: Date): Promise<boolean>;
 };
 
 export function createUserRepository(): UserRepository {
@@ -40,6 +45,19 @@ export function createUserRepository(): UserRepository {
         `) as unknown as Row[];
         return toUser(rows[0]!);
       });
+    },
+
+    async encerrarSessoes(userId) {
+      await withoutTenant(async (tx) => {
+        await tx`SELECT core.encerrar_sessoes(${userId})`;
+      });
+    },
+
+    async sessaoValida(userId, emitidaEm) {
+      const rows = (await sql()`SELECT core.sessao_valida(${userId}, ${emitidaEm}) AS valida`) as unknown as {
+        valida: boolean;
+      }[];
+      return rows[0]?.valida === true;
     },
 
     async findById(id) {

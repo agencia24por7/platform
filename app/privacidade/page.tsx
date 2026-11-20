@@ -77,7 +77,8 @@ export default function Privacidade() {
           </li>
           <li>
             <strong>WhatsApp Business</strong>: avisos de mensagens recebidas, usados para atribuir conversas aos
-            anúncios que as originaram.
+            anúncios que as originaram. Guardamos só o identificador e o horário da mensagem, a origem do anúncio e um
+            pseudônimo do telefone; o texto, o nome e o número do contato não são guardados.
           </li>
           <li>
             <strong>RD Station CRM, Z-API e Apify</strong>, por chave de API fornecida pelo cliente: negociações do
@@ -215,7 +216,15 @@ export default function Privacidade() {
       </section>
 
       <section>
-        <h2>10. Cookies</h2>
+        <h2>10. Menores de idade</h2>
+        <p>
+          A orla é uma ferramenta profissional e não se destina a menores de 18 anos. Não tratamos
+          intencionalmente dados de crianças ou adolescentes.
+        </p>
+      </section>
+
+      <section>
+        <h2>11. Cookies</h2>
         <p>
           Usamos só cookies essenciais: o da sessão de login, os temporários da autorização com Google e Meta e o que
           lembra a organização escolhida. Não usamos cookies de publicidade nem de rastreamento. A preferência de tema
@@ -224,7 +233,7 @@ export default function Privacidade() {
       </section>
 
       <section>
-        <h2>11. Incidentes de segurança</h2>
+        <h2>12. Incidentes de segurança</h2>
         <p>
           Se um incidente puder trazer risco ou dano relevante, comunicamos a ANPD e as pessoas afetadas no prazo da
           regulamentação, com o que aconteceu, quais dados foram envolvidos e o que fizemos.
@@ -232,7 +241,7 @@ export default function Privacidade() {
       </section>
 
       <section>
-        <h2>12. Mudanças nesta política</h2>
+        <h2>13. Mudanças nesta política</h2>
         <p>
           Quando a política mudar, atualizamos a data no topo e avisamos quem usa a orla. Veja também os{' '}
           <Link href="/termos">Termos de Serviço</Link>.
