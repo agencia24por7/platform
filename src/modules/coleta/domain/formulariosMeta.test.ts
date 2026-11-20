@@ -17,7 +17,7 @@ type No = {
 };
 type Modelo = { nodes: No[]; connections: Record<string, unknown>; settings: Record<string, unknown> };
 
-const BASE_DO_GRAPH = 'https:' + '/'.repeat(2) + 'graph.facebook.com/v23.0/';
+const BASE_DO_GRAPH = 'https:' + '/'.repeat(2) + 'graph.facebook.com/v26.0/';
 const modelo = JSON.parse(readFileSync('n8n/workflows/coletores/coletor-meta-formularios.json', 'utf8')) as Modelo;
 const no = (nome: string): No => modelo.nodes.find((candidato) => candidato.name === nome)!;
 
@@ -90,7 +90,7 @@ describe('coletor de formulários da Meta (modelo do n8n)', () => {
     const listar = no('Listar formulários');
     assert.equal(listar.parameters.authentication, 'none');
     assert.equal(listar.credentials, undefined);
-    assert.ok(String(listar.parameters.url).startsWith(`=${BASE_DO_GRAPH}`));
+    assert.ok(String(listar.parameters.url).startsWith("=https://graph.facebook.com/{{ $('Montar requisição').first().json.versaoApi }}/"));
     assert.ok(String(listar.parameters.url).endsWith('/leadgen_forms'));
     const query = (listar.parameters.queryParameters as { parameters: { name: string; value: string }[] }).parameters;
     assert.ok(query.find((parametro) => parametro.name === 'access_token')!.value.includes("$('Token da Página')"));

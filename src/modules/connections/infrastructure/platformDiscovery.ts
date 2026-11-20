@@ -24,10 +24,11 @@ import {
 import type { Platform } from '@/modules/connections/domain/connection';
 import type { PlatformDiscovery, Varredura } from '@/modules/connections/application/platformDiscoveryPort';
 import { GOOGLE_ADS_VERSION } from '@/modules/connections/domain/googleAdsVersion';
+import { META_GRAPH_BASE } from '@/modules/connections/domain/metaGraphVersion';
 import { resumirFalha } from '@/modules/connections/domain/falhaDescoberta';
 
 const GOOGLE_API = `https://googleads.googleapis.com/${GOOGLE_ADS_VERSION}`;
-const GRAPH_API = 'https://graph.facebook.com/v23.0';
+const GRAPH_API = META_GRAPH_BASE;
 const TIMEOUT_MS = 15_000;
 
 const CLIENT_QUERY = [

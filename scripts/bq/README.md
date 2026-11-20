@@ -202,7 +202,7 @@ do `ad_account_id` (o `externalId`), com dono pela `dim_fonte_scd2`
 (`platform = 'meta'`) nas views `vw_*`: `cliente_na_epoca_*` e
 `cliente_atual_*`. Nas dimensões a "época" é o início da versão (`valido_de`).
 
-Origem na API (Marketing API v23.0): relatórios assíncronos
+Origem na API (Marketing API v26.0, fixada; plano para v27.0 no ADR 0025): relatórios assíncronos
 `POST /{act}/insights` + `GET /{report_run_id}/insights` (insights) e `GET
 /{act}/campaigns|adsets|ads` (dimensões), paginados. Janelas de 28 dias do
 backfill. Valores monetários com a moeda da conta em `moeda`.
@@ -314,11 +314,15 @@ backfill. Valores monetários com a moeda da conta em `moeda`.
 ### Coleta e cotas
 
 O coletor cria quatro relatórios assíncronos (anúncio, idade × gênero,
-posicionamento, região), consulta a cada 20 s (até 30 vezes) e baixa páginas de
-500 linhas. Chamadas por fonte e janela: 4 criações, até 120 consultas, 3 listas
-paginadas (200 por página) e os downloads. Limite de uso da Meta
-(códigos 4, 17, 32, 613, 80000-80014) vira `api_recusou`; autorização
-(401/403/190) vira `reauth_pending`.
+posicionamento, região), consulta a cada 20 s (até 30 vezes; 60-300 s quando o
+uso informado em `X-Business-Use-Case-Usage`/`X-FB-Ads-Insights-Throttle` passa de
+75%) e baixa páginas de 500 linhas. Chamadas por fonte e janela: 4 criações, até
+120 consultas, 3 listas paginadas (200 por página, só na primeira incremental do
+dia) e os downloads. Limite de uso da Meta (429, códigos 4, 17, 32, 341, 613,
+80000-80014) vira `limite_de_uso`: a coleta fecha como `failed`, não avança a
+marca d'água e a próxima rodada de 6h tenta de novo (ADR 0025); autorização
+(401/403/190) vira `reauth_pending`. Nos recortes com início há mais de 13 meses
+o coletor não pede `reach` e grava `alcance` nulo.
 
 <!-- Meta Ads: novas tabelas acima desta linha -->
 

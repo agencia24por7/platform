@@ -1,7 +1,8 @@
 import { sql } from '@/shared/db/client';
 import { withTenant } from '@/shared/db/tenant';
 import type { Platform } from '@/modules/connections/domain/connection';
-import type { AbrirColetaInput, Coleta, FecharColetaInput, FonteElegivel, FonteTipo } from '@/modules/coleta/domain/coleta';
+import { chaveDaFonte, type AbrirColetaInput, type Coleta, type FecharColetaInput, type FonteBruta, type FonteTipo } from '@/modules/coleta/domain/coleta';
+import type { HistoricoDeColeta } from '@/modules/coleta/domain/janelaIncremental';
 import type { RelatorioDeExecucao } from '@/modules/coleta/domain/qualidade';
 
 type FonteRow = {
@@ -19,6 +20,15 @@ type FonteRow = {
   credential_ref: string;
   coletor_ref: string | null;
   connection_id: string;
+};
+
+type HistoricoRow = {
+  fonte_tipo: FonteTipo;
+  fonte_id: string;
+  ultima_janela_sucesso: Date | null;
+  ultima_janela_parcial_repetida: Date | null;
+  ultima_incremental_em: Date | null;
+  ultimo_limite_diario_em: Date | null;
 };
 
 type ColetaRow = {
@@ -49,8 +59,9 @@ type ColetaRow = {
 const TETO_DE_FONTES = 200;
 
 const isoDate = (value: Date): string => value.toISOString().slice(0, 10);
+const isoDateOuNulo = (value: Date | null): string | null => (value ? isoDate(value) : null);
 
-const toFonte = (row: FonteRow): Omit<FonteElegivel, 'janelaSugerida'> => ({
+const toFonte = (row: FonteRow): FonteBruta => ({
   fonteTipo: row.fonte_tipo,
   fonteId: row.fonte_id,
   organizationId: row.organization_id,
@@ -100,7 +111,8 @@ export type ContextoDeGravacao = {
 };
 
 export type ColetaRepository = {
-  fontes(limit: number, plataformas: readonly Platform[]): Promise<readonly Omit<FonteElegivel, 'janelaSugerida'>[]>;
+  fontes(limit: number, plataformas: readonly Platform[]): Promise<readonly FonteBruta[]>;
+  historicos(): Promise<ReadonlyMap<string, HistoricoDeColeta>>;
   resolveFonte(fonteTipo: FonteTipo, fonteId: string): Promise<{ organizationId: string; clientId: string; platform: Platform } | null>;
   resolveContextoDeGravacao(coletaId: string): Promise<ContextoDeGravacao | null>;
   findByIdempotencyKey(key: string): Promise<Coleta | null>;
@@ -118,6 +130,16 @@ export function createColetaRepository(): ColetaRepository {
         WHERE platform = ANY(${[...plataformas]}::text[])
         LIMIT ${Math.max(Math.min(limit, TETO_DE_FONTES), 1)}`) as unknown as FonteRow[];
       return rows.map(toFonte);
+    },
+
+    async historicos() {
+      const rows = (await sql()`SELECT * FROM automation.historico_de_coleta()`) as unknown as HistoricoRow[];
+      return new Map(rows.map((row) => [chaveDaFonte(row.fonte_tipo, row.fonte_id), {
+        ultimaJanelaSucesso: isoDateOuNulo(row.ultima_janela_sucesso),
+        ultimaJanelaParcialRepetida: isoDateOuNulo(row.ultima_janela_parcial_repetida),
+        ultimaIncrementalEm: row.ultima_incremental_em,
+        ultimoLimiteDiarioEm: row.ultimo_limite_diario_em,
+      }]));
     },
 
     async resolveFonte(fonteTipo, fonteId) {

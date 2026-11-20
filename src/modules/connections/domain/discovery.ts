@@ -1,4 +1,5 @@
 import type { Platform } from '@/modules/connections/domain/connection';
+import { META_GRAPH_VERSION } from './metaGraphVersion.ts';
 
 export type DiscoveredAccount = {
   readonly platform: Platform;
@@ -271,7 +272,7 @@ export function parseGtmAccountIds(payload: unknown): readonly string[] {
     .filter((id): id is string => typeof id === 'string');
 }
 
-export const META_GRAPH_VERSION = 'v23.0';
+export { META_GRAPH_VERSION };
 
 const CAMPOS_DO_PIXEL = 'id,name,last_fired_time,is_unavailable';
 
