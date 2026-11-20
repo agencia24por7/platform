@@ -115,6 +115,10 @@ function descobrirRecursos(
       return discovery.youtube(accessToken);
     case 'gbp':
       return discovery.gbp(accessToken);
+    case 'pixel':
+      return discovery.pixel(accessToken);
+    case 'leadads':
+      return discovery.leadads(accessToken);
     default:
       return Promise.resolve([]);
   }
@@ -127,6 +131,7 @@ const GRANT_BY_PLATFORM: Record<PlataformaOauth, GrantType> = {
   ga4: 'oauth_user',
   gtm: 'oauth_user',
   pixel: 'oauth_user',
+  leadads: 'oauth_user',
   searchconsole: 'oauth_user',
   youtube: 'oauth_user',
   gbp: 'oauth_user',

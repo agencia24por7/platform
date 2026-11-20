@@ -5,6 +5,14 @@ import type { Platform } from '@/modules/connections/domain/connection';
 import type { RelatorioDeExecucao } from '@/modules/coleta/domain/qualidade';
 import { linhaParaBigQuery, paraParametroBigQuery } from '@/modules/coleta/infrastructure/parametrosBigQuery';
 import { COLUNAS_DO_FATO_RD, dataDoSnapshot, linhaDoFatoRd, negociacoesUnicas, type NegociacaoRd } from '@/modules/coleta/domain/negociacoesRd';
+import { COLUNAS_DO_FATO_EVENTOS, TIPOS_DO_FATO_EVENTOS, eventosUnicos, linhaDoFatoEventos, type EventoDoDia } from '@/modules/coleta/domain/eventosDoDataset';
+import {
+  COLUNAS_DO_FATO_FORMULARIOS,
+  TIPOS_DO_FATO_FORMULARIOS,
+  formulariosUnicos,
+  linhaDoFatoFormularios,
+  type FormularioMeta,
+} from '@/modules/coleta/domain/formulariosMeta';
 
 type LinhaBruta = Record<string, unknown>;
 
@@ -44,6 +52,8 @@ const TIPOS_RD = {
 } as const;
 
 type NegociacaoDoDia = NegociacaoRd & { readonly dataSnapshot: string };
+
+type FormularioDoDia = FormularioMeta & { readonly dataSnapshot: string };
 
 const CONFIG_POR_PLATAFORMA: Partial<Record<Platform, ConfiguracaoPlataforma>> = {
   google: {
@@ -208,6 +218,42 @@ const CONFIG_POR_PLATAFORMA: Partial<Record<Platform, ConfiguracaoPlataforma>> =
         contaId: ctx.externalId,
         dataSnapshot: negociacao.dataSnapshot,
         moeda: ctx.currency,
+        execucaoId: ctx.execucaoId,
+        inseridoEm: agora(),
+      });
+    },
+  },
+  pixel: {
+    staging: 'stg_meta_eventos_dataset',
+    fato: 'fato_meta_eventos_dataset',
+    chave: ['organization_id', 'dataset_id', 'data_dia', 'evento', 'origem'],
+    colunas: COLUNAS_DO_FATO_EVENTOS,
+    tipos: TIPOS_DO_FATO_EVENTOS,
+    preparar: (linhas) => eventosUnicos(linhas),
+    mapear: (linha, ctx) =>
+      linhaDoFatoEventos(linha as unknown as EventoDoDia, {
+        organizationId: ctx.organizationId,
+        datasetId: ctx.externalId,
+        execucaoId: ctx.execucaoId,
+        inseridoEm: agora(),
+      }),
+  },
+  leadads: {
+    staging: 'stg_meta_formularios',
+    fato: 'fato_meta_formularios',
+    chave: ['organization_id', 'page_id', 'form_id', 'data_snapshot'],
+    colunas: COLUNAS_DO_FATO_FORMULARIOS,
+    tipos: TIPOS_DO_FATO_FORMULARIOS,
+    preparar: (linhas) => {
+      const dataSnapshot = dataDoSnapshot(new Date());
+      return formulariosUnicos(linhas).map((formulario) => ({ ...formulario, dataSnapshot }));
+    },
+    mapear: (linha, ctx) => {
+      const formulario = linha as unknown as FormularioDoDia;
+      return linhaDoFatoFormularios(formulario, {
+        organizationId: ctx.organizationId,
+        pageId: ctx.externalId,
+        dataSnapshot: formulario.dataSnapshot,
         execucaoId: ctx.execucaoId,
         inseridoEm: agora(),
       });

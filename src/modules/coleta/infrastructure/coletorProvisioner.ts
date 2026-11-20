@@ -11,6 +11,8 @@ import coletorGa4 from '@/../n8n/workflows/coletores/coletor-ga4.json';
 import coletorMeta from '@/../n8n/workflows/coletores/coletor-meta-insights.json';
 import coletorGtm from '@/../n8n/workflows/coletores/coletor-gtm.json';
 import coletorRdStation from '@/../n8n/workflows/coletores/coletor-rdstation.json';
+import coletorMetaDataset from '@/../n8n/workflows/coletores/coletor-meta-dataset.json';
+import coletorMetaFormularios from '@/../n8n/workflows/coletores/coletor-meta-formularios.json';
 
 const TEMPLATE_BY_PLATFORM: Partial<Record<Platform, WorkflowTemplate>> = {
   google: coletorGoogleAds as WorkflowTemplate,
@@ -21,6 +23,8 @@ const TEMPLATE_BY_PLATFORM: Partial<Record<Platform, WorkflowTemplate>> = {
   meta: coletorMeta as WorkflowTemplate,
   gtm: coletorGtm as WorkflowTemplate,
   rdstation: coletorRdStation as WorkflowTemplate,
+  pixel: coletorMetaDataset as WorkflowTemplate,
+  leadads: coletorMetaFormularios as WorkflowTemplate,
 };
 
 export type ColetorProvisioner = {

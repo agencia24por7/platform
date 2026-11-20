@@ -3,11 +3,11 @@ import { describe, it } from 'node:test';
 import { ModoColeta, fonteDe, fontesAtivasNoV1, janelaAteOntem, janelaDias, limiteLinhas, plataformasColetaveis } from './mapaDeFontes.ts';
 
 describe('fontesAtivasNoV1', () => {
-  it('traz só as 8 fontes com série temporal ou snapshot prontos', () => {
+  it('traz só as 10 fontes com série temporal ou snapshot prontos', () => {
     const platforms = fontesAtivasNoV1()
       .map((fonte) => fonte.platform)
       .sort();
-    assert.deepEqual(platforms, ['gbp', 'google', 'gtm', 'ga4', 'meta', 'rdstation', 'searchconsole', 'youtube'].sort());
+    assert.deepEqual(platforms, ['gbp', 'google', 'gtm', 'ga4', 'leadads', 'meta', 'pixel', 'rdstation', 'searchconsole', 'youtube'].sort());
   });
 
   it('cada fonte ativa tem motivo nulo e cada fonte inativa tem motivo', () => {
@@ -16,8 +16,8 @@ describe('fontesAtivasNoV1', () => {
     }
   });
 
-  it('apify, zapi, pixel e whatsapp ficam fora, com motivo', () => {
-    for (const platform of ['apify', 'zapi', 'pixel', 'whatsapp'] as const) {
+  it('apify, zapi e whatsapp ficam fora, com motivo', () => {
+    for (const platform of ['apify', 'zapi', 'whatsapp'] as const) {
       const fonte = fonteDe(platform);
       assert.equal(fonte.ativaNoV1, false);
       assert.ok(fonte.motivoForaDoV1 && fonte.motivoForaDoV1.length > 0);
@@ -28,7 +28,7 @@ describe('fontesAtivasNoV1', () => {
 describe('plataformasColetaveis', () => {
   it('o orquestrador só recebe fontes de plataforma com coletor: apify e zapi ficam de fora', () => {
     const coletaveis = plataformasColetaveis();
-    assert.deepEqual([...coletaveis].sort(), ['gbp', 'google', 'gtm', 'ga4', 'meta', 'rdstation', 'searchconsole', 'youtube'].sort());
+    assert.deepEqual([...coletaveis].sort(), ['gbp', 'google', 'gtm', 'ga4', 'leadads', 'meta', 'pixel', 'rdstation', 'searchconsole', 'youtube'].sort());
     for (const platform of ['apify', 'zapi'] as const) assert.ok(!coletaveis.includes(platform));
   });
 
@@ -41,6 +41,25 @@ describe('plataformasColetaveis', () => {
     for (const campo of [...fonte.dimensoes, ...fonte.metricas]) {
       assert.ok(!/contact|email|phone|organization|user|custom|notes|^name$/.test(campo), `campo pessoal no mapa: ${campo}`);
     }
+  });
+
+  it('pixel entra como série diária por evento no fato de eventos do conjunto de dados, com histórico curto', () => {
+    const fonte = fonteDe('pixel');
+    assert.equal(fonte.grao, 'dataset_dia_evento');
+    assert.equal(fonte.tabelaFato, 'fato_meta_eventos_dataset');
+    assert.equal(janelaDias('pixel', ModoColeta.Amostra), 7);
+    assert.equal(janelaDias('pixel', ModoColeta.Completa), 28);
+  });
+
+  it('leadads entra como snapshot diário de formulários, sem janela e sem ler leads', () => {
+    const fonte = fonteDe('leadads');
+    assert.equal(fonte.grao, 'snapshot');
+    assert.equal(fonte.tabelaFato, 'fato_meta_formularios');
+    assert.equal(janelaDias('leadads', ModoColeta.Completa), 0);
+    for (const campo of [...fonte.dimensoes, ...fonte.metricas]) {
+      assert.ok(!/field_data|^leads$|email|phone|full_name|questions/.test(campo), `campo pessoal no mapa: ${campo}`);
+    }
+    assert.ok(!fonte.endpoint.includes('/leads'));
   });
 });
 

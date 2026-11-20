@@ -13,6 +13,8 @@ export type Varredura = {
 export type PlatformDiscovery = {
   google(accessToken: string): Promise<readonly DiscoveredAccount[]>;
   meta(accessToken: string): Promise<readonly DiscoveredAccount[]>;
+  pixel(accessToken: string): Promise<readonly DiscoveredAccount[]>;
+  leadads(accessToken: string): Promise<readonly DiscoveredAccount[]>;
   ga4(accessToken: string): Promise<readonly DiscoveredAccount[]>;
   gtm(accessToken: string): Promise<readonly DiscoveredAccount[]>;
   searchconsole(accessToken: string): Promise<readonly DiscoveredAccount[]>;

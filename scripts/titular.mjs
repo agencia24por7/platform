@@ -91,6 +91,8 @@ const FATOS_POR_FONTE = [
   { tabela: 'fato_youtube_diario', chave: 'channel_id', plataforma: "'youtube'", data: 'data_dia' },
   { tabela: 'fato_gbp_diario', chave: 'location_id', plataforma: "'gbp'", data: 'data_dia' },
   { tabela: 'fato_rd_negociacoes', chave: 'conta_id', plataforma: "'rdstation'", data: 'data_snapshot' },
+  { tabela: 'fato_meta_eventos_dataset', chave: 'dataset_id', plataforma: "'pixel'", data: 'data_dia' },
+  { tabela: 'fato_meta_formularios', chave: 'page_id', plataforma: "'leadads'", data: 'data_snapshot' },
 ];
 
 function excluirFatosDoCliente(clientId) {

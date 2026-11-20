@@ -14,6 +14,7 @@ export const CREDENTIAL_TYPE: Record<Platform, string> = {
   zapi: 'httpHeaderAuth',
   gtm: 'googleOAuth2Api',
   pixel: 'facebookGraphApi',
+  leadads: 'facebookGraphApi',
   searchconsole: 'googleOAuth2Api',
   youtube: 'googleOAuth2Api',
   gbp: 'googleOAuth2Api',

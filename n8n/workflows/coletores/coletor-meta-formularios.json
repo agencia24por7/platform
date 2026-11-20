@@ -1,0 +1,259 @@
+{
+  "name": "Coletor · Meta formulários de cadastro (modelo)",
+  "nodes": [
+    {
+      "id": "entrada",
+      "name": "Entrada",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -200,
+        0
+      ],
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "fonte"
+            },
+            {
+              "name": "janela"
+            },
+            {
+              "name": "modo"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "montar",
+      "name": "Montar requisição",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const { fonte } = $json;\nconst pageId = String(fonte?.externalId ?? '');\nreturn [{ json: { inicio: Date.now(), versaoApi: 'v23.0', pageId, pageIdValido: /^\\d{5,25}$/.test(pageId) } }];\n"
+      }
+    },
+    {
+      "id": "token-da-pagina",
+      "name": "Token da Página",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/v23.0/{{ encodeURIComponent($json.pageId) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "facebookGraphApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "access_token"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "tem-token",
+      "name": "Tem token da Página?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "tem-token-verdadeiro",
+              "leftValue": "={{ $('Montar requisição').first().json.pageIdValido && typeof $json.body?.access_token === 'string' && $json.body.access_token.length > 0 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "listar-formularios",
+      "name": "Listar formulários",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        -100
+      ],
+      "executeOnce": true,
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/v23.0/{{ encodeURIComponent($('Montar requisição').first().json.pageId) }}/leadgen_forms",
+        "authentication": "none",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "id,name,status,leads_count,expired_leads_count,created_time"
+            },
+            {
+              "name": "limit",
+              "value": "100"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Token da Página').first().json.body.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.paging?.next }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body?.paging?.next }}",
+              "limitPagesFetched": true,
+              "maxRequests": 50
+            }
+          }
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "normalizar",
+      "name": "Normalizar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const contexto = $('Montar requisição').first().json;\nconst respostaDoToken = $('Token da Página').first().json ?? {};\nconst tokenDaPagina = typeof respostaDoToken.body?.access_token === 'string' ? respostaDoToken.body.access_token : '';\nconst paginas = tokenDaPagina\n  ? $input.all().map((item) => item.json).filter((json) => json && (json.statusCode !== undefined || json.error))\n  : [];\nconst requests = 1 + paginas.length;\nconst bytes = paginas.reduce((total, resposta) => total + JSON.stringify(resposta.body ?? {}).length, 0);\nconst ROTULO_MAXIMO = 200;\n\nfunction devolver(linhas, falhas) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - contexto.inicio },\n      falhas,\n      requests,\n      versaoApi: contexto.versaoApi,\n    },\n  }];\n}\n\nfunction semToken(texto) {\n  let limpo = String(texto ?? '');\n  if (tokenDaPagina) limpo = limpo.split(tokenDaPagina).join('[removido]');\n  return limpo.replace(/access_token=[^&\\s\"']+/g, 'access_token=[removido]').slice(0, 500);\n}\n\nfunction falhaDe(resposta) {\n  if (resposta.error) return { causa: 'api_recusou', detalhe: semToken(`falha de rede: ${resposta.error?.message ?? resposta.error}`) };\n  if (resposta.statusCode >= 200 && resposta.statusCode < 300) return null;\n  const erro = resposta.body?.error;\n  const detalhe = semToken(erro?.message || `HTTP ${resposta.statusCode}`);\n  const semAcesso = resposta.statusCode === 401 || resposta.statusCode === 403 || [190, 10, 200].includes(erro?.code);\n  return { causa: semAcesso ? 'reauth_pending' : 'api_recusou', detalhe };\n}\n\nif (!contexto.pageIdValido) return devolver([], [{ causa: 'api_recusou', detalhe: 'id da Página inválido' }]);\n\nconst falhaDoToken = falhaDe(respostaDoToken);\nif (falhaDoToken) return devolver([], [falhaDoToken]);\nif (!tokenDaPagina) {\n  return devolver([], [{\n    causa: 'reauth_pending',\n    detalhe: 'A Meta não entregou o token da Página: quem autorizou precisa da tarefa ADVERTISE, MANAGE ou MANAGE_LEADS nela.',\n  }]);\n}\n\nconst recusada = paginas.map(falhaDe).find(Boolean);\nif (recusada) return devolver([], [recusada]);\n\nconst texto = (valor) => {\n  if (typeof valor !== 'string') return null;\n  const limpo = valor.trim();\n  return limpo ? limpo.slice(0, ROTULO_MAXIMO) : null;\n};\nconst contagem = (valor) => {\n  const numero = typeof valor === 'string' && valor.trim() !== '' ? Number(valor) : valor;\n  return typeof numero === 'number' && Number.isFinite(numero) && numero >= 0 ? Math.trunc(numero) : null;\n};\n\nconst porId = new Map();\nfor (const pagina of paginas) {\n  const formularios = Array.isArray(pagina.body?.data) ? pagina.body.data : [];\n  for (const formulario of formularios) {\n    const formId = typeof formulario?.id === 'string' && /^\\d{5,25}$/.test(formulario.id) ? formulario.id : null;\n    if (!formId) continue;\n    porId.set(formId, {\n      formId,\n      nome: texto(formulario.name),\n      status: typeof formulario.status === 'string' && /^[A-Z_]{1,40}$/.test(formulario.status) ? formulario.status : null,\n      leadsTotal: contagem(formulario.leads_count),\n      leadsExpirados: contagem(formulario.expired_leads_count),\n      criadoEm: typeof formulario.created_time === 'string' && formulario.created_time ? formulario.created_time : null,\n    });\n  }\n}\n\nconst linhas = [...porId.values()];\nif (linhas.length === 0) return devolver([], [{ causa: 'sem_dados_no_periodo', detalhe: null }]);\nreturn devolver(linhas, []);\n"
+      }
+    }
+  ],
+  "connections": {
+    "Entrada": {
+      "main": [
+        [
+          {
+            "node": "Montar requisição",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar requisição": {
+      "main": [
+        [
+          {
+            "node": "Token da Página",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token da Página": {
+      "main": [
+        [
+          {
+            "node": "Tem token da Página?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem token da Página?": {
+      "main": [
+        [
+          {
+            "node": "Listar formulários",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Listar formulários": {
+      "main": [
+        [
+          {
+            "node": "Normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "timezone": "America/Sao_Paulo"
+  }
+}
