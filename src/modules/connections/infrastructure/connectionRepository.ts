@@ -42,8 +42,8 @@ export type ConnectionRepository = {
   renew(input: NewConnection & { readonly id: string }): Promise<Connection>;
   list(organizationId: string): Promise<readonly Connection[]>;
   remove(organizationId: string, id: string): Promise<boolean>;
-  setColetorRef(organizationId: string, id: string, coletorRef: string): Promise<void>;
-  setExecutorRef(organizationId: string, id: string, executorRef: string): Promise<void>;
+  trocarColetorRef(organizationId: string, id: string, coletorRef: string): Promise<string | null>;
+  trocarExecutorRef(organizationId: string, id: string, executorRef: string): Promise<string | null>;
 };
 
 export function createConnectionRepository(): ConnectionRepository {
@@ -109,15 +109,27 @@ export function createConnectionRepository(): ConnectionRepository {
       });
     },
 
-    async setColetorRef(organizationId, id, coletorRef) {
-      await withTenant(organizationId, async (tx) => {
-        await tx`UPDATE integrations.connections SET coletor_ref = ${coletorRef} WHERE id = ${id}`;
+    async trocarColetorRef(organizationId, id, coletorRef) {
+      return withTenant(organizationId, async (tx) => {
+        const rows = (await tx`
+          UPDATE integrations.connections novo
+          SET coletor_ref = ${coletorRef}
+          FROM (SELECT coletor_ref FROM integrations.connections WHERE id = ${id} FOR UPDATE) anterior
+          WHERE novo.id = ${id}
+          RETURNING anterior.coletor_ref AS anterior`) as unknown as { anterior: string | null }[];
+        return rows[0]?.anterior ?? null;
       });
     },
 
-    async setExecutorRef(organizationId, id, executorRef) {
-      await withTenant(organizationId, async (tx) => {
-        await tx`UPDATE integrations.connections SET executor_ref = ${executorRef} WHERE id = ${id}`;
+    async trocarExecutorRef(organizationId, id, executorRef) {
+      return withTenant(organizationId, async (tx) => {
+        const rows = (await tx`
+          UPDATE integrations.connections novo
+          SET executor_ref = ${executorRef}
+          FROM (SELECT executor_ref FROM integrations.connections WHERE id = ${id} FOR UPDATE) anterior
+          WHERE novo.id = ${id}
+          RETURNING anterior.executor_ref AS anterior`) as unknown as { anterior: string | null }[];
+        return rows[0]?.anterior ?? null;
       });
     },
   };
