@@ -144,3 +144,21 @@ primeira carga de cada fonte:
   BigQuery (`node scripts/bq-ddl.mjs`), deploy do app, primeira execução da
   rota (manual pelo workflow) e implantação manual do workflow no n8n (ADR
   0009).
+
+## Adendo (2026-11-20): um padrão só, fatos sem `client_id`
+
+O `tria_dw` foi apagado e recriado (só o BigQuery; nenhum backup do Postgres
+foi tocado) para não conviver com dois padrões. Isso substitui as duas
+primeiras consequências acima:
+
+- Fatos e `gov_snapshot_fontes` não têm `client_id`. Cada linha carrega
+  `organization_id` e a chave da fonte; o dono vem só de `dim_fonte_scd2`,
+  pelas views `vw_*` (`cliente_na_epoca_*` e `cliente_atual_*`).
+- A chave do MERGE de cada fato é a chave natural da fonte, sem `client_id`.
+- `qc_execucoes` e `gov_paridade` continuam com `client_id`: registram a
+  execução em si, que pertence ao cliente da coleta.
+- `scripts/titular.mjs excluir-cliente` apaga dos fatos e de
+  `gov_snapshot_fontes` as linhas cujo momento cai no período em que a fonte
+  foi do cliente, segundo a dimensão; depois apaga das tabelas com
+  `client_id`, dimensões incluídas.
+- `HASH` é reservada no BigQuery: a coluna de versão chama `hash_versao`.

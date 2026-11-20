@@ -1,6 +1,5 @@
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.gov_snapshot_fontes` (
   organization_id   STRING NOT NULL,
-  client_id         STRING NOT NULL,
   platform          STRING NOT NULL,
   fonte_tipo        STRING NOT NULL,
   fonte_id          STRING NOT NULL,
@@ -12,7 +11,7 @@ CREATE TABLE IF NOT EXISTS `{{DATASET}}.gov_snapshot_fontes` (
   visto_em          TIMESTAMP NOT NULL
 )
 PARTITION BY DATE(visto_em)
-CLUSTER BY organization_id, client_id;
+CLUSTER BY organization_id, platform, fonte_id;
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.gov_paridade` (
   organization_id  STRING NOT NULL,
