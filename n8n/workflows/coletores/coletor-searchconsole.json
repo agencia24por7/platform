@@ -43,7 +43,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const { fonte, janela, modo } = $json;\nconst versaoApi = 'v3';\nconst limite = modo === 'amostra' ? 500 : 25000;\nconst URL_DA_CONSULTA = `https://www.googleapis.com/webmasters/${versaoApi}/sites/${encodeURIComponent(fonte.externalId)}/searchAnalytics/query`;\n\nconst METRICAS_ANTIGAS = ['clicks', 'impressions', 'ctr', 'position'];\nconst METRICAS = ['cliques', 'impressoes', 'ctr', 'posicao_media'];\n\nconst RECORTES = {\n  padrao: { opcional: false, dimensoes: [['date', 'metricDate'], ['device', 'device']], metricas: METRICAS_ANTIGAS },\n  consulta_pagina: { opcional: false, dimensoes: [['date', 'metricDate'], ['query', 'consulta'], ['page', 'pagina']], metricas: METRICAS },\n  pagina: { opcional: false, dimensoes: [['date', 'metricDate'], ['page', 'pagina']], metricas: METRICAS },\n  pais_dispositivo: { opcional: false, dimensoes: [['date', 'metricDate'], ['country', 'pais'], ['device', 'dispositivo']], metricas: METRICAS },\n  aparencia: { opcional: true, dimensoes: [['date', 'metricDate'], ['searchAppearance', 'aparencia']], metricas: METRICAS },\n};\n\nconst consultas = Object.fromEntries(Object.entries(RECORTES).map(([tabela, recorte]) => [tabela, {\n  tabela,\n  ...recorte,\n  corpo: {\n    startDate: janela.start,\n    endDate: janela.end,\n    dimensions: recorte.dimensoes.map(([nome]) => nome),\n    rowLimit: limite,\n    startRow: 0,\n    dataState: 'final',\n  },\n}]));\n\nreturn [{ json: { inicio: Date.now(), versaoApi, fonte, url: URL_DA_CONSULTA, consultas } }];\n"
+        "jsCode": "const { fonte, janela, modo } = $json;\nconst versaoApi = 'v3';\nconst limite = modo === 'amostra' ? 500 : 25000;\nconst URL_DA_CONSULTA = `https://www.googleapis.com/webmasters/${versaoApi}/sites/${encodeURIComponent(fonte.externalId)}/searchAnalytics/query`;\n\nconst METRICAS_ANTIGAS = ['clicks', 'impressions', 'ctr', 'position'];\nconst METRICAS = ['cliques', 'impressoes', 'ctr', 'posicao_media'];\n\nconst RECORTES = {\n  padrao: { opcional: false, dimensoes: [['date', 'metricDate'], ['device', 'device']], metricas: METRICAS_ANTIGAS },\n  consulta_pagina: { opcional: false, dimensoes: [['date', 'metricDate'], ['query', 'consulta'], ['page', 'pagina']], metricas: METRICAS },\n  pagina: { opcional: false, dimensoes: [['date', 'metricDate'], ['page', 'pagina']], metricas: METRICAS },\n  pais_dispositivo: { opcional: false, dimensoes: [['date', 'metricDate'], ['country', 'pais'], ['device', 'dispositivo']], metricas: METRICAS },\n  aparencia: { opcional: true, porDia: true, dimensoes: [['searchAppearance', 'aparencia']], metricas: METRICAS },\n};\n\nconst DIA_MS = 86_400_000;\nconst diasDaJanela = Array.from(\n  { length: Math.round((Date.parse(janela.end) - Date.parse(janela.start)) / DIA_MS) + 1 },\n  (_, indice) => new Date(Date.parse(janela.start) + indice * DIA_MS).toISOString().slice(0, 10),\n);\n\nconst consultas = Object.fromEntries(Object.entries(RECORTES).map(([tabela, recorte]) => [tabela, {\n  tabela,\n  ...recorte,\n  ...(recorte.porDia ? { dias: diasDaJanela } : {}),\n  corpo: {\n    startDate: janela.start,\n    endDate: janela.end,\n    dimensions: recorte.dimensoes.map(([nome]) => nome),\n    rowLimit: limite,\n    startRow: 0,\n    dataState: 'final',\n  },\n}]));\n\nreturn [{ json: { inicio: Date.now(), versaoApi, fonte, url: URL_DA_CONSULTA, consultas } }];\n"
       }
     },
     {
@@ -76,7 +76,7 @@
                   {
                     "type": "body",
                     "name": "startRow",
-                    "value": "={{ ($request.body.startRow ?? 0) + $request.body.rowLimit }}"
+                    "value": "={{ $pageCount * $request.body.rowLimit }}"
                   }
                 ]
               },
@@ -145,7 +145,7 @@
                   {
                     "type": "body",
                     "name": "startRow",
-                    "value": "={{ ($request.body.startRow ?? 0) + $request.body.rowLimit }}"
+                    "value": "={{ $pageCount * $request.body.rowLimit }}"
                   }
                 ]
               },
@@ -214,7 +214,7 @@
                   {
                     "type": "body",
                     "name": "startRow",
-                    "value": "={{ ($request.body.startRow ?? 0) + $request.body.rowLimit }}"
+                    "value": "={{ $pageCount * $request.body.rowLimit }}"
                   }
                 ]
               },
@@ -283,7 +283,7 @@
                   {
                     "type": "body",
                     "name": "startRow",
-                    "value": "={{ ($request.body.startRow ?? 0) + $request.body.rowLimit }}"
+                    "value": "={{ $pageCount * $request.body.rowLimit }}"
                   }
                 ]
               },
@@ -344,29 +344,16 @@
               "responseFormat": "json"
             }
           },
-          "pagination": {
-            "pagination": {
-              "paginationMode": "updateAParameterInEachRequest",
-              "parameters": {
-                "parameters": [
-                  {
-                    "type": "body",
-                    "name": "startRow",
-                    "value": "={{ ($request.body.startRow ?? 0) + $request.body.rowLimit }}"
-                  }
-                ]
-              },
-              "paginationCompleteWhen": "other",
-              "completeExpression": "={{ $response.statusCode !== 200 || $request.body.rowLimit <= 500 || ($response.body.rows ?? []).length < $request.body.rowLimit }}",
-              "limitPagesFetched": true,
-              "maxRequests": 80,
-              "requestInterval": 300
+          "batching": {
+            "batch": {
+              "batchSize": 5,
+              "batchInterval": 300
             }
           }
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($('Montar requisição').first().json.consultas['aparencia'].corpo) }}"
+        "jsonBody": "={{ JSON.stringify($json.corpo) }}"
       },
       "credentials": {
         "googleOAuth2Api": {
@@ -388,7 +375,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "return [{ json: { respostas: $input.all().map((item) => item.json).filter((json) => Object.keys(json).length > 0) } }];\n"
+        "jsCode": "const dias = $('Dias da aparencia').all().map((item) => item.json.dia);\nreturn [{ json: { respostas: $input.all().map((item, indice) => (Object.keys(item.json).length > 0 ? { ...item.json, dia: dias[indice] } : null)).filter(Boolean) } }];\n"
       }
     },
     {
@@ -402,7 +389,21 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const contexto = $('Montar requisição').first().json;\nconst TABELAS = [\"padrao\",\"consulta_pagina\",\"pagina\",\"pais_dispositivo\",\"aparencia\"];\nconst coletadas = TABELAS.map((tabela) => ({\n  consulta: contexto.consultas[tabela],\n  respostas: $(`Fechar ${tabela}`).first().json.respostas,\n}));\nconst respostas = coletadas.flatMap((item) => item.respostas);\nconst requests = respostas.length;\nconst bytes = respostas.reduce((total, resposta) => total + JSON.stringify(resposta.body ?? {}).length, 0);\n\nfunction devolver(linhas, falhas) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - contexto.inicio },\n      falhas,\n      requests,\n      versaoApi: contexto.versaoApi,\n    },\n  }];\n}\n\nconst falhaDeRede = respostas.find((resposta) => resposta.error);\nif (falhaDeRede) {\n  const detalhe = falhaDeRede.error?.message ?? String(falhaDeRede.error);\n  return devolver([], [{ causa: 'api_recusou', detalhe: `falha de rede: ${detalhe}`.slice(0, 500) }]);\n}\n\nconst aceita = (consulta, resposta) => resposta.statusCode >= 200 && resposta.statusCode < 300 || (consulta.opcional && resposta.statusCode === 400);\nconst recusada = coletadas.flatMap((item) => item.respostas.map((resposta) => ({ consulta: item.consulta, resposta }))).find((par) => !aceita(par.consulta, par.resposta))?.resposta;\nif (recusada) {\n  const erro = Array.isArray(recusada.body) ? recusada.body[0]?.error : recusada.body?.error;\n  const detalhe = String(erro?.message || `HTTP ${recusada.statusCode}`).slice(0, 500);\n  const configuracaoDoProjeto = recusada.statusCode === 429 || /SERVICE_DISABLED|accessNotConfigured|has not been used in project|RESOURCE_EXHAUSTED|RATE_LIMIT/.test(JSON.stringify(erro ?? {}));\n  const semAcesso = !configuracaoDoProjeto && (recusada.statusCode === 401 || recusada.statusCode === 403 || erro?.code === 190);\n  return devolver([], [{ causa: semAcesso ? 'reauth_pending' : 'api_recusou', detalhe }]);\n}\n\nconst motivoDaRecusa = (resposta) => {\n  if (resposta?.error) return `falha de rede: ${resposta.error?.message ?? String(resposta.error)}`;\n  const erro = Array.isArray(resposta?.body) ? resposta.body[0]?.error : resposta?.body?.error;\n  return String(erro?.message || `HTTP ${resposta?.statusCode}`);\n};\n\nfunction coletaIncompleta(recusas) {\n  const porTabela = new Map();\n  for (const { tabela, resposta } of recusas) {\n    const atual = porTabela.get(tabela) ?? { total: 0, motivo: motivoDaRecusa(resposta) };\n    porTabela.set(tabela, { ...atual, total: atual.total + 1 });\n  }\n  return [...porTabela].map(([tabela, { total, motivo }]) => ({\n    causa: 'coleta_incompleta',\n    detalhe: `${tabela}: ${total > 1 ? `${total} pedidos recusados, ` : ''}${motivo}`.slice(0, 500),\n  }));\n}\n\nconst incompletas = coletaIncompleta(coletadas.flatMap(({ consulta, respostas: paginas }) => paginas\n  .filter((resposta) => !(resposta.statusCode >= 200 && resposta.statusCode < 300))\n  .map((resposta) => ({ tabela: consulta.tabela, resposta }))));\n\nconst linhas = coletadas.flatMap(({ consulta, respostas: paginas }) => paginas\n  .filter((resposta) => resposta.statusCode >= 200 && resposta.statusCode < 300)\n  .flatMap((resposta) => resposta.body?.rows ?? [])\n  .map((linha) => {\n    const saida = consulta.tabela === 'padrao' ? {} : { _tabela: consulta.tabela };\n    consulta.dimensoes.forEach(([, campo], indice) => {\n      saida[campo] = linha.keys?.[indice] ?? null;\n    });\n    saida[consulta.metricas[0]] = Number(linha.clicks ?? 0);\n    saida[consulta.metricas[1]] = Number(linha.impressions ?? 0);\n    saida[consulta.metricas[2]] = Number(linha.ctr ?? 0);\n    saida[consulta.metricas[3]] = Number(linha.position ?? 0);\n    return saida;\n  }));\n\nif (linhas.length === 0) return devolver([], incompletas.length > 0 ? incompletas : [{ causa: 'sem_dados_no_periodo', detalhe: null }]);\nreturn devolver(linhas.map((linha) => ({ ...linha, versaoApi: contexto.versaoApi })), incompletas);\n"
+        "jsCode": "const contexto = $('Montar requisição').first().json;\nconst TABELAS = [\"padrao\",\"consulta_pagina\",\"pagina\",\"pais_dispositivo\",\"aparencia\"];\nconst coletadas = TABELAS.map((tabela) => ({\n  consulta: contexto.consultas[tabela],\n  respostas: $(`Fechar ${tabela}`).first().json.respostas,\n}));\nconst respostas = coletadas.flatMap((item) => item.respostas);\nconst requests = respostas.length;\nconst bytes = respostas.reduce((total, resposta) => total + JSON.stringify(resposta.body ?? {}).length, 0);\n\nfunction devolver(linhas, falhas) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - contexto.inicio },\n      falhas,\n      requests,\n      versaoApi: contexto.versaoApi,\n    },\n  }];\n}\n\nconst falhaDeRede = respostas.find((resposta) => resposta.error);\nif (falhaDeRede) {\n  const detalhe = falhaDeRede.error?.message ?? String(falhaDeRede.error);\n  return devolver([], [{ causa: 'api_recusou', detalhe: `falha de rede: ${detalhe}`.slice(0, 500) }]);\n}\n\nconst aceita = (consulta, resposta) => resposta.statusCode >= 200 && resposta.statusCode < 300 || (consulta.opcional && resposta.statusCode === 400);\nconst recusada = coletadas.flatMap((item) => item.respostas.map((resposta) => ({ consulta: item.consulta, resposta }))).find((par) => !aceita(par.consulta, par.resposta))?.resposta;\nif (recusada) {\n  const erro = Array.isArray(recusada.body) ? recusada.body[0]?.error : recusada.body?.error;\n  const detalhe = String(erro?.message || `HTTP ${recusada.statusCode}`).slice(0, 500);\n  const configuracaoDoProjeto = recusada.statusCode === 429 || /SERVICE_DISABLED|accessNotConfigured|has not been used in project|RESOURCE_EXHAUSTED|RATE_LIMIT/.test(JSON.stringify(erro ?? {}));\n  const semAcesso = !configuracaoDoProjeto && (recusada.statusCode === 401 || recusada.statusCode === 403 || erro?.code === 190);\n  return devolver([], [{ causa: semAcesso ? 'reauth_pending' : 'api_recusou', detalhe }]);\n}\n\nconst motivoDaRecusa = (resposta) => {\n  if (resposta?.error) return `falha de rede: ${resposta.error?.message ?? String(resposta.error)}`;\n  const erro = Array.isArray(resposta?.body) ? resposta.body[0]?.error : resposta?.body?.error;\n  return String(erro?.message || `HTTP ${resposta?.statusCode}`);\n};\n\nfunction coletaIncompleta(recusas) {\n  const porTabela = new Map();\n  for (const { tabela, resposta } of recusas) {\n    const atual = porTabela.get(tabela) ?? { total: 0, motivo: motivoDaRecusa(resposta) };\n    porTabela.set(tabela, { ...atual, total: atual.total + 1 });\n  }\n  return [...porTabela].map(([tabela, { total, motivo }]) => ({\n    causa: 'coleta_incompleta',\n    detalhe: `${tabela}: ${total > 1 ? `${total} pedidos recusados, ` : ''}${motivo}`.slice(0, 500),\n  }));\n}\n\nconst incompletas = coletaIncompleta(coletadas.flatMap(({ consulta, respostas: paginas }) => paginas\n  .filter((resposta) => !(resposta.statusCode >= 200 && resposta.statusCode < 300))\n  .map((resposta) => ({ tabela: consulta.tabela, resposta }))));\n\nconst linhas = coletadas.flatMap(({ consulta, respostas: paginas }) => paginas\n  .filter((resposta) => resposta.statusCode >= 200 && resposta.statusCode < 300)\n  .flatMap((resposta) => (resposta.body?.rows ?? []).map((linha) => ({ linha, dia: resposta.dia })))\n  .map(({ linha, dia }) => {\n    const saida = consulta.tabela === 'padrao' ? {} : { _tabela: consulta.tabela };\n    if (consulta.porDia) saida.metricDate = dia ?? null;\n    consulta.dimensoes.forEach(([, campo], indice) => {\n      saida[campo] = linha.keys?.[indice] ?? null;\n    });\n    saida[consulta.metricas[0]] = Number(linha.clicks ?? 0);\n    saida[consulta.metricas[1]] = Number(linha.impressions ?? 0);\n    saida[consulta.metricas[2]] = Number(linha.ctr ?? 0);\n    saida[consulta.metricas[3]] = Number(linha.position ?? 0);\n    return saida;\n  }));\n\nif (linhas.length === 0) return devolver([], incompletas.length > 0 ? incompletas : [{ causa: 'sem_dados_no_periodo', detalhe: null }]);\nreturn devolver(linhas.map((linha) => ({ ...linha, versaoApi: contexto.versaoApi })), incompletas);\n"
+      }
+    },
+    {
+      "id": "dias-da-aparencia",
+      "name": "Dias da aparencia",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1880,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const consulta = $('Montar requisição').first().json.consultas.aparencia;\nreturn consulta.dias.map((dia) => ({ json: { dia, corpo: { ...consulta.corpo, startDate: dia, endDate: dia } } }));\n"
       }
     }
   ],
@@ -510,7 +511,7 @@
       "main": [
         [
           {
-            "node": "Chamar aparencia",
+            "node": "Dias da aparencia",
             "type": "main",
             "index": 0
           }
@@ -533,6 +534,17 @@
         [
           {
             "node": "Normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dias da aparencia": {
+      "main": [
+        [
+          {
+            "node": "Chamar aparencia",
             "type": "main",
             "index": 0
           }
