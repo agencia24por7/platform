@@ -1,4 +1,7 @@
 import { execFileSync } from 'node:child_process';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const USO = `uso:
   node scripts/titular.mjs exportar <email>
@@ -84,27 +87,55 @@ function anonimizar(email) {
   console.log(consultar(`SELECT jsonb_pretty(core.anonimizar_titular_e_encerrar(${literal(email)}));`));
 }
 
-const FATOS_POR_FONTE = [
-  { tabela: 'fato_ads_diario', chave: 'ad_account_id', plataforma: 'f.platform', data: 'data_dia' },
-  { tabela: 'fato_ga4_diario', chave: 'property_id', plataforma: "'ga4'", data: 'data_dia' },
-  { tabela: 'fato_search_console_diario', chave: 'site', plataforma: "'searchconsole'", data: 'data_dia' },
-  { tabela: 'fato_youtube_diario', chave: 'channel_id', plataforma: "'youtube'", data: 'data_dia' },
-  { tabela: 'fato_gbp_diario', chave: 'location_id', plataforma: "'gbp'", data: 'data_dia' },
-  { tabela: 'fato_rd_negociacoes', chave: 'conta_id', plataforma: "'rdstation'", data: 'data_snapshot' },
-  { tabela: 'fato_meta_eventos_dataset', chave: 'dataset_id', plataforma: "'pixel'", data: 'data_dia' },
-  { tabela: 'fato_meta_formularios', chave: 'page_id', plataforma: "'leadads'", data: 'data_snapshot' },
-  { tabela: 'gov_snapshot_fontes', chave: 'fonte_id', plataforma: 'f.platform', momento: 'f.visto_em' },
-];
+const IDENTIFICADOR = /^[a-z][a-z0-9_]*$/;
+
+function validarEntrada(arquivo, entrada) {
+  const { tabela, chave, plataforma, colunaPlataforma, data, momento, todoPeriodo } = entrada;
+  const recorte = [data !== undefined, momento !== undefined, todoPeriodo === true].filter(Boolean).length;
+  const valido = [tabela, chave, plataforma].every((valor) => IDENTIFICADOR.test(valor ?? ''))
+    && [colunaPlataforma, data, momento].every((valor) => valor === undefined || IDENTIFICADOR.test(valor))
+    && (todoPeriodo === undefined || todoPeriodo === true)
+    && recorte === 1;
+  if (!valido) falhar(`manifesto inválido em ${arquivo}: ${JSON.stringify(entrada)}`);
+  return entrada;
+}
+
+function lerManifesto() {
+  const dir = fileURLToPath(new URL('./bq/manifesto/', import.meta.url));
+  return readdirSync(dir)
+    .filter((nome) => nome.endsWith('.json'))
+    .sort()
+    .flatMap((nome) => JSON.parse(readFileSync(join(dir, nome), 'utf8')).map((entrada) => validarEntrada(nome, entrada)));
+}
+
+const FATOS_POR_FONTE = lerManifesto();
+
+function sqlExclusao(fato) {
+  const alvo = `\`${PROJETO}.${DATASET}.${fato.tabela}\``;
+  const dim = `\`${PROJETO}.${DATASET}.dim_fonte_scd2\``;
+  const plataforma = `'${fato.plataforma}'`;
+  const mesmaFonte = (alias) =>
+    `${alias}.organization_id = f.organization_id AND ${alias}.platform = ${plataforma} AND ${alias}.external_id = f.${fato.chave}`;
+  const filtroPlataforma = fato.colunaPlataforma ? ` AND f.${fato.colunaPlataforma} = ${plataforma}` : '';
+
+  if (fato.todoPeriodo) {
+    return `DELETE FROM ${alvo} f WHERE EXISTS (
+         SELECT 1 FROM ${dim} d WHERE d.client_id = @id AND ${mesmaFonte('d')})
+       AND NOT EXISTS (
+         SELECT 1 FROM ${dim} o WHERE o.client_id IS NOT NULL AND o.client_id != @id AND ${mesmaFonte('o')})${filtroPlataforma}`;
+  }
+
+  const momento = fato.momento ? `f.${fato.momento}` : `TIMESTAMP(f.${fato.data}, 'America/Sao_Paulo')`;
+  return `DELETE FROM ${alvo} f WHERE EXISTS (
+         SELECT 1 FROM ${dim} d
+         WHERE d.client_id = @id AND ${mesmaFonte('d')}
+           AND ${momento} >= d.valido_de AND ${momento} < d.valido_ate)${filtroPlataforma}`;
+}
 
 function excluirFatosDoCliente(clientId) {
   for (const fato of FATOS_POR_FONTE) {
-    const momento = fato.momento ?? `TIMESTAMP(f.${fato.data}, 'America/Sao_Paulo')`;
     execFileSync('bq', [
-      '--project_id', PROJETO, 'query', '--use_legacy_sql=false', `--parameter=id:STRING:${clientId}`,
-      `DELETE FROM \`${PROJETO}.${DATASET}.${fato.tabela}\` f WHERE EXISTS (
-         SELECT 1 FROM \`${PROJETO}.${DATASET}.dim_fonte_scd2\` d
-         WHERE d.client_id = @id AND d.organization_id = f.organization_id AND d.platform = ${fato.plataforma}
-           AND d.external_id = f.${fato.chave} AND ${momento} >= d.valido_de AND ${momento} < d.valido_ate)`,
+      '--project_id', PROJETO, 'query', '--use_legacy_sql=false', `--parameter=id:STRING:${clientId}`, sqlExclusao(fato),
     ], { stdio: 'inherit' });
   }
 }
@@ -129,7 +160,7 @@ function excluirCliente(clientId) {
   console.log(resumo);
   const tabelas = local ? [] : tabelasComCliente();
   if (!local) {
-    console.log(`BigQuery: fatos das fontes que foram do cliente, pelo período de posse (dim_fonte_scd2): ${FATOS_POR_FONTE.map((f) => f.tabela).join(', ')}`);
+    console.log(`BigQuery: tabelas do manifesto (scripts/bq/manifesto), pelo período de posse em dim_fonte_scd2: ${FATOS_POR_FONTE.map((f) => `${f.tabela}[${f.plataforma}${f.todoPeriodo ? ', todo o período' : ''}]`).join(', ')}`);
     console.log(`BigQuery: depois, linhas com client_id em ${tabelas.join(', ')}`);
   }
 

@@ -1,0 +1,3 @@
+[
+  { "tabela": "fato_rd_negociacoes", "chave": "conta_id", "plataforma": "rdstation", "data": "data_snapshot" }
+]

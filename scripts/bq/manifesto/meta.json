@@ -1,0 +1,3 @@
+[
+  { "tabela": "fato_ads_diario", "chave": "ad_account_id", "plataforma": "meta", "colunaPlataforma": "platform", "data": "data_dia" }
+]
