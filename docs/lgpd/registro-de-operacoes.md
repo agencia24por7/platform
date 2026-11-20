@@ -1,0 +1,38 @@
+# Registro das operações de tratamento (LGPD, art. 37)
+
+- Controlador dos dados da equipe e operador dos dados dos clientes: Agência 24/7
+- Encarregado: Bruno Abreu, contato@agencia24por7.com
+- Última revisão: 2026-11-20
+
+A política pública está em `/privacidade` (`app/privacidade/page.tsx`). Toda mudança aqui
+que altere o que é tratado, por quê, com quem ou por quanto tempo exige atualizar a política.
+
+## Operações
+
+| Operação | Titulares | Dados | Onde fica | Finalidade | Base legal | Papel da agência |
+|---|---|---|---|---|---|---|
+| Login com Google | Equipe da agência e pessoas indicadas pelos clientes | nome, e-mail, foto, ID Google, último acesso | `core.users` | identificar e autorizar | execução de contrato (art. 7º, V) | controladora |
+| Equipe e convites | Equipe e convidados | e-mail do convidado, papel, recorte por cliente | `core.members`, `core.invitations`, `core.member_clients` | controle de acesso | execução de contrato | controladora |
+| Trilha de auditoria | Quem age na plataforma | ID do autor, IP, e-mail no metadata de eventos de equipe | `audit.audit_log` | segurança e prestação de contas | legítimo interesse e obrigação legal (art. 7º, II e IX) | controladora |
+| Conexões com plataformas | Quem autoriza a conexão | e-mail da conta que autorizou, token (cifrado no n8n) | `integrations.connections.account_email`, cofre do n8n | coletar métricas e executar tarefas pedidas | execução de contrato | operadora |
+| Métricas de marketing | Em regra nenhum (dados agregados de campanha) | métricas e nomes de campanhas, locais, canais | `metrics.*`, BigQuery `tria_dw` | relatórios | execução de contrato | operadora |
+| Leads (Meta Lead Ads → RD Station) | Pessoas que preenchem formulários de anúncio | nome, telefone, e-mail, produto de interesse | só em trânsito no n8n; n8n Data Tables guardam IDs | entregar o lead ao CRM do cliente | instrução do cliente (controlador) | operadora |
+| Avisos do WhatsApp | Contatos que escrevem ao cliente | payload do webhook (telefone, nome, mensagem) | `integrations.whatsapp_inbound_events` | atribuir conversa ao anúncio | instrução do cliente | operadora |
+| Alertas de falha | Equipe da agência | mensagem de erro do fluxo | Gmail | operação | legítimo interesse | controladora |
+
+## Operadores e suboperadores
+
+| Fornecedor | O que recebe | País |
+|---|---|---|
+| Google Cloud | hospedagem, banco, BigQuery, backups, segredos | EUA |
+| Google (APIs) e Meta (APIs) | chamadas autorizadas | EUA |
+| RD Station | leads, quando o cliente contrata a automação | Brasil/EUA |
+| Z-API, Apify | chamadas com a chave do cliente | Brasil/EUA |
+| Google Workspace (Gmail) | alertas de falha | EUA |
+
+## Pendências fora do código
+
+- Contrato de operador com cada cliente que usa a automação de leads (art. 39), começando pela Credaz.
+- Relatório de impacto (RIPD, art. 38) para o fluxo de leads da Credaz: o público é de crédito consignado e
+  benefícios sociais, potencialmente vulnerável.
+- Aditivo de proteção de dados do Google Cloud aceito no console (base da transferência internacional, art. 33).

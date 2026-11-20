@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { modules } from '@/composition';
@@ -89,6 +90,13 @@ export default async function PaginaDoConvite({
               );
             })}
           </div>
+
+          <p className="portao__nota">
+            Ao conectar, você autoriza {convite.organizationName} a acessar, pela orla, os dados descritos na{' '}
+            <Link href="/privacidade">Política de Privacidade</Link>, conforme os{' '}
+            <Link href="/termos">Termos de Serviço</Link>. Você pode revogar o acesso a qualquer momento na sua conta
+            Google ou Meta.
+          </p>
         </div>
       </main>
     </div>
