@@ -19,6 +19,18 @@ export type CredentialVault = {
 
 export const VAULT_PREFIX = 'n8n:credential:';
 
+export const REFERENCIA_DESCARTADA = 'descartada';
+const PREFIXO_SEM_CREDENCIAL = 'pendente:';
+
+export function semCredencialNoCofre(credentialRef: string): boolean {
+  return credentialRef === REFERENCIA_DESCARTADA || credentialRef.startsWith(PREFIXO_SEM_CREDENCIAL);
+}
+
+export async function descartarCredencial(vault: CredentialVault, credentialRef: string): Promise<DiscardOutcome> {
+  if (semCredencialNoCofre(credentialRef)) return 'descartada';
+  return vault.discard(credentialRef);
+}
+
 export function credentialIdOf(credentialRef: string): string | null {
   if (!credentialRef.startsWith(VAULT_PREFIX)) return null;
 

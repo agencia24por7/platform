@@ -44,9 +44,9 @@ export type ConnectionRepository = {
   insert(input: NewConnection): Promise<Connection>;
   findById(organizationId: string, id: string): Promise<Connection | null>;
   findByExternalId(organizationId: string, platform: string, externalId: string): Promise<Connection | null>;
-  renew(input: NewConnection & { readonly id: string }): Promise<Connection>;
+  renew(input: NewConnection & { readonly id: string }, credentialRefEsperada: string): Promise<Connection | null>;
   list(organizationId: string): Promise<readonly Connection[]>;
-  revogar(organizationId: string, id: string): Promise<WorkflowsDaConexao | null>;
+  revogar(organizationId: string, id: string, credentialRefEsperada: string): Promise<WorkflowsDaConexao | null>;
   trocarColetorRef(organizationId: string, id: string, coletorRef: string): Promise<string | null>;
   trocarExecutorRef(organizationId: string, id: string, executorRef: string): Promise<string | null>;
 };
@@ -65,7 +65,7 @@ export function createConnectionRepository(): ConnectionRepository {
       });
     },
 
-    async renew(input) {
+    async renew(input, credentialRefEsperada) {
       return withTenant(input.organizationId, async (tx) => {
         const rows = (await tx`
           UPDATE integrations.connections
@@ -76,9 +76,9 @@ export function createConnectionRepository(): ConnectionRepository {
               status         = ${input.status ?? 'active'},
               expires_at     = ${input.expiresAt},
               authorized_at  = now()
-          WHERE id = ${input.id}
+          WHERE id = ${input.id} AND credential_ref = ${credentialRefEsperada}
           RETURNING *`) as unknown as Row[];
-        return toConnection(rows[0]!);
+        return rows[0] ? toConnection(rows[0]) : null;
       });
     },
 
@@ -106,12 +106,12 @@ export function createConnectionRepository(): ConnectionRepository {
       });
     },
 
-    async revogar(organizationId, id) {
+    async revogar(organizationId, id, credentialRefEsperada) {
       return withTenant(organizationId, async (tx) => {
         const rows = (await tx`
           WITH antes AS (
             SELECT id, coletor_ref, executor_ref FROM integrations.connections
-            WHERE id = ${id} AND status <> 'revoked'
+            WHERE id = ${id} AND status <> 'revoked' AND credential_ref = ${credentialRefEsperada}
             FOR UPDATE
           )
           UPDATE integrations.connections c

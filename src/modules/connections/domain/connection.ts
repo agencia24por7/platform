@@ -154,6 +154,9 @@ export type NewConnection = Omit<Connection, 'id' | 'status' | 'authorizedAt' | 
   readonly webhookToken?: string | null;
 };
 
+export const MENSAGEM_DE_CONEXAO_ALTERADA =
+  'Esta conexão foi alterada por outra requisição ao mesmo tempo. Nada foi perdido: recarregue a página e confira o estado antes de tentar de novo.';
+
 export const CREDENCIAL_SEM_COFRE = 'pendente:cofre-indisponivel';
 
 export function readinessOf(connection: Pick<Connection, 'status' | 'credentialRef'>): {

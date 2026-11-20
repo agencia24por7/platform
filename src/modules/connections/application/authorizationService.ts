@@ -3,9 +3,10 @@ import { executarComCompensacao } from '@/shared/result/compensacao';
 import { err, ok, type Result } from '@/shared/result/result';
 import { logger } from '@/shared/logging/logger';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
-import type { CredentialVault } from '@/modules/connections/application/credentialVault';
+import { descartarCredencial, type CredentialVault } from '@/modules/connections/application/credentialVault';
 import {
   CREDENCIAL_SEM_COFRE,
+  MENSAGEM_DE_CONEXAO_ALTERADA,
   veiculaAnuncio,
   type Connection,
   type GrantType,
@@ -322,13 +323,21 @@ export function createAuthorizationService(
       };
 
       const connection = await executarComCompensacao(
-        () => (already ? connections.renew({ ...proposta, id: already.id }) : connections.insert(proposta)),
+        () =>
+          already
+            ? connections.renew({ ...proposta, id: already.id }, already.credentialRef)
+            : connections.insert(proposta),
         descartarCredencialNova,
       );
 
+      if (!connection) {
+        await descartarCredencialNova();
+        return err(failure('conflict', MENSAGEM_DE_CONEXAO_ALTERADA));
+      }
+
       const credencialTrocada =
         already && already.credentialRef !== credentialRef ? already.credentialRef : null;
-      const descarte = credencialTrocada ? await vault.discard(credencialTrocada) : null;
+      const descarte = credencialTrocada ? await descartarCredencial(vault, credencialTrocada) : null;
 
       if (vault.available && connection.credentialRef !== CREDENCIAL_SEM_COFRE) {
         try {

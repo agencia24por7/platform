@@ -1,6 +1,6 @@
 import { env } from '@/shared/config/env';
 import { logger } from '@/shared/logging/logger';
-import { credentialIdOf } from '@/modules/connections/application/credentialVault';
+import { credentialIdOf, semCredencialNoCofre } from '@/modules/connections/application/credentialVault';
 import type { CredentialVault, VaultSecret } from '@/modules/connections/application/credentialVault';
 
 import type { Platform } from '@/modules/connections/domain/connection';
@@ -52,6 +52,7 @@ export function createN8nCredentialVault(): CredentialVault {
     available,
 
     async discard(credentialRef: string) {
+      if (semCredencialNoCofre(credentialRef)) return 'descartada' as const;
       if (!available) return 'indisponivel' as const;
 
       const id = credentialIdOf(credentialRef);
