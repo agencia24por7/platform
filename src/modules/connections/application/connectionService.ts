@@ -28,6 +28,7 @@ import type { DiscoveredAccountRepository } from '@/modules/connections/infrastr
 import { logger } from '@/shared/logging/logger';
 import { avisarMudancaDePosse, semAvisoDePosse, type AvisoDePosse } from '@/modules/connections/application/avisoDePosse';
 import { liberarContasDaConexao } from '@/modules/connections/application/liberacaoDeContas';
+import { executarComCompensacao } from '@/shared/result/compensacao';
 import { randomBytes } from 'node:crypto';
 
 export type LinkAccountInput = Omit<NewAdAccount, 'organizationId'> & {
@@ -144,10 +145,17 @@ export function createConnectionService(
         clientSecret: '',
       });
 
-      const existente = await connections.findByExternalId(
-        input.organizationId,
-        input.platform,
-        identidade,
+      const descartarChaveNova = async (): Promise<void> => {
+        try {
+          await vault.discard(credentialRef);
+        } catch (erro) {
+          logger.error('chave.credencial_orfa', { platform: input.platform, error: erro instanceof Error ? erro.message : 'desconhecido' });
+        }
+      };
+
+      const existente = await executarComCompensacao(
+        () => connections.findByExternalId(input.organizationId, input.platform, identidade),
+        descartarChaveNova,
       );
 
       const webhookToken =
@@ -168,9 +176,10 @@ export function createConnectionService(
         authorizedVia: 'staff' as const,
       };
 
-      const connection = existente
-        ? await connections.renew({ ...proposta, id: existente.id })
-        : await connections.insert(proposta);
+      const connection = await executarComCompensacao(
+        () => (existente ? connections.renew({ ...proposta, id: existente.id }) : connections.insert(proposta)),
+        descartarChaveNova,
+      );
 
       if (existente && existente.credentialRef !== credentialRef) {
         await vault.discard(existente.credentialRef);
