@@ -23,6 +23,19 @@ export const dynamic = 'force-dynamic';
 const STATE_COOKIE = 'tria_oauth_state';
 const VERIFIER_COOKIE = 'tria_oauth_verifier';
 
+function motivoDoStateInvalido(
+  temCookie: boolean,
+  binding: StateCookie | null,
+  plataforma: string,
+  recebido: string | null,
+): string {
+  if (!temCookie) return 'sem_cookie';
+  if (!binding) return 'cookie_invalido';
+  if (!binding.state.startsWith(`${plataforma}.`)) return 'outra_plataforma';
+  if (!recebido) return 'sem_state_na_volta';
+  return 'state_divergente';
+}
+
 function clear(response: NextResponse): NextResponse {
   response.cookies.delete(STATE_COOKIE);
   response.cookies.delete(VERIFIER_COOKIE);
@@ -159,7 +172,10 @@ export async function GET(
     !expectedState.startsWith(`${plataforma}.`) ||
     !secureCompare(query.get('state') ?? '', expectedState)
   ) {
-    logger.warn('oauth.callback.state_mismatch', { platform });
+    logger.warn('oauth.callback.state_mismatch', {
+      platform,
+      motivo: motivoDoStateInvalido(request.cookies.has(STATE_COOKIE), binding, plataforma, query.get('state')),
+    });
     return backTo('estado_invalido', origem, platform);
   }
 
