@@ -29,7 +29,7 @@ export type UserRepository = {
   membershipsOf(userId: string): Promise<readonly Membership[]>;
   addMember(organizationId: string, userId: string, role: MemberRole): Promise<void>;
   countMembers(organizationId: string): Promise<number>;
-  encerrarSessoes(userId: string): Promise<void>;
+  encerrarSessoes(userId: string, em: Date): Promise<void>;
   sessaoValida(userId: string, emitidaEm: Date): Promise<boolean>;
 };
 
@@ -47,9 +47,9 @@ export function createUserRepository(): UserRepository {
       });
     },
 
-    async encerrarSessoes(userId) {
+    async encerrarSessoes(userId, em) {
       await withoutTenant(async (tx) => {
-        await tx`SELECT core.encerrar_sessoes(${userId})`;
+        await tx`SELECT core.encerrar_sessoes(${userId}, ${em})`;
       });
     },
 

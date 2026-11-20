@@ -69,5 +69,5 @@ export function membershipFor(
 }
 
 export function sessaoAindaValida(user: Pick<User, 'sessoesValidasDesde'>, sessaoEmitidaEm: number): boolean {
-  return !user.sessoesValidasDesde || sessaoEmitidaEm >= user.sessoesValidasDesde.getTime();
+  return !user.sessoesValidasDesde || sessaoEmitidaEm > user.sessoesValidasDesde.getTime();
 }

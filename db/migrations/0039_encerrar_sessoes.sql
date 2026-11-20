@@ -12,21 +12,26 @@ END $$;
 ALTER TABLE core.users ADD COLUMN IF NOT EXISTS sessoes_validas_desde timestamptz;
 
 COMMENT ON COLUMN core.users.sessoes_validas_desde IS
-  'Sessões emitidas antes deste instante são recusadas. O logout e a anonimização do titular gravam now(): a sessão é um HMAC sem estado e, sem isso, um token copiado valeria até expirar (12h).';
+  'Sessões emitidas antes deste instante são recusadas. O logout grava o instante do relógio do app e a anonimização grava now(): a sessão é um HMAC sem estado e, sem isso, um token copiado valeria até expirar (12h).';
 
-CREATE OR REPLACE FUNCTION core.encerrar_sessoes(p_usuario uuid)
+CREATE OR REPLACE FUNCTION core.encerrar_sessoes(p_usuario uuid, p_em timestamptz)
 RETURNS void
 LANGUAGE sql
 SECURITY DEFINER
 SET search_path = pg_catalog, public
 VOLATILE
 AS $$
-  UPDATE core.users SET sessoes_validas_desde = now() WHERE id = p_usuario;
+  UPDATE core.users
+     SET sessoes_validas_desde = greatest(coalesce(sessoes_validas_desde, p_em), p_em)
+   WHERE id = p_usuario;
 $$;
 
-REVOKE ALL ON FUNCTION core.encerrar_sessoes(uuid) FROM PUBLIC;
+COMMENT ON FUNCTION core.encerrar_sessoes IS
+  'Recebe o instante do relógio do app, o mesmo que assina o issuedAt das sessões: corte e emissão vêm do mesmo relógio.';
+
+REVOKE ALL ON FUNCTION core.encerrar_sessoes(uuid, timestamptz) FROM PUBLIC;
 DO $$ BEGIN
-  EXECUTE format('GRANT EXECUTE ON FUNCTION core.encerrar_sessoes(uuid) TO %I', current_setting('sessao.papel_app'));
+  EXECUTE format('GRANT EXECUTE ON FUNCTION core.encerrar_sessoes(uuid, timestamptz) TO %I', current_setting('sessao.papel_app'));
 END $$;
 
 CREATE OR REPLACE FUNCTION core.sessao_valida(p_usuario uuid, p_emitida_em timestamptz)
@@ -38,7 +43,7 @@ STABLE
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM core.users
-     WHERE id = p_usuario AND (sessoes_validas_desde IS NULL OR sessoes_validas_desde <= p_emitida_em)
+     WHERE id = p_usuario AND (sessoes_validas_desde IS NULL OR p_emitida_em > sessoes_validas_desde)
   );
 $$;
 

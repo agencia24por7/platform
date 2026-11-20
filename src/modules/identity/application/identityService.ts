@@ -64,7 +64,7 @@ export function createIdentityService(users: UserRepository, audit: AuditRecorde
     },
 
     async encerrarSessoes(userId) {
-      await users.encerrarSessoes(userId);
+      await users.encerrarSessoes(userId, new Date());
     },
 
     async sessaoValida(userId, sessaoEmitidaEm) {
