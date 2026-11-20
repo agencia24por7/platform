@@ -21,7 +21,7 @@ export function veiculaAnuncio(platform: Platform): platform is PlataformaDeAnun
   return (PLATAFORMAS_DE_ANUNCIO as readonly string[]).includes(platform);
 }
 
-export const PLATAFORMAS_COM_RECURSO = ['ga4', 'gtm', 'searchconsole', 'youtube', 'gbp'] as const;
+export const PLATAFORMAS_COM_RECURSO = ['ga4', 'gtm', 'searchconsole', 'youtube', 'gbp', 'rdstation', 'apify', 'zapi'] as const;
 export type PlataformaComRecurso = (typeof PLATAFORMAS_COM_RECURSO)[number];
 
 export function temRecursoParaVincular(platform: Platform): platform is PlataformaComRecurso {
@@ -34,6 +34,9 @@ export const ROTULO_DO_RECURSO: Record<PlataformaComRecurso, string> = {
   searchconsole: 'Site',
   youtube: 'Canal',
   gbp: 'Local',
+  rdstation: 'Conta',
+  apify: 'Conta',
+  zapi: 'Instância',
 };
 
 const RECURSO_FEMININO: Record<PlataformaComRecurso, boolean> = {
@@ -42,6 +45,9 @@ const RECURSO_FEMININO: Record<PlataformaComRecurso, boolean> = {
   searchconsole: false,
   youtube: false,
   gbp: false,
+  rdstation: true,
+  apify: true,
+  zapi: true,
 };
 
 export function concordaComRecurso(platform: PlataformaComRecurso, masculino: string, feminino: string): string {

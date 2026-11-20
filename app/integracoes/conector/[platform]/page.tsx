@@ -637,7 +637,9 @@ export default async function ConectorPage({
 
             {recursosPendentes.length === 0 ? (
               <div className="empty">
-                Os recursos aparecem aqui depois que você autoriza a plataforma.
+                {usaChaveDeApi(plataforma)
+                  ? `A ${ROTULO_DO_RECURSO[plataforma].toLowerCase()} aparece aqui depois que a chave é guardada.`
+                  : 'Os recursos aparecem aqui depois que você autoriza a plataforma.'}
               </div>
             ) : (
               <div className="table-wrap">

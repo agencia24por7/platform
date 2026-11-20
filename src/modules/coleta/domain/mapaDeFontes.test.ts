@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { ModoColeta, fonteDe, fontesAtivasNoV1, janelaAteOntem, janelaDias, limiteLinhas } from './mapaDeFontes.ts';
+import { ModoColeta, fonteDe, fontesAtivasNoV1, janelaAteOntem, janelaDias, limiteLinhas, plataformasColetaveis } from './mapaDeFontes.ts';
 
 describe('fontesAtivasNoV1', () => {
   it('traz só as 7 fontes com série temporal ou snapshot prontos', () => {
@@ -22,6 +22,14 @@ describe('fontesAtivasNoV1', () => {
       assert.equal(fonte.ativaNoV1, false);
       assert.ok(fonte.motivoForaDoV1 && fonte.motivoForaDoV1.length > 0);
     }
+  });
+});
+
+describe('plataformasColetaveis', () => {
+  it('o orquestrador só recebe fontes de plataforma com coletor: conta vinculada por chave fica de fora', () => {
+    const coletaveis = plataformasColetaveis();
+    assert.deepEqual([...coletaveis].sort(), ['gbp', 'google', 'gtm', 'ga4', 'meta', 'searchconsole', 'youtube'].sort());
+    for (const platform of ['rdstation', 'apify', 'zapi'] as const) assert.ok(!coletaveis.includes(platform));
   });
 });
 

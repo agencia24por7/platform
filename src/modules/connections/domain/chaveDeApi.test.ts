@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   CONTA_UNICA,
+  contaDaChave,
   identidadeDaConexao,
   montarChaveZapi,
   partesDaChaveZapi,
@@ -69,4 +70,18 @@ test('chave do Z-API sem os dois-pontos, ou com mais de um, é recusada', () => 
   assert.equal(partesDaChaveZapi('a:b:c'), null);
   assert.equal(partesDaChaveZapi(':semid'), null);
   assert.equal(partesDaChaveZapi('semtoken:'), null);
+});
+
+test('a conexão por chave rende uma única conta vinculável, com a identidade e o rótulo da conexão', () => {
+  const conta = contaDaChave({ platform: 'rdstation', externalId: CONTA_UNICA, label: 'RD Station CRM · abcd••••wxyz' });
+  assert.deepEqual(conta, {
+    platform: 'rdstation',
+    externalId: CONTA_UNICA,
+    name: 'RD Station CRM · abcd••••wxyz',
+    currency: 'BRL',
+    timezone: 'America/Sao_Paulo',
+    managerExternalId: null,
+    spendingLast30Days: null,
+    inactive: false,
+  });
 });

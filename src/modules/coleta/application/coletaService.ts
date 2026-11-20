@@ -3,7 +3,7 @@ import { err, ok, type Result } from '@/shared/result/result';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import type { AbrirColetaInput, Coleta, FecharColetaInput, FonteElegivel } from '@/modules/coleta/domain/coleta';
 import { isJanelaSana } from '@/modules/coleta/domain/coleta';
-import { fonteDe, janelaAteOntem, janelaDias, type ModoColeta } from '@/modules/coleta/domain/mapaDeFontes';
+import { fonteDe, janelaAteOntem, janelaDias, plataformasColetaveis, type ModoColeta } from '@/modules/coleta/domain/mapaDeFontes';
 import type { ColetaRepository } from '@/modules/coleta/infrastructure/coletaRepository';
 import type { BigQueryGravador } from '@/modules/coleta/infrastructure/bigQueryGravador';
 
@@ -23,7 +23,7 @@ export type ColetaService = {
 export function createColetaService(coletas: ColetaRepository, audit: AuditRecorder, bigQuery: BigQueryGravador): ColetaService {
   return {
     async fontes(limit, modo, worker) {
-      const brutas = await coletas.fontes(limit);
+      const brutas = await coletas.fontes(limit, plataformasColetaveis());
       const entries = brutas.map((fonte) => ({ ...fonte, janelaSugerida: janelaAteOntem(fonte.platform, modo) }));
       await audit.record({
         organizationId: null,
