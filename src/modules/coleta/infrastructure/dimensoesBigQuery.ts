@@ -2,6 +2,7 @@ import { BigQuery } from '@google-cloud/bigquery';
 import { env } from '@/shared/config/env';
 import type { EstadoDaFonte, EstadoDoCliente, NovaVersao, PlanoScd2, VersaoExistente } from '@/modules/coleta/domain/dimensoes';
 import { linhaParaBigQuery, paraParametroBigQuery } from '@/modules/coleta/infrastructure/parametrosBigQuery';
+import { comRetentativa } from '@/modules/coleta/infrastructure/retentativaBigQuery';
 
 type ConfiguracaoDaDimensao<A> = {
   readonly tabela: string;
@@ -121,16 +122,19 @@ export function createDimensoesBigQuery(): DimensoesBigQuery {
       COMMIT TRANSACTION;
     `;
 
-    const [job] = await cliente().createQueryJob({
-      query,
-      params: {
-        agora: paraParametroBigQuery(plano.agora, 'TIMESTAMP'),
-        fechar: [...plano.fechar],
-        novas: plano.inserir.map((versao) => linhaParaBigQuery(cfg.linha(versao), cfg.tipos)),
-      },
-      types: { agora: 'TIMESTAMP', fechar: ['STRING'], novas: [cfg.tipos] },
+    await comRetentativa(async () => {
+      const [job] = await cliente().createQueryJob({
+        query,
+        maximumBytesBilled: String(config.BQ_MAXIMO_BYTES_FATURADOS),
+        params: {
+          agora: paraParametroBigQuery(plano.agora, 'TIMESTAMP'),
+          fechar: [...plano.fechar],
+          novas: plano.inserir.map((versao) => linhaParaBigQuery(cfg.linha(versao), cfg.tipos)),
+        },
+        types: { agora: 'TIMESTAMP', fechar: ['STRING'], novas: [cfg.tipos] },
+      });
+      await job.getQueryResults();
     });
-    await job.getQueryResults();
   }
 
   return {

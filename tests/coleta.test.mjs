@@ -179,12 +179,12 @@ describe('camada de coleta', { concurrency: false }, () => {
     assert.equal(response.status, 404);
   });
 
-  it('gravar recusa quando o BigQuery não está configurado neste ambiente', async () => {
+  it('gravar recusa coleta já fechada, antes de tocar no BigQuery', async () => {
     const response = await post('/api/v0/coleta/gravar', {
       coletaId,
       linhas: [{ externalCampaignId: 'c1', metricDate: '2026-11-01', spend: 10 }],
     });
-    assert.equal(response.status, 503);
+    assert.equal(response.status, 409);
   });
 
   it('não permite encerrar duas vezes', async () => {

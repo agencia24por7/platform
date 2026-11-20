@@ -8,10 +8,14 @@ CREATE TABLE IF NOT EXISTS `{{DATASET}}.gov_snapshot_fontes` (
   inactive          BOOL,
   rotulo_esperado   STRING,
   rotulo_observado  STRING,
-  visto_em          TIMESTAMP NOT NULL
+  visto_em          TIMESTAMP NOT NULL,
+  execucao_id       STRING
 )
 PARTITION BY DATE(visto_em)
 CLUSTER BY organization_id, platform, fonte_id;
+
+ALTER TABLE `{{DATASET}}.gov_snapshot_fontes`
+ADD COLUMN IF NOT EXISTS execucao_id STRING;
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.gov_paridade` (
   organization_id  STRING NOT NULL,

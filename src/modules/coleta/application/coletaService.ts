@@ -3,6 +3,7 @@ import { err, ok, type Result } from '@/shared/result/result';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import type { AbrirColetaInput, Coleta, FecharColetaInput, FonteElegivel } from '@/modules/coleta/domain/coleta';
 import { isJanelaSana } from '@/modules/coleta/domain/coleta';
+import { recusaDaGravacao } from '@/modules/coleta/domain/gravacaoPermitida';
 import { fonteDe, janelaAteOntem, janelaDias, plataformasColetaveis, type ModoColeta } from '@/modules/coleta/domain/mapaDeFontes';
 import type { ColetaRepository } from '@/modules/coleta/infrastructure/coletaRepository';
 import type { BigQueryGravador } from '@/modules/coleta/infrastructure/bigQueryGravador';
@@ -90,7 +91,8 @@ export function createColetaService(coletas: ColetaRepository, audit: AuditRecor
 
     async gravar(input, worker) {
       const contexto = await coletas.resolveContextoDeGravacao(input.coletaId);
-      if (!contexto) return err(failure('not_found', 'Execução não encontrada.'));
+      const recusa = recusaDaGravacao(contexto);
+      if (recusa || !contexto) return err(failure(recusa?.codigo ?? 'not_found', recusa?.mensagem ?? 'Execução não encontrada.'));
 
       const resultado = await bigQuery.gravar(contexto.platform, input.linhas, {
         organizationId: contexto.organizationId,

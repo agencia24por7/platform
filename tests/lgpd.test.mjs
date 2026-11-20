@@ -136,7 +136,7 @@ describe('retenção e direitos do titular', { concurrency: false }, () => {
        VALUES ('${org}', '${cliente}', '${conexao}', 'google', '123-${String(marca).slice(-3)}-${sufixo}', 'Conta ${nome}')
        RETURNING id`,
     ));
-    return { cliente, conta };
+    return { cliente, conta, conexao };
   };
 
   const naOrganizacao = (sql) => comoApp(`SET app.organization_id = '${org}'; SET app.client_ids = '*'; ${sql}`);
@@ -197,5 +197,59 @@ describe('retenção e direitos do titular', { concurrency: false }, () => {
     assert.equal(umaLinha(dono(`SELECT count(*) FROM integrations.ad_accounts WHERE client_id = '${cliente}'`)), '0');
     assert.equal(umaLinha(dono(
       `SELECT count(*) FROM audit.audit_log WHERE action = 'client.purged' AND target_id = '${cliente}'`)), '1');
+  });
+
+  it('expurgar tira o nome do cliente da trilha e devolve os recursos dele a descoberto', () => {
+    const { cliente, conta, conexao } = clienteComConta('Purga', '0004');
+    const recurso = umaLinha(dono(
+      `INSERT INTO integrations.connection_accounts (organization_id, connection_id, platform, external_id, name, state, client_id)
+       VALUES ('${org}', '${conexao}', 'rdstation', 'rd-${marca}', 'RD Purga', 'linked', '${cliente}') RETURNING id`,
+    ));
+    const espelho = umaLinha(dono(
+      `INSERT INTO integrations.connection_accounts (organization_id, connection_id, platform, external_id, name, state, ad_account_id)
+       VALUES ('${org}', '${conexao}', 'google', 'g-${marca}', 'Conta Purga', 'linked', '${conta}') RETURNING id`,
+    ));
+    const movida = umaLinha(dono(
+      `INSERT INTO audit.audit_log (organization_id, actor_type, action, target_type, target_id, metadata)
+       VALUES ('${org}', 'user', 'ad_account.reassigned', 'ad_account', '${conta}',
+               '{"de": "Purga", "deId": "${cliente}", "para": "Outro"}') RETURNING id`,
+    ));
+    const criado = umaLinha(dono(
+      `INSERT INTO audit.audit_log (organization_id, actor_type, action, target_type, target_id, metadata)
+       VALUES ('${org}', 'user', 'client.created', 'client', '${cliente}', '{"name": "Purga"}') RETURNING id`,
+    ));
+
+    const resumo = JSON.parse(dono(`SELECT core.expurgar_cliente('${cliente}')`));
+    assert.equal(resumo.recursosLiberados, 2);
+    assert.equal(resumo.auditoriaAnonimizada, 2);
+
+    assert.equal(umaLinha(dono(
+      `SELECT state || '|' || (client_id IS NULL) || '|' || (ad_account_id IS NULL)
+       FROM integrations.connection_accounts WHERE id = '${recurso}'`)), 'discovered|true|true');
+    assert.equal(umaLinha(dono(`SELECT state FROM integrations.connection_accounts WHERE id = '${espelho}'`)), 'discovered');
+    assert.equal(umaLinha(dono(
+      `SELECT (metadata ->> 'de') || '|' || (metadata ->> 'para') FROM audit.audit_log WHERE id = '${movida}'`)),
+      '[cliente expurgado]|Outro');
+    assert.equal(umaLinha(dono(`SELECT metadata ->> 'name' FROM audit.audit_log WHERE id = '${criado}'`)), '[cliente expurgado]');
+    assert.equal(umaLinha(dono(
+      `SELECT count(*) FROM audit.audit_log WHERE organization_id = '${org}' AND metadata::text LIKE '%"Purga"%'`)), '0');
+  });
+
+  it('o dono anterior vem do deId; nome antigo repetido entre clientes fica desconhecido', () => {
+    const { cliente: antigo } = clienteComConta('Homonimo', '0005');
+    dono(`SELECT core.excluir_cliente('${antigo}', 'teste')`);
+    const { conta } = clienteComConta('Homonimo', '0006');
+    const externo = umaLinha(dono(`SELECT external_id FROM integrations.ad_accounts WHERE id = '${conta}'`));
+    dono(
+      `INSERT INTO audit.audit_log (organization_id, occurred_at, actor_type, action, target_type, target_id, metadata) VALUES
+       ('${org}', now() - interval '2 days', 'user', 'ad_account.reassigned', 'ad_account', '${conta}', '{"de": "Homonimo"}'),
+       ('${org}', now() - interval '1 day', 'user', 'ad_account.reassigned', 'ad_account', '${conta}',
+        '{"de": "Homonimo", "deId": "${antigo}"}')`,
+    );
+    const linhas = dono(
+      `SELECT dono_conhecido || '|' || coalesce(client_id_anterior::text, '-')
+       FROM automation.dimensao_mudancas_de_posse() WHERE external_id = '${externo}' ORDER BY em`,
+    ).split('\n');
+    assert.deepEqual(linhas, ['false|-', `true|${antigo}`]);
   });
 });

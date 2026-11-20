@@ -97,6 +97,8 @@ export type ContextoDeGravacao = {
   readonly platform: Platform;
   readonly externalId: string;
   readonly currency: string;
+  readonly coletaStatus: string;
+  readonly clienteExcluido: boolean;
 };
 
 export type ColetaRepository = {
@@ -133,16 +135,27 @@ export function createColetaRepository(): ColetaRepository {
 
     async resolveContextoDeGravacao(coletaId) {
       const rows = (await sql()`
-        SELECT organization_id, client_id, platform, external_id, currency FROM automation.resolve_coleta_contexto(${coletaId})`) as unknown as {
+        SELECT organization_id, client_id, platform, external_id, currency, coleta_status, cliente_excluido
+        FROM automation.resolve_coleta_contexto(${coletaId})`) as unknown as {
         organization_id: string;
         client_id: string;
         platform: Platform;
         external_id: string;
         currency: string;
+        coleta_status: string;
+        cliente_excluido: boolean;
       }[];
       const found = rows[0];
       return found
-        ? { organizationId: found.organization_id, clientId: found.client_id, platform: found.platform, externalId: found.external_id, currency: found.currency }
+        ? {
+            organizationId: found.organization_id,
+            clientId: found.client_id,
+            platform: found.platform,
+            externalId: found.external_id,
+            currency: found.currency,
+            coletaStatus: found.coleta_status,
+            clienteExcluido: found.cliente_excluido,
+          }
         : null;
     },
 

@@ -79,6 +79,7 @@ describe('remover conexão libera as contas descobertas', () => {
       externalId: 'ext-ca1',
       connectionId: 'conn1',
       de: 'Credaz',
+      deId: 'credaz',
       motivo: MOTIVO_DA_LIBERACAO,
     });
   });

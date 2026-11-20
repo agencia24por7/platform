@@ -8,11 +8,14 @@ import {
   agruparPorTabela,
   colunasDoStagingScd2,
   dividirEmLotes,
+  separarPorChaveValida,
   sqlInsercaoPorUnnest,
   sqlMergeFato,
+  sqlMergeSnapshot,
   sqlScd2,
   tiposDoStagingScd2,
 } from '@/modules/coleta/infrastructure/sqlDaGravacao';
+import { ambienteReal, comRetentativa } from '@/modules/coleta/infrastructure/retentativaBigQuery';
 import { TABELAS_POR_PLATAFORMA } from '@/modules/coleta/infrastructure/tabelas';
 import {
   agora,
@@ -48,6 +51,9 @@ export type BigQueryGravador = {
   }): Promise<void>;
 };
 
+const nomeDaTabela = (cfg: ConfiguracaoTabela): string =>
+  cfg.tipo === 'fato' ? cfg.fato : cfg.tipo === 'scd2' ? cfg.dimensao : cfg.tabela;
+
 export function createBigQueryGravador(): BigQueryGravador {
   const config = env();
   const available = Boolean(config.BQ_PROJECT_ID);
@@ -55,9 +61,18 @@ export function createBigQueryGravador(): BigQueryGravador {
   const dataset = config.BQ_DATASET;
   const tabela = (nome: string) => `\`${config.BQ_PROJECT_ID}.${dataset}.${nome}\``;
 
+  const maximumBytesBilled = String(config.BQ_MAXIMO_BYTES_FATURADOS);
+
   async function executar(opcoes: Query): Promise<void> {
-    const [job] = await bigquery!.createQueryJob(opcoes);
-    await job.getQueryResults();
+    await comRetentativa(
+      async () => {
+        const [job] = await bigquery!.createQueryJob({ ...opcoes, maximumBytesBilled });
+        await job.getQueryResults();
+      },
+      undefined,
+      ambienteReal((tentativa, erro) =>
+        logger.warn('coleta.bigquery.retentativa', { tentativa, error: erro instanceof Error ? erro.message : 'desconhecido' })),
+    );
   }
 
   async function inserirLinhas(destino: string, colunas: readonly string[], tipos: TiposDasColunas, linhas: readonly Record<string, unknown>[]): Promise<void> {
@@ -68,7 +83,11 @@ export function createBigQueryGravador(): BigQueryGravador {
   }
 
   const doLote = (ctx: ContextoGravacao, inseridoEm: string) => ({
-    params: { execucaoId: ctx.execucaoId, inseridoEm: paraParametroBigQuery(inseridoEm, 'TIMESTAMP') },
+    params: {
+      execucaoId: ctx.execucaoId,
+      inseridoEm: paraParametroBigQuery(inseridoEm, 'TIMESTAMP'),
+      organizationId: ctx.organizationId,
+    },
     types: { inseridoEm: 'TIMESTAMP' },
   });
 
@@ -91,19 +110,25 @@ export function createBigQueryGravador(): BigQueryGravador {
     });
   }
 
-  async function gravarSnapshot(cfg: ConfiguracaoSnapshot, mapeadas: readonly Record<string, unknown>[]): Promise<void> {
-    await inserirLinhas(cfg.tabela, Object.keys(cfg.tipos), cfg.tipos, mapeadas);
+  async function gravarSnapshot(cfg: ConfiguracaoSnapshot, mapeadas: readonly Record<string, unknown>[], ctx: ContextoGravacao): Promise<void> {
+    const colunas = Object.keys(cfg.tipos);
+    const query = sqlMergeSnapshot(tabela(cfg.tabela), { chave: cfg.chave, colunas, colunaMomento: cfg.colunaMomento });
+    for (const lote of dividirEmLotes(mapeadas.map((linha) => linhaParaBigQuery(linha, cfg.tipos)))) {
+      await executar({ query, params: { linhas: lote, organizationId: ctx.organizationId }, types: { linhas: [cfg.tipos] } });
+    }
   }
 
   async function gravarTabela(cfg: ConfiguracaoTabela, linhas: readonly LinhaBruta[], ctx: ContextoGravacao): Promise<number> {
     const preparadas = cfg.preparar ? cfg.preparar(linhas) : linhas;
     if (preparadas.length === 0) return 0;
-    const mapeadas = preparadas.map((linha) => cfg.mapear(linha, ctx));
+    const { validas, descartadas } = separarPorChaveValida(preparadas.map((linha) => cfg.mapear(linha, ctx)), cfg.chave, cfg.tipos);
+    if (descartadas > 0) logger.warn('coleta.bigquery.chave_invalida', { tabela: nomeDaTabela(cfg), descartadas });
+    if (validas.length === 0) return 0;
 
-    if (cfg.tipo === 'fato') await gravarFato(cfg, mapeadas, ctx);
-    else if (cfg.tipo === 'scd2') await gravarScd2(cfg, mapeadas, ctx);
-    else await gravarSnapshot(cfg, mapeadas);
-    return mapeadas.length;
+    if (cfg.tipo === 'fato') await gravarFato(cfg, validas, ctx);
+    else if (cfg.tipo === 'scd2') await gravarScd2(cfg, validas, ctx);
+    else await gravarSnapshot(cfg, validas, ctx);
+    return validas.length;
   }
 
   return {
@@ -152,6 +177,7 @@ export function createBigQueryGravador(): BigQueryGravador {
 
         const [job] = await bigquery.createQueryJob({
           query,
+          maximumBytesBilled,
           params: {
             organizationId: execucao.organizationId,
             clientId: execucao.clientId,
