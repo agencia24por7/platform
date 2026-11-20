@@ -80,3 +80,11 @@ npm run n8n:sincronizar -- --conexoes conexoes.json --aplicar  # grava
 - Correção de rumo: antes deste adendo a sincronização incluía esses fluxos e chegou a acrescentar neles a nota
   de origem e a desligar o salvamento de execuções (rodada de LGPD). Isso foi feito pela plataforma em fluxos
   que não são dela; reverter ou manter é decisão de quem os opera.
+
+## Adendo (2026-11-20): vínculo por identificador, não por nome nem por tag
+
+- Coletores e executores por conexão: pelo ID do workflow gravado na conexão (`coletor_ref`, `executor_ref`).
+- Workflows da plataforma: pelo **arquivo de origem gravado na nota** do próprio workflow. Renomear no editor não
+  quebra o vínculo. O nome serve só para **adotar** um workflow que ainda não tem nota; dois candidatos com o
+  mesmo arquivo ou o mesmo nome param a sincronização em vez de escolher um.
+- Tags são só identificação visual: nenhum código seleciona ou filtra workflows por tag.

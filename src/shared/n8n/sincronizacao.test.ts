@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { MODELO_DE_COLETOR, MODELO_DE_EXECUTOR, PASTAS_DE_MODELO } from './modelos.ts';
-import { NOTA_DE_ORIGEM, mesclar, versaoDoModelo, versaoImplantada, type Workflow } from './sincronizacao.ts';
+import { NOTA_DE_ORIGEM, arquivoDeOrigem, localizarImplantado, mesclar, versaoDoModelo, versaoImplantada, type Workflow } from './sincronizacao.ts';
 
 const CREDENCIAL_REAL = { id: 'AbCdEfGh12345678', name: 'ORLA · worker token' };
 const ARQUIVO = 'n8n/workflows/exemplo.json';
@@ -123,5 +123,21 @@ describe('sincronização de workflows do n8n', () => {
 
     const arquivos = PASTAS_DE_MODELO.flatMap((pasta) => readdirSync(pasta).map((arquivo) => `${pasta}${arquivo}`));
     for (const arquivo of arquivos) assert.ok(mapeados.has(arquivo), `${arquivo} fora do mapa de modelos`);
+  });
+  it('localiza pelo arquivo de origem gravado na nota, mesmo se o workflow foi renomeado', () => {
+    const { corpo } = mesclar(doRepositorio, implantado, 'Nome antigo', ARQUIVO);
+    const renomeado = { ...(corpo as Workflow), name: 'Alguém renomeou no editor', id: 'wfA' };
+    const homonimo = { ...implantado, name: doRepositorio.name, id: 'wfB' };
+
+    assert.equal(arquivoDeOrigem(renomeado), ARQUIVO);
+    const achado = localizarImplantado(ARQUIVO, doRepositorio.name, [homonimo, renomeado]);
+    assert.equal(achado?.workflow.id, 'wfA');
+    assert.equal(achado?.por, 'arquivo');
+  });
+
+  it('só adota pelo nome quem ainda não tem origem, e recusa ambiguidade', () => {
+    const semNota = { ...implantado, id: 'wfC' };
+    assert.equal(localizarImplantado(ARQUIVO, implantado.name, [semNota])?.por, 'nome');
+    assert.throws(() => localizarImplantado(ARQUIVO, implantado.name, [semNota, { ...semNota, id: 'wfD' }]), /mais de um/);
   });
 });

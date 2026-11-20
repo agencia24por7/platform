@@ -29,6 +29,7 @@ export const NOTA_DE_ORIGEM = 'Origem no repositório';
 
 const MARCADOR = /^a-definir/;
 const VERSAO_NA_NOTA = /versão: ([0-9a-f]{16})/;
+const ARQUIVO_NA_NOTA = /Arquivo: `([^`]+)`/;
 
 const ehExpressao = (valor: unknown) => typeof valor === 'string' && valor.startsWith('=');
 
@@ -94,6 +95,25 @@ export function versaoDoModelo(modelo: Workflow): string {
 export function versaoImplantada(implantado: Workflow): string | null {
   const nota = implantado.nodes.find((no) => no.name === NOTA_DE_ORIGEM);
   return String(nota?.parameters?.['content'] ?? '').match(VERSAO_NA_NOTA)?.[1] ?? null;
+}
+
+export function arquivoDeOrigem(implantado: Workflow): string | null {
+  const nota = implantado.nodes.find((no) => no.name === NOTA_DE_ORIGEM);
+  return String(nota?.parameters?.['content'] ?? '').match(ARQUIVO_NA_NOTA)?.[1] ?? null;
+}
+
+export function localizarImplantado<W extends Workflow>(
+  arquivo: string,
+  nome: string,
+  implantados: readonly W[],
+): { readonly workflow: W; readonly por: 'arquivo' | 'nome' } | null {
+  const porArquivo = implantados.filter((workflow) => arquivoDeOrigem(workflow) === arquivo);
+  if (porArquivo.length === 1) return { workflow: porArquivo[0]!, por: 'arquivo' };
+  if (porArquivo.length > 1) throw new Error(`mais de um workflow implantado aponta para ${arquivo}`);
+
+  const semOrigem = implantados.filter((workflow) => workflow.name === nome && arquivoDeOrigem(workflow) === null);
+  if (semOrigem.length > 1) throw new Error(`mais de um workflow sem origem chamado "${nome}"`);
+  return semOrigem[0] ? { workflow: semOrigem[0], por: 'nome' } : null;
 }
 
 function notaDeOrigem(arquivo: string, versao: string): No {
