@@ -101,6 +101,42 @@ montar_disco_dados() {
 
 montar_disco_dados
 
+configurar_limpeza() {
+  mkdir -p /etc/systemd/journald.conf.d
+  printf '[Journal]\nSystemMaxUse=200M\nMaxRetentionSec=1month\n' > /etc/systemd/journald.conf.d/tria.conf
+  systemctl restart systemd-journald
+
+  cat > /etc/systemd/system/tria-limpeza.service <<'UNIDADE'
+[Unit]
+Description=Limpeza semanal de imagens, cache e pacotes sem uso
+ConditionPathExists=/usr/bin/docker
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker image prune -af
+ExecStart=/usr/bin/docker builder prune -af --filter until=168h
+ExecStart=/usr/bin/docker container prune -f --filter until=168h
+ExecStart=/usr/bin/apt-get clean
+UNIDADE
+
+  cat > /etc/systemd/system/tria-limpeza.timer <<'UNIDADE'
+[Unit]
+Description=Agenda a limpeza semanal
+
+[Timer]
+OnCalendar=Sun 04:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIDADE
+
+  systemctl daemon-reload
+  systemctl enable --now tria-limpeza.timer
+}
+
+configurar_limpeza
+
 if [ -f /var/lib/tria-provisioned ]; then
   echo "Ja provisionado. Ambiente regravado a partir dos segredos. Subindo a pilha."
   cd "$STACK" && docker compose -f docker-compose.prod.yml up -d

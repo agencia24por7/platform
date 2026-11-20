@@ -76,6 +76,15 @@ resource "google_artifact_registry_repository" "app" {
   description   = "Imagens do app"
 
   cleanup_policies {
+    id     = "apagar-antigas"
+    action = "DELETE"
+    condition {
+      tag_state  = "ANY"
+      older_than = "604800s"
+    }
+  }
+
+  cleanup_policies {
     id     = "manter-recentes"
     action = "KEEP"
     most_recent_versions {
@@ -91,6 +100,23 @@ resource "google_artifact_registry_repository" "app_orla" {
   location      = var.region
   format        = "DOCKER"
   description   = "Imagens do app (ex-tria)"
+
+  cleanup_policies {
+    id     = "apagar-antigas"
+    action = "DELETE"
+    condition {
+      tag_state  = "ANY"
+      older_than = "604800s"
+    }
+  }
+
+  cleanup_policies {
+    id     = "manter-recentes"
+    action = "KEEP"
+    most_recent_versions {
+      keep_count = 10
+    }
+  }
 
   depends_on = [google_project_service.bootstrap]
 }
