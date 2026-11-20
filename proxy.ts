@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { SESSION_COOKIE } from '@/modules/identity/domain/sessionCookie';
+import { CABECALHO_DO_NONCE, novoNonce, politicaDeSeguranca } from '@/shared/http/csp';
 
 function enderecoPublico(): string {
   const configurado = process.env['TRIA_APP_BASE_URL'];
@@ -21,14 +22,27 @@ const ROTAS_ABERTAS = [
   '/api/oauth',
 ];
 
+function seguirComNonce(request: NextRequest): NextResponse {
+  const nonce = novoNonce();
+  const politica = politicaDeSeguranca(nonce, process.env.NODE_ENV === 'development');
+
+  const cabecalhos = new Headers(request.headers);
+  cabecalhos.set(CABECALHO_DO_NONCE, nonce);
+  cabecalhos.set('Content-Security-Policy', politica);
+
+  const resposta = NextResponse.next({ request: { headers: cabecalhos } });
+  resposta.headers.set('Content-Security-Policy', politica);
+  return resposta;
+}
+
 export function proxy(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
 
   if (ROTAS_ABERTAS.some((rota) => pathname === rota || pathname.startsWith(`${rota}/`))) {
-    return NextResponse.next();
+    return seguirComNonce(request);
   }
 
-  if (request.cookies.get(SESSION_COOKIE)?.value) return NextResponse.next();
+  if (request.cookies.get(SESSION_COOKIE)?.value) return seguirComNonce(request);
 
   const destino = new URL('/api/auth/google/start', enderecoPublico());
   if (pathname !== '/') destino.searchParams.set('returnTo', pathname);

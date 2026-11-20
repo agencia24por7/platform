@@ -17,12 +17,18 @@ export type CorpoDeWorkflow = {
   readonly settings: Record<string, unknown>;
 };
 
+export type WorkflowImplantado = CorpoDeWorkflow & { readonly id: string; readonly active: boolean };
+
 export type ClienteN8n = {
   criar(corpo: CorpoDeWorkflow, contexto: Record<string, string>): Promise<string | null>;
   remover(workflowId: string, contexto: Record<string, string>): Promise<boolean>;
+  listar(): Promise<WorkflowImplantado[]>;
+  atualizar(workflowId: string, corpo: CorpoDeWorkflow): Promise<boolean>;
+  publicar(workflowId: string): Promise<boolean>;
 };
 
 const TENTATIVAS_DE_REMOCAO = 10;
+const TAMANHO_DA_PAGINA = 100;
 
 export function criarClienteN8n(configuracao: ConfiguracaoN8n, logger: Registrador): ClienteN8n {
   const esperarMs = configuracao.esperarMs ?? 2_000;
@@ -82,6 +88,33 @@ export function criarClienteN8n(configuracao: ConfiguracaoN8n, logger: Registrad
         logger.error('n8n.workflow.remover.erro', { ...contexto, workflowId, error: error instanceof Error ? error.message : 'desconhecido' });
         return false;
       }
+    },
+
+    async listar() {
+      const todos: WorkflowImplantado[] = [];
+      let cursor: string | undefined;
+      do {
+        const consulta = new URLSearchParams({ limit: String(TAMANHO_DA_PAGINA) });
+        if (cursor) consulta.set('cursor', cursor);
+        const resposta = await chamar('GET', `workflows?${consulta}`);
+        if (!resposta.ok) throw new Error(`n8n respondeu ${resposta.status} ao listar workflows`);
+        const pagina = (await resposta.json()) as { data: WorkflowImplantado[]; nextCursor?: string | null };
+        todos.push(...pagina.data);
+        cursor = pagina.nextCursor ?? undefined;
+      } while (cursor);
+      return todos;
+    },
+
+    async atualizar(workflowId, corpo) {
+      const resposta = await chamar('PUT', `workflows/${workflowId}`, corpo);
+      if (!resposta.ok) logger.error('n8n.workflow.atualizar.falhou', { workflowId, status: resposta.status });
+      return resposta.ok;
+    },
+
+    async publicar(workflowId) {
+      const resposta = await chamar('POST', `workflows/${workflowId}/activate`);
+      if (!resposta.ok) logger.warn('n8n.workflow.publicar.falhou', { workflowId, status: resposta.status });
+      return resposta.ok;
     },
   };
 }
