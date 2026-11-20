@@ -3,6 +3,7 @@ export const CausaFaltante = {
   ReauthPending: 'reauth_pending',
   ApiRecusou: 'api_recusou',
   SemDadosNoPeriodo: 'sem_dados_no_periodo',
+  ColetaIncompleta: 'coleta_incompleta',
   ForaDoV1: 'fora_do_v1',
 } as const;
 export type CausaFaltante = (typeof CausaFaltante)[keyof typeof CausaFaltante];

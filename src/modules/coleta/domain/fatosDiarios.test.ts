@@ -173,3 +173,36 @@ describe('coletor Search Console', () => {
     assert.equal(normalizar(referencia)[0]!.json.falhas[0].causa, 'reauth_pending');
   });
 });
+
+describe("regressões contra a API real", () => {
+  const parametro = (arquivo: string, no: string) => JSON.stringify(carregar(arquivo).nodes.find((n) => n.name === no)!.parameters);
+
+  it("paginação usa o contador de páginas, nunca o corpo anterior da requisição", () => {
+    assert.match(parametro("coletor-ga4.json", "Chamar API"), /\$pageCount \* \$request\.body\.limit/);
+    assert.match(parametro("coletor-searchconsole.json", "Chamar padrao"), /\$pageCount \* \$request\.body\.rowLimit/);
+    assert.doesNotMatch(parametro("coletor-searchconsole.json", "Chamar padrao"), /\$request\.body\.startRow \?\?/);
+  });
+
+  it("aparência do Search Console é pedida um dia por vez, só com searchAppearance", () => {
+    const modelo = carregar("coletor-searchconsole.json");
+    const entrada = { fonte: { externalId: "sc-domain:x.com" }, janela: { start: "2026-01-01", end: "2026-01-03" }, modo: "completa" };
+    const montado = compilar(codigo(modelo, "Montar requisição"), "$json")(entrada)[0]!.json;
+    assert.deepEqual(montado.consultas.aparencia.dias, ["2026-01-01", "2026-01-02", "2026-01-03"]);
+    assert.deepEqual(montado.consultas.aparencia.corpo.dimensions, ["searchAppearance"]);
+    const dias = compilar(codigo(modelo, "Dias da aparencia"), "$")((nome: string) => ({ first: () => ({ json: montado }) }));
+    assert.equal(dias.length, 3);
+    assert.equal(dias[1]!.json.corpo.startDate, "2026-01-02");
+    assert.equal(dias[1]!.json.corpo.endDate, "2026-01-02");
+  });
+
+  it("Google Ads não pede campos inexistentes na v26", () => {
+    const modelo = carregar("coletor-google-ads.json");
+    const pedidos = compilar(codigo(modelo, "Montar requisição"), "$json")({
+      fonte: { externalId: "123-456-7890", managerExternalId: "111-222-3333" },
+      janela: { start: "2026-01-01", end: "2026-01-02" },
+      modo: "completa",
+    });
+    for (const { json } of pedidos) assert.doesNotMatch(json.corpo.query, /metrics\.video_views/);
+    assert.ok(pedidos.some(({ json }) => json.corpo.query.includes("metrics.video_trueview_views")));
+  });
+});

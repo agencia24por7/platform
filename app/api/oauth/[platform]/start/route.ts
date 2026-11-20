@@ -15,6 +15,7 @@ import {
   type PlataformaOauth,
 } from '@/modules/connections/domain/oauth';
 import { credenciaisDaPlataforma } from '@/modules/connections/application/credenciaisOauth';
+import { destinoDoErroDeAutorizacao } from '@/modules/connections/domain/erroDeAutorizacao';
 import type { Platform } from '@/modules/connections/domain/connection';
 
 export const dynamic = 'force-dynamic';
@@ -28,9 +29,12 @@ export async function GET(
   context: { params: Promise<{ platform: string }> },
 ): Promise<NextResponse> {
   const { platform } = await context.params;
-  if (!falaOauth(platform as Platform)) {
-    return NextResponse.redirect(new URL('/comecar?erro=plataforma_desconhecida', env().TRIA_APP_BASE_URL));
-  }
+  const pedido = request.nextUrl.searchParams.get('returnTo');
+  const origem = pedido && isSafeReturnPath(pedido) ? pedido : null;
+  const voltarComErro = (codigo: string) =>
+    NextResponse.redirect(new URL(destinoDoErroDeAutorizacao(origem, codigo, platform), env().TRIA_APP_BASE_URL));
+
+  if (!falaOauth(platform as Platform)) return voltarComErro('plataforma_desconhecida');
 
   const sessao = await currentUser();
   if (!sessao) {
@@ -55,7 +59,7 @@ export async function GET(
   const credentials = credenciaisDaPlataforma(platform as PlataformaOauth);
   if (!isConfigured(credentials, platform as Platform)) {
     logger.info('oauth.start.not_configured', { platform });
-    return NextResponse.redirect(new URL(`/comecar?passo=conectar&indisponivel=${platform}`, env().TRIA_APP_BASE_URL));
+    return voltarComErro('app_indisponivel');
   }
 
   const returnTo = request.nextUrl.searchParams.get('returnTo') ?? '/comecar?passo=contas';

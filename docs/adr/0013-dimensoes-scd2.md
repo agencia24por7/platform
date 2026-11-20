@@ -145,6 +145,9 @@ primeira carga de cada fonte:
   rota (manual pelo workflow) e implantação manual do workflow no n8n (ADR
   0009).
 
+> Revisto pela ADR 0022: `excluir-cliente` passou a ser exclusão lógica e o
+> `DELETE` descrito aqui é o `expurgar-cliente`.
+
 ## Adendo (2026-11-20): um padrão só, fatos sem `client_id`
 
 O `tria_dw` foi apagado e recriado (só o BigQuery; nenhum backup do Postgres

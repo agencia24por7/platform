@@ -76,12 +76,12 @@
                   {
                     "type": "body",
                     "name": "offset",
-                    "value": "={{ ($request.body.offset ?? 0) + $request.body.limit }}"
+                    "value": "={{ $pageCount * $request.body.limit }}"
                   }
                 ]
               },
               "paginationCompleteWhen": "other",
-              "completeExpression": "={{ $response.statusCode !== 200 || $request.body.limit <= 500 || ($request.body.offset ?? 0) + ($response.body.rows ?? []).length >= ($response.body.rowCount ?? 0) }}",
+              "completeExpression": "={{ $response.statusCode !== 200 || $request.body.limit <= 500 || ($response.body.rows ?? []).length < $request.body.limit }}",
               "limitPagesFetched": true,
               "maxRequests": 60,
               "requestInterval": 400

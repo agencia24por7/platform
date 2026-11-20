@@ -11,8 +11,8 @@ Fonte da verdade dos prazos publicados em `/privacidade` (seção 8). Mudou um p
 | Conta Google que entrou sem acesso liberado | 30 dias sem login | `core.aplicar_retencao()` (só se não tiver vínculo, convite aberto nem referência) |
 | Avisos do WhatsApp (`whatsapp_inbound_events`) | 90 dias | `core.aplicar_retencao()` |
 | Token de conexão | enquanto a conexão existir | remover a conexão apaga a credencial do cofre (`removerConexao`) |
-| Métricas | enquanto o cliente usar a orla | `scripts/titular.mjs excluir-cliente` em até 30 dias do pedido |
-| Histórico de dono das fontes e dos clientes no BigQuery (`dim_fonte_scd2`, `dim_cliente_scd2`; nomes de cliente e de fonte, dado de negócio) | enquanto o cliente usar a orla | mesmo `excluir-cliente`: apaga de toda tabela-base com `client_id` (ADR 0013) |
+| Métricas e dados de um cliente excluído | enquanto houver base legal (contrato, obrigação, exercício de direitos); a exclusão é lógica | `scripts/titular.mjs excluir-cliente` esconde do app e das views `vw_*` sem apagar (ADR 0022); `expurgar-cliente` elimina em até 30 dias do pedido quando a eliminação for obrigatória |
+| Histórico de dono das fontes e dos clientes no BigQuery (`dim_fonte_scd2`, `dim_cliente_scd2`; nomes de cliente e de fonte, dado de negócio) | enquanto houver base legal; cliente excluído ganha versão com `status = 'excluido'` | `expurgar-cliente`: apaga de toda tabela-base com `client_id` (ADR 0013, ADR 0022) |
 | Execuções das automações (n8n) | 14 dias | `EXECUTIONS_DATA_MAX_AGE=336`; fluxos de leads não salvam execução |
 | Backups lógicos | 30 dias | ciclo de vida do bucket (`infra/terraform/backup.tf`) |
 | Snapshots do disco | 7 dias | política de snapshot (`infra/terraform`) |

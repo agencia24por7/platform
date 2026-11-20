@@ -47,7 +47,7 @@ describe('tela de conexão e fluxo OAuth', { concurrency: false }, () => {
     const response = await follow('/api/oauth/google/start');
     assert.equal(response.status, 307);
     const location = response.headers.get('location') ?? '';
-    assert.match(location, /indisponivel=google/);
+    assert.match(location, /erroConexao=app_indisponivel&plataforma=google/);
     assert.ok(!location.includes('accounts.google.com'));
   });
 
@@ -155,7 +155,7 @@ describe('autorizar plataforma exige administrar a organização', { concurrency
     const resposta = await browse('/api/oauth/google/start');
     const destino = resposta.headers.get('location') ?? '';
     assert.ok(
-      destino.includes('accounts.google.com') || destino.includes('indisponivel=google'),
+      destino.includes('accounts.google.com') || destino.includes('erroConexao=app_indisponivel'),
       `admin devia seguir para o provedor ou esbarrar só na configuração: foi para ${destino}`,
     );
   });
@@ -171,7 +171,7 @@ describe('autorizar plataforma exige administrar a organização', { concurrency
     const cliente = query(
       `INSERT INTO core.clients (organization_id, name, business_model)
        VALUES ('${organizacao}', 'Cliente da Guarda', 'leads')
-       ON CONFLICT (organization_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id`,
+       ON CONFLICT (organization_id, name) WHERE excluido_em IS NULL DO UPDATE SET name = EXCLUDED.name RETURNING id`,
     );
     query(
       `INSERT INTO core.member_clients (member_id, client_id) VALUES ('${membro}', '${cliente}')
