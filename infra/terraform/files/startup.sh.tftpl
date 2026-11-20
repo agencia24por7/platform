@@ -113,7 +113,7 @@ ConditionPathExists=/usr/bin/docker
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/docker image prune -af --filter until=168h
+ExecStart=/usr/bin/docker image prune -af
 ExecStart=/usr/bin/docker builder prune -af --filter until=168h
 ExecStart=/usr/bin/docker container prune -f --filter until=168h
 ExecStart=/usr/bin/apt-get clean
