@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { concordaComRecurso, grantTypesFor, missingScopes } from './connection.ts';
+import { ROTULO_DO_RECURSO, concordaComRecurso, grantTypesFor, missingScopes, temRecursoParaVincular } from './connection.ts';
 
 describe('missingScopes', () => {
   it('exige adwords no Google', () => {
@@ -30,5 +30,21 @@ describe('concordaComRecurso', () => {
     for (const platform of ['gtm', 'searchconsole', 'youtube', 'gbp'] as const) {
       assert.equal(concordaComRecurso(platform, 'vinculado', 'vinculada'), 'vinculado');
     }
+  });
+});
+
+describe('temRecursoParaVincular', () => {
+  it('conexões por chave de API rendem um recurso que ganha dono como os demais', () => {
+    for (const platform of ['rdstation', 'apify', 'zapi'] as const) {
+      assert.equal(temRecursoParaVincular(platform), true);
+      assert.equal(concordaComRecurso(platform, 'vinculado', 'vinculada'), 'vinculada');
+    }
+    assert.equal(ROTULO_DO_RECURSO.rdstation, 'Conta');
+    assert.equal(ROTULO_DO_RECURSO.zapi, 'Instância');
+  });
+
+  it('contas de anúncio seguem fora: o vínculo delas passa por ad_accounts', () => {
+    assert.equal(temRecursoParaVincular('google'), false);
+    assert.equal(temRecursoParaVincular('meta'), false);
   });
 });

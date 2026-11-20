@@ -6,8 +6,15 @@ import { atorAtual } from '@/shared/http/ator';
 import { list, requestId, text } from '@/shared/http/actions';
 import { currentOrganization, requireContext } from '@/shared/http/currentOrganization';
 import { canOperate } from '@/modules/identity/domain/user';
+import { veiculaAnuncio } from '@/modules/connections/domain/connection';
+import type { StoredDiscovery } from '@/modules/connections/infrastructure/discoveredAccountRepository';
 
 export const dynamic = 'force-dynamic';
+
+async function contasDeAnuncioPendentes(organizationId: string): Promise<readonly StoredDiscovery[]> {
+  const pendentes = await modules().discoveredAccounts.listPending(organizationId);
+  return pendentes.filter((conta) => veiculaAnuncio(conta.platform));
+}
 
 async function linkSelected(formData: FormData): Promise<void> {
   'use server';
@@ -26,7 +33,7 @@ async function linkSelected(formData: FormData): Promise<void> {
 
   if (selected.length === 0) redirect('/comecar/contas?erro=nenhuma');
 
-  const pending = await modules().discoveredAccounts.listPending(organization.id);
+  const pending = await contasDeAnuncioPendentes(organization.id);
   const chosen = pending.filter((account) => selected.includes(account.id));
 
   const client = await modules().clients.create(
@@ -87,7 +94,7 @@ export default async function SelectAccountsPage({
 
   const [params, pending] = await Promise.all([
     searchParams,
-    modules().discoveredAccounts.listPending(organization.id),
+    contasDeAnuncioPendentes(organization.id),
   ]);
 
   return (

@@ -284,7 +284,7 @@ export async function guardarChave(formData: FormData): Promise<void> {
     voltar(toActionState(resultado.error).error ?? 'Não deu para guardar a chave.');
     return;
   }
-  voltar('Chave testada com sucesso e guardada no cofre. O banco ficou só com a referência.');
+  voltar('Chave testada com sucesso e guardada no cofre. O banco ficou só com a referência. Agora escolha logo abaixo o cliente dono dela.');
 }
 
 export async function removerConexao(formData: FormData): Promise<void> {

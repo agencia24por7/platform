@@ -14,6 +14,7 @@ import {
 } from '@/modules/connections/domain/connection';
 import {
   MOTIVO_DA_CHAVE,
+  contaDaChave,
   identidadeDaConexao,
   rotuloDaChave,
   usaChaveDeApi,
@@ -23,6 +24,7 @@ import type { CredentialVault } from '@/modules/connections/application/credenti
 import type { CredentialTester } from '@/modules/connections/application/credentialTester';
 import type { AdAccountRepository } from '@/modules/connections/infrastructure/adAccountRepository';
 import type { ConnectionRepository } from '@/modules/connections/infrastructure/connectionRepository';
+import type { DiscoveredAccountRepository } from '@/modules/connections/infrastructure/discoveredAccountRepository';
 import { randomBytes } from 'node:crypto';
 
 export type LinkAccountInput = Omit<NewAdAccount, 'organizationId'> & {
@@ -83,6 +85,7 @@ export function createConnectionService(
   vault: CredentialVault,
   tester: CredentialTester,
   workflows: RemovedorDeWorkflow,
+  contasDescobertas: Pick<DiscoveredAccountRepository, 'replace'>,
 ): ConnectionService {
   return {
     async guardarChave(input, ator) {
@@ -146,6 +149,10 @@ export function createConnectionService(
       if (existente && existente.credentialRef !== credentialRef) {
         await vault.discard(existente.credentialRef);
       }
+
+      await contasDescobertas.replace(input.organizationId, connection.id, [
+        contaDaChave({ platform: input.platform, externalId: connection.externalId, label: connection.label }),
+      ]);
 
       await audit.record({
         organizationId: input.organizationId,

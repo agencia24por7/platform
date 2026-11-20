@@ -46,6 +46,8 @@ type ColetaRow = {
   error_message: string | null;
 };
 
+const TETO_DE_FONTES = 200;
+
 const isoDate = (value: Date): string => value.toISOString().slice(0, 10);
 
 const toFonte = (row: FonteRow): Omit<FonteElegivel, 'janelaSugerida'> => ({
@@ -98,7 +100,7 @@ export type ContextoDeGravacao = {
 };
 
 export type ColetaRepository = {
-  fontes(limit: number): Promise<readonly Omit<FonteElegivel, 'janelaSugerida'>[]>;
+  fontes(limit: number, plataformas: readonly Platform[]): Promise<readonly Omit<FonteElegivel, 'janelaSugerida'>[]>;
   resolveFonte(fonteTipo: FonteTipo, fonteId: string): Promise<{ organizationId: string; clientId: string; platform: Platform } | null>;
   resolveContextoDeGravacao(coletaId: string): Promise<ContextoDeGravacao | null>;
   findByIdempotencyKey(key: string): Promise<Coleta | null>;
@@ -110,9 +112,11 @@ export type ColetaRepository = {
 
 export function createColetaRepository(): ColetaRepository {
   return {
-    async fontes(limit) {
+    async fontes(limit, plataformas) {
       const rows = (await sql()`
-        SELECT * FROM automation.fontes_de_coleta(${limit})`) as unknown as FonteRow[];
+        SELECT * FROM automation.fontes_de_coleta(${TETO_DE_FONTES})
+        WHERE platform = ANY(${[...plataformas]}::text[])
+        LIMIT ${Math.max(Math.min(limit, TETO_DE_FONTES), 1)}`) as unknown as FonteRow[];
       return rows.map(toFonte);
     },
 

@@ -58,6 +58,7 @@ function build() {
       vault,
       credentialTester,
       createColetorProvisioner(),
+      discoveredAccounts,
     ),
     authorization: createAuthorizationService(
       organizations,
