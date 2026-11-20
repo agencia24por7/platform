@@ -47,7 +47,7 @@ describe('tela de conexão e fluxo OAuth', { concurrency: false }, () => {
     const response = await follow('/api/oauth/google/start');
     assert.equal(response.status, 307);
     const location = response.headers.get('location') ?? '';
-    assert.match(location, /indisponivel=google/);
+    assert.match(location, /erroConexao=app_indisponivel&plataforma=google/);
     assert.ok(!location.includes('accounts.google.com'));
   });
 
@@ -155,7 +155,7 @@ describe('autorizar plataforma exige administrar a organização', { concurrency
     const resposta = await browse('/api/oauth/google/start');
     const destino = resposta.headers.get('location') ?? '';
     assert.ok(
-      destino.includes('accounts.google.com') || destino.includes('indisponivel=google'),
+      destino.includes('accounts.google.com') || destino.includes('erroConexao=app_indisponivel'),
       `admin devia seguir para o provedor ou esbarrar só na configuração: foi para ${destino}`,
     );
   });
