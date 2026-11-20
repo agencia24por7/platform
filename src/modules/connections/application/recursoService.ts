@@ -9,6 +9,7 @@ import type {
 } from '@/modules/connections/infrastructure/discoveredAccountRepository';
 import { failure, type Failure } from '@/shared/result/failure';
 import { err, ok, type Result } from '@/shared/result/result';
+import { avisarMudancaDePosse, semAvisoDePosse, type AvisoDePosse } from '@/modules/connections/application/avisoDePosse';
 
 export type DonoDoRecurso = {
   findById(organizationId: string, id: string): Promise<(ClienteAvaliado & { readonly name: string }) | null>;
@@ -33,6 +34,7 @@ export function createRecursoService(
   recursos: DiscoveredAccountRepository,
   clientes: DonoDoRecurso,
   audit: AuditRecorder,
+  aviso: AvisoDePosse = semAvisoDePosse,
 ): RecursoService {
   async function auditar(
     organizationId: string,
@@ -68,6 +70,7 @@ export function createRecursoService(
       await recursos.markLinkedToClient(input.organizationId, recurso!.id, cliente!.id);
       const vinculado = { ...recurso!, state: 'linked' as const, clientId: cliente!.id };
       await auditar(input.organizationId, ator, vinculado, 'connection_account.link', { clientId: cliente!.id, cliente: cliente!.name });
+      avisarMudancaDePosse(aviso, 'connection_account.link');
       return ok(vinculado);
     },
 
@@ -87,8 +90,9 @@ export function createRecursoService(
       await auditar(input.organizationId, ator, movido, 'connection_account.reassigned', {
         de: origem?.name ?? recurso!.clientId,
         para: destino!.name,
-        historicoSegue: true,
+        historico: 'scd2',
       });
+      avisarMudancaDePosse(aviso, 'connection_account.reassigned');
       return ok(movido);
     },
 
@@ -102,6 +106,7 @@ export function createRecursoService(
       if (!solto) return err(failure('conflict', 'O recurso mudou enquanto você desvinculava. Recarregue a página.'));
 
       await auditar(input.organizationId, ator, solto, 'connection_account.unlink', { de: origem?.name ?? recurso!.clientId });
+      avisarMudancaDePosse(aviso, 'connection_account.unlink');
       return ok(solto);
     },
   };
