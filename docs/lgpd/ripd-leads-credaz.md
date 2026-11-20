@@ -2,7 +2,7 @@
 
 - Versão: 1 (rascunho) — 2026-11-20
 - Elaborado por: Agência 24/7 (operadora), para validação da Credaz (controladora)
-- Encarregado da operadora: Bruno Abreu, contato@agencia24por7.com
+- Encarregado da operadora: Filipe Jones, contato@agencia24por7.com
 - Base: LGPD, art. 38; Guia de RIPD da ANPD
 
 > O RIPD é de responsabilidade da controladora (Credaz). Este rascunho descreve o tratamento que a Agência
@@ -67,4 +67,4 @@ fim do contrato. Retenção no RD Station: definida pela Credaz.
 | Papel | Nome | Data |
 |---|---|---|
 | Encarregado da Credaz | [•] | [•] |
-| Encarregado da Agência | Bruno Abreu | [•] |
+| Encarregado da Agência | Filipe Jones | [•] |

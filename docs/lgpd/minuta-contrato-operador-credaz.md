@@ -5,7 +5,7 @@
 
 **CONTROLADORA:** [razão social da Credaz], CNPJ [•], com sede em [•], representada por [•] ("Credaz").
 
-**OPERADORA:** Agência 24/7, representada por Filipe Jones, CPF [•], [ou razão social e CNPJ quando constituída],e-mail contato@agencia24por7.com ("Agência").
+**OPERADORA:** Agência 24/7, representada por Filipe Jones, CPF [•], [ou razão social e CNPJ quando constituída], e-mail contato@agencia24por7.com ("Agência").
 
 Este acordo integra o contrato de prestação de serviços de marketing entre as partes ("Contrato Principal") e
 regula o tratamento de dados pessoais feito pela Agência em nome da Credaz, nos termos da Lei nº 13.709/2018
