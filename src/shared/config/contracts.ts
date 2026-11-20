@@ -80,7 +80,7 @@ export const achadoDeParidadeBody = z.object({
 
 export const avisoDeQualidadeBody = z.object({
   fonte: z.string().min(1).max(120),
-  tipo: z.enum(['versao_da_api', 'uso_de_cota', 'limiar_de_privacidade', 'linhas_agrupadas', 'alcance_omitido', 'receita_indisponivel']),
+  tipo: z.enum(['versao_da_api', 'uso_de_cota', 'limiar_de_privacidade', 'linhas_agrupadas', 'alcance_omitido', 'receita_indisponivel', 'parcial_aceita']),
   detalhe: z.string().max(500).nullable().default(null),
 });
 
@@ -115,4 +115,23 @@ export const fecharColetaBody = z.object({
   qualidadeResumo: qualidadeResumoBody.nullable().default(null),
   errorCode: z.string().max(80).nullable().default(null),
   errorMessage: z.string().max(1000).nullable().default(null),
+  pausa: z.object({
+    motivo: z.enum(['cota_diaria', 'limite_temporario']),
+    minutos: z.coerce.number().int().min(0).max(1440).nullable().default(null),
+  }).nullable().default(null),
 });
+
+export const publicarBrainsPendentesBody = z
+  .object({ limite: z.number().int().min(1).max(200).default(20) })
+  .strict();
+
+export const reconstruirBrainBody = z
+  .object({
+    organizationId: uuid.optional(),
+    clientId: uuid.optional(),
+    todos: z.literal(true).optional(),
+  })
+  .strict()
+  .refine((corpo) => (corpo.todos ? !corpo.organizationId && !corpo.clientId : Boolean(corpo.organizationId)), {
+    message: 'informe organizationId (e opcionalmente clientId) ou todos: true',
+  });

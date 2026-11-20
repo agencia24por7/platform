@@ -304,9 +304,13 @@ export function janelaDias(platform: Platform, modo: ModoColeta): number {
   return modo === ModoColeta.Amostra ? fonte.janelaAmostraDias : fonte.janelaCompletaDias;
 }
 
-export function janelaAteOntem(platform: Platform, modo: ModoColeta, hoje: Date = new Date()): { readonly start: string; readonly end: string } {
+const FUSO_DO_DIA_DA_COLETA = 'America/Sao_Paulo';
+
+export function janelaAteOntem(platform: Platform, modo: ModoColeta, agora: Date = new Date()): { readonly start: string; readonly end: string } {
   const dias = janelaDias(platform, modo) || 1;
-  const fim = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), hoje.getUTCDate() - 1));
+  const [ano, mes, dia] = new Intl.DateTimeFormat('en-CA', { timeZone: FUSO_DO_DIA_DA_COLETA, year: 'numeric', month: '2-digit', day: '2-digit' })
+    .format(agora).split('-').map(Number) as [number, number, number];
+  const fim = new Date(Date.UTC(ano, mes - 1, dia - 1));
   const inicio = new Date(fim);
   inicio.setUTCDate(inicio.getUTCDate() - (dias - 1));
 
