@@ -38,3 +38,42 @@ aquela conta é.
   como histórico, e `fontes_de_coleta` já a exclui pelo estado da conexão.
 - Quando o RD Station ganhar coletor, basta ligar `ativaNoV1` no mapa de fontes;
   o dono de cada conta já estará definido.
+
+## Adendo (2026-11-20) — remover a conexão solta as contas
+
+Substitui o primeiro item de Consequências e a parte da Decisão que dizia que
+guardar a chave de novo depois de removida preserva o vínculo.
+
+Em produção, a conta `principal` do RD Station seguiu vinculada à Credaz depois
+de "Remover" e continuou listada como fonte; o único caminho que a tela oferecia
+era desvincular, e para quem usa isso soou como "não deixou apagar a conta".
+
+- `connectionService.removerConexao`, depois de revogar, chama
+  `liberarContasDaConexao`: toda `connection_accounts` daquela conexão com
+  `state = 'linked'` e `client_id` preenchido volta para `discovered` sem
+  cliente — a mesma semântica de `recursoService.desvincular`.
+- Cada conta solta grava `connection_account.unlink` com `metadata.de` (nome do
+  cliente anterior) e `metadata.motivo = 'connection.removed'`, e a remoção dispara
+  o aviso de posse (`coleta.dimensoes.sincronizadas`, motivo
+  `connection_account.unlink`). Assim `dim_fonte_scd2` (ADR 0013) fecha a posse
+  na sincronização seguinte, e `dimensao_mudancas_de_posse` reconstrói o dono
+  anterior pela trilha de auditoria como em qualquer desvínculo.
+  `connection.removed` passa a levar `contasLiberadas`.
+- `listAll`, `listPending` e `listByConnection` ignoram contas de conexões
+  revogadas: elas somem da tela do conector, de "Vincular conta ou fonte" e do
+  onboarding, e não podem ser vinculadas a partir dali. Guardar a chave de novo
+  renova a mesma conexão e a conta reaparece como `discovered`, para ser
+  vinculada outra vez de forma explícita.
+- `integrations.ad_accounts` (Meta/Google) **não** é tocado. Ali o vínculo é o
+  dono histórico das métricas ("O histórico de métricas fica"); a coleta já para
+  porque `fontes_de_coleta` (0033) exige `connections.status = 'active'`, e
+  reautorizar a conexão retoma a coleta sem precisar revincular cada conta.
+  Desvincular uma conta de anúncio continua sendo ação explícita (`unlinkAccount`).
+- Os botões "Remover" e "Testar e guardar no cofre" usam `BotaoDeEnvio`
+  (`useFormStatus`): ficam desabilitados e mostram "Removendo…"/"Testando e
+  guardando…" enquanto a ação roda. Em produção a chave foi guardada quatro
+  vezes em dez segundos, e cada envio provisiona um coletor novo no n8n e
+  remove o anterior.
+- Contas que já estavam vinculadas a conexões revogadas antes desta mudança não
+  são migradas: seguem com o cliente até alguém desvincular ou a chave ser
+  guardada de novo e removida.
