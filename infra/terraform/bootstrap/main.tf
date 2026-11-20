@@ -159,7 +159,7 @@ resource "google_project_iam_member" "terraform" {
 }
 
 resource "google_project_iam_member" "planner" {
-  for_each = toset(["roles/viewer"])
+  for_each = toset(["roles/viewer", "roles/iam.securityReviewer"])
 
   project = var.project_id
   role    = each.value

@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import { Bricolage_Grotesque, Inter, Sora } from 'next/font/google';
 import type { ReactNode } from 'react';
 import './globals.css';
+import { CABECALHO_DO_NONCE } from '@/shared/http/csp';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -67,7 +69,9 @@ const THEME_SCRIPT = `(function () {
   } catch (_) {}
 })();`;
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const nonce = (await headers()).get(CABECALHO_DO_NONCE) ?? undefined;
+
   return (
     <html
       lang="pt-BR"
@@ -76,7 +80,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     >
       <head>
         {/* eslint-disable-next-line react/no-danger */}
-        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
       <body>{children}</body>
     </html>

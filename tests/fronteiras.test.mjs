@@ -207,6 +207,18 @@ describe('fronteiras entre inquilinos', { concurrency: false }, () => {
     assert.equal(umaLinha(frouxas), '', `tabelas sem RLS forçada: ${frouxas}`);
   });
 
+  const SEM_POLITICA_POR_DESENHO = "ARRAY['integrations.whatsapp_inbound_events']";
+
+  it('tabelas sem política por desenho só são tocadas por funções SECURITY DEFINER', () => {
+    const acessoDireto = dono(`
+      SELECT coalesce(string_agg(t.tabela||':'||t.privilegio, ', '), '')
+      FROM unnest(${SEM_POLITICA_POR_DESENHO}) AS x(tabela),
+           LATERAL (SELECT x.tabela AS tabela, p AS privilegio
+                    FROM unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE']) p
+                    WHERE has_table_privilege((SELECT rolname FROM pg_roles WHERE rolname IN ('orla_app','tria_app') LIMIT 1), x.tabela, p)) t`);
+    assert.equal(umaLinha(acessoDireto), '');
+  });
+
   it('toda tabela com RLS tem ao menos uma política', () => {
     const orfas = dono(`
       SELECT coalesce(string_agg(n.nspname||'.'||c.relname, ', '), '')
@@ -214,7 +226,8 @@ describe('fronteiras entre inquilinos', { concurrency: false }, () => {
       WHERE c.relkind = 'r'
         AND n.nspname IN ('core','integrations','metrics','automation','audit')
         AND c.relrowsecurity
-        AND NOT EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid)`);
+        AND NOT EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid)
+        AND (n.nspname||'.'||c.relname) <> ALL (${SEM_POLITICA_POR_DESENHO})`);
     assert.equal(umaLinha(orfas), '');
   });
 

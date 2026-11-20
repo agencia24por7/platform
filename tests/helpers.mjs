@@ -20,13 +20,23 @@ export function workerHeaders() {
   return { Authorization: `Bearer ${env().TRIA_WORKER_TOKEN}`, 'Content-Type': 'application/json' };
 }
 
-export async function appIsUp() {
+const TENTATIVAS_DE_SAUDE = 6;
+
+async function respondeSaude() {
   try {
-    const response = await fetch(`${BASE}/api/health`, { signal: AbortSignal.timeout(2000) });
+    const response = await fetch(`${BASE}/api/health`, { signal: AbortSignal.timeout(5000) });
     return response.ok;
   } catch {
     return false;
   }
+}
+
+export async function appIsUp() {
+  for (let tentativa = 1; tentativa <= TENTATIVAS_DE_SAUDE; tentativa++) {
+    if (await respondeSaude()) return true;
+    if (tentativa < TENTATIVAS_DE_SAUDE) await new Promise((resolver) => setTimeout(resolver, 1000));
+  }
+  return false;
 }
 
 const SESSION_COOKIE = 'tria_sessao';
