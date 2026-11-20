@@ -1,8 +1,8 @@
 import { sql } from '@/shared/db/client';
 import { withTenant } from '@/shared/db/tenant';
 import type { Platform } from '@/modules/connections/domain/connection';
-import { chaveDaFonte, type AbrirColetaInput, type Coleta, type FecharColetaInput, type FonteBruta, type FonteTipo } from '@/modules/coleta/domain/coleta';
-import type { HistoricoDeColeta } from '@/modules/coleta/domain/janelaIncremental';
+import { FONTE_OCUPADA, chaveDaFonte, type AbrirColetaInput, type Coleta, type FecharColetaInput, type FonteBruta, type FonteTipo } from '@/modules/coleta/domain/coleta';
+import type { EscopoDaPausa, HistoricoDeColeta, MotivoDaPausa } from '@/modules/coleta/domain/janelaIncremental';
 import type { RelatorioDeExecucao } from '@/modules/coleta/domain/qualidade';
 
 type FonteRow = {
@@ -28,7 +28,11 @@ type HistoricoRow = {
   ultima_janela_sucesso: Date | null;
   ultima_janela_parcial_repetida: Date | null;
   ultima_incremental_em: Date | null;
-  ultimo_limite_diario_em: Date | null;
+  pausa_ate: Date | null;
+  pausa_da_plataforma_ate: Date | null;
+  em_execucao_desde: Date | null;
+  ultima_tentativa_em: Date | null;
+  falhas_consecutivas: number | null;
 };
 
 type ColetaRow = {
@@ -56,7 +60,15 @@ type ColetaRow = {
   error_message: string | null;
 };
 
-const TETO_DE_FONTES = 200;
+const TETO_DE_FONTES = 2000;
+const INDICE_DE_UMA_RUNNING_POR_FONTE = 'coletas_uma_running_por_fonte';
+
+
+function violouUmaRunningPorFonte(erro: unknown): boolean {
+  if (typeof erro !== 'object' || erro === null) return false;
+  const { code, constraint_name: restricao } = erro as { code?: unknown; constraint_name?: unknown };
+  return code === '23505' && restricao === INDICE_DE_UMA_RUNNING_POR_FONTE;
+}
 
 const isoDate = (value: Date): string => value.toISOString().slice(0, 10);
 const isoDateOuNulo = (value: Date | null): string | null => (value ? isoDate(value) : null);
@@ -118,11 +130,30 @@ export type ColetaRepository = {
   resolveFonte(fonteTipo: FonteTipo, fonteId: string): Promise<{ organizationId: string; clientId: string; platform: Platform } | null>;
   resolveContextoDeGravacao(coletaId: string): Promise<ContextoDeGravacao | null>;
   findByIdempotencyKey(key: string): Promise<Coleta | null>;
-  abrir(input: AbrirColetaInput, organizationId: string, clientId: string, platform: Platform): Promise<Coleta>;
+  abrir(input: AbrirColetaInput, organizationId: string, clientId: string, platform: Platform): Promise<Coleta | typeof FONTE_OCUPADA>;
+  expirarColetasRunning(idadeHoras: number): Promise<number>;
+  registrarPausa(coletaId: string, ate: Date, motivo: MotivoDaPausa, escopo: EscopoDaPausa): Promise<void>;
   fechar(input: FecharColetaInput): Promise<Coleta | null>;
   marcarFalhaDeAuth(fonteTipo: FonteTipo, fonteId: string): Promise<void>;
   marcarColetaConcluida(fonteTipo: FonteTipo, fonteId: string, em: Date): Promise<void>;
 };
+
+function inserirColeta(input: AbrirColetaInput, organizationId: string, clientId: string, platform: Platform): Promise<Coleta> {
+  return withTenant(organizationId, async (tx) => {
+    const rows = (await tx`
+      INSERT INTO automation.coletas
+        (organization_id, client_id, platform, fonte_tipo, ad_account_id, connection_account_id,
+         mode, idempotency_key, window_start, window_end, n8n_execution_id)
+      VALUES (
+        ${organizationId}, ${clientId}, ${platform}, ${input.fonteTipo},
+        ${input.fonteTipo === 'ad_account' ? input.fonteId : null},
+        ${input.fonteTipo === 'connection_account' ? input.fonteId : null},
+        ${input.mode}, ${input.idempotencyKey}, ${input.window.start}, ${input.window.end}, ${input.n8nExecutionId}
+      )
+      RETURNING *`) as unknown as ColetaRow[];
+    return toColeta(rows[0]!);
+  });
+}
 
 export function createColetaRepository(): ColetaRepository {
   return {
@@ -130,6 +161,7 @@ export function createColetaRepository(): ColetaRepository {
       const rows = (await sql()`
         SELECT * FROM automation.fontes_de_coleta(${TETO_DE_FONTES})
         WHERE platform = ANY(${[...plataformas]}::text[])
+        ORDER BY fonte_id
         LIMIT ${Math.max(Math.min(limit, TETO_DE_FONTES), 1)}`) as unknown as FonteRow[];
       return rows.map(toFonte);
     },
@@ -140,8 +172,21 @@ export function createColetaRepository(): ColetaRepository {
         ultimaJanelaSucesso: isoDateOuNulo(row.ultima_janela_sucesso),
         ultimaJanelaParcialRepetida: isoDateOuNulo(row.ultima_janela_parcial_repetida),
         ultimaIncrementalEm: row.ultima_incremental_em,
-        ultimoLimiteDiarioEm: row.ultimo_limite_diario_em,
+        pausaAte: row.pausa_ate,
+        pausaDaPlataformaAte: row.pausa_da_plataforma_ate,
+        emExecucaoDesde: row.em_execucao_desde,
+        ultimaTentativaEm: row.ultima_tentativa_em,
+        falhasConsecutivas: Number(row.falhas_consecutivas ?? 0),
       }]));
+    },
+
+    async expirarColetasRunning(idadeHoras) {
+      const rows = (await sql()`SELECT automation.expirar_coletas_running(make_interval(hours => ${idadeHoras})) AS expiradas`) as unknown as { expiradas: number }[];
+      return Number(rows[0]?.expiradas ?? 0);
+    },
+
+    async registrarPausa(coletaId, ate, motivo, escopo) {
+      await sql()`SELECT automation.registrar_pausa_da_coleta(${coletaId}, ${ate}, ${motivo}, ${escopo})`;
     },
 
     async resolveFonte(fonteTipo, fonteId) {
@@ -197,20 +242,12 @@ export function createColetaRepository(): ColetaRepository {
     },
 
     async abrir(input, organizationId, clientId, platform) {
-      return withTenant(organizationId, async (tx) => {
-        const rows = (await tx`
-          INSERT INTO automation.coletas
-            (organization_id, client_id, platform, fonte_tipo, ad_account_id, connection_account_id,
-             mode, idempotency_key, window_start, window_end, n8n_execution_id)
-          VALUES (
-            ${organizationId}, ${clientId}, ${platform}, ${input.fonteTipo},
-            ${input.fonteTipo === 'ad_account' ? input.fonteId : null},
-            ${input.fonteTipo === 'connection_account' ? input.fonteId : null},
-            ${input.mode}, ${input.idempotencyKey}, ${input.window.start}, ${input.window.end}, ${input.n8nExecutionId}
-          )
-          RETURNING *`) as unknown as ColetaRow[];
-        return toColeta(rows[0]!);
-      });
+      try {
+        return await inserirColeta(input, organizationId, clientId, platform);
+      } catch (erro) {
+        if (violouUmaRunningPorFonte(erro)) return FONTE_OCUPADA;
+        throw erro;
+      }
     },
 
     async fechar(input) {

@@ -25,7 +25,7 @@ export type AchadoDeParidade = {
 
 export type AvisoDeQualidade = {
   readonly fonte: string;
-  readonly tipo: 'versao_da_api' | 'uso_de_cota' | 'limiar_de_privacidade' | 'linhas_agrupadas' | 'alcance_omitido' | 'receita_indisponivel';
+  readonly tipo: 'versao_da_api' | 'uso_de_cota' | 'limiar_de_privacidade' | 'linhas_agrupadas' | 'alcance_omitido' | 'receita_indisponivel' | 'parcial_aceita';
   readonly detalhe: string | null;
 };
 

@@ -102,10 +102,11 @@ idempotente.
   `RESOURCE_EXHAUSTED`, `rateLimitExceeded`, `quotaExceeded` e similares. API
   desligada no projeto (`SERVICE_DISABLED`, `accessNotConfigured`) continua
   `api_recusou`. Quando o sinal é de **cota diária** (`dailyLimitExceeded`,
-  `quotaExceeded`, "per day", "Number of operations" do Ads Basic), o detalhe
-  começa com `cota_diaria:`, e o `fontes` pausa a fonte até virar o dia em
-  `America/Los_Angeles`, quando as cotas do Google renovam. Assim nada é
-  retentado no mesmo dia: chamadas recusadas também consomem operações.
+  `quotaExceeded`, "per day", "Number of operations" do Ads Basic), a falha leva
+  `pausa: cota_diaria`. O fechamento grava a pausa em colunas (veja a revisão
+  abaixo) até a meia-noite de `America/Los_Angeles`, quando as cotas do Google
+  renovam. Assim nada é retentado no mesmo dia: chamadas recusadas também
+  consomem operações.
 - **GA4**: `returnPropertyQuota: true`. A paginação para quando
   `tokensPerProjectPerHour` passa de 80%, e o recorte fica `coleta_incompleta`
   (não avança). O uso vai como aviso.
@@ -220,6 +221,106 @@ rodada).
   existir: ou a coleta é completa, ou fica marcada.
 - Três parciais seguidas na mesma janela avançam a marca. O dia faltante fica
   em `qc_execucoes` e se recupera com backfill pontual (`janelas` explícitas).
-- Rollout: migração 0050, deploy do app, depois sincronizar no n8n o
-  orquestrador, o backfill e os coletores. O app aceita `amostra` e
-  `incremental` durante a troca.
+- Rollout: veja a ordem na revisão abaixo.
+
+## Revisão de 2026-11-20 (migração 0051)
+
+Uma revisão independente do resultado combinado (#107 a #110) achou os pontos
+abaixo. Todos foram corrigidos no mesmo PR.
+
+1. **Métrica opcional nula não apaga a real.** `tabelas/youtube.ts`
+   convertia receita nula em 0, e o `MERGE` sobrescrevia a receita já gravada.
+   Agora o mapper mantém o nulo, e a configuração do fato ganhou
+   `preservarSeNulo`. Nessas colunas o `MERGE` faz
+   `SET col = COALESCE(origem.col, alvo.col)`. O critério vale para
+   `receita_estimada` (YouTube) e para `alcance`/`frequencia` (Meta, que a API
+   omite nos recortes com mais de 13 meses).
+2. **Marca d'água só com coleta confiável.** `historico_de_coleta` passa a
+   contar só os modos `incremental` e `completa`. Uma coleta `amostra` antiga
+   (teto de 500 linhas) nunca avança a marca. A função também só olha os
+   últimos **400 dias** (índice `coletas_fonte_janela_idx`). Uma fonte parada
+   há mais tempo volta como nova: 7 dias, e o backfill cobre o resto.
+3. **Coleta presa e concorrência.**
+   - `automation.expirar_coletas_running(interval)` fecha como `failed`, com
+     `error_code = abandonada`, toda coleta `running` com mais de **8 h**. Ela
+     roda no início de `/coleta/fontes`. O limite é maior que o timeout do
+     orquestrador (5 h), então só pega execução que morreu.
+   - `fontes` pula a fonte com coleta `running` iniciada há menos de **3 h**.
+     Essa é a duração máxima razoável de uma fonte: o relatório assíncrono da
+     Meta leva até 30 × 20 s mais os downloads.
+   - O índice único parcial `coletas_uma_running_por_fonte` (`WHERE status =
+     'running'`) impede duas coletas abertas da mesma fonte. O `abrir`
+     devolve **409** com `errors.motivo = fonte_ocupada`, e o orquestrador e o
+     backfill pulam a fonte sem erro. A lógica `#2`/`#3` do #109 continua:
+     coleta fechada reabre com nova chave e coleta running devolve a mesma.
+   - No n8n:
+     - `executionTimeout`: orquestrador 5 h, janela do backfill 1 h,
+       backfill 24 h, com `EXECUTIONS_TIMEOUT_MAX=86400` no compose.
+     - `retryOnFail` (3 tentativas, 5 s) em `Gravar métricas`,
+       `Fechar execução` e `Fechar execução (sem coletor)`. Com
+       `neverError`, a retentativa só dispara em falha de rede, por exemplo
+       durante o deploy do app. `gravar` é idempotente por
+       `execucao_id`/`inserido_em`, e `fechar` repetido devolve 409, que o
+       fluxo ignora.
+     - Os nós Code `Calcular qualidade`, `Dividir em lotes` e
+       `Conferir gravação` têm saída de erro para `Falha interna`, que fecha
+       a coleta como `failed` (`falha_orquestrador`).
+4. **Ordem e corte.** `fontes_de_coleta` passa a ordenar por `fonte_id`, com
+   teto de 2000 em vez de 200. O filtro de plataforma vem antes do `LIMIT`. O
+   serviço ordena pela mais atrasada e, no empate, por quem tentou há mais
+   tempo. Uma fonte com falhas incrementais seguidas espera: 1 falha não
+   espera, 2 falhas esperam 6 h, e a espera dobra até 24 h. Uma fonte que
+   sempre falha deixa de ocupar o topo 4 vezes por dia.
+5. **Parcial aceita.** Quando a marca vem de 3 parciais repetidas, o `fontes`
+   devolve `marcaPorParcial = true`, e a coleta seguinte grava o aviso
+   `parcial_aceita` em `qc_execucoes`. Custo: uma consulta opcional que
+   sempre falha faz a mesma janela rodar 3 vezes (até 3 × as chamadas daquela
+   janela) antes de a marca avançar.
+6. **Dia de São Paulo.** `janelaAteOntem` (modos `completa`/`amostra`) e o
+   `Gerar janelas` do backfill usam a data de `America/Sao_Paulo`. Antes, entre
+   21 h e 24 h BRT, a janela incluía o dia corrente, ainda incompleto.
+7. **Execuções não persistidas** também em `plataforma/retencao-diaria` e
+   `plataforma/dimensoes-diarias` (`saveData*: none`), com teste.
+   `agencia/alertas-de-falha` continua como estava.
+8. **Testes**:
+   - unitários: planejador (ocupada, espera, pausa, ordem), serviço (fontes
+     incrementais, 409 `fonte_ocupada`, pausa no fechamento), mapper do
+     YouTube, SQL do `MERGE` com `COALESCE`, coletores e estrutura dos fluxos;
+   - integração (`tests/coleta.test.mjs`): segunda `running` recusada,
+     expiração, `historico_de_coleta` (modo e parciais), pausa por
+     plataforma;
+   - todo nó Code de todo workflow compila (`new Function`).
+9. **Pausa estruturada.** Colunas `pausa_ate`, `pausa_motivo`
+   (`cota_diaria` | `limite_temporario`) e `pausa_escopo` (`fonte` |
+   `plataforma`) em `automation.coletas`. O coletor marca a falha com
+   `pausa`, o orquestrador repassa no `fechar`, e o servidor calcula:
+   - cota diária: até a meia-noite do Pacífico;
+   - limite temporário: os minutos de `estimated_time_to_regain_access`, com
+     teto de 6 h.
+   Google Ads e YouTube têm cota por developer token/projeto, compartilhada
+   entre as fontes. Por isso a pausa por cota diária deles vale para **toda a
+   plataforma**. O casamento com o texto de `error_message` deixou de existir.
+10. **`abrir` recusado não vira `sem_credencial`.** O orquestrador distingue:
+    - `fonte_ocupada`: pula;
+    - `abrir_recusado`: registra o erro do app, sem tentar fechar uma coleta
+      que não existe;
+    - `sem_credencial`: coleta aberta sem coletor, fechada como `failed`.
+11. **GA4 sem query string.** `pagePath` e `landingPage` podem carregar dado
+    pessoal (e-mail, token) na query. O coletor corta em `?`/`#` e soma as
+    linhas que só diferiam por isso, como o Search Console já fazia.
+    Contagens de usuários somadas assim são um teto (o mesmo usuário pode
+    aparecer em duas variantes da URL). Sessões, visualizações e eventos são
+    aditivos.
+
+### Ordem de rollout
+
+1. Aplicar `scripts/bq/03_governanca.sql` no BigQuery **antes** do deploy.
+2. Desativar o orquestrador no n8n e fazer o deploy fora de 00/06/12/18 h BRT.
+   As migrações 0044, 0045, 0050 e 0051 rodam pelo `migrar.sh` antes de o app
+   subir. A 0051 fecha `running` velhas ou duplicadas antes de criar o índice
+   único. O app novo aceita o orquestrador antigo (`modo=amostra`).
+3. `npm run n8n:sincronizar -- --conexoes <arquivo.json>`, que sincroniza os coletores
+   clonados por conexão, o orquestrador, o backfill e os fluxos de
+   `plataforma/`. Só depois reativar o orquestrador, já com `modo=incremental`.
+4. Atualizar as permissões do Login for Business no painel da Meta, depois de
+   testar uma Página.

@@ -81,17 +81,22 @@ describe('janelaDias', () => {
 
 describe('janelaAteOntem', () => {
   it('termina ontem e cobre N dias (amostra = 7)', () => {
-    const hoje = new Date(Date.UTC(2026, 10, 15));
+    const hoje = new Date(Date.UTC(2026, 10, 15, 15));
     assert.deepEqual(janelaAteOntem('google', ModoColeta.Amostra, hoje), { start: '2026-11-08', end: '2026-11-14' });
   });
 
   it('completa cobre 28 dias', () => {
-    const hoje = new Date(Date.UTC(2026, 10, 15));
+    const hoje = new Date(Date.UTC(2026, 10, 15, 15));
     assert.deepEqual(janelaAteOntem('google', ModoColeta.Completa, hoje), { start: '2026-10-18', end: '2026-11-14' });
   });
 
+  it('usa o dia de America/Sao_Paulo: às 22h BRT o dia corrente não entra', () => {
+    const noiteEmSaoPaulo = new Date('2026-11-16T01:00:00Z');
+    assert.deepEqual(janelaAteOntem('google', ModoColeta.Completa, noiteEmSaoPaulo).end, '2026-11-14');
+  });
+
   it('atravessa virada de mês/ano corretamente', () => {
-    const hoje = new Date(Date.UTC(2026, 0, 3));
+    const hoje = new Date(Date.UTC(2026, 0, 3, 15));
     assert.deepEqual(janelaAteOntem('google', ModoColeta.Amostra, hoje), { start: '2025-12-27', end: '2026-01-02' });
   });
 });

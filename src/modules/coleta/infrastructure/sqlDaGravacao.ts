@@ -74,7 +74,7 @@ const filtroDaOrganizacao = (chave: readonly string[], alias: string): string =>
 export function sqlMergeFato(
   fato: string,
   staging: string,
-  cfg: Pick<ConfiguracaoFato, 'chave' | 'colunas'> & { readonly tipos?: TiposDasColunas },
+  cfg: Pick<ConfiguracaoFato, 'chave' | 'colunas' | 'preservarSeNulo'> & { readonly tipos?: TiposDasColunas },
 ): string {
   const colunaData = colunaDeDataDaChave(cfg);
   const filtroDaData = colunaData ? ` AND alvo.${colunaData} BETWEEN data_minima AND data_maxima` : '';
@@ -87,7 +87,7 @@ export function sqlMergeFato(
   const onClause = cfg.chave.map((coluna) => `alvo.${coluna} = origem.${coluna}`).join(' AND ');
   const setClause = cfg.colunas
     .filter((coluna) => !cfg.chave.includes(coluna))
-    .map((coluna) => `${coluna} = origem.${coluna}`)
+    .map((coluna) => (cfg.preservarSeNulo?.includes(coluna) ? `${coluna} = COALESCE(origem.${coluna}, alvo.${coluna})` : `${coluna} = origem.${coluna}`))
     .join(', ');
   const insertColunas = cfg.colunas.join(', ');
   const insertValores = cfg.colunas.map((coluna) => `origem.${coluna}`).join(', ');
