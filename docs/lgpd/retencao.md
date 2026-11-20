@@ -13,6 +13,8 @@ Fonte da verdade dos prazos publicados em `/privacidade` (seção 8). Mudou um p
 | Token de conexão | enquanto a conexão existir | remover a conexão apaga a credencial do cofre (`removerConexao`) |
 | Métricas e dados de um cliente excluído | enquanto houver base legal (contrato, obrigação, exercício de direitos); a exclusão é lógica | `scripts/titular.mjs excluir-cliente` esconde do app e das views `vw_*` sem apagar (ADR 0022); `expurgar-cliente` elimina em até 30 dias do pedido quando a eliminação for obrigatória |
 | Histórico de dono das fontes e dos clientes no BigQuery (`dim_fonte_scd2`, `dim_cliente_scd2`; nomes de cliente e de fonte, dado de negócio) | enquanto houver base legal; cliente excluído ganha versão com `status = 'excluido'` | `expurgar-cliente`: apaga de toda tabela-base com `client_id` (ADR 0013, ADR 0022) |
+| Contexto do cliente (`core.client_context_*`, revisões incluídas, e o prefixo do cliente no bucket) | enquanto o cliente existir; exclusão lógica esconde do app e revoga os links | expurgo: `core.expurgar_cliente` apaga as linhas por `ON DELETE CASCADE`; `expurgarArmazenamento` apaga o prefixo `orgs/{org}/clientes/{cliente}/` no bucket, versões incluídas (ADR 0026) |
+| Link público do mapa de contexto | até vencer (padrão 30 dias, máx. 90) ou ser revogado; o registro fica com o cliente | só o hash do token é guardado |
 | Execuções das automações (n8n) | 14 dias | `EXECUTIONS_DATA_MAX_AGE=336`; fluxos de leads não salvam execução |
 | Backups lógicos | 30 dias | ciclo de vida do bucket (`infra/terraform/backup.tf`) |
 | Snapshots do disco | 7 dias | política de snapshot (`infra/terraform`) |
