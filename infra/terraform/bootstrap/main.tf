@@ -1,6 +1,10 @@
 terraform {
   required_version = ">= 1.9.0"
 
+  backend "gcs" {
+    prefix = "bootstrap"
+  }
+
   required_providers {
     google = {
       source  = "hashicorp/google"
@@ -82,6 +86,15 @@ resource "google_artifact_registry_repository" "app" {
   depends_on = [google_project_service.bootstrap]
 }
 
+resource "google_artifact_registry_repository" "app_orla" {
+  repository_id = "orla"
+  location      = var.region
+  format        = "DOCKER"
+  description   = "Imagens do app (ex-tria)"
+
+  depends_on = [google_project_service.bootstrap]
+}
+
 resource "google_iam_workload_identity_pool" "github" {
   workload_identity_pool_id = "github"
   display_name              = "GitHub Actions"
@@ -137,6 +150,7 @@ resource "google_project_iam_member" "terraform" {
     "roles/monitoring.notificationChannelEditor",
     "roles/dns.admin",
     "roles/bigquery.admin",
+    "roles/storage.admin",
   ])
 
   project = var.project_id
