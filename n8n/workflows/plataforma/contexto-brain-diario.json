@@ -87,7 +87,7 @@
     "saveDataErrorExecution": "none",
     "saveDataSuccessExecution": "none",
     "timezone": "America/Sao_Paulo",
-    "errorWorkflow": "im3mfvd9pUI79e74",
+    "errorWorkflow": "origem:n8n/workflows/plataforma/alertas-de-falha.json",
     "saveManualExecutions": false
   }
 }

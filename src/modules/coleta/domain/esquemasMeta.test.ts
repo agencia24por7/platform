@@ -27,7 +27,7 @@ const RELATORIOS_CONCLUIDOS = ['anuncio', 'idade_genero', 'posicionamento', 'reg
 }));
 
 function executarNormalizar(nos: Record<string, Linha[]>, relatorios: Linha[] = RELATORIOS_CONCLUIDOS): Linha {
-  const contexto = { inicio: Date.now(), versaoApi: 'v26.0', fonte: { externalId: 'act_1', currency: 'BRL' } };
+  const contexto = { inicio: Date.now(), versaoApi: 'v27.0', fonte: { externalId: 'act_1', currency: 'BRL' } };
   const todos: Record<string, Linha[]> = {
     'Montar requisição': [contexto],
     'Preparar downloads': [{ relatorios, tentativa: 2, urls: {} }],
@@ -243,7 +243,7 @@ describe('coletor Meta Ads', () => {
 });
 
 describe('laço de relatórios assíncronos', () => {
-  const contexto = { base: 'https://graph.facebook.com/v26.0', conta: 'act_1', relatorios: [{ chave: 'anuncio' }, { chave: 'regiao' }] };
+  const contexto = { base: 'https://graph.facebook.com/v27.0', conta: 'act_1', relatorios: [{ chave: 'anuncio' }, { chave: 'regiao' }] };
 
   function executar(nome: string, indiceDaRodada: number, nos: Record<string, Linha[]>, entrada: Linha[]): Linha {
     const buscar = (no: string) => {
@@ -290,7 +290,7 @@ describe('laço de relatórios assíncronos', () => {
     });
     const montar = new Function('$', '$runIndex', codigoDo('Montar consulta')) as (...argumentos: unknown[]) => { json: Linha }[];
     const itens = montar(buscar, 0);
-    assert.equal(itens[0]!.json.consultaUrl, 'https://graph.facebook.com/v26.0/act_1?fields=id');
+    assert.equal(itens[0]!.json.consultaUrl, 'https://graph.facebook.com/v27.0/act_1?fields=id');
     assert.match(String(itens[1]!.json.consultaUrl), /\/2\?fields=id,async_status/);
   });
 });

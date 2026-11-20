@@ -131,7 +131,7 @@ describe('coletor Search Console', () => {
     }
     for (const recorte of RECORTES_SEARCH_CONSOLE) {
       const consulta = montado.consultas[recorte.tabela];
-      const campos = [...consulta.dimensoes.map(([, campo]: [string, string]) => campo).filter((c: string) => c !== 'metricDate'), ...consulta.metricas];
+      const campos = [...(consulta.porTipo ? ['tipo'] : []), ...consulta.dimensoes.map(([, campo]: [string, string]) => campo).filter((c: string) => c !== 'metricDate'), ...consulta.metricas];
       assert.deepEqual(campos.sort(), [...recorte.dimensoes, ...Object.keys(recorte.metricas)].sort());
       assert.ok(modelo.nodes.some((no) => no.name === `Chamar ${recorte.tabela}`));
     }
@@ -146,6 +146,7 @@ describe('coletor Search Console', () => {
       pagina: [],
       pais_dispositivo: [pagina(['2026-01-05', 'bra', 'DESKTOP'])],
       aparencia: [{ statusCode: 400, body: { error: { code: 400, message: 'invalid' } } }],
+      tipo: [],
     };
     const referencia = (nome: string) => {
       if (nome === 'Montar requisição') return { first: () => ({ json: montado }) };

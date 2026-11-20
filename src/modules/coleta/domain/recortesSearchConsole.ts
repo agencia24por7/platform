@@ -12,4 +12,5 @@ export const RECORTES_SEARCH_CONSOLE: readonly RecorteDeFato[] = [
   recorteDeFato('pagina', 'search_console_pagina_diario', 'site', ['pagina'], METRICAS_DE_BUSCA),
   recorteDeFato('pais_dispositivo', 'search_console_pais_dispositivo_diario', 'site', ['pais', 'dispositivo'], METRICAS_DE_BUSCA),
   recorteDeFato('aparencia', 'search_console_aparencia_diario', 'site', ['aparencia'], METRICAS_DE_BUSCA),
+  recorteDeFato('tipo', 'search_console_tipo_diario', 'site', ['tipo'], METRICAS_DE_BUSCA),
 ];
