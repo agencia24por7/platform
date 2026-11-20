@@ -1,0 +1,301 @@
+{
+  "name": "Coletor · RD Station CRM (modelo)",
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "timezone": "America/Sao_Paulo"
+  },
+  "nodes": [
+    {
+      "id": "entrada",
+      "name": "Entrada",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -200,
+        0
+      ],
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "fonte"
+            },
+            {
+              "name": "janela"
+            },
+            {
+              "name": "modo"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "montar",
+      "name": "Montar requisição",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const { fonte } = $json;\nreturn [{ json: { inicio: Date.now(), versaoApi: 'crm-v1', fonte } }];\n"
+      }
+    },
+    {
+      "id": "funis",
+      "name": "Listar funis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://crm.rdstation.com/api/v1/deal_pipelines",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "limit",
+              "value": "200"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "um-por-funil",
+      "name": "Um item por funil",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const resposta = $input.first().json;\nconst ok = !resposta.error && resposta.statusCode >= 200 && resposta.statusCode < 300 && Array.isArray(resposta.body);\nconst funis = ok ? resposta.body.filter((funil) => funil && (funil.id ?? funil._id) != null) : [];\nif (funis.length === 0) return [{ json: { temFunil: false } }];\nreturn funis.map((funil) => ({ json: { temFunil: true, funilId: String(funil.id ?? funil._id) } }));\n"
+      }
+    },
+    {
+      "id": "tem-funil",
+      "name": "Tem funil?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "tem-funil-verdadeiro",
+              "leftValue": "={{ $json.temFunil }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "negociacoes",
+      "name": "Listar negociações",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        -100
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://crm.rdstation.com/api/v1/deals",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "deal_pipeline_id",
+              "value": "={{ $json.funilId }}"
+            },
+            {
+              "name": "limit",
+              "value": "200"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 600
+            }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "qs",
+                    "name": "next_page",
+                    "value": "={{ $response.body.next_page }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.statusCode !== 200 || $response.body.has_more !== true || !$response.body.next_page }}",
+              "limitPagesFetched": true,
+              "maxRequests": 60,
+              "requestInterval": 600
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "normalizar",
+      "name": "Normalizar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const LIMITE_DE_PAGINAS = 60;\nconst TETO_DA_API = 10000;\nconst contexto = $('Montar requisição').first().json;\nconst respostaDosFunis = $('Listar funis').first().json;\nconst paginas = $input.all().map((item) => item.json).filter((json) => json && (json.statusCode !== undefined || json.error));\nconst respostas = [respostaDosFunis, ...paginas];\nconst requests = respostas.length;\nconst bytes = respostas.reduce((total, resposta) => total + JSON.stringify(resposta.body ?? {}).length, 0);\n\nfunction devolver(linhas, falhas) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - contexto.inicio },\n      falhas,\n      requests,\n      versaoApi: contexto.versaoApi,\n    },\n  }];\n}\n\nconst falhaDeRede = respostas.find((resposta) => resposta.error);\nif (falhaDeRede) {\n  const detalhe = falhaDeRede.error?.message ?? String(falhaDeRede.error);\n  return devolver([], [{ causa: 'api_recusou', detalhe: `falha de rede: ${detalhe}`.slice(0, 500) }]);\n}\n\nconst recusada = respostas.find((resposta) => !(resposta.statusCode >= 200 && resposta.statusCode < 300));\nif (recusada) {\n  const corpo = recusada.body ?? {};\n  const detalhe = String(corpo.error || corpo.message || `HTTP ${recusada.statusCode}`).slice(0, 500);\n  const semAcesso = recusada.statusCode === 401 || recusada.statusCode === 403;\n  return devolver([], [{ causa: semAcesso ? 'reauth_pending' : 'api_recusou', detalhe }]);\n}\n\nconst ROTULO_MAXIMO = 200;\nconst texto = (valor) => {\n  if (typeof valor !== 'string' && typeof valor !== 'number') return null;\n  const limpo = String(valor).trim();\n  return limpo ? limpo.slice(0, ROTULO_MAXIMO) : null;\n};\nconst identificador = (valor) => {\n  const id = texto(valor);\n  return id && /^[A-Za-z0-9_-]+$/.test(id) ? id : null;\n};\nconst numero = (valor) => {\n  if (valor === null || valor === undefined || valor === '') return null;\n  const convertido = Number(valor);\n  return Number.isFinite(convertido) ? convertido : null;\n};\nconst booleano = (valor) => (typeof valor === 'boolean' ? valor : null);\nconst instante = (valor) => (typeof valor === 'string' && valor ? valor : null);\n\nconst etapas = new Map();\nfor (const funil of Array.isArray(respostaDosFunis.body) ? respostaDosFunis.body : []) {\n  const pipelineId = identificador(funil?.id ?? funil?._id);\n  for (const etapa of Array.isArray(funil?.deal_stages) ? funil.deal_stages : []) {\n    const etapaId = identificador(etapa?.id ?? etapa?._id);\n    if (!etapaId) continue;\n    etapas.set(etapaId, { pipelineId, pipelineName: texto(funil.name), stageOrder: numero(etapa.order) });\n  }\n}\n\nfunction linhaDa(negociacao) {\n  const dealId = identificador(negociacao?.id ?? negociacao?._id);\n  if (!dealId) return null;\n  const etapa = negociacao.deal_stage ?? {};\n  const stageId = identificador(etapa.id ?? etapa._id);\n  const doFunil = (stageId && etapas.get(stageId)) || {};\n  return {\n    dealId,\n    pipelineId: doFunil.pipelineId ?? null,\n    pipelineName: doFunil.pipelineName ?? null,\n    stageId,\n    stageName: texto(etapa.name),\n    stageOrder: doFunil.stageOrder ?? null,\n    win: booleano(negociacao.win),\n    hold: booleano(negociacao.hold),\n    amountTotal: numero(negociacao.amount_total),\n    amountMonthly: numero(negociacao.amount_montly ?? negociacao.amount_monthly),\n    amountUnique: numero(negociacao.amount_unique),\n    createdAt: instante(negociacao.created_at),\n    updatedAt: instante(negociacao.updated_at),\n    closedAt: instante(negociacao.closed_at),\n    dealSourceName: texto(negociacao.deal_source?.name),\n    campaignName: texto(negociacao.campaign?.name),\n  };\n}\n\nconst porId = new Map();\nconst porFunil = new Map();\nfor (const pagina of paginas) {\n  const negociacoes = Array.isArray(pagina.body?.deals) ? pagina.body.deals : [];\n  const linhasDaPagina = negociacoes.map(linhaDa).filter(Boolean);\n  for (const linha of linhasDaPagina) porId.set(linha.dealId, linha);\n  const funil = linhasDaPagina[0]?.pipelineId ?? 'sem_funil';\n  const resumo = porFunil.get(funil) ?? { paginas: 0, coletadas: 0, total: 0, temMais: false };\n  resumo.paginas += 1;\n  resumo.coletadas += linhasDaPagina.length;\n  resumo.total = Math.max(resumo.total, Number(pagina.body?.total ?? 0));\n  resumo.temMais = resumo.temMais || pagina.body?.has_more === true;\n  porFunil.set(funil, resumo);\n}\n\nconst linhas = [...porId.values()];\nif (linhas.length === 0) return devolver([], [{ causa: 'sem_dados_no_periodo', detalhe: null }]);\n\nconst truncados = [...porFunil.entries()].filter(([, resumo]) =>\n  (resumo.paginas >= LIMITE_DE_PAGINAS && resumo.temMais) || (resumo.coletadas >= TETO_DA_API && resumo.coletadas < resumo.total));\nif (truncados.length > 0) {\n  const detalhe = truncados.map(([funil, resumo]) => `${funil}: ${resumo.coletadas}/${resumo.total}`).join('; ');\n  return devolver(linhas, [{ causa: 'coleta_incompleta', detalhe: `funil acima do teto de paginação: ${detalhe}`.slice(0, 500) }]);\n}\n\nreturn devolver(linhas, []);\n"
+      }
+    }
+  ],
+  "connections": {
+    "Entrada": {
+      "main": [
+        [
+          {
+            "node": "Montar requisição",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar requisição": {
+      "main": [
+        [
+          {
+            "node": "Listar funis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Listar funis": {
+      "main": [
+        [
+          {
+            "node": "Um item por funil",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Um item por funil": {
+      "main": [
+        [
+          {
+            "node": "Tem funil?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem funil?": {
+      "main": [
+        [
+          {
+            "node": "Listar negociações",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Listar negociações": {
+      "main": [
+        [
+          {
+            "node": "Normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

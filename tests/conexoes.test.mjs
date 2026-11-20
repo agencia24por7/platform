@@ -164,11 +164,14 @@ describe('conta do RD Station guardada por chave ganha cliente dono', { concurre
     assert.ok(depois.includes(`/clientes/${cliente}`), 'o cliente dono não aparece ao lado da conta');
   });
 
-  it('a conta vinculada não entra na fila do orquestrador: o RD Station ainda não tem coletor', async () => {
+  it('a conta vinculada entra na fila do orquestrador como fonte do RD Station, com o cliente dono', async () => {
     const resposta = await get('/api/v0/coleta/fontes?limit=200').then((r) => r.json());
     assert.ok(Array.isArray(resposta.fontes));
-    assert.ok(!resposta.fontes.some((fonte) => fonte.fonteId === recurso));
-    assert.ok(!resposta.fontes.some((fonte) => fonte.platform === 'rdstation'));
+    const fonte = resposta.fontes.find((candidata) => candidata.fonteId === recurso);
+    assert.ok(fonte, 'a conta do RD Station vinculada não aparece nas fontes de coleta');
+    assert.equal(fonte.platform, 'rdstation');
+    assert.equal(fonte.fonteTipo, 'connection_account');
+    assert.equal(fonte.clientId, cliente);
   });
 
   it('remover a conexão revoga a chave e mantém o vínculo como histórico, fora da coleta', async () => {

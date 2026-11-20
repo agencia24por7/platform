@@ -3,11 +3,11 @@ import { describe, it } from 'node:test';
 import { ModoColeta, fonteDe, fontesAtivasNoV1, janelaAteOntem, janelaDias, limiteLinhas, plataformasColetaveis } from './mapaDeFontes.ts';
 
 describe('fontesAtivasNoV1', () => {
-  it('traz só as 7 fontes com série temporal ou snapshot prontos', () => {
+  it('traz só as 8 fontes com série temporal ou snapshot prontos', () => {
     const platforms = fontesAtivasNoV1()
       .map((fonte) => fonte.platform)
       .sort();
-    assert.deepEqual(platforms, ['gbp', 'google', 'gtm', 'ga4', 'meta', 'searchconsole', 'youtube'].sort());
+    assert.deepEqual(platforms, ['gbp', 'google', 'gtm', 'ga4', 'meta', 'rdstation', 'searchconsole', 'youtube'].sort());
   });
 
   it('cada fonte ativa tem motivo nulo e cada fonte inativa tem motivo', () => {
@@ -16,8 +16,8 @@ describe('fontesAtivasNoV1', () => {
     }
   });
 
-  it('rdstation, apify, zapi, pixel e whatsapp ficam fora, com motivo', () => {
-    for (const platform of ['rdstation', 'apify', 'zapi', 'pixel', 'whatsapp'] as const) {
+  it('apify, zapi, pixel e whatsapp ficam fora, com motivo', () => {
+    for (const platform of ['apify', 'zapi', 'pixel', 'whatsapp'] as const) {
       const fonte = fonteDe(platform);
       assert.equal(fonte.ativaNoV1, false);
       assert.ok(fonte.motivoForaDoV1 && fonte.motivoForaDoV1.length > 0);
@@ -26,10 +26,21 @@ describe('fontesAtivasNoV1', () => {
 });
 
 describe('plataformasColetaveis', () => {
-  it('o orquestrador só recebe fontes de plataforma com coletor: conta vinculada por chave fica de fora', () => {
+  it('o orquestrador só recebe fontes de plataforma com coletor: apify e zapi ficam de fora', () => {
     const coletaveis = plataformasColetaveis();
-    assert.deepEqual([...coletaveis].sort(), ['gbp', 'google', 'gtm', 'ga4', 'meta', 'searchconsole', 'youtube'].sort());
-    for (const platform of ['rdstation', 'apify', 'zapi'] as const) assert.ok(!coletaveis.includes(platform));
+    assert.deepEqual([...coletaveis].sort(), ['gbp', 'google', 'gtm', 'ga4', 'meta', 'rdstation', 'searchconsole', 'youtube'].sort());
+    for (const platform of ['apify', 'zapi'] as const) assert.ok(!coletaveis.includes(platform));
+  });
+
+  it('rdstation entra como snapshot diário no fato de negociações, sem janela', () => {
+    const fonte = fonteDe('rdstation');
+    assert.equal(fonte.grao, 'snapshot');
+    assert.equal(fonte.tabelaFato, 'fato_rd_negociacoes');
+    assert.equal(janelaDias('rdstation', ModoColeta.Completa), 0);
+    assert.ok(fonte.rotulosEsperados.includes('deal_stage.name'));
+    for (const campo of [...fonte.dimensoes, ...fonte.metricas]) {
+      assert.ok(!/contact|email|phone|organization|user|custom|notes|^name$/.test(campo), `campo pessoal no mapa: ${campo}`);
+    }
   });
 });
 
