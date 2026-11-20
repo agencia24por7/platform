@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { isValidExternalId, normalizeExternalId } from './adAccount.ts';
+import { isValidExternalId, normalizeExternalId, recusaParaDesvincularConta } from './adAccount.ts';
 
 describe('normalizeExternalId', () => {
   it('prefixa act_ no Meta quando ausente', () => {
@@ -45,3 +45,22 @@ describe('isValidExternalId', () => {
     assert.ok(!isValidExternalId('meta', 'act_1234567890 OR 1=1'));
   });
 });
+
+describe('desvincular conta de anúncio', () => {
+  it('operador desvincula conta vinculada', () => {
+    assert.equal(recusaParaDesvincularConta('operator', { status: 'linked' }), null);
+  });
+
+  it('leitor não desvincula', () => {
+    assert.equal(recusaParaDesvincularConta('viewer', { status: 'linked' })?.codigo, 'forbidden');
+  });
+
+  it('conta inexistente', () => {
+    assert.equal(recusaParaDesvincularConta('admin', null)?.codigo, 'not_found');
+  });
+
+  it('conta já desvinculada', () => {
+    assert.equal(recusaParaDesvincularConta('admin', { status: 'unlinked' })?.codigo, 'conflict');
+  });
+});
+

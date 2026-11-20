@@ -23,6 +23,7 @@ import { canAdminister, canOperate } from '@/modules/identity/domain/user';
 import {
   aceitarConvite,
   convidarParaMcc,
+  desvincularConta,
   desvincularRecurso,
   guardarChave,
   removerChave,
@@ -378,6 +379,7 @@ export default async function ConectorPage({
                       <th>{agencia ? 'Cliente' : 'Negócio'}</th>
                       <th>Coleta</th>
                       <th>Última coleta</th>
+                      {podeVincular ? <th aria-label="Ações" /> : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -398,6 +400,17 @@ export default async function ConectorPage({
                         <td className="muted">
                           {conta.lastSyncAt ? conta.lastSyncAt.toLocaleString('pt-BR') : 'nunca'}
                         </td>
+                        {podeVincular ? (
+                          <td>
+                            <form className="form--inline" action={desvincularConta}>
+                              <input type="hidden" name="contaId" value={conta.id} />
+                              <input type="hidden" name="voltarPara" value={voltarPara} />
+                              <button className="btn btn--compacto" type="submit" aria-label={`Desvincular ${conta.name}`}>
+                                Desvincular
+                              </button>
+                            </form>
+                          </td>
+                        ) : null}
                       </tr>
                     ))}
                   </tbody>

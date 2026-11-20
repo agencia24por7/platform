@@ -1,4 +1,5 @@
 import type { Platform } from '@/modules/connections/domain/connection';
+import { canOperate, type MemberRole } from '../../identity/domain/user.ts';
 
 export type AdAccountStatus = 'linked' | 'pending' | 'error' | 'unlinked';
 
@@ -32,4 +33,16 @@ export function normalizeExternalId(platform: Platform, raw: string): string {
 
 export function isValidExternalId(platform: Platform, value: string): boolean {
   return platform === 'google' ? GOOGLE_ID.test(value) : META_ID.test(value);
+}
+
+export type RecusaDeConta = {
+  readonly codigo: 'forbidden' | 'not_found' | 'conflict';
+  readonly mensagem: string;
+};
+
+export function recusaParaDesvincularConta(papel: MemberRole, conta: Pick<AdAccount, 'status'> | null): RecusaDeConta | null {
+  if (!canOperate(papel)) return { codigo: 'forbidden', mensagem: 'Seu papel não permite desvincular contas.' };
+  if (!conta) return { codigo: 'not_found', mensagem: 'Conta não encontrada nesta organização.' };
+  if (conta.status === 'unlinked') return { codigo: 'conflict', mensagem: 'Esta conta já está desvinculada.' };
+  return null;
 }

@@ -105,6 +105,7 @@ export type ColetaRepository = {
   abrir(input: AbrirColetaInput, organizationId: string, clientId: string, platform: Platform): Promise<Coleta>;
   fechar(input: FecharColetaInput): Promise<Coleta | null>;
   marcarFalhaDeAuth(fonteTipo: FonteTipo, fonteId: string): Promise<void>;
+  marcarColetaConcluida(fonteTipo: FonteTipo, fonteId: string, em: Date): Promise<void>;
 };
 
 export function createColetaRepository(): ColetaRepository {
@@ -181,6 +182,10 @@ export function createColetaRepository(): ColetaRepository {
           ${input.errorCode}, ${input.errorMessage}
         )`) as unknown as ColetaRow[];
       return rows[0]?.id ? toColeta(rows[0]) : null;
+    },
+
+    async marcarColetaConcluida(fonteTipo, fonteId, em) {
+      await sql()`SELECT automation.coleta_concluida(${fonteTipo}, ${fonteId}, ${em})`;
     },
 
     async marcarFalhaDeAuth(fonteTipo, fonteId) {
