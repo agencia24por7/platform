@@ -4,6 +4,7 @@ import { logger } from '@/shared/logging/logger';
 import type { Platform } from '@/modules/connections/domain/connection';
 import type { RelatorioDeExecucao } from '@/modules/coleta/domain/qualidade';
 import { linhaParaBigQuery, paraParametroBigQuery } from '@/modules/coleta/infrastructure/parametrosBigQuery';
+import { COLUNAS_DO_FATO_RD, dataDoSnapshot, linhaDoFatoRd, negociacoesUnicas, type NegociacaoRd } from '@/modules/coleta/domain/negociacoesRd';
 
 type LinhaBruta = Record<string, unknown>;
 
@@ -22,6 +23,7 @@ type ConfiguracaoPlataforma = {
   readonly colunas: readonly string[];
   readonly tipos: Readonly<Record<string, string>>;
   readonly mapear: (linha: LinhaBruta, ctx: ContextoGravacao) => Record<string, unknown>;
+  readonly preparar?: (linhas: readonly LinhaBruta[]) => readonly LinhaBruta[];
 };
 
 const TIPOS_ADS = {
@@ -32,6 +34,16 @@ const TIPOS_ADS = {
 } as const;
 
 const agora = () => new Date().toISOString();
+
+const TIPOS_RD = {
+  organization_id: 'STRING', client_id: 'STRING', deal_id: 'STRING', data_snapshot: 'DATE', pipeline_id: 'STRING',
+  pipeline_nome: 'STRING', etapa_id: 'STRING', etapa_nome: 'STRING', etapa_ordem: 'INT64', situacao: 'STRING',
+  valor_total: 'NUMERIC', valor_mensal: 'NUMERIC', valor_unico: 'NUMERIC', moeda: 'STRING', criada_em: 'TIMESTAMP',
+  atualizada_em: 'TIMESTAMP', fechada_em: 'TIMESTAMP', fonte_nome: 'STRING', campanha_nome: 'STRING',
+  execucao_id: 'STRING', inserido_em: 'TIMESTAMP',
+} as const;
+
+type NegociacaoDoDia = NegociacaoRd & { readonly dataSnapshot: string };
 
 const CONFIG_POR_PLATAFORMA: Partial<Record<Platform, ConfiguracaoPlataforma>> = {
   google: {
@@ -185,6 +197,28 @@ const CONFIG_POR_PLATAFORMA: Partial<Record<Platform, ConfiguracaoPlataforma>> =
       inserido_em: agora(),
     }),
   },
+  rdstation: {
+    staging: 'stg_rd_negociacoes',
+    fato: 'fato_rd_negociacoes',
+    chave: ['organization_id', 'client_id', 'deal_id', 'data_snapshot'],
+    colunas: COLUNAS_DO_FATO_RD,
+    tipos: TIPOS_RD,
+    preparar: (linhas) => {
+      const dataSnapshot = dataDoSnapshot(new Date());
+      return negociacoesUnicas(linhas).map((negociacao) => ({ ...negociacao, dataSnapshot }));
+    },
+    mapear: (linha, ctx) => {
+      const negociacao = linha as unknown as NegociacaoDoDia;
+      return linhaDoFatoRd(negociacao, {
+        organizationId: ctx.organizationId,
+        clientId: ctx.clientId,
+        dataSnapshot: negociacao.dataSnapshot,
+        moeda: ctx.currency,
+        execucaoId: ctx.execucaoId,
+        inseridoEm: agora(),
+      });
+    },
+  },
 };
 
 const PLATAFORMAS_SNAPSHOT: ReadonlySet<Platform> = new Set(['gtm']);
@@ -233,7 +267,10 @@ export function createBigQueryGravador(): BigQueryGravador {
 
     const query = `
       MERGE \`${config.BQ_PROJECT_ID}.${dataset}.${cfg.fato}\` AS alvo
-      USING (SELECT * FROM \`${config.BQ_PROJECT_ID}.${dataset}.${cfg.staging}\` WHERE execucao_id = @execucaoId) AS origem
+      USING (
+        SELECT * FROM \`${config.BQ_PROJECT_ID}.${dataset}.${cfg.staging}\` WHERE execucao_id = @execucaoId
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY ${cfg.chave.join(', ')} ORDER BY inserido_em DESC) = 1
+      ) AS origem
       ON ${onClause}
       WHEN MATCHED THEN UPDATE SET ${setClause}
       WHEN NOT MATCHED THEN INSERT (${insertColunas}) VALUES (${insertValores})
@@ -288,9 +325,10 @@ export function createBigQueryGravador(): BigQueryGravador {
 
       const cfg = CONFIG_POR_PLATAFORMA[platform];
       if (!cfg) return { ok: false, motivo: 'plataforma_sem_mapeamento' };
-      if (linhas.length === 0) return { ok: true, linhasGravadas: 0 };
+      const preparadas = cfg.preparar ? cfg.preparar(linhas) : linhas;
+      if (preparadas.length === 0) return { ok: true, linhasGravadas: 0 };
 
-      const linhasMapeadas = linhas.map((linha) => linhaParaBigQuery(cfg.mapear(linha, ctx), cfg.tipos));
+      const linhasMapeadas = preparadas.map((linha) => linhaParaBigQuery(cfg.mapear(linha, ctx), cfg.tipos));
 
       try {
         const colunasQuery = cfg.colunas.join(', ');

@@ -8,6 +8,7 @@ export const MODELO_DE_COLETOR: Readonly<Record<string, string>> = {
   youtube: 'n8n/workflows/coletores/coletor-youtube.json',
   gbp: 'n8n/workflows/coletores/coletor-gbp.json',
   gtm: 'n8n/workflows/coletores/coletor-gtm.json',
+  rdstation: 'n8n/workflows/coletores/coletor-rdstation.json',
 };
 
 export const MODELO_DE_EXECUTOR: Readonly<Record<string, string>> = {
