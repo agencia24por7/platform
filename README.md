@@ -30,6 +30,7 @@ npm run infra:up         # postgres + n8n
 npm run db:migrate
 node scripts/n8n-credential.mjs                                   # token do worker como credencial cifrada
 docker exec tria-n8n n8n import:workflow --input=/workflows/coleta-metricas.json
+npm run n8n:sincronizar  # confere os workflows da instância contra o repositório (docs/adr/0009)
 ./scripts/dev.sh         # app em http://localhost:3000
 ```
 

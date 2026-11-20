@@ -25,8 +25,8 @@ output "tunnel_commands" {
   description = "Acesso administrativo sem abrir porta na internet."
   value = {
     ssh      = "gcloud compute ssh ${google_compute_instance.app.name} --zone ${var.zone} --tunnel-through-iap"
-    postgres = "gcloud compute start-iap-tunnel ${google_compute_instance.app.name} 5432 --local-host-port=localhost:5432 --zone ${var.zone}"
-    n8n      = "gcloud compute start-iap-tunnel ${google_compute_instance.app.name} 5678 --local-host-port=localhost:5678 --zone ${var.zone}"
+    postgres = "VM=${google_compute_instance.app.name} ZONE=${var.zone} ./scripts/tunel.sh postgres"
+    n8n      = "VM=${google_compute_instance.app.name} ZONE=${var.zone} ./scripts/tunel.sh n8n"
   }
 }
 

@@ -25,7 +25,7 @@ describe('endereços do app', () => {
   it('nenhum redirecionamento é construído a partir da requisição', () => {
     const suspeitos = [];
 
-    for (const caminho of [...arquivosDe('app', ['.ts', '.tsx']), 'middleware.ts']) {
+    for (const caminho of [...arquivosDe('app', ['.ts', '.tsx']), 'proxy.ts']) {
       const conteudo = readFileSync(caminho, 'utf8');
 
       for (const padrao of ['request.url', 'nextUrl.clone()']) {
