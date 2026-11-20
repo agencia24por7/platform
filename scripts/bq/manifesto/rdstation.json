@@ -1,3 +1,62 @@
 [
-  { "tabela": "fato_rd_negociacoes", "chave": "conta_id", "plataforma": "rdstation", "data": "data_snapshot" }
+  {
+    "tabela": "fato_rd_negociacoes",
+    "chave": "conta_id",
+    "plataforma": "rdstation",
+    "data": "data_snapshot"
+  },
+  {
+    "tabela": "dim_rd_funil_scd2",
+    "chave": "conta_id",
+    "plataforma": "rdstation",
+    "todoPeriodo": true
+  },
+  {
+    "tabela": "dim_rd_etapa_scd2",
+    "chave": "conta_id",
+    "plataforma": "rdstation",
+    "todoPeriodo": true
+  },
+  {
+    "tabela": "dim_rd_fonte_scd2",
+    "chave": "conta_id",
+    "plataforma": "rdstation",
+    "todoPeriodo": true
+  },
+  {
+    "tabela": "dim_rd_campanha_scd2",
+    "chave": "conta_id",
+    "plataforma": "rdstation",
+    "todoPeriodo": true
+  },
+  {
+    "tabela": "dim_rd_produto_scd2",
+    "chave": "conta_id",
+    "plataforma": "rdstation",
+    "todoPeriodo": true
+  },
+  {
+    "tabela": "dim_rd_usuario_scd2",
+    "chave": "conta_id",
+    "plataforma": "rdstation",
+    "todoPeriodo": true
+  },
+  {
+    "tabela": "fato_rd_negociacao_produtos",
+    "chave": "conta_id",
+    "plataforma": "rdstation",
+    "data": "data_snapshot"
+  },
+  {
+    "tabela": "fato_rd_negociacao_etapas",
+    "chave": "conta_id",
+    "plataforma": "rdstation",
+    "data": "data_dia"
+  },
+  {
+    "tabela": "fato_rd_tarefas_diarias",
+    "chave": "conta_id",
+    "plataforma": "rdstation",
+    "data": "data_dia"
+  }
 ]

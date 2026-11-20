@@ -1,3 +1,26 @@
 [
-  { "tabela": "fato_meta_formularios", "chave": "page_id", "plataforma": "leadads", "data": "data_snapshot" }
+  {
+    "tabela": "fato_meta_formularios",
+    "chave": "page_id",
+    "plataforma": "leadads",
+    "data": "data_snapshot"
+  },
+  {
+    "tabela": "dim_meta_pagina_scd2",
+    "chave": "page_id",
+    "plataforma": "leadads",
+    "todoPeriodo": true
+  },
+  {
+    "tabela": "dim_meta_formulario_scd2",
+    "chave": "page_id",
+    "plataforma": "leadads",
+    "todoPeriodo": true
+  },
+  {
+    "tabela": "fato_meta_leads_diario",
+    "chave": "page_id",
+    "plataforma": "leadads",
+    "data": "data_dia"
+  }
 ]

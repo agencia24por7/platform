@@ -45,6 +45,15 @@ function rodarMontar(fonte: Record<string, unknown>, janelaDaFonte = janela) {
   return executar({ fonte, janela: janelaDaFonte, modo: 'completa' })[0]!.json;
 }
 
+const NOS_DOS_RECORTES = [
+  'Recorte (dispositivo)',
+  'Recorte (sistema operacional)',
+  'Recorte (navegador do visitante)',
+  'Recorte (host)',
+  'Recorte (chaves de correspondência)',
+  'Recorte (resultado do processamento)',
+];
+
 type SaidaDoColetor = { linhas: Record<string, unknown>[]; falhas: { causa: string; detalhe: string | null }[] };
 
 function rodarNormalizar(respostas: Record<'total' | 'navegador' | 'servidor', unknown[]>, datasetId = '1234567890'): SaidaDoColetor {
@@ -54,6 +63,8 @@ function rodarNormalizar(respostas: Record<'total' | 'navegador' | 'servidor', u
     'Eventos (total)': respostas.total,
     'Eventos (navegador)': respostas.navegador,
     'Eventos (servidor)': respostas.servidor,
+    Dataset: [resposta({ id: datasetId })],
+    ...Object.fromEntries(NOS_DOS_RECORTES.map((nome) => [nome, [pagina([])]])),
   };
   const $ = (nome: string) => ({
     first: () => ({ json: porNo[nome]![0] }),
@@ -149,7 +160,7 @@ describe('linha do fato de eventos', () => {
 describe('coletor do conjunto de dados da Meta (modelo do n8n)', () => {
   it('toda chamada HTTP usa a credencial facebookGraphApi que o provisioner substitui', () => {
     const chamadas = modelo.nodes.filter((candidato) => candidato.type === 'n8n-nodes-base.httpRequest');
-    assert.equal(chamadas.length, 3);
+    assert.equal(chamadas.length, 3 + 1 + NOS_DOS_RECORTES.length);
     for (const chamada of chamadas) {
       assert.equal(chamada.parameters.authentication, 'predefinedCredentialType');
       assert.equal(chamada.parameters.nodeCredentialType, 'facebookGraphApi');
@@ -186,9 +197,10 @@ describe('coletor do conjunto de dados da Meta (modelo do n8n)', () => {
       ...agregarPorDia([balde('2026-11-01T12:00:00+0000', [{ value: 'PageView', count: 8 }])], OrigemDoEvento.Navegador, janela),
       ...agregarPorDia([balde('2026-11-01T12:00:00+0000', [{ value: 'Lead', count: 3 }])], OrigemDoEvento.Servidor, janela),
     ];
-    assert.deepEqual(ordenar(saida.linhas), ordenar(esperado));
-    for (const linha of saida.linhas) assert.deepEqual(Object.keys(linha).sort(), [...CAMPOS_DO_EVENTO].sort());
-    assert.deepEqual(ordenar(eventosUnicos(saida.linhas)), ordenar(saida.linhas));
+    const eventos = saida.linhas.filter((linha) => !linha._tabela);
+    assert.deepEqual(ordenar(eventos), ordenar(esperado));
+    for (const linha of eventos) assert.deepEqual(Object.keys(linha).sort(), [...CAMPOS_DO_EVENTO].sort());
+    assert.deepEqual(ordenar(eventosUnicos(eventos)), ordenar(eventos));
     assert.ok(!JSON.stringify(saida).includes(TOKEN));
   });
 
@@ -204,7 +216,7 @@ describe('coletor do conjunto de dados da Meta (modelo do n8n)', () => {
     const saida = rodarNormalizar({ total: [pagina(baldesTotais)], navegador: [recusa], servidor: [recusa] });
     assert.equal(saida.falhas[0]!.causa, 'coleta_incompleta');
     assert.ok(saida.linhas.length > 0);
-    assert.ok(saida.linhas.every((linha) => linha.origem === 'total'));
+    assert.ok(saida.linhas.filter((linha) => !linha._tabela).every((linha) => linha.origem === 'total'));
   });
 
   it('falha de rede não devolve o token que estiver na mensagem', () => {

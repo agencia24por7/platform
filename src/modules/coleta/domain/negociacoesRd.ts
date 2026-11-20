@@ -23,6 +23,9 @@ export const CAMPOS_DA_NEGOCIACAO = [
   'closedAt',
   'dealSourceName',
   'campaignName',
+  'userId',
+  'dealSourceId',
+  'campaignId',
 ] as const;
 
 export type NegociacaoRd = {
@@ -41,6 +44,9 @@ export type NegociacaoRd = {
   readonly closedAt: string | null;
   readonly dealSourceName: string | null;
   readonly campaignName: string | null;
+  readonly userId: string | null;
+  readonly dealSourceId: string | null;
+  readonly campaignId: string | null;
 };
 
 export const FUSO_DO_SNAPSHOT = 'America/Sao_Paulo';
@@ -106,6 +112,9 @@ export function negociacaoDaLinha(bruta: Readonly<Record<string, unknown>>): Neg
     closedAt: instante(bruta.closedAt),
     dealSourceName: texto(bruta.dealSourceName),
     campaignName: texto(bruta.campaignName),
+    userId: identificador(bruta.userId),
+    dealSourceId: identificador(bruta.dealSourceId),
+    campaignId: identificador(bruta.campaignId),
   };
 }
 
@@ -138,7 +147,7 @@ export type ContextoDoFatoRd = {
 export const COLUNAS_DO_FATO_RD = [
   'organization_id', 'conta_id', 'deal_id', 'data_snapshot', 'pipeline_id', 'pipeline_nome', 'etapa_id',
   'etapa_nome', 'etapa_ordem', 'situacao', 'valor_total', 'valor_mensal', 'valor_unico', 'moeda', 'criada_em',
-  'atualizada_em', 'fechada_em', 'fonte_nome', 'campanha_nome', 'execucao_id', 'inserido_em',
+  'atualizada_em', 'fechada_em', 'fonte_nome', 'campanha_nome', 'responsavel_id', 'fonte_id', 'campanha_id', 'execucao_id', 'inserido_em',
 ] as const;
 
 export function linhaDoFatoRd(negociacao: NegociacaoRd, ctx: ContextoDoFatoRd): Record<(typeof COLUNAS_DO_FATO_RD)[number], unknown> {
@@ -162,6 +171,9 @@ export function linhaDoFatoRd(negociacao: NegociacaoRd, ctx: ContextoDoFatoRd): 
     fechada_em: negociacao.closedAt,
     fonte_nome: negociacao.dealSourceName,
     campanha_nome: negociacao.campaignName,
+    responsavel_id: negociacao.userId,
+    fonte_id: negociacao.dealSourceId,
+    campanha_id: negociacao.campaignId,
     execucao_id: ctx.execucaoId,
     inserido_em: ctx.inseridoEm,
   };

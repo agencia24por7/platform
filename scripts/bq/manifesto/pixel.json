@@ -1,3 +1,20 @@
 [
-  { "tabela": "fato_meta_eventos_dataset", "chave": "dataset_id", "plataforma": "pixel", "data": "data_dia" }
+  {
+    "tabela": "fato_meta_eventos_dataset",
+    "chave": "dataset_id",
+    "plataforma": "pixel",
+    "data": "data_dia"
+  },
+  {
+    "tabela": "dim_meta_dataset_scd2",
+    "chave": "dataset_id",
+    "plataforma": "pixel",
+    "todoPeriodo": true
+  },
+  {
+    "tabela": "fato_meta_eventos_dataset_recortes",
+    "chave": "dataset_id",
+    "plataforma": "pixel",
+    "data": "data_dia"
+  }
 ]
