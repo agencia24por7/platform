@@ -12,6 +12,7 @@ const LINKS = [
   { href: '/sobre', rotulo: 'Sobre a orla' },
   { href: '/privacidade', rotulo: 'Privacidade' },
   { href: '/termos', rotulo: 'Termos de serviço' },
+  { href: '/exclusao-de-dados', rotulo: 'Exclusão de dados' },
 ];
 
 export function DocumentoPublico({ titulo, resumo, atualizadoEm, children }: Props) {
