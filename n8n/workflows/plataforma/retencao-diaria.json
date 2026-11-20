@@ -1,0 +1,67 @@
+{
+  "name": "ORLA · privacidade · retenção diária",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 3 * * *"
+            }
+          ]
+        }
+      },
+      "name": "Todo dia às 03:30",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {},
+      "name": "Execução manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://app:3000/api/v0/manutencao/retencao",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "name": "Aplicar retenção",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 100],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "ORLA · worker token"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Todo dia às 03:30": {
+      "main": [[{ "node": "Aplicar retenção", "type": "main", "index": 0 }]]
+    },
+    "Execução manual": {
+      "main": [[{ "node": "Aplicar retenção", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "timezone": "America/Sao_Paulo",
+    "errorWorkflow": "im3mfvd9pUI79e74"
+  }
+}
