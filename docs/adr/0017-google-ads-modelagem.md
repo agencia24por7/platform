@@ -1,4 +1,4 @@
-# 0016 — Modelagem do Google Ads no BigQuery
+# 0017 — Modelagem do Google Ads no BigQuery
 
 - Status: aceito
 - Data: 2026-11-20

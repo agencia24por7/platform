@@ -293,7 +293,7 @@ Configuração: `tabelas/google.ts`. Manifesto: `manifesto/google.json`. DDL: `2
 
 Mesma tabela da seção Meta Ads, com `platform = 'google'`.
 
-Modelagem e cota: ADR [0016](../../docs/adr/0016-google-ads-modelagem.md). Origem: Google Ads API
+Modelagem e cota: ADR [0017](../../docs/adr/0017-google-ads-modelagem.md). Origem: Google Ads API
 `v26`, GAQL `googleAds:searchStream`, uma consulta por tabela. Todas as colunas
 de DDL são geradas da especificação em `tabelas/googleEspecificacao.ts` e
 conferidas por `googleEspecificacao.test.ts`. Valor monetário = `cost_micros` ÷
@@ -334,7 +334,7 @@ só trazem linhas com `metrics.impressions > 0`; campanha traz todas.
 ### Dimensões SCD2
 
 Chave = `organization_id, ad_account_id` + id da entidade; manifesto
-`todoPeriodo`. Buscadas só na janela mais recente (ADR 0016). Cluster pela
+`todoPeriodo`. Buscadas só na janela mais recente (ADR 0017). Cluster pela
 chave; sem partição.
 
 | Tabela | Chave da entidade | Atributos (hash da versão) |
@@ -352,7 +352,7 @@ Staging das dimensões: `stg_google_campanha`, `stg_google_grupo_anuncios`,
 
 Por conta: 11 consultas por janela de 28 dias (+5 de entidade na janela mais
 recente). Backfill de 37 meses ≈ 456 operações por conta; incremental ≈ 16.
-Teto recomendado: 20 contas/dia de backfill. Detalhe na ADR 0016.
+Teto recomendado: 20 contas/dia de backfill. Detalhe na ADR 0017.
 
 <!-- Google Ads: novas tabelas acima desta linha -->
 
@@ -369,7 +369,7 @@ Configuração: `tabelas/ga4.ts`. Manifesto: `manifesto/ga4.json`. DDL: `22_ga4*
 - Partição `data_dia`; cluster `organization_id, property_id`.
 - Staging `stg_ga4_diario`; view `vw_ga4_diario`.
 
-Decisões: ADR [0016](../../docs/adr/0016-ga4-searchconsole-modelagem.md). DDL:
+Decisões: ADR [0018](../../docs/adr/0018-ga4-searchconsole-modelagem.md). DDL:
 `22_ga4.sql`. Todas as tabelas abaixo seguem o mesmo molde: fato diário
 `PARTITION BY data_dia`, `CLUSTER BY organization_id, property_id, <1ª
 dimensão>`; staging `stg_<mesmo sufixo>`; view `vw_<mesmo sufixo>` (dedupe +
@@ -409,7 +409,7 @@ Configuração: `tabelas/searchconsole.ts`. Manifesto: `manifesto/searchconsole.
 - Partição `data_dia`; cluster `organization_id, site`.
 - Staging `stg_search_console_diario`; view `vw_search_console_diario`.
 
-Decisões: ADR [0016](../../docs/adr/0016-ga4-searchconsole-modelagem.md). DDL:
+Decisões: ADR [0018](../../docs/adr/0018-ga4-searchconsole-modelagem.md). DDL:
 `23_searchconsole.sql`. Mesmo molde das tabelas de recorte do GA4: partição
 `data_dia`, `CLUSTER BY organization_id, site, <1ª dimensão>`, staging
 `stg_<sufixo>`, view `vw_<sufixo>` com `platform = 'searchconsole'`. Origem:
@@ -450,7 +450,7 @@ Configuração: `tabelas/youtube.ts`. Manifesto: `manifesto/youtube.json`. DDL: 
 Origem: YouTube Analytics API v2 (`reports.query`, escopo `yt-analytics.readonly`)
 e YouTube Data API v3 (`videos.list`, `playlists.list`, escopo `youtube.readonly`,
 1 unidade de cota por chamada; nunca `search.list`, que custa 100). Decisões: ADR
-[0016](../../docs/adr/0016-youtube-gbp-modelagem.md). Cada tabela abaixo tem
+[0019](../../docs/adr/0019-youtube-gbp-modelagem.md). Cada tabela abaixo tem
 `_tabela` própria no coletor (entre parênteses). Todas as `vw_*` de fato dão o
 dono `cliente_na_epoca_*` e `cliente_atual_*`; as `vw_dim_*` dão só
 `cliente_atual_*`.
@@ -538,7 +538,7 @@ Performance API (`fetchMultiDailyMetricsTimeSeries`): as quatro
 `BUSINESS_IMPRESSIONS_*`, `BUSINESS_DIRECTION_REQUESTS`, `CALL_CLICKS`,
 `WEBSITE_CLICKS`, `MESSAGING_CLICKS`, `BUSINESS_BOOKINGS` e
 `BUSINESS_FOOD_MENU_CLICKS` (as duas métricas depreciadas ficam de fora).
-Decisões: ADR [0016](../../docs/adr/0016-youtube-gbp-modelagem.md).
+Decisões: ADR [0019](../../docs/adr/0019-youtube-gbp-modelagem.md).
 
 ### `dim_gbp_local_scd2` (`dim_local`)
 
@@ -567,7 +567,7 @@ Decisões: ADR [0016](../../docs/adr/0016-youtube-gbp-modelagem.md).
 - Staging `stg_gbp_palavras_chave_mensal`; view `vw_gbp_palavras_chave_mensal`
   (dono pelo mês: `cliente_na_epoca_*` usa o dia 1 do mês).
 
-Avaliações (contagem e nota média): ficaram de fora, ver ADR 0016.
+Avaliações (contagem e nota média): ficaram de fora, ver ADR 0019.
 
 <!-- Google Business Profile: novas tabelas acima desta linha -->
 
@@ -586,7 +586,7 @@ Configuração: `tabelas/rdstation.ts`. Manifesto: `manifesto/rdstation.json`. D
 - Partição `data_snapshot`; cluster `organization_id, conta_id`.
 - Staging `stg_rd_negociacoes`; view `vw_rd_negociacoes`.
 
-### Dimensões do RD Station e fatos de negociação (ADR 0016)
+### Dimensões do RD Station e fatos de negociação (ADR 0020)
 
 `fato_rd_negociacoes` ganhou `responsavel_id` (id opaco do usuário), `fonte_id` e `campanha_id`
 (DDL: `26_rdstation.sql`, com `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`). Todas as dimensões abaixo têm chave
@@ -646,7 +646,7 @@ Configuração: `tabelas/rdstation.ts`. Manifesto: `manifesto/rdstation.json`. D
 - Granularidade: uma linha por `organization_id`, `conta_id`, `deal_id`, `etapa_id`, `entrou_em`.
 - Colunas: `data_dia` (dia de São Paulo da entrada), `execucao_id`, `inserido_em`.
 - Partição `data_dia` (cluster `organization_id, conta_id, deal_id`); staging `stg_rd_negociacao_etapas`; view `vw_rd_negociacao_etapas` (`cliente_na_epoca_*` e `cliente_atual_*`).
-- Origem: `deal_stage_histories` de cada negociação em `GET /deals` (formato a confirmar, ADR 0016). Evento de mudança de etapa: dá o tempo em cada etapa e a conversão entre etapas.
+- Origem: `deal_stage_histories` de cada negociação em `GET /deals` (formato a confirmar, ADR 0020). Evento de mudança de etapa: dá o tempo em cada etapa e a conversão entre etapas.
 
 ### `fato_rd_tarefas_diarias`
 
@@ -660,7 +660,7 @@ Configuração: `tabelas/rdstation.ts`. Manifesto: `manifesto/rdstation.json`. D
 ## Meta Pixel e Lead Ads
 
 Configuração: `tabelas/pixel.ts` e `tabelas/leadads.ts`. Manifesto:
-`manifesto/pixel.json` e `manifesto/leadads.json`. DDL: `27_*.sql` e `27b_*.sql`. ADRs 0014 e 0016.
+`manifesto/pixel.json` e `manifesto/leadads.json`. DDL: `27_*.sql` e `27b_*.sql`. ADRs 0014 e 0020.
 
 ### `fato_meta_eventos_dataset` (pixel)
 
@@ -681,7 +681,7 @@ Configuração: `tabelas/pixel.ts` e `tabelas/leadads.ts`. Manifesto:
 - Staging `stg_meta_formularios`; view `vw_meta_formularios`.
 - DDL: `06_meta_dataset_formularios.sql`.
 
-### `dim_meta_dataset_scd2` e `fato_meta_eventos_dataset_recortes` (ADR 0016)
+### `dim_meta_dataset_scd2` e `fato_meta_eventos_dataset_recortes` (ADR 0020)
 
 ### `dim_meta_dataset_scd2` (dimensão SCD2)
 
@@ -697,7 +697,7 @@ Configuração: `tabelas/pixel.ts` e `tabelas/leadads.ts`. Manifesto:
 - Partição `data_dia` (cluster `organization_id, dataset_id, recorte`); staging `stg_meta_eventos_dataset_recortes`; view `vw_meta_eventos_dataset_recortes` (`cliente_na_epoca_*` e `cliente_atual_*`).
 - Origem: `GET /{dataset}/stats?aggregation=<recorte>`, uma chamada por recorte. Recortes (`recorte` → agregação): `dispositivo` → `device_type`, `sistema_operacional` → `device_os`, `navegador_do_visitante` → `browser_type`, `host` → `host` (só o nome do servidor), `chave_de_correspondencia` → `match_keys` (qualidade: quantos eventos trazem cada chave, só o nome da chave), `resultado_do_processamento` → `event_processing_results`. Recortes não se combinam entre si nem com o evento. `url` não é coletada (parâmetros podem trazer dado pessoal).
 
-### Dimensões e leads diários do Lead Ads (ADR 0016)
+### Dimensões e leads diários do Lead Ads (ADR 0020)
 
 ### `dim_meta_pagina_scd2` (dimensão SCD2)
 
@@ -730,7 +730,7 @@ GTM não é série temporal: hoje só alimenta `gov_snapshot_fontes` (seção
 Transversais) com `platform = 'gtm'`, via `tipo: 'snapshot'` (append, sem
 staging).
 
-### Dimensões do contêiner (ADR 0016)
+### Dimensões do contêiner (ADR 0020)
 
 Todas com chave `organization_id` e `conteiner_id` (o ID público `GTM-XXXX`). DDL: `28_gtm.sql`.
 

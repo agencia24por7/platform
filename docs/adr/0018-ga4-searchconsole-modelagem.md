@@ -1,4 +1,4 @@
-# 0016 — Modelagem do GA4 e do Search Console no BigQuery
+# 0018 — Modelagem do GA4 e do Search Console no BigQuery
 
 - Status: aceito
 - Data: 2026-11-20
