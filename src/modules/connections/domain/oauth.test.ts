@@ -273,3 +273,13 @@ describe('requestCameFromBase', () => {
     assert.ok(!requestCameFromBase({ host: 'localhost:4000' }, 'http://localhost:3000'));
   });
 });
+
+describe('isSafeReturnPath com segmentos de ponto', () => {
+  it('recusa caminho que normaliza para //outro-dominio', () => {
+    for (const caminho of ['/a/..//evil.example', '/%2e%2e//evil.example', '/./..//evil.example/x']) {
+      assert.equal(isSafeReturnPath(caminho), false, caminho);
+    }
+    assert.equal(isSafeReturnPath('/integracoes/conector/meta?aviso=ok'), true);
+  });
+});
+

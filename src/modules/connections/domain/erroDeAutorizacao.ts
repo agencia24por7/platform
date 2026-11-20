@@ -20,7 +20,8 @@ export function mensagemDoErroDeAutorizacao(codigo: string): string {
 }
 
 export function destinoDoErroDeAutorizacao(origem: string | null, codigo: string, plataforma: string): string {
-  const url = new URL(origem ?? '/integracoes', 'http://orla.local');
+  const normalizada = new URL(origem ?? '/integracoes', 'http://orla.local');
+  const url = normalizada.pathname.startsWith('//') ? new URL('/integracoes', 'http://orla.local') : normalizada;
   for (const chave of ['erroConexao', 'plataforma', 'autorizado', 'descobertas', 'aviso']) url.searchParams.delete(chave);
   url.searchParams.set('erroConexao', codigo);
   url.searchParams.set('plataforma', plataforma);
