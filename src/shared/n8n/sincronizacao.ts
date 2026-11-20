@@ -137,6 +137,25 @@ export function avaliarAlvo(
   return { permitido: true };
 }
 
+export const PREFIXO_DO_FLUXO_DE_ERRO = 'origem:';
+export const ARQUIVO_DOS_ALERTAS = 'n8n/workflows/plataforma/alertas-de-falha.json';
+
+export type FluxoDeErroResolvido = { readonly modelo: Workflow; readonly aviso: string | null };
+
+export function resolverFluxoDeErro(modelo: Workflow, implantados: readonly Workflow[]): FluxoDeErroResolvido {
+  const declarado = modelo.settings['errorWorkflow'];
+  if (typeof declarado !== 'string' || !declarado.startsWith(PREFIXO_DO_FLUXO_DE_ERRO)) return { modelo, aviso: null };
+
+  const arquivo = declarado.slice(PREFIXO_DO_FLUXO_DE_ERRO.length);
+  const alvos = implantados.filter((implantado) => arquivoDeOrigem(implantado) === arquivo);
+  if (alvos.length > 1) throw new Error(`mais de um workflow implantado aponta para ${arquivo}`);
+
+  const { errorWorkflow: _removido, ...restante } = modelo.settings;
+  const id = (alvos[0] as (Workflow & { readonly id?: string }) | undefined)?.id;
+  if (!id) return { modelo: { ...modelo, settings: restante }, aviso: `fluxo de erro ${arquivo} ainda não implantado: o workflow fica sem errorWorkflow` };
+  return { modelo: { ...modelo, settings: { ...restante, errorWorkflow: id } }, aviso: null };
+}
+
 function notaDeOrigem(arquivo: string, versao: string): No {
   return {
     name: NOTA_DE_ORIGEM,

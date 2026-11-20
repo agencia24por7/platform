@@ -163,9 +163,10 @@ Migração `db/migrations/0120_cofre_de_tokens.sql` (fase 1, aditiva, reaplicáv
   `refreshed_at`, `ultima_falha_em/codigo`, `versao`, `created_at`, `updated_at`), RLS ENABLE+FORCE com a mesma
   política de `connections` (organização da sessão, sem recorte de cliente).
 - Funções SECURITY DEFINER `integrations.resolver_conexao_do_token` e `integrations.tokens_a_renovar`.
-- Concessões num bloco único no fim do arquivo, só para o papel do app (`orla_app`). O papel de worker do
-  banco (`orla_worker`, em introdução por outro trabalho) **não** recebe a tabela: quem decifra é o app. Se for
-  preciso, ajuste só esse bloco.
+- Concessões num bloco único no fim do arquivo, seguindo ADR 0028: a tabela é concedida só a `orla_app`
+  (o `orla_worker` herda, sob as mesmas políticas RLS, e continua sem privilégio de tabela próprio); as duas
+  funções que atravessam inquilinos são revogadas de `orla_app` e executáveis só por `orla_worker` — a web
+  nunca resolve token de outra organização. Ajustes de papel ficam só nesse bloco.
 
 Migração de corte `db/corte/0121_corte_para_cofre.sql` — **fora de `db/migrations/` de propósito**: nem
 `scripts/migrate.mjs` nem `infra/compose/migrar.sh` a aplicam. A fase 2 a move para `db/migrations/` no PR do

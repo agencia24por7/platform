@@ -58,6 +58,7 @@ services:
       NODE_ENV: production
       NODE_OPTIONS: --max-old-space-size=256
       DATABASE_URL: ${DATABASE_URL:?required}
+      DATABASE_URL_WORKER: ${DATABASE_URL_WORKER:?required}
       TRIA_WORKER_TOKEN: ${TRIA_WORKER_TOKEN:?required}
       TRIA_APP_BASE_URL: ${TRIA_APP_BASE_URL:?required}
       BQ_PROJECT_ID: ${BQ_PROJECT_ID:-}
@@ -128,7 +129,7 @@ services:
     cap_drop: [ALL]
 
   proxy:
-    image: caddy:2.10-alpine
+    image: caddy:2.10-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
     container_name: orla-proxy
     <<: *hardening
     depends_on: [app, n8n]

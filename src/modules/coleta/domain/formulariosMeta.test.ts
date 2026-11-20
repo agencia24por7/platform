@@ -17,7 +17,7 @@ type No = {
 };
 type Modelo = { nodes: No[]; connections: Record<string, unknown>; settings: Record<string, unknown> };
 
-const BASE_DO_GRAPH = 'https:' + '/'.repeat(2) + 'graph.facebook.com/v26.0/';
+const BASE_DO_GRAPH = 'https:' + '/'.repeat(2) + 'graph.facebook.com/v27.0/';
 const modelo = JSON.parse(readFileSync('n8n/workflows/coletores/coletor-meta-formularios.json', 'utf8')) as Modelo;
 const no = (nome: string): No => modelo.nodes.find((candidato) => candidato.name === nome)!;
 

@@ -157,8 +157,14 @@ BEGIN
   REVOKE ALL ON FUNCTION integrations.tokens_a_renovar(timestamptz, integer) FROM PUBLIC;
 
   EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON integrations.connection_tokens TO %I', papel_app);
-  EXECUTE format('GRANT EXECUTE ON FUNCTION integrations.resolver_conexao_do_token(uuid, uuid) TO %I', papel_app);
-  EXECUTE format('GRANT EXECUTE ON FUNCTION integrations.tokens_a_renovar(timestamptz, integer) TO %I', papel_app);
+
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'orla_worker') THEN
+    RAISE EXCEPTION 'papel orla_worker ausente; a 0070 precisa ter rodado antes';
+  END IF;
+  EXECUTE format('REVOKE ALL ON FUNCTION integrations.resolver_conexao_do_token(uuid, uuid) FROM %I', papel_app);
+  EXECUTE format('REVOKE ALL ON FUNCTION integrations.tokens_a_renovar(timestamptz, integer) FROM %I', papel_app);
+  GRANT EXECUTE ON FUNCTION integrations.resolver_conexao_do_token(uuid, uuid) TO orla_worker;
+  GRANT EXECUTE ON FUNCTION integrations.tokens_a_renovar(timestamptz, integer) TO orla_worker;
 END $$;
 
 COMMIT;

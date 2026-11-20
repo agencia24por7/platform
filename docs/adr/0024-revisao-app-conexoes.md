@@ -100,7 +100,7 @@ substituiu, e o último vence. Resíduo conhecido: se uma remoção confirmar en
 exige `AND status <> 'revoked'` em `trocarColetorRef` e mudar o retorno para
 distinguir "não aplicou"; fica como melhoria separada.
 
-### Papel separado para o worker (item 6) — desenho, adiado
+### Papel separado para o worker (item 6) — implementado no ADR 0028
 
 Hoje web e worker conectam como `orla_app` e as rotas `/api/v0` (autenticadas
 por `TRIA_WORKER_TOKEN`) herdam o EXECUTE das funções `SECURITY DEFINER` que

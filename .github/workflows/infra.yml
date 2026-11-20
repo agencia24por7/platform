@@ -24,6 +24,7 @@ env:
 
 jobs:
   plan:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -38,12 +39,16 @@ jobs:
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Versão
+        run: terraform version -json | jq -e --arg v "$TF_VERSION" '.terraform_version == $v'
 
       - name: Formatação
         run: terraform -chdir=$WORKDIR fmt -check -recursive
 
       - name: Init
-        run: terraform -chdir=$WORKDIR init -input=false -lock=false -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"
+        run: terraform -chdir=$WORKDIR init -input=false -lock=false -lockfile=readonly -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"
 
       - name: Validate
         run: terraform -chdir=$WORKDIR validate
@@ -62,10 +67,15 @@ jobs:
           TF_VAR_budget_notification_emails: '["${{ vars.ACME_EMAIL }}"]'
 
       - name: Resumo do plano
-        run: terraform -chdir=$WORKDIR show -no-color plano.tfplan | head -200 >> $GITHUB_STEP_SUMMARY
+        run: |
+          {
+            echo '## Plano (PR, somente leitura)'
+            echo '```'
+            terraform -chdir=$WORKDIR show -no-color plano.tfplan | head -400
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   apply:
-    needs: plan
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -81,12 +91,22 @@ jobs:
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Versão
+        run: terraform version -json | jq -e --arg v "$TF_VERSION" '.terraform_version == $v'
+
+      - name: Formatação
+        run: terraform -chdir=$WORKDIR fmt -check -recursive
 
       - name: Init
-        run: terraform -chdir=$WORKDIR init -input=false -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"
+        run: terraform -chdir=$WORKDIR init -input=false -lockfile=readonly -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"
 
-      - name: Apply
-        run: terraform -chdir=$WORKDIR apply -input=false -auto-approve -lock-timeout=120s
+      - name: Validate
+        run: terraform -chdir=$WORKDIR validate
+
+      - name: Plan salvo
+        run: terraform -chdir=$WORKDIR plan -input=false -lock-timeout=120s -out=tfplan
         env:
           TF_VAR_environment: ${{ vars.ENVIRONMENT }}
           TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
@@ -97,3 +117,16 @@ jobs:
           TF_VAR_dns_zone_project: ${{ vars.DNS_ZONE_PROJECT }}
           TF_VAR_acme_email: ${{ vars.ACME_EMAIL }}
           TF_VAR_budget_notification_emails: '["${{ vars.ACME_EMAIL }}"]'
+
+      - name: Plano no resumo do job
+        run: |
+          {
+            echo '## Plano aplicado (exatamente este arquivo)'
+            echo "sha256 do tfplan: $(sha256sum $WORKDIR/tfplan | cut -d' ' -f1)"
+            echo '```'
+            terraform -chdir=$WORKDIR show -no-color tfplan
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Apply do plano salvo
+        run: terraform -chdir=$WORKDIR apply -input=false -lock-timeout=120s tfplan
