@@ -16,6 +16,9 @@ Fonte da verdade dos prazos publicados em `/privacidade` (seção 8). Mudou um p
 | Execuções das automações (n8n) | 14 dias | `EXECUTIONS_DATA_MAX_AGE=336`; fluxos de leads não salvam execução |
 | Staging do BigQuery (`stg_*`: linhas de uma chamada de gravação, sem `client_id`) | 7 dias | `partition_expiration_days = 7` no DDL; o expurgo não apaga a staging, que some sozinha nesse prazo (ADR 0023) |
 | Linhas apagadas ou alteradas no BigQuery (time travel do dataset) | 7 dias + 7 de fail-safe do Google | padrão do dataset (`max_time_travel_hours` 168, `infra/terraform/bigquery.tf`); um expurgo só some de vez do BigQuery depois desse prazo (ADR 0023) |
+| Arquivos do contexto do cliente (bucket `-contexto`: logos, manual de marca, CSV, imagens; exportação derivada) | enquanto o cliente existir; exclusão lógica não apaga; `expurgar-cliente` apaga todas as versões do prefixo `orgs/{org}/clientes/{cliente}/` | `deletePrefix` em `src/shared/storage` (ADR 0027) |
+| Arquivos apagados do contexto (soft delete) | 7 dias | `soft_delete_policy` do bucket (`infra/terraform/contexto.tf`); depois disso somem de vez (ADR 0027) |
+| Versões antigas dos arquivos do contexto | 90 dias, até 5 por arquivo | ciclo de vida do bucket de contexto (`infra/terraform/contexto.tf`) |
 | Backups lógicos | 30 dias | ciclo de vida do bucket (`infra/terraform/backup.tf`) |
 | Snapshots do disco | 7 dias | política de snapshot (`infra/terraform`) |
 
