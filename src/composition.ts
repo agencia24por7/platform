@@ -55,6 +55,7 @@ function build() {
       clientRepository,
       vault,
       credentialTester,
+      createColetorProvisioner(),
     ),
     authorization: createAuthorizationService(
       organizations,
