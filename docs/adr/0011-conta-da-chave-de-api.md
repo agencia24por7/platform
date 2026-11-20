@@ -77,3 +77,9 @@ era desvincular, e para quem usa isso soou como "não deixou apagar a conta".
 - Contas que já estavam vinculadas a conexões revogadas antes desta mudança não
   são migradas: seguem com o cliente até alguém desvincular ou a chave ser
   guardada de novo e removida.
+
+## Adendo (ADR 0029) — revogar no provedor
+
+Remover a conexão do Google ou da Meta passa a revogar o acesso no provedor antes de apagar a credencial do
+cofre (workflow temporário com a credencial da própria conexão). A falha do cofre continua sem alterar nada; a
+falha da revogação não impede a remoção e vira aviso ao admin. Ver ADR 0029.

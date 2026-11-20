@@ -21,6 +21,7 @@ locals {
     "youtubeanalytics.googleapis.com",
     "tagmanager.googleapis.com",
     "storage.googleapis.com",
+    "cloudkms.googleapis.com",
   ]
 }
 

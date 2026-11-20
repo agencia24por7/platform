@@ -6,7 +6,8 @@
     "saveDataSuccessExecution": "none",
     "timezone": "America/Sao_Paulo",
     "saveManualExecutions": false,
-    "executionTimeout": 86400
+    "executionTimeout": 86400,
+    "errorWorkflow": "origem:n8n/workflows/plataforma/alertas-de-falha.json"
   },
   "nodes": [
     {

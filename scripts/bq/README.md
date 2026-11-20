@@ -82,7 +82,16 @@ BY` do `QUALIFY` da view. Sem granularidade declarada a tabela não entra.
   `dim_*` vê também o histórico de clientes excluídos e precisa juntar
   `dim_cliente_scd2` com o mesmo filtro.
 - `DELETE` só no **expurgo** (`scripts/titular.mjs expurgar-cliente`), por
-  obrigação legal de eliminação, pelo manifesto abaixo.
+  obrigação legal de eliminação, pelo manifesto abaixo, e nas duas regras do
+  YouTube (ADR 0029): `expurgarFonte` (fatos, dimensões e staging de um canal
+  numa organização quando a autorização acaba, também em
+  `titular.mjs expurgar-fonte`) e o prazo de 30 dias das dimensões
+  `dim_youtube_*_scd2` (`POST /api/v0/manutencao/youtube`, diário).
+- Período de dono **desconhecido** (mudança de posse antiga cujo dono a trilha
+  não identifica) é gravado em `dim_fonte_scd2` com `client_id NULL` e
+  `status = 'desconhecido'`. O expurgo de cliente nunca apaga esse período e
+  não trata como "só do cliente" uma fonte que tem período desconhecido
+  (ADR 0029).
 
 ### Partição e cluster
 
@@ -102,7 +111,10 @@ BY` do `QUALIFY` da view. Sem granularidade declarada a tabela não entra.
   mais `valido_de TIMESTAMP NOT NULL`, `valido_ate TIMESTAMP NOT NULL`
   (`9999-12-31` na versão aberta), `atual BOOL NOT NULL`, `hash_versao STRING
   NOT NULL` (`TO_HEX(SHA256(TO_JSON_STRING(STRUCT(<atributos>))))`),
-  `execucao_id STRING`, `carregado_em TIMESTAMP NOT NULL`. Intervalo
+  `execucao_id STRING`, `carregado_em TIMESTAMP NOT NULL` (gravação da versão;
+  nas dimensões com `renovaCarregadoEm`, hoje as do YouTube, a última vez que a
+  coleta trouxe a entidade sem mudança, que é o "renovado em" do prazo de 30
+  dias). Intervalo
   semiaberto `[valido_de, valido_ate)`; a primeira versão de cada chave vale
   desde `1970-01-01`. A staging dela tem chave + atributos + `execucao_id` +
   `inserido_em`.
@@ -132,8 +144,11 @@ gravação inteira (`tabela_desconhecida:<nome>`).
    com `_tabela`.
 4. **Manifesto** em `scripts/bq/manifesto/<plataforma>.json` (expurgo de
    cliente, `scripts/titular.mjs expurgar-cliente`), com `grao` igual à `chave` da
-   configuração e, se o fato aponta para uma dimensão de entidade,
-   `entidades` (`registro.test.ts` confere).
+   configuração, `staging` igual à staging da configuração (o expurgo apaga
+   também a staging, por organização + chave da fonte) e, se o fato aponta para
+   uma dimensão de entidade, `entidades` (`registro.test.ts` confere os três).
+   Manifesto novo entra também em
+   `src/modules/privacidade/infrastructure/manifestoDoBigQuery.ts` (há teste).
 5. **Esta página**: seção da plataforma, com granularidade.
 6. **ADR** quando houver decisão de modelagem (granularidade, semântica).
 
@@ -220,7 +235,7 @@ do `ad_account_id` (o `externalId`), com dono pela `dim_fonte_scd2`
 (`platform = 'meta'`) nas views `vw_*`: `cliente_na_epoca_*` e
 `cliente_atual_*`. Nas dimensões a "época" é o início da versão (`valido_de`).
 
-Origem na API (Marketing API v26.0, fixada; plano para v27.0 no ADR 0025): relatórios assíncronos
+Origem na API (Marketing API v27.0, fixada; ADR 0025): relatórios assíncronos
 `POST /{act}/insights` + `GET /{report_run_id}/insights` (insights) e `GET
 /{act}/campaigns|adsets|ads` (dimensões), paginados. Janelas de 28 dias do
 backfill. Valores monetários com a moeda da conta em `moeda`.
@@ -371,6 +386,14 @@ Colunas de métrica (fatos, exceto onde dito): `investimento`
 `todas_conversoes_receita` (`all_conversions_value`), `interacoes`,
 `visualizacoes_video` (`video_trueview_views`; o antigo `video_views` não existe mais na v26).
 
+Limites de completude dos termos de pesquisa: `search_term_view` só devolve
+termos que passam o limite de privacidade do Google e não cobre campanhas
+Performance Max. A soma de `fato_google_termo_pesquisa_diario` pode ser menor
+que o investimento da campanha (`fato_google_campanha_diario`); compare com a
+campanha, não com a soma dos termos. O mesmo vale para o GA4 sob limiar de
+privacidade (aviso `limiar_de_privacidade`). Ver o adendo de 20/11/2026 no ADR
+[0025](../../docs/adr/0025-coleta-incremental.md).
+
 ### Fatos (DDL: `21_google_ads.sql`)
 
 | Tabela | Grão (= chave do MERGE) | Origem (`FROM`) e colunas próprias |
@@ -490,6 +513,7 @@ Decisões: ADR [0018](../../docs/adr/0018-ga4-searchconsole-modelagem.md). DDL:
 | `pagina` | `fato_search_console_pagina_diario` | `pagina` | page |
 | `pais_dispositivo` | `fato_search_console_pais_dispositivo_diario` | `pais` (ISO 3166-1 alfa-3, minúsculo), `dispositivo` | country, device |
 | `aparencia` | `fato_search_console_aparencia_diario` | `aparencia` | searchAppearance (ex.: AMP, rich results; recorte opcional: 400 não falha a coleta) |
+| `tipo` | `fato_search_console_tipo_diario` | `tipo` (`image`, `video`, `news`, `discover`, `googleNews`) | date, com `type=<tipo>`; `web` fica nas tabelas acima |
 
 Consultas são termos agregados; a API omite as anonimizadas (raras), então
 `consulta_pagina` soma menos que `pagina`, e `pagina` (agregação por página)
@@ -497,6 +521,13 @@ não bate exatamente com `fato_search_console_diario` (por propriedade). A
 API devolve só as linhas de maior tráfego por dia; não há garantia de
 completude da cauda. `fato_search_console_diario` (acima) continua como
 total por dispositivo.
+
+`fato_search_console_tipo_diario` só guarda dados reais: a API devolve uma linha
+por data com zero impressões para tipos sem tráfego, e o coletor descarta essas
+linhas antes de gravar. Ausência de linha para um tipo/dia significa zero
+impressões naquele tipo (não falha de coleta). O tipo `web` não entra aqui.
+`searchAppearance` só pode ser consultado sozinho (sem `date`), por isso a
+tabela `aparencia` é coletada um dia por pedido.
 
 <!-- Search Console: novas tabelas acima desta linha -->
 
@@ -531,6 +562,9 @@ dono `cliente_na_epoca_*` e `cliente_atual_*`; as `vw_dim_*` dão só
   `snippet.categoryId`, `contentDetails.duration` ISO 8601 convertida em
   segundos, `status.privacyStatus`), só dos vídeos mais vistos da janela (até 25).
 - Staging `stg_youtube_video`; view `vw_dim_youtube_video_scd2`.
+- Prazo de 30 dias (Políticas do YouTube API Services III.E.4, ADR 0029): a
+  coleta renova `carregado_em` da versão aberta inalterada; o job diário apaga
+  toda versão com `carregado_em` de mais de 30 dias.
 
 ### `dim_youtube_playlist_scd2` (`dim_playlist`)
 
@@ -540,6 +574,7 @@ dono `cliente_na_epoca_*` e `cliente_atual_*`; as `vw_dim_*` dão só
 - Cluster `organization_id, channel_id, playlist_id`.
 - Origem: `playlists.list` (primeira página, 50 playlists).
 - Staging `stg_youtube_playlist`; view `vw_dim_youtube_playlist_scd2`.
+- Mesmo prazo de 30 dias de `dim_youtube_video_scd2`.
 
 ### `fato_youtube_video_diario` (`video_diario`)
 
@@ -945,6 +980,7 @@ Cada view lê uma única tabela-base, deduplica pelo grão quando a base é fato
 | `vw_search_console_pagina_diario` | `fato_search_console_pagina_diario` | `23_searchconsole.sql` |
 | `vw_search_console_pais_dispositivo_diario` | `fato_search_console_pais_dispositivo_diario` | `23_searchconsole.sql` |
 | `vw_search_console_aparencia_diario` | `fato_search_console_aparencia_diario` | `23_searchconsole.sql` |
+| `vw_search_console_tipo_diario` | `fato_search_console_tipo_diario` | `23_searchconsole.sql` |
 | `vw_dim_youtube_video_scd2` | `dim_youtube_video_scd2` | `24_youtube.sql` |
 | `vw_dim_youtube_playlist_scd2` | `dim_youtube_playlist_scd2` | `24_youtube.sql` |
 | `vw_youtube_video_diario` | `fato_youtube_video_diario` | `24_youtube.sql` |

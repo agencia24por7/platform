@@ -6,6 +6,7 @@ import {
   executarPassos,
   passosPorClientId,
   planoDoExpurgo,
+  planoDoExpurgoDaFonte,
   sqlVersoesDoCliente,
   validarEntrada as entradaValida,
   validarFontes,
@@ -17,10 +18,17 @@ const USO = `uso:
   node scripts/titular.mjs excluir-cliente <client_id> [--confirmar] [--por <quem>]
   node scripts/titular.mjs restaurar-cliente <client_id> [--confirmar] [--por <quem>]
   node scripts/titular.mjs expurgar-cliente <client_id> [--confirmar]
+  node scripts/titular.mjs expurgar-fonte <organization_id> <plataforma> <external_id> [--confirmar]
+  node scripts/titular.mjs pedidos-de-exclusao listar
+  node scripts/titular.mjs pedidos-de-exclusao andamento <codigo> [--confirmar] [--por <quem>]
+  node scripts/titular.mjs pedidos-de-exclusao concluir <codigo> --evidencia <texto> [--confirmar] [--por <quem>]
 
 excluir-cliente é a exclusão lógica (nada é apagado; restaurar-cliente desfaz).
 expurgar-cliente apaga de vez no BigQuery e depois no Postgres: só para obrigação legal,
 com o cliente já excluído logicamente. Se falhar no meio, rode o mesmo comando de novo.
+expurgar-fonte apaga do BigQuery todos os dados de uma fonte (fatos, dimensões, staging) numa
+organização, qualquer que seja o cliente: é o expurgo de quando a autorização acaba (YouTube, ADR 0029).
+pedidos-de-exclusao lista e atende os pedidos recebidos pelo callback de exclusão da Meta.
 Opções: --local (banco do docker local em vez da VM de produção).
 Sem --confirmar, nenhum comando que altera dados executa: só mostra o que seria afetado.
 Veja docs/lgpd/atendimento-ao-titular.md.`;
@@ -177,6 +185,16 @@ function tabelasComCliente() {
   return saida.split('\n').slice(1).map((linha) => linha.trim()).filter(Boolean);
 }
 
+function exigirPlataforma(valor) {
+  if (!valor || !/^[a-z][a-z0-9_]*$/.test(valor)) falhar(`plataforma inválida.\n\n${USO}`);
+  return valor;
+}
+
+function exigirCodigo(valor) {
+  if (!valor || !/^[A-Z0-9]{16,64}$/.test(valor)) falhar(`código de confirmação inválido.\n\n${USO}`);
+  return valor;
+}
+
 function exigirPor(valor) {
   if (!valor || valor.startsWith('--') || valor.length > 200) falhar(`--por inválido.\n\n${USO}`);
   return valor;
@@ -318,6 +336,62 @@ async function expurgarCliente(idInformado) {
   console.log('Cliente expurgado. Os backups expiram em até 30 dias e o time travel do BigQuery em até 7 (docs/lgpd/retencao.md).');
 }
 
+function executarNoBigQuerySemParametro(passo) {
+  console.log(`BigQuery: ${passo.nome}`);
+  execFileSync('bq', ['--project_id', PROJETO, 'query', '--use_legacy_sql=false', passo.sql], { stdio: 'inherit' });
+}
+
+async function expurgarFonte(organizationId, platform, externalId) {
+  if (!externalId || externalId.startsWith('--')) falhar(`external_id ausente.\n\n${USO}`);
+  const [fonte] = validarFontes([{ organizationId, platform: exigirPlataforma(platform), externalId }]);
+  const passos = planoDoExpurgoDaFonte({ manifesto: FATOS_POR_FONTE, fonte, destino: DESTINO });
+  console.log(`Fonte ${fonte.platform} ${fonte.externalId} da organização ${fonte.organizationId}. Passos no BigQuery:`);
+  for (const passo of passos) console.log(`  - ${passo.nome}`);
+  if (!confirmar) {
+    console.log('\nSimulação. Rode de novo com --confirmar para apagar de vez esses dados no BigQuery (todos os clientes da organização).');
+    return;
+  }
+  if (local) {
+    console.log('--local: o BigQuery não é tocado. Nada a fazer.');
+    return;
+  }
+  const resultado = executarPassos(passos, executarNoBigQuerySemParametro);
+  if (!resultado.ok) {
+    falhar(`FALHOU no BigQuery em ${resultado.falhou} (${resultado.erro?.message ?? 'erro'}). Pendentes: ${resultado.pendentes.join(', ')}. Rode o mesmo comando de novo: cada passo é idempotente.`);
+  }
+  await sincronizarDimensoes();
+  console.log('Fonte expurgada do BigQuery.');
+}
+
+function listarPedidosDeExclusao() {
+  return consultar(`
+    SELECT jsonb_pretty(coalesce(jsonb_agg(jsonb_build_object(
+      'codigo', p.codigo_de_confirmacao, 'situacao', p.status, 'recebidoEm', p.criado_em, 'concluidoEm', p.concluido_em,
+      'conexoes', (SELECT coalesce(jsonb_agg(jsonb_build_object('organizacao', o.name, 'connectionId', c.id,
+                     'plataforma', c.platform, 'estado', c.status)), '[]')
+                   FROM privacidade.pedidos_de_exclusao_conexoes l
+                   JOIN integrations.connections c ON c.id = l.connection_id
+                   JOIN core.organizations o ON o.id = l.organization_id
+                   WHERE l.pedido_id = p.id)) ORDER BY p.criado_em), '[]'))
+    FROM privacidade.pedidos_de_exclusao p
+    WHERE p.status <> 'concluido' OR p.concluido_em > now() - interval '30 days';`);
+}
+
+function atenderPedidoDeExclusao(acao, codigo) {
+  const situacao = acao === 'concluir' ? 'concluido' : 'em_andamento';
+  const indiceDaEvidencia = resto.indexOf('--evidencia');
+  const evidencia = indiceDaEvidencia >= 0 ? resto[indiceDaEvidencia + 1] ?? '' : '';
+  if (situacao === 'concluido' && (!evidencia || evidencia.startsWith('--') || evidencia.length > 2000)) {
+    falhar(`concluir exige --evidencia <o que foi feito: conexões removidas, expurgos>.\n\n${USO}`);
+  }
+  console.log(listarPedidosDeExclusao());
+  if (!confirmar) {
+    console.log(`\nSimulação. Rode de novo com --confirmar para marcar ${codigo} como ${situacao}.`);
+    return;
+  }
+  console.log(consultar(`SELECT jsonb_pretty(privacidade.atualizar_pedido_de_exclusao(${literal(codigo)}, ${literal(situacao)}, ${literal(evidencia || ' ')}, ${literal(exigirPor(por))}));`));
+}
+
 switch (comando) {
   case 'exportar':
     console.log(exportar(exigirEmail(alvo)));
@@ -333,6 +407,14 @@ switch (comando) {
     break;
   case 'expurgar-cliente':
     await expurgarCliente(exigirUuid(alvo));
+    break;
+  case 'expurgar-fonte':
+    await expurgarFonte(exigirUuid(alvo), resto[0], resto[1]);
+    break;
+  case 'pedidos-de-exclusao':
+    if (alvo === 'listar') console.log(listarPedidosDeExclusao());
+    else if (alvo === 'andamento' || alvo === 'concluir') atenderPedidoDeExclusao(alvo, exigirCodigo(resto[0]));
+    else falhar(USO);
     break;
   default:
     falhar(USO);

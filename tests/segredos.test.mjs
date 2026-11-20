@@ -31,7 +31,9 @@ describe('o segredo não mora aqui', { concurrency: false }, () => {
       FROM information_schema.columns
       WHERE table_schema IN ('core','integrations','metrics','automation','audit')
         AND (column_name ~* '(access_?token|refresh_?token|client_?secret|api_?key|password|senha|chave)')
-        AND column_name <> 'credential_ref'`);
+        AND column_name <> 'credential_ref'
+        AND NOT (table_schema = 'integrations' AND table_name = 'connection_tokens'
+                 AND column_name LIKE '%\\_ciphertext' AND data_type = 'bytea')`);
 
     assert.equal(suspeitas, '', `coluna com cara de segredo: ${suspeitas}`);
   });
@@ -91,7 +93,7 @@ describe('o segredo não mora aqui', { concurrency: false }, () => {
       const conteudo = readFileSync(caminho, 'utf8');
       return [...conteudo.matchAll(/fetch\(\s*([^,)]+)/g)]
         .map((m) => m[1].trim())
-        .filter((alvo) => !/^(new URL\(|`|'|"|GOOGLE_TOKEN_URL|exchange\.url|troca\.url|url\b|onde\.url)/.test(alvo))
+        .filter((alvo) => !/^(new URL\(|`|'|"|GOOGLE_TOKEN_URL|destinoDoAlerta|exchange\.url|troca\.url|url\b|onde\.url)/.test(alvo))
         .map((alvo) => `${caminho}: ${alvo}`);
     });
 

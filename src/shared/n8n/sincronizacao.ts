@@ -137,6 +137,56 @@ export function avaliarAlvo(
   return { permitido: true };
 }
 
+const chaveDaCredencial = (tipo: string, nome: string) => `${tipo}|${nome}`;
+
+export function credenciaisPorNome(implantados: readonly Workflow[]): ReadonlyMap<string, Credencial> {
+  const vistas = new Map<string, Credencial | null>();
+  for (const no of implantados.flatMap((workflow) => workflow.nodes)) {
+    for (const [tipo, credencial] of Object.entries(no.credentials ?? {})) {
+      if (MARCADOR.test(credencial.id) || MARCADOR.test(credencial.name)) continue;
+      const chave = chaveDaCredencial(tipo, credencial.name);
+      const anterior = vistas.get(chave);
+      vistas.set(chave, anterior === undefined || anterior?.id === credencial.id ? credencial : null);
+    }
+  }
+  return new Map([...vistas].filter((par): par is [string, Credencial] => par[1] !== null));
+}
+
+export function modeloComCredenciaisPorNome(modelo: Workflow, conhecidas: ReadonlyMap<string, Credencial>): Workflow {
+  return {
+    ...modelo,
+    nodes: modelo.nodes.map((no) => {
+      if (!no.credentials) return no;
+      const credenciais = Object.fromEntries(
+        Object.entries(no.credentials).map(([tipo, credencial]) => [
+          tipo,
+          MARCADOR.test(credencial.id) ? (conhecidas.get(chaveDaCredencial(tipo, credencial.name)) ?? credencial) : credencial,
+        ]),
+      );
+      return { ...no, credentials: credenciais };
+    }),
+  };
+}
+
+export const PREFIXO_DO_FLUXO_DE_ERRO = 'origem:';
+export const ARQUIVO_DOS_ALERTAS = 'n8n/workflows/plataforma/alertas-de-falha.json';
+
+export type FluxoDeErroResolvido = { readonly modelo: Workflow; readonly aviso: string | null };
+
+export function resolverFluxoDeErro(modelo: Workflow, implantados: readonly Workflow[]): FluxoDeErroResolvido {
+  const declarado = modelo.settings['errorWorkflow'];
+  if (typeof declarado !== 'string' || !declarado.startsWith(PREFIXO_DO_FLUXO_DE_ERRO)) return { modelo, aviso: null };
+
+  const arquivo = declarado.slice(PREFIXO_DO_FLUXO_DE_ERRO.length);
+  const alvos = implantados.filter((implantado) => arquivoDeOrigem(implantado) === arquivo);
+  if (alvos.length > 1) throw new Error(`mais de um workflow implantado aponta para ${arquivo}`);
+
+  const { errorWorkflow: _removido, ...restante } = modelo.settings;
+  const id = (alvos[0] as (Workflow & { readonly id?: string }) | undefined)?.id;
+  if (!id) return { modelo: { ...modelo, settings: restante }, aviso: `fluxo de erro ${arquivo} ainda não implantado: o workflow fica sem errorWorkflow` };
+  return { modelo: { ...modelo, settings: { ...restante, errorWorkflow: id } }, aviso: null };
+}
+
 function notaDeOrigem(arquivo: string, versao: string): No {
   return {
     name: NOTA_DE_ORIGEM,

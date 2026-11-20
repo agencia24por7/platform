@@ -17,6 +17,7 @@ const ROTAS_ABERTAS = [
   '/api/portaria',
   '/api/erros',
   '/api/webhooks',
+  '/api/meta/exclusao',
   '/convite',
   '/api/convite',
   '/contexto',
