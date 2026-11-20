@@ -53,7 +53,7 @@ describe('resolução do fluxo de erro pela nota de origem', () => {
 describe('fluxos da plataforma usam só o fluxo de alertas da plataforma', () => {
   const arquivos = [
     ...readdirSync('n8n/workflows').filter((nome) => nome.endsWith('.json')).map((nome) => `n8n/workflows/${nome}`),
-    ...readdirSync('n8n/workflows/plataforma').map((nome) => `n8n/workflows/plataforma/${nome}`),
+    ...readdirSync('n8n/workflows/plataforma').filter((nome) => nome.endsWith('.json')).map((nome) => `n8n/workflows/plataforma/${nome}`),
   ];
 
   it('todos apontam para a origem do fluxo de alertas, exceto ele mesmo', () => {

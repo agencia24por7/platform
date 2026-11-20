@@ -194,22 +194,28 @@ export function reconstruirPosse(
     .filter((mudanca) => mudanca.em.getTime() > INICIO_DOS_TEMPOS.getTime() && mudanca.em.getTime() < agora.getTime())
     .sort((a, b) => a.em.getTime() - b.em.getTime());
 
-  const ultimaDesconhecida = ordenadas.map((mudanca) => mudanca.antes).lastIndexOf(null);
-  const conhecidas = ordenadas.slice(ultimaDesconhecida + 1);
-
-  const segmentos: Segmento<EstadoDaFonte>[] = conhecidas.map((mudanca, indice) => ({
-    validoDe: indice === 0 ? INICIO_DOS_TEMPOS : conhecidas[indice - 1]!.em,
-    atributos: { ...atual, clientId: mudanca.antes!.clientId, status: mudanca.antes!.status },
+  const segmentos: Segmento<EstadoDaFonte>[] = ordenadas.map((mudanca, indice) => ({
+    validoDe: indice === 0 ? INICIO_DOS_TEMPOS : ordenadas[indice - 1]!.em,
+    atributos: mudanca.antes
+      ? { ...atual, clientId: mudanca.antes.clientId, status: mudanca.antes.status }
+      : { ...atual, clientId: null, status: STATUS_DE_DONO_DESCONHECIDO },
   }));
-  segmentos.push({ validoDe: conhecidas.length > 0 ? conhecidas[conhecidas.length - 1]!.em : INICIO_DOS_TEMPOS, atributos: atual });
+  segmentos.push({ validoDe: ordenadas.length > 0 ? ordenadas[ordenadas.length - 1]!.em : INICIO_DOS_TEMPOS, atributos: atual });
 
   const compactos = semRepeticao(segmentos, hashDaFonte);
-  while (compactos.length > 1 && compactos[0]!.atributos.clientId === null) {
+  while (compactos.length > 1 && semDonoConhecidoPorEscolha(compactos[0]!.atributos)) {
     compactos.shift();
     compactos[0] = { ...compactos[0]!, validoDe: INICIO_DOS_TEMPOS };
   }
   return compactos;
 }
+
+export const STATUS_DE_DONO_DESCONHECIDO = 'desconhecido';
+
+export const donoDesconhecido = (fonte: Pick<EstadoDaFonte, 'clientId' | 'status'>): boolean =>
+  fonte.clientId === null && fonte.status === STATUS_DE_DONO_DESCONHECIDO;
+
+const semDonoConhecidoPorEscolha = (fonte: EstadoDaFonte): boolean => fonte.clientId === null && !donoDesconhecido(fonte);
 
 export function registrosDasFontes(fontes: readonly EstadoDaFonte[]): Registro<EstadoDaFonte>[] {
   return fontes.map((fonte) => ({ chave: chaveDaFonte(fonte), atributos: fonte }));

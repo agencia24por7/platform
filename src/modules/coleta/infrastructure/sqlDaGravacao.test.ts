@@ -13,6 +13,9 @@ import {
   sqlScd2,
   tiposDoStagingScd2,
 } from './sqlDaGravacao.ts';
+import '../../../shared/testing/registrarAlias.mjs';
+
+const { TABELAS_YOUTUBE } = await import('./tabelas/youtube.ts');
 
 const normalizar = (sql: string) => sql.replace(/\s+/g, ' ').trim();
 
@@ -198,6 +201,25 @@ describe('SQL de dimensão SCD2', () => {
   it('primeira versão da chave vale desde 1970; as seguintes desde agora', () => {
     const sql = normalizar(sqlScd2('`dim`', '`stg`', cfg));
     assert.match(sql, /IF\(EXISTS \(SELECT 1 FROM `dim` d WHERE d\.organization_id = o\.organization_id AND d\.campanha_id = o\.campanha_id AND d\.organization_id = @organizationId\), @agora, TIMESTAMP '1970-01-01 00:00:00\+00'\)/);
+  });
+
+  it('sem renovaCarregadoEm, versão inalterada não é tocada', () => {
+    assert.doesNotMatch(normalizar(sqlScd2('`dim`', '`stg`', cfg)), /SET carregado_em/);
+  });
+
+  it('com renovaCarregadoEm, a versão aberta inalterada ganha carregado_em = agora (prazo de 30 dias do YouTube)', () => {
+    const sql = normalizar(sqlScd2('`dim`', '`stg`', { ...cfg, renovaCarregadoEm: true }));
+    assert.match(
+      sql,
+      /UPDATE `dim` AS d SET carregado_em = @agora FROM \(.+\) AS o WHERE d\.atual AND d\.organization_id = o\.organization_id AND d\.campanha_id = o\.campanha_id AND d\.organization_id = @organizationId AND d\.hash_versao = o\.hash_versao; COMMIT TRANSACTION;$/,
+    );
+    assert.equal(sql.match(/d\.organization_id = @organizationId/g)?.length, 4);
+  });
+
+  it('as dimensões do YouTube renovam carregado_em; as outras não', () => {
+    const youtube = Object.values(TABELAS_YOUTUBE).filter((tabela) => tabela.tipo === 'scd2');
+    assert.ok(youtube.length >= 2);
+    assert.ok(youtube.every((tabela) => tabela.tipo === 'scd2' && tabela.renovaCarregadoEm === true));
   });
 
   it('origem deduplica a staging da execução pela chave', () => {

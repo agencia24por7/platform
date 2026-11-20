@@ -82,7 +82,16 @@ BY` do `QUALIFY` da view. Sem granularidade declarada a tabela não entra.
   `dim_*` vê também o histórico de clientes excluídos e precisa juntar
   `dim_cliente_scd2` com o mesmo filtro.
 - `DELETE` só no **expurgo** (`scripts/titular.mjs expurgar-cliente`), por
-  obrigação legal de eliminação, pelo manifesto abaixo.
+  obrigação legal de eliminação, pelo manifesto abaixo, e nas duas regras do
+  YouTube (ADR 0029): `expurgarFonte` (fatos, dimensões e staging de um canal
+  numa organização quando a autorização acaba, também em
+  `titular.mjs expurgar-fonte`) e o prazo de 30 dias das dimensões
+  `dim_youtube_*_scd2` (`POST /api/v0/manutencao/youtube`, diário).
+- Período de dono **desconhecido** (mudança de posse antiga cujo dono a trilha
+  não identifica) é gravado em `dim_fonte_scd2` com `client_id NULL` e
+  `status = 'desconhecido'`. O expurgo de cliente nunca apaga esse período e
+  não trata como "só do cliente" uma fonte que tem período desconhecido
+  (ADR 0029).
 
 ### Partição e cluster
 
@@ -102,7 +111,10 @@ BY` do `QUALIFY` da view. Sem granularidade declarada a tabela não entra.
   mais `valido_de TIMESTAMP NOT NULL`, `valido_ate TIMESTAMP NOT NULL`
   (`9999-12-31` na versão aberta), `atual BOOL NOT NULL`, `hash_versao STRING
   NOT NULL` (`TO_HEX(SHA256(TO_JSON_STRING(STRUCT(<atributos>))))`),
-  `execucao_id STRING`, `carregado_em TIMESTAMP NOT NULL`. Intervalo
+  `execucao_id STRING`, `carregado_em TIMESTAMP NOT NULL` (gravação da versão;
+  nas dimensões com `renovaCarregadoEm`, hoje as do YouTube, a última vez que a
+  coleta trouxe a entidade sem mudança, que é o "renovado em" do prazo de 30
+  dias). Intervalo
   semiaberto `[valido_de, valido_ate)`; a primeira versão de cada chave vale
   desde `1970-01-01`. A staging dela tem chave + atributos + `execucao_id` +
   `inserido_em`.
@@ -132,8 +144,11 @@ gravação inteira (`tabela_desconhecida:<nome>`).
    com `_tabela`.
 4. **Manifesto** em `scripts/bq/manifesto/<plataforma>.json` (expurgo de
    cliente, `scripts/titular.mjs expurgar-cliente`), com `grao` igual à `chave` da
-   configuração e, se o fato aponta para uma dimensão de entidade,
-   `entidades` (`registro.test.ts` confere).
+   configuração, `staging` igual à staging da configuração (o expurgo apaga
+   também a staging, por organização + chave da fonte) e, se o fato aponta para
+   uma dimensão de entidade, `entidades` (`registro.test.ts` confere os três).
+   Manifesto novo entra também em
+   `src/modules/privacidade/infrastructure/manifestoDoBigQuery.ts` (há teste).
 5. **Esta página**: seção da plataforma, com granularidade.
 6. **ADR** quando houver decisão de modelagem (granularidade, semântica).
 
@@ -547,6 +562,9 @@ dono `cliente_na_epoca_*` e `cliente_atual_*`; as `vw_dim_*` dão só
   `snippet.categoryId`, `contentDetails.duration` ISO 8601 convertida em
   segundos, `status.privacyStatus`), só dos vídeos mais vistos da janela (até 25).
 - Staging `stg_youtube_video`; view `vw_dim_youtube_video_scd2`.
+- Prazo de 30 dias (Políticas do YouTube API Services III.E.4, ADR 0029): a
+  coleta renova `carregado_em` da versão aberta inalterada; o job diário apaga
+  toda versão com `carregado_em` de mais de 30 dias.
 
 ### `dim_youtube_playlist_scd2` (`dim_playlist`)
 
@@ -556,6 +574,7 @@ dono `cliente_na_epoca_*` e `cliente_atual_*`; as `vw_dim_*` dão só
 - Cluster `organization_id, channel_id, playlist_id`.
 - Origem: `playlists.list` (primeira página, 50 playlists).
 - Staging `stg_youtube_playlist`; view `vw_dim_youtube_playlist_scd2`.
+- Mesmo prazo de 30 dias de `dim_youtube_video_scd2`.
 
 ### `fato_youtube_video_diario` (`video_diario`)
 

@@ -30,6 +30,8 @@ import { logger } from '@/shared/logging/logger';
 import { avisarMudancaDePosse, semAvisoDePosse, type AvisoDePosse } from '@/modules/connections/application/avisoDePosse';
 import { liberarContasDaConexao } from '@/modules/connections/application/liberacaoDeContas';
 import { executarComCompensacao } from '@/shared/result/compensacao';
+import { avisoDaRevogacao, type ConexaoARevogar, type ResultadoDaRevogacao, type RevogadoNoProvedor } from '@/modules/privacidade/domain/revogacao';
+import type { ResultadoDoExpurgoDaConexao } from '@/modules/privacidade/application/expurgoDeFontes';
 import { randomBytes } from 'node:crypto';
 
 function violouUnicidade(erro: unknown): boolean {
@@ -58,7 +60,7 @@ export type ConnectionService = {
     organizationId: string;
     papelDeQuemAge: MemberRole;
     connectionId: string;
-  }, ator: Ator): Promise<Result<void, Failure>>;
+  }, ator: Ator): Promise<Result<ResultadoDaRemocao, Failure>>;
   reassignAccount(input: {
     organizationId: string;
     papelDeQuemAge: MemberRole;
@@ -82,6 +84,30 @@ export type ClientOwnership = {
   findById(organizationId: string, id: string): Promise<{ readonly id: string; readonly name: string } | null>;
 };
 
+export type PrivacidadeDaRemocao = {
+  revogarNoProvedor(conexao: ConexaoARevogar): Promise<ResultadoDaRevogacao>;
+  expurgarDadosDaConexao(input: {
+    readonly organizationId: string;
+    readonly connectionId: string;
+    readonly platform: Platform;
+  }): Promise<ResultadoDoExpurgoDaConexao>;
+};
+
+export const semPrivacidadeNaRemocao: PrivacidadeDaRemocao = {
+  revogarNoProvedor: async () => ({ revogadoNoProvedor: 'nao_suportado', motivo: 'plataforma_sem_revogacao' }),
+  expurgarDadosDaConexao: async () => ({ enfileirados: 0, concluidos: 0 }),
+};
+
+export type ResultadoDaRemocao = {
+  readonly revogadoNoProvedor: RevogadoNoProvedor;
+  readonly avisoDeRevogacao: string | null;
+  readonly expurgo: ResultadoDoExpurgoDaConexao;
+};
+
+const MENSAGEM_DE_COFRE_QUE_FALHOU = 'Não deu para apagar a credencial no cofre. Nada foi alterado; tente de novo.';
+const MENSAGEM_DE_COFRE_QUE_FALHOU_DEPOIS_DE_REVOGAR =
+  'O acesso já foi revogado no provedor, mas não deu para apagar a credencial no cofre. A conexão continua na lista; tente remover de novo.';
+
 export type ProvisionadorDeColetor = {
   provisionar(input: { readonly platform: Platform; readonly credentialRef: string; readonly label: string }): Promise<string | null>;
   remover(workflowId: string): Promise<boolean>;
@@ -97,6 +123,7 @@ export function createConnectionService(
   workflows: ProvisionadorDeColetor,
   contasDescobertas: Pick<DiscoveredAccountRepository, 'replace' | 'liberarDaConexao'>,
   aviso: AvisoDePosse = semAvisoDePosse,
+  privacidade: PrivacidadeDaRemocao = semPrivacidadeNaRemocao,
 ): ConnectionService {
   async function provisionarColetor(organizationId: string, connection: Connection): Promise<string | null> {
     try {
@@ -235,10 +262,27 @@ export function createConnectionService(
         return err(failure('not_found', 'Conexão não encontrada.'));
       }
 
+      const revogacao = await privacidade.revogarNoProvedor(conexao).catch(
+        (): ResultadoDaRevogacao => ({ revogadoNoProvedor: false, motivo: 'falhou' }),
+      );
+
       const descarte = await descartarCredencial(vault, conexao.credentialRef);
       if (descarte === 'falhou' || descarte === 'sem_permissao') {
+        if (revogacao.revogadoNoProvedor === true) {
+          await audit.record({
+            organizationId: input.organizationId,
+            actorType: 'user',
+            actorId: ator.userId,
+            action: 'connection.provider_revoked',
+            targetType: 'connection',
+            targetId: conexao.id,
+            requestId: ator.requestId,
+            sourceIp: ator.sourceIp,
+            metadata: { platform: conexao.platform, revogadoNoProvedor: true, credencialNoCofre: true },
+          });
+        }
         return err(
-          failure('conflict', 'Não deu para apagar a credencial no cofre. Nada foi alterado; tente de novo.'),
+          failure('conflict', revogacao.revogadoNoProvedor === true ? MENSAGEM_DE_COFRE_QUE_FALHOU_DEPOIS_DE_REVOGAR : MENSAGEM_DE_COFRE_QUE_FALHOU),
         );
       }
 
@@ -271,6 +315,10 @@ export function createConnectionService(
         }
       }
 
+      const expurgo = await privacidade
+        .expurgarDadosDaConexao({ organizationId: input.organizationId, connectionId: conexao.id, platform: conexao.platform })
+        .catch((): ResultadoDoExpurgoDaConexao => ({ enfileirados: 0, concluidos: 0 }));
+
       await audit.record({
         organizationId: input.organizationId,
         actorType: 'user',
@@ -285,11 +333,18 @@ export function createConnectionService(
           contasLiberadas: liberadas.length,
           coletorRemovido: workflowsNaoRemovidos.length === 0,
           ...(workflowsNaoRemovidos.length > 0 ? { workflowsOrfaos: workflowsNaoRemovidos } : {}),
+          revogadoNoProvedor: revogacao.revogadoNoProvedor,
+          motivoDaRevogacao: revogacao.motivo,
+          ...(expurgo.enfileirados > 0 ? { expurgoDeFontes: expurgo } : {}),
         },
       });
 
       if (liberadas.length > 0) avisarMudancaDePosse(aviso, 'connection_account.unlink');
-      return ok(undefined);
+      return ok({
+        revogadoNoProvedor: revogacao.revogadoNoProvedor,
+        avisoDeRevogacao: avisoDaRevogacao(conexao.platform, revogacao),
+        expurgo,
+      });
     },
 
     async createConnection(input, ator) {

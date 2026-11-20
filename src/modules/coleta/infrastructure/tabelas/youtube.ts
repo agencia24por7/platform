@@ -33,6 +33,7 @@ const DIM_VIDEO: ConfiguracaoScd2 = {
   tipo: 'scd2',
   staging: 'stg_youtube_video',
   dimensao: 'dim_youtube_video_scd2',
+  renovaCarregadoEm: true,
   chave: ['organization_id', 'channel_id', 'video_id'],
   atributos: ['titulo', 'duracao_segundos', 'publicado_em', 'privacidade', 'categoria_id'],
   tipos: {
@@ -55,6 +56,7 @@ const DIM_PLAYLIST: ConfiguracaoScd2 = {
   tipo: 'scd2',
   staging: 'stg_youtube_playlist',
   dimensao: 'dim_youtube_playlist_scd2',
+  renovaCarregadoEm: true,
   chave: ['organization_id', 'channel_id', 'playlist_id'],
   atributos: ['titulo', 'privacidade', 'qtd_videos'],
   tipos: {
