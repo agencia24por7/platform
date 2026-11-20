@@ -169,12 +169,16 @@ por `organization_id` e pela chave da fonte.
   `scripts/bq/06_meta_dataset_formularios.sql` (`node scripts/bq-ddl.mjs`,
   idempotente; depende de `dim_fonte_scd2` e `dim_cliente_scd2` do
   `05_dimensoes_scd2.sql`).
-- **Meta Login for Business**: as permissões vêm da configuração do
-  `META_LOGIN_CONFIG_ID`, não do parâmetro `scope`. Para os formulários, ela
-  precisa incluir `pages_show_list`, `pages_read_engagement`,
-  `pages_manage_ads` e `leads_retrieval`. Sem isso a descoberta de Páginas volta
-  vazia e o coletor fecha como `reauth_pending`. Isso se confere no painel do
-  app, não no código.
+- **Meta Login for Business**: as permissões vêm da configuração de login,
+  não do parâmetro `scope`. Os formulários usam uma configuração própria,
+  "Orla - Lead Ads" (`LEADADS_LOGIN_CONFIG_ID`, segredo
+  `leadads-login-config-id`), com `pages_show_list`, `pages_read_engagement`,
+  `pages_manage_ads`, `leads_retrieval` e `ads_management`. A configuração
+  "Orla - Conexoes" (`META_LOGIN_CONFIG_ID`, usada por Meta Ads e Meta Pixel)
+  fica só com as permissões de anúncio: quem conecta anúncios não concede
+  acesso às Páginas. A URI `/api/oauth/leadads/callback` precisa estar na lista
+  de redirecionamento do Login for Business, como as de `meta`, `pixel` e
+  `whatsapp`. Isso se confere no painel do app, não no código.
 - **Para começar a coletar**: conexões Meta Pixel já existentes não têm coletor
   nem recursos descobertos. É preciso reconectar Meta Pixel (descobre os
   conjuntos de dados e provisiona o coletor) e conectar Meta Lead Ads (descobre

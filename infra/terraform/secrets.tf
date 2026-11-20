@@ -20,6 +20,11 @@ locals {
     "meta-app-id",
     "meta-app-secret",
     "meta-login-config-id",
+    "whatsapp-login-config-id",
+    "whatsapp-webhook-verify-token",
+    "leadads-login-config-id",
+    "rdstation-client-id",
+    "rdstation-client-secret",
   ]
 
   all_secret_names = concat(local.app_secret_names, local.oauth_secret_names)
@@ -86,4 +91,15 @@ resource "google_project_iam_audit_config" "secretmanager_access" {
   audit_log_config {
     log_type = "ADMIN_READ"
   }
+}
+
+import {
+  for_each = toset([
+    "whatsapp-login-config-id",
+    "whatsapp-webhook-verify-token",
+    "rdstation-client-id",
+    "rdstation-client-secret",
+  ])
+  to = google_secret_manager_secret.app[each.value]
+  id = "projects/${var.project_id}/secrets/${local.prefix}-${each.value}"
 }
