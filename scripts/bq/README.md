@@ -347,7 +347,7 @@ Colunas de métrica (fatos, exceto onde dito): `investimento`
 (`metrics.cost_micros`), `impressoes`, `cliques`, `conversoes`, `receita`
 (`conversions_value`), `todas_conversoes` (`all_conversions`),
 `todas_conversoes_receita` (`all_conversions_value`), `interacoes`,
-`visualizacoes_video` (`video_views`).
+`visualizacoes_video` (`video_trueview_views`; o antigo `video_views` não existe mais na v26).
 
 ### Fatos (DDL: `21_google_ads.sql`)
 
