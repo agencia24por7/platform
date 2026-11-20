@@ -293,6 +293,67 @@ Configuração: `tabelas/google.ts`. Manifesto: `manifesto/google.json`. DDL: `2
 
 Mesma tabela da seção Meta Ads, com `platform = 'google'`.
 
+Modelagem e cota: ADR [0016](../../docs/adr/0016-google-ads-modelagem.md). Origem: Google Ads API
+`v26`, GAQL `googleAds:searchStream`, uma consulta por tabela. Todas as colunas
+de DDL são geradas da especificação em `tabelas/googleEspecificacao.ts` e
+conferidas por `googleEspecificacao.test.ts`. Valor monetário = `cost_micros` ÷
+1.000.000, na `moeda` da linha. Toda tabela tem `organization_id` e
+`ad_account_id` (`externalId`), `execucao_id`, `inserido_em`; fatos têm
+`PARTITION BY data_dia` e `CLUSTER BY organization_id, ad_account_id,
+external_campaign_id`; staging `stg_google_*` (7 dias) com as mesmas colunas.
+Cada fato tem a view `vw_google_*_diario` (nome do fato com `vw_` no lugar de
+`fato_`), com dedupe pela chave e `cliente_na_epoca_*`/`cliente_atual_*` via
+`dim_fonte_scd2` (`platform = 'google'`). Dimensões têm a view
+`vw_dim_google_*` (todas as versões + `cliente_atual_*`).
+
+Colunas de métrica (fatos, exceto onde dito): `investimento`
+(`metrics.cost_micros`), `impressoes`, `cliques`, `conversoes`, `receita`
+(`conversions_value`), `todas_conversoes` (`all_conversions`),
+`todas_conversoes_receita` (`all_conversions_value`), `interacoes`,
+`visualizacoes_video` (`video_views`).
+
+### Fatos (DDL: `21_google_ads.sql`)
+
+| Tabela | Grão (= chave do MERGE) | Origem (`FROM`) e colunas próprias |
+|---|---|---|
+| `fato_google_campanha_diario` | `organization_id, ad_account_id, external_campaign_id, data_dia` | `campaign`; mais `parcela_impressoes_pesquisa`, `perdida_orcamento`, `perdida_ranking`, `parcela_topo`, `parcela_topo_absoluto` (`search_*_impression_share`; nulas fora de Pesquisa) |
+| `fato_google_anuncio_diario` | `..., external_campaign_id, ad_group_id, ad_id, data_dia` | `ad_group_ad` |
+| `fato_google_palavra_chave_diario` | `..., external_campaign_id, ad_group_id, criterion_id, data_dia` | `keyword_view` |
+| `fato_google_termo_pesquisa_diario` | `..., external_campaign_id, ad_group_id, termo, data_dia` | `search_term_view`; `status_termo`; termo truncado em 500 |
+| `fato_google_conversao_diario` | `..., external_campaign_id, conversion_action_id, data_dia` | `campaign` + `segments.conversion_action`; só as 4 métricas de conversão; `acao_nome`, `acao_categoria` |
+| `fato_google_dispositivo_diario` | `..., external_campaign_id, dispositivo, data_dia` | `campaign` + `segments.device` |
+| `fato_google_rede_diario` | `..., external_campaign_id, rede, data_dia` | `campaign` + `segments.ad_network_type` |
+| `fato_google_geo_diario` | `..., external_campaign_id, pais_criterio_id, tipo_localizacao, data_dia` | `geographic_view` (país; `location_type`) |
+| `fato_google_idade_diario` | `..., external_campaign_id, ad_group_id, faixa_etaria, data_dia` | `age_range_view` |
+| `fato_google_genero_diario` | `..., external_campaign_id, ad_group_id, genero, data_dia` | `gender_view` |
+| `fato_google_grupo_ativos_diario` | `..., external_campaign_id, asset_group_id, data_dia` | `asset_group` (Performance Max); sem `visualizacoes_video` |
+
+Fatos de entidade (anúncio, palavra-chave, termo, recortes, grupo de ativos)
+só trazem linhas com `metrics.impressions > 0`; campanha traz todas.
+
+### Dimensões SCD2
+
+Chave = `organization_id, ad_account_id` + id da entidade; manifesto
+`todoPeriodo`. Buscadas só na janela mais recente (ADR 0016). Cluster pela
+chave; sem partição.
+
+| Tabela | Chave da entidade | Atributos (hash da versão) |
+|---|---|---|
+| `dim_google_campanha_scd2` | `external_campaign_id` | `nome`, `status`, `canal` (`advertising_channel_type`), `subcanal`, `estrategia_lance` (`bidding_strategy_type`), `orcamento` (`campaign_budget.amount_micros`), `orcamento_compartilhado` |
+| `dim_google_grupo_anuncios_scd2` | `ad_group_id` | `external_campaign_id`, `nome`, `status`, `tipo` |
+| `dim_google_anuncio_scd2` | `ad_id` | `ad_group_id`, `external_campaign_id`, `nome`, `tipo`, `status`, `aprovacao` (`policy_summary.approval_status`) |
+| `dim_google_palavra_chave_scd2` | `ad_group_id, criterion_id` | `external_campaign_id`, `texto`, `correspondencia`, `status`, `negativa`, `nota_qualidade` |
+| `dim_google_grupo_ativos_scd2` | `asset_group_id` | `external_campaign_id`, `nome`, `status` |
+
+Staging das dimensões: `stg_google_campanha`, `stg_google_grupo_anuncios`,
+`stg_google_anuncio`, `stg_google_palavra_chave`, `stg_google_grupo_ativos`.
+
+### Cota e volume (nível Básico, 15.000 operações/dia)
+
+Por conta: 11 consultas por janela de 28 dias (+5 de entidade na janela mais
+recente). Backfill de 37 meses ≈ 456 operações por conta; incremental ≈ 16.
+Teto recomendado: 20 contas/dia de backfill. Detalhe na ADR 0016.
+
 <!-- Google Ads: novas tabelas acima desta linha -->
 
 ## GA4

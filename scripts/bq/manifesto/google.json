@@ -1,3 +1,19 @@
 [
-  { "tabela": "fato_ads_diario", "chave": "ad_account_id", "plataforma": "google", "colunaPlataforma": "platform", "data": "data_dia" }
+  { "tabela": "fato_ads_diario", "chave": "ad_account_id", "plataforma": "google", "colunaPlataforma": "platform", "data": "data_dia" },
+  { "tabela": "fato_google_campanha_diario", "chave": "ad_account_id", "plataforma": "google", "data": "data_dia" },
+  { "tabela": "fato_google_anuncio_diario", "chave": "ad_account_id", "plataforma": "google", "data": "data_dia" },
+  { "tabela": "fato_google_palavra_chave_diario", "chave": "ad_account_id", "plataforma": "google", "data": "data_dia" },
+  { "tabela": "fato_google_termo_pesquisa_diario", "chave": "ad_account_id", "plataforma": "google", "data": "data_dia" },
+  { "tabela": "fato_google_conversao_diario", "chave": "ad_account_id", "plataforma": "google", "data": "data_dia" },
+  { "tabela": "fato_google_dispositivo_diario", "chave": "ad_account_id", "plataforma": "google", "data": "data_dia" },
+  { "tabela": "fato_google_rede_diario", "chave": "ad_account_id", "plataforma": "google", "data": "data_dia" },
+  { "tabela": "fato_google_geo_diario", "chave": "ad_account_id", "plataforma": "google", "data": "data_dia" },
+  { "tabela": "fato_google_idade_diario", "chave": "ad_account_id", "plataforma": "google", "data": "data_dia" },
+  { "tabela": "fato_google_genero_diario", "chave": "ad_account_id", "plataforma": "google", "data": "data_dia" },
+  { "tabela": "fato_google_grupo_ativos_diario", "chave": "ad_account_id", "plataforma": "google", "data": "data_dia" },
+  { "tabela": "dim_google_campanha_scd2", "chave": "ad_account_id", "plataforma": "google", "todoPeriodo": true },
+  { "tabela": "dim_google_grupo_anuncios_scd2", "chave": "ad_account_id", "plataforma": "google", "todoPeriodo": true },
+  { "tabela": "dim_google_anuncio_scd2", "chave": "ad_account_id", "plataforma": "google", "todoPeriodo": true },
+  { "tabela": "dim_google_palavra_chave_scd2", "chave": "ad_account_id", "plataforma": "google", "todoPeriodo": true },
+  { "tabela": "dim_google_grupo_ativos_scd2", "chave": "ad_account_id", "plataforma": "google", "todoPeriodo": true }
 ]
