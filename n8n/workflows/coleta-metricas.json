@@ -6,7 +6,8 @@
     "saveDataErrorExecution": "none",
     "saveDataSuccessExecution": "none",
     "timezone": "America/Sao_Paulo",
-    "saveManualExecutions": false
+    "saveManualExecutions": false,
+    "errorWorkflow": "origem:n8n/workflows/plataforma/alertas-de-falha.json"
   },
   "nodes": [
     {

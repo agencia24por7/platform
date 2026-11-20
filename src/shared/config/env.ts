@@ -40,6 +40,7 @@ const schema = z.object({
   N8N_OWNER_EMAIL: opcional(z.string().email()),
   N8N_OWNER_PASSWORD: opcional(z.string().min(8)),
   N8N_API_KEY: opcional(z.string().min(20)),
+  ALERT_WEBHOOK_URL: opcional(z.string().url().startsWith('https://')),
   BQ_PROJECT_ID: opcional(z.string().min(3)),
   BQ_DATASET: z.string().min(3).default('tria_dw'),
   CONTEXT_BUCKET: opcional(z.string().regex(/^[a-z0-9][a-z0-9._-]{2,221}$/, 'nome de bucket inválido')),

@@ -14,8 +14,11 @@ rodadas do dia repetiam a mesma janela e as mesmas consultas de entidades.
 
 A auditoria da documentação oficial (20/11/2026) achou também:
 
-- A Graph/Marketing API serve `v26.0` para quem pede `v23.0`, `v24.0` ou
-  `v25.0` (conferido com chamada real); `v27.0` já existe.
+- A Graph/Marketing API serve `v27.0` quando pedida (conferido com chamada
+  real em 20/11/2026, com o mesmo comportamento para `level=ad`,
+  `time_increment=1` e atribuição unificada). A `v26.0` foi a versão
+  anterior e também é aceita; versões antigas (`v23.0` a `v25.0`) são
+  servidas como a mais nova suportada.
 - Nenhum coletor lia os cabeçalhos de uso nem tratava 429 como "tente mais
   tarde": todo limite virava falha fatal `api_recusou`.
 - GTM tem limite de 0,25 QPS por projeto (25 por 100 s, 10 mil por dia).
@@ -135,15 +138,15 @@ no JSON do resumo, sem coluna nova.
 
 ### Correções da auditoria
 
-- **Versão da Meta fixada em `v26.0`**: `metaGraphVersion.ts` no TypeScript
-  (OAuth, descoberta) e uma constante `VERSAO_DA_API_META` no primeiro nó Code
-  de cada coletor e do executor do parceiro. As URLs dos nós HTTP dos
-  formulários leem `versaoApi` desse nó. **Plano para `v27.0`**: trocar as duas
-  constantes, rodar uma coleta manual de cada coletor Meta, conferir que o
-  aviso `versao_da_api` some e que `qc_execucoes` não mostra campo removido.
-  Fazer isso antes de a Meta descontinuar a `v26.0`. Os fluxos de cliente
-  `clientes/credaz/*` ainda pedem `v23.0` (servida como `v26.0`) e ficam para o
-  dono desses fluxos.
+- **Versão da Meta fixada em `v27.0`** (a `v26.0` foi a anterior):
+  `metaGraphVersion.ts` no TypeScript (OAuth, descoberta) e uma constante
+  `VERSAO_DA_API_META` no primeiro nó Code de cada coletor e do executor do
+  parceiro. As URLs dos nós HTTP dos formulários leem `versaoApi` desse nó. O
+  coletor continua gravando o cabeçalho `facebook-api-version` servido e avisa
+  `versao_da_api` quando difere do pedido. Depois do deploy, rodar uma coleta
+  manual de cada coletor Meta e conferir que o aviso não aparece e que
+  `qc_execucoes` não mostra campo removido. Os fluxos de cliente
+  `clientes/credaz/*` ainda pedem `v23.0` e ficam para o dono desses fluxos.
 - **Alcance**: nos recortes com início há mais de 13 meses o coletor não pede
   `reach`. `alcance` sai nulo quando a API não devolve o campo, inclusive no
   nível de anúncio. As colunas `alcance` de `20_meta_ads.sql` já aceitam NULL, e
@@ -324,3 +327,69 @@ abaixo. Todos foram corrigidos no mesmo PR.
    `plataforma/`. Só depois reativar o orquestrador, já com `modo=incremental`.
 4. Atualizar as permissões do Login for Business no painel da Meta, depois de
    testar uma Página.
+
+## Adendo de 20/11/2026: cobertura das plataformas
+
+Conferido de forma empírica, só leitura, na mesma data.
+
+- **Search Console, outros tipos de busca**: só `type=web` tem volume. A API
+  devolve uma linha por data com zero impressões para `video`, `news`,
+  `discover` e `googleNews`, então contar linhas engana. A tabela
+  `fato_search_console_tipo_diario` (`image`, `video`, `news`, `discover`,
+  `googleNews`; chave `organization_id`, `site`, `tipo`, `data_dia`) recebe uma
+  consulta por tipo (`dimensions: ['date']`, `type`) e o coletor descarta as
+  linhas com zero impressões antes de emitir: ausência de linha significa zero.
+  Cada tipo devolve no máximo uma linha por dia da janela, bem abaixo de 25 mil;
+  uma resposta que bata em `rowLimit` vira `coleta_incompleta`. A janela é a
+  mesma das demais consultas do Search Console (atraso de 3 dias, reprocesso
+  da janela incremental). `searchAppearance` só aceita ser consultado sozinho,
+  sem `date`; por isso `aparencia` continua sendo pedida um dia por vez.
+- **Cabeçalhos de uso da Meta**: o coletor lê `x-business-use-case-usage` e
+  `x-fb-ads-insights-throttle`. `x-fb-ads-insights-reach-throttle` não vem
+  (nem pedindo `reach`) e nenhum coletor depende dele. Quando o uso traz
+  `ads_api_access_tier: development_access`, o coletor registra o aviso de
+  qualidade `nivel_de_acesso`. Esse nível tem limites de uso baixos; o
+  Standard Access exige App Review da Meta, com verificação de empresa
+  (business verification). Informativo: não falha a coleta.
+- **403 `PERMISSION_DENIED` em um recurso**: nova causa `sem_acesso`, fatal só
+  para aquela fonte (as demais seguem). Vale para GBP (local), Google Ads
+  (conta), GA4 (propriedade), Search Console (site), YouTube (canal) e GTM
+  (contêiner). Exemplo, o segundo local do GBP, que devolve 403 em tudo:
+  `Sem permissão no local <id> — a conta autorizada não gerencia este local`.
+  Continuam `reauth_pending`: 401, `invalid_grant` e 403 por escopo insuficiente
+  (`ACCESS_TOKEN_SCOPE_INSUFFICIENT`), que são problema do token. Developer
+  token recusado e API desligada no projeto continuam `api_recusou`. A causa
+  entra em `CausaFaltante`, em `faltanteBody` e em `qc_execucoes`; o
+  orquestrador a trata como fatal por fonte, sem marcar falha de autenticação.
+- **RD Station**: o CRM v1 não devolve cabeçalhos de limite (a documentação diz
+  120 requisições por minuto; o espaçamento de 600 ms, cerca de 100 por
+  minuto, fica). Um 429, ou `RATE_LIMIT_EXCEEDED`, espera 60 s e repete a
+  coleta inteira uma vez (nós `Verificar limite`, `Repetir?` e `Esperar
+  limite`); se persistir, fecha como `failed` com `limite_de_uso` e pausa
+  temporária de 5 min. Como a v1 não manda `Retry-After`, a espera é fixa.
+  Truncamento por `has_more` continua virando `coleta_incompleta`.
+- **Google Ads e GA4**: `search_term_view` só traz termos que passam o limite de
+  privacidade do Google, e campanhas Performance Max ficam fora dessa visão; a
+  soma dos termos pode ser menor que o investimento da campanha. O GA4 também
+  agrega linhas sob limiar de privacidade (`subjectToThresholding`, aviso
+  `limiar_de_privacidade`). Não é falha de coleta e não há como "completar".
+- **Alertas de falha da plataforma**: os fluxos da plataforma (`n8n/workflows`
+  e `plataforma/`) apontavam `errorWorkflow` para o fluxo de alertas da
+  agência. Agora apontam para `plataforma/alertas-de-falha.json`, que recebe o
+  gatilho de erro e faz `POST /api/v0/manutencao/alerta` (token de worker). O
+  app limpa a mensagem (token, e-mail, CPF, telefone), corta em 500
+  caracteres, grava em `automation.alertas` (migração 0090, tabela de
+  plataforma com RLS forçado e política só para o papel do app), deduplica por
+  workflow + mensagem na janela de 1 h (a repetição só incrementa
+  `ocorrencias`), limita a 60 alertas novos por hora e registra a auditoria
+  `plataforma.alerta`. A variável opcional `ALERT_WEBHOOK_URL` (HTTPS) recebe
+  `{ "text": ... }` a cada alerta novo; sem ela, nada sai do app e nenhuma
+  credencial nova existe no n8n. A tela Coletas mostra, para quem administra,
+  quantos alertas abertos existem (últimos 7 dias) e um botão para resolvê-los.
+  Nos modelos, `settings.errorWorkflow` é `origem:<arquivo>`; a sincronização
+  troca pelo id do workflow implantado cuja nota de origem aponta para esse
+  arquivo (nunca pelo nome) e processa o fluxo de alertas primeiro. Se ele ainda
+  não estiver implantado, o `errorWorkflow` sai e a sincronização avisa. O fluxo
+  de alertas não tem `errorWorkflow`, para não gerar laço. Coletores e
+  executores não definem fluxo de erro: a falha deles sobe para o fluxo que os
+  chamou.

@@ -28,6 +28,9 @@ import { createOrganizationService } from '@/modules/organizations/application/o
 import { createOrganizationRepository } from '@/modules/organizations/infrastructure/organizationRepository';
 import { createRetencaoService } from '@/modules/privacidade/application/retencaoService';
 import { createRetencaoRepository } from '@/modules/privacidade/infrastructure/retencaoRepository';
+import { createAlertaService } from '@/modules/alertas/application/alertaService';
+import { createAlertaRepository } from '@/modules/alertas/infrastructure/alertaRepository';
+import { createLimiteDeAlertasNovos, createNotificadorPorWebhook } from '@/modules/alertas/infrastructure/alertaNotificador';
 import { createDimensoesService } from '@/modules/coleta/application/dimensoesService';
 import { createDimensoesRepository } from '@/modules/coleta/infrastructure/dimensoesRepository';
 import { createDimensoesBigQuery } from '@/modules/coleta/infrastructure/dimensoesBigQuery';
@@ -83,6 +86,7 @@ function build() {
     ),
     coleta: createColetaService(createColetaRepository(), audit, createBigQueryGravador()),
     retencao: createRetencaoService(createRetencaoRepository(), audit),
+    alertas: createAlertaService(createAlertaRepository(), audit, createNotificadorPorWebhook(), createLimiteDeAlertasNovos()),
     dimensoes,
   };
 }

@@ -2,6 +2,9 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Shell } from '@/../app/_components/Shell';
 import { modules } from '@/composition';
+import { BotaoDeEnvio } from '@/../app/_components/BotaoDeEnvio';
+import { resolverAlertasDaPlataforma } from '@/../app/automacoes/acoes';
+import { canAdminister } from '@/modules/identity/domain/user';
 import { requireContext } from '@/shared/http/currentOrganization';
 
 export const dynamic = 'force-dynamic';
@@ -14,9 +17,12 @@ const runTone: Record<string, string> = {
 };
 
 export default async function AutomationsPage() {
-  const organization = (await requireContext()).organization;
+  const contexto = await requireContext();
+  const organization = contexto.organization;
+  const administra = canAdminister(contexto.role);
 
   const runs = await modules().ingestion.recentRuns(organization.id, 25);
+  const alertasAbertos = administra ? await modules().alertas.contarAbertos() : 0;
 
   return (
     <Shell title="Coletas" organization={organization} active="/automacoes">
@@ -28,6 +34,14 @@ export default async function AutomationsPage() {
             reafirmadas. Nada entra sem deixar rastro.
           </div>
         </div>
+        {alertasAbertos > 0 ? (
+          <form action={resolverAlertasDaPlataforma}>
+            <span className="pill pill--danger">{alertasAbertos} alerta(s) de falha da plataforma</span>{' '}
+            <BotaoDeEnvio className="btn" pendente="Resolvendo…">
+              Marcar como resolvidos
+            </BotaoDeEnvio>
+          </form>
+        ) : null}
       </div>
 
       <div className="card">

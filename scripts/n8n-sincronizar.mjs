@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { TAG_DA_PLATAFORMA, criarClienteN8n } from '../src/shared/n8n/clienteN8n.ts';
 import { MODELO_DE_COLETOR, MODELO_DE_EXECUTOR, PASTA_DOS_WORKFLOWS, ehDaPlataforma, ehModelo } from '../src/shared/n8n/modelos.ts';
-import { avaliarAlvo, localizarImplantado, mesclar, versaoDoModelo, versaoImplantada } from '../src/shared/n8n/sincronizacao.ts';
+import { ARQUIVO_DOS_ALERTAS, avaliarAlvo, localizarImplantado, mesclar, resolverFluxoDeErro, versaoDoModelo, versaoImplantada } from '../src/shared/n8n/sincronizacao.ts';
 
 const argumentos = process.argv.slice(2);
 const aplicar = argumentos.includes('--aplicar');
@@ -40,11 +40,12 @@ function alvosDasConexoes() {
 
 const temTagDaPlataforma = (implantado) => (implantado.tags ?? []).some((tag) => tag.name === TAG_DA_PLATAFORMA);
 
-async function sincronizar(arquivo, implantado) {
+async function sincronizar(arquivo, implantado, implantados) {
   const avaliacao = avaliarAlvo(implantado, { adotar, tagDaPlataforma: TAG_DA_PLATAFORMA });
   if (!avaliacao.permitido) return { acao: 'bloqueado', detalhe: avaliacao.motivo };
 
-  const modelo = lerJson(arquivo);
+  const { modelo, aviso } = resolverFluxoDeErro(lerJson(arquivo), implantados);
+  if (aviso) console.warn(`aviso: ${implantado.name}: ${aviso}`);
   if (versaoImplantada(implantado) === versaoDoModelo(modelo)) {
     if (temTagDaPlataforma(implantado)) return { acao: 'igual' };
     if (!aplicar) return { acao: 'marcaria', detalhe: `sem a tag ${TAG_DA_PLATAFORMA}` };
@@ -65,11 +66,11 @@ async function sincronizar(arquivo, implantado) {
 }
 
 async function main() {
-  const implantados = await n8n.listar();
-  const porId = new Map(implantados.map((w) => [w.id, w]));
+  let implantados = await n8n.listar();
   const resultados = [];
 
-  for (const arquivo of arquivosDaPlataforma(PASTA_DOS_WORKFLOWS)) {
+  const arquivos = arquivosDaPlataforma(PASTA_DOS_WORKFLOWS).sort((a, b) => Number(b === ARQUIVO_DOS_ALERTAS) - Number(a === ARQUIVO_DOS_ALERTAS));
+  for (const arquivo of arquivos) {
     const nome = lerJson(arquivo).name;
     const achado = localizarImplantado(arquivo, nome, implantados);
     if (!achado) {
@@ -77,16 +78,18 @@ async function main() {
       continue;
     }
     const alvo = `${achado.workflow.name} (${achado.workflow.id})${achado.por === 'nome' ? ' [adotado pelo nome]' : ''}`;
-    resultados.push({ arquivo, alvo, ...(await sincronizar(arquivo, achado.workflow)) });
+    resultados.push({ arquivo, alvo, ...(await sincronizar(arquivo, achado.workflow, implantados)) });
+    if (arquivo === ARQUIVO_DOS_ALERTAS) implantados = await n8n.listar();
   }
 
+  const porId = new Map(implantados.map((w) => [w.id, w]));
   for (const { arquivo, id } of alvosDasConexoes()) {
     const implantado = porId.get(id);
     if (!implantado) {
       resultados.push({ arquivo, alvo: id, acao: 'ausente', detalhe: 'a conexão aponta para um workflow que não existe' });
       continue;
     }
-    resultados.push({ arquivo, alvo: `${implantado.name} (${id})`, ...(await sincronizar(arquivo, implantado)) });
+    resultados.push({ arquivo, alvo: `${implantado.name} (${id})`, ...(await sincronizar(arquivo, implantado, implantados)) });
   }
 
   for (const r of resultados) console.log(`${r.acao.padEnd(15)} ${r.alvo}${r.detalhe ? ` — ${r.detalhe}` : ''}`);

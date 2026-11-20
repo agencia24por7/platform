@@ -218,7 +218,7 @@ do `ad_account_id` (o `externalId`), com dono pela `dim_fonte_scd2`
 (`platform = 'meta'`) nas views `vw_*`: `cliente_na_epoca_*` e
 `cliente_atual_*`. Nas dimensões a "época" é o início da versão (`valido_de`).
 
-Origem na API (Marketing API v26.0, fixada; plano para v27.0 no ADR 0025): relatórios assíncronos
+Origem na API (Marketing API v27.0, fixada; ADR 0025): relatórios assíncronos
 `POST /{act}/insights` + `GET /{report_run_id}/insights` (insights) e `GET
 /{act}/campaigns|adsets|ads` (dimensões), paginados. Janelas de 28 dias do
 backfill. Valores monetários com a moeda da conta em `moeda`.
@@ -369,6 +369,14 @@ Colunas de métrica (fatos, exceto onde dito): `investimento`
 `todas_conversoes_receita` (`all_conversions_value`), `interacoes`,
 `visualizacoes_video` (`video_trueview_views`; o antigo `video_views` não existe mais na v26).
 
+Limites de completude dos termos de pesquisa: `search_term_view` só devolve
+termos que passam o limite de privacidade do Google e não cobre campanhas
+Performance Max. A soma de `fato_google_termo_pesquisa_diario` pode ser menor
+que o investimento da campanha (`fato_google_campanha_diario`); compare com a
+campanha, não com a soma dos termos. O mesmo vale para o GA4 sob limiar de
+privacidade (aviso `limiar_de_privacidade`). Ver o adendo de 20/11/2026 no ADR
+[0025](../../docs/adr/0025-coleta-incremental.md).
+
 ### Fatos (DDL: `21_google_ads.sql`)
 
 | Tabela | Grão (= chave do MERGE) | Origem (`FROM`) e colunas próprias |
@@ -488,6 +496,7 @@ Decisões: ADR [0018](../../docs/adr/0018-ga4-searchconsole-modelagem.md). DDL:
 | `pagina` | `fato_search_console_pagina_diario` | `pagina` | page |
 | `pais_dispositivo` | `fato_search_console_pais_dispositivo_diario` | `pais` (ISO 3166-1 alfa-3, minúsculo), `dispositivo` | country, device |
 | `aparencia` | `fato_search_console_aparencia_diario` | `aparencia` | searchAppearance (ex.: AMP, rich results; recorte opcional: 400 não falha a coleta) |
+| `tipo` | `fato_search_console_tipo_diario` | `tipo` (`image`, `video`, `news`, `discover`, `googleNews`) | date, com `type=<tipo>`; `web` fica nas tabelas acima |
 
 Consultas são termos agregados; a API omite as anonimizadas (raras), então
 `consulta_pagina` soma menos que `pagina`, e `pagina` (agregação por página)
@@ -495,6 +504,13 @@ não bate exatamente com `fato_search_console_diario` (por propriedade). A
 API devolve só as linhas de maior tráfego por dia; não há garantia de
 completude da cauda. `fato_search_console_diario` (acima) continua como
 total por dispositivo.
+
+`fato_search_console_tipo_diario` só guarda dados reais: a API devolve uma linha
+por data com zero impressões para tipos sem tráfego, e o coletor descarta essas
+linhas antes de gravar. Ausência de linha para um tipo/dia significa zero
+impressões naquele tipo (não falha de coleta). O tipo `web` não entra aqui.
+`searchAppearance` só pode ser consultado sozinho (sem `date`), por isso a
+tabela `aparencia` é coletada um dia por pedido.
 
 <!-- Search Console: novas tabelas acima desta linha -->
 
@@ -943,6 +959,7 @@ Cada view lê uma única tabela-base, deduplica pelo grão quando a base é fato
 | `vw_search_console_pagina_diario` | `fato_search_console_pagina_diario` | `23_searchconsole.sql` |
 | `vw_search_console_pais_dispositivo_diario` | `fato_search_console_pais_dispositivo_diario` | `23_searchconsole.sql` |
 | `vw_search_console_aparencia_diario` | `fato_search_console_aparencia_diario` | `23_searchconsole.sql` |
+| `vw_search_console_tipo_diario` | `fato_search_console_tipo_diario` | `23_searchconsole.sql` |
 | `vw_dim_youtube_video_scd2` | `dim_youtube_video_scd2` | `24_youtube.sql` |
 | `vw_dim_youtube_playlist_scd2` | `dim_youtube_playlist_scd2` | `24_youtube.sql` |
 | `vw_youtube_video_diario` | `fato_youtube_video_diario` | `24_youtube.sql` |
