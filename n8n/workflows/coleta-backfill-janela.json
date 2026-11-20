@@ -2,10 +2,11 @@
   "name": "ORLA · coleta · backfill · janela",
   "settings": {
     "executionOrder": "v1",
-    "saveDataErrorExecution": "all",
-    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
     "timezone": "America/Sao_Paulo",
-    "callerPolicy": "workflowsFromSameOwner"
+    "callerPolicy": "workflowsFromSameOwner",
+    "saveManualExecutions": false
   },
   "nodes": [
     {
@@ -141,7 +142,7 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const fonte = $('Entrada').item.json.fonte;\nconst coleta = $('Abrir execução').item.json;\nconst resultado = $json ?? {};\nconst linhas = Array.isArray(resultado.linhas) ? resultado.linhas : [];\nconst falhas = Array.isArray(resultado.falhas) ? resultado.falhas.filter((falha) => falha && falha.causa) : [];\nconst NAO_FATAIS = new Set(['sem_dados_no_periodo', 'coleta_incompleta']);\nconst fatal = falhas.find((falha) => !NAO_FATAIS.has(falha.causa)) ?? null;\nconst incompletas = falhas.filter((falha) => falha.causa === 'coleta_incompleta');\nconst status = fatal ? 'failed' : incompletas.length > 0 ? 'partial' : 'success';\nconst detalhes = (lista) => lista.map((falha) => falha.detalhe ?? falha.causa).join(' | ').slice(0, 1000);\n\nconst qualidadeResumo = {\n  fontesEsperadas: 1,\n  fontesColetadas: fatal ? 0 : 1,\n  faltantes: falhas.slice(0, 500).map((falha) => ({\n    fonte: fonte.nome || fonte.externalId,\n    causa: String(falha.causa).slice(0, 80),\n    detalhe: falha.detalhe == null ? null : String(falha.detalhe).slice(0, 500),\n  })),\n  paridade: [],\n  volumetria: resultado.volumetria ?? { linhas: linhas.length, bytes: 0, requests: resultado.requests ?? 0, duracaoMs: 0 },\n};\n\nreturn {\n  json: {\n    coletaId: coleta.id,\n    status,\n    errorCode: fatal ? fatal.causa : incompletas.length > 0 ? 'coleta_incompleta' : null,\n    errorMessage: fatal ? String(fatal.detalhe ?? fatal.causa).slice(0, 1000) : incompletas.length > 0 ? detalhes(incompletas) : null,\n    requestCount: resultado.requests ?? 0,\n    linhas,\n    qualidadeResumo,\n  },\n};"
+        "jsCode": "const fonte = $('Entrada').item.json.fonte;\nconst coleta = $('Abrir execução').item.json;\nconst resultado = $json ?? {};\nconst removerSegredos = (texto) => String(texto)\n  .replace(/(access_token|refresh_token|client_secret|developer_token|api_key|key|token)=[^&\\s\"']+/gi, '$1=[removido]')\n  .replace(/Bearer\\s+[A-Za-z0-9._~+\\/-]+=*/g, 'Bearer [removido]');\nconst mensagemDoErro = (erro) => removerSegredos(typeof erro === 'string' ? erro : erro?.message ?? JSON.stringify(erro)).slice(0, 500);\nconst respostaInvalida = Boolean(resultado.error)\n  || !Array.isArray(resultado.linhas)\n  || !resultado.volumetria\n  || typeof resultado.volumetria !== 'object';\nconst linhas = respostaInvalida ? [] : resultado.linhas;\nconst falhas = respostaInvalida\n  ? [{ causa: 'falha_coletor', detalhe: resultado.error ? mensagemDoErro(resultado.error) : 'o coletor devolveu uma resposta sem linhas ou volumetria' }]\n  : Array.isArray(resultado.falhas) ? resultado.falhas.filter((falha) => falha && falha.causa) : [];\nconst NAO_FATAIS = new Set(['sem_dados_no_periodo', 'coleta_incompleta']);\nconst fatal = falhas.find((falha) => !NAO_FATAIS.has(falha.causa)) ?? null;\nconst incompletas = falhas.filter((falha) => falha.causa === 'coleta_incompleta');\nconst status = fatal ? 'failed' : incompletas.length > 0 ? 'partial' : 'success';\nconst detalhes = (lista) => removerSegredos(lista.map((falha) => falha.detalhe ?? falha.causa).join(' | ')).slice(0, 1000);\n\nconst qualidadeResumo = {\n  fontesEsperadas: 1,\n  fontesColetadas: fatal ? 0 : 1,\n  faltantes: falhas.slice(0, 500).map((falha) => ({\n    fonte: fonte.nome || fonte.externalId,\n    causa: String(falha.causa).slice(0, 80),\n    detalhe: falha.detalhe == null ? null : removerSegredos(falha.detalhe).slice(0, 500),\n  })),\n  paridade: [],\n  volumetria: respostaInvalida ? { linhas: 0, bytes: 0, requests: 0, duracaoMs: 0 } : resultado.volumetria,\n};\n\nreturn {\n  json: {\n    coletaId: coleta.id,\n    status,\n    errorCode: fatal ? fatal.causa : incompletas.length > 0 ? 'coleta_incompleta' : null,\n    errorMessage: fatal ? removerSegredos(fatal.detalhe ?? fatal.causa).slice(0, 1000) : incompletas.length > 0 ? detalhes(incompletas) : null,\n    requestCount: respostaInvalida ? 0 : resultado.requests ?? 0,\n    linhas,\n    qualidadeResumo,\n  },\n};"
       }
     },
     {
@@ -194,7 +195,8 @@
           "id": "a-definir-pelo-provisioner",
           "name": "a-definir-pelo-provisioner"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "id": "fechar-ok",
@@ -226,7 +228,8 @@
           "id": "a-definir-pelo-provisioner",
           "name": "a-definir-pelo-provisioner"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "id": "calcular-sem-coletor",
@@ -272,7 +275,8 @@
           "id": "a-definir-pelo-provisioner",
           "name": "a-definir-pelo-provisioner"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "id": "conferir-gravacao",
@@ -285,7 +289,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const qualidade = $('Calcular qualidade').first().json;\nconst respostas = $input.all().map((item) => item.json ?? {});\nconst esperadas = qualidade.linhas.length;\nconst gravadas = respostas.reduce((total, resposta) => total + Number(resposta.linhasGravadas ?? 0), 0);\nconst descartadas = respostas.reduce((total, resposta) => total + Number(resposta.linhasDescartadas ?? 0), 0);\nconst recusada = respostas.find((resposta) => resposta.linhasGravadas === undefined);\nconst gravou = qualidade.status === 'success' || qualidade.status === 'partial';\nconst falhouGravacao = gravou && esperadas > 0 && (Boolean(recusada) || gravadas + descartadas !== esperadas);\nconst motivo = recusada\n  ? `lote recusado: ${recusada.detail ?? recusada.title ?? 'sem detalhe'}`\n  : `gravadas ${gravadas} + descartadas ${descartadas} de ${esperadas} em ${respostas.length} lote(s)`;\n\nreturn [{\n  json: {\n    coletaId: qualidade.coletaId,\n    status: falhouGravacao ? 'failed' : qualidade.status,\n    requestCount: qualidade.requestCount,\n    rowsReceived: esperadas,\n    rowsWritten: gravadas,\n    qualidadeResumo: qualidade.qualidadeResumo,\n    errorCode: falhouGravacao ? 'gravacao_bq' : qualidade.errorCode,\n    errorMessage: falhouGravacao ? String(motivo).slice(0, 1000) : qualidade.errorMessage,\n  },\n  pairedItem: 0,\n}];"
+        "jsCode": "const qualidade = $('Calcular qualidade').first().json;\nconst respostas = $input.all().map((item) => item.json ?? {});\nconst esperadas = qualidade.linhas.length;\nconst gravadas = respostas.reduce((total, resposta) => total + Number(resposta.linhasGravadas ?? 0), 0);\nconst descartadas = respostas.reduce((total, resposta) => total + Number(resposta.linhasDescartadas ?? 0), 0);\nconst recusada = respostas.find((resposta) => resposta.linhasGravadas === undefined);\nconst gravou = qualidade.status === 'success' || qualidade.status === 'partial';\nconst falhouGravacao = gravou && esperadas > 0 && (Boolean(recusada) || gravadas + descartadas !== esperadas);\nconst removerSegredos = (texto) => String(texto)\n  .replace(/(access_token|refresh_token|client_secret|developer_token|api_key|key|token)=[^&\\s\"']+/gi, '$1=[removido]')\n  .replace(/Bearer\\s+[A-Za-z0-9._~+\\/-]+=*/g, 'Bearer [removido]');\nconst detalheDaRecusa = (resposta) => resposta.detail ?? resposta.title\n  ?? (resposta.error ? removerSegredos(typeof resposta.error === 'string' ? resposta.error : resposta.error?.message ?? JSON.stringify(resposta.error)) : 'sem detalhe');\nconst motivo = recusada\n  ? `lote recusado: ${detalheDaRecusa(recusada)}`\n  : `gravadas ${gravadas} + descartadas ${descartadas} de ${esperadas} em ${respostas.length} lote(s)`;\n\nreturn [{\n  json: {\n    coletaId: qualidade.coletaId,\n    status: falhouGravacao ? 'failed' : qualidade.status,\n    requestCount: qualidade.requestCount,\n    rowsReceived: esperadas,\n    rowsWritten: gravadas,\n    qualidadeResumo: qualidade.qualidadeResumo,\n    errorCode: falhouGravacao ? 'gravacao_bq' : qualidade.errorCode,\n    errorMessage: falhouGravacao ? String(motivo).slice(0, 1000) : qualidade.errorMessage,\n  },\n  pairedItem: 0,\n}];"
       }
     },
     {

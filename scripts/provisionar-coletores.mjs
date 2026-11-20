@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { criarClienteN8n } from '../src/shared/n8n/clienteN8n.ts';
+import { MODELO_DE_COLETOR } from '../src/shared/n8n/modelos.ts';
 
 const CONTAINER = 'orla-postgres';
 const VAULT_PREFIX = 'n8n:credential:';
@@ -12,16 +14,9 @@ const CREDENTIAL_TYPE = {
   youtube: 'googleOAuth2Api',
   gbp: 'googleOAuth2Api',
   gtm: 'googleOAuth2Api',
-};
-
-const TEMPLATE_FILE_BY_PLATFORM = {
-  google: 'n8n/workflows/coletores/coletor-google-ads.json',
-  meta: 'n8n/workflows/coletores/coletor-meta-insights.json',
-  ga4: 'n8n/workflows/coletores/coletor-ga4.json',
-  searchconsole: 'n8n/workflows/coletores/coletor-searchconsole.json',
-  youtube: 'n8n/workflows/coletores/coletor-youtube.json',
-  gbp: 'n8n/workflows/coletores/coletor-gbp.json',
-  gtm: 'n8n/workflows/coletores/coletor-gtm.json',
+  rdstation: 'httpQueryAuth',
+  pixel: 'facebookGraphApi',
+  leadads: 'facebookGraphApi',
 };
 
 const env = Object.fromEntries(
@@ -56,10 +51,14 @@ function montarWorkflow(template, tipoEsperado, credentialId, credentialNome) {
   return encontrada ? corpo : null;
 }
 
+const silencioso = { info() {}, warn: (m, d) => console.warn(m, d), error: (m, d) => console.error(m, d) };
+let clienteN8n = null;
+const n8n = () => (clienteN8n ??= criarClienteN8n({ url: env.N8N_API_URL, apiKey: env.N8N_API_KEY }, silencioso));
+
 async function provisionar(connection) {
   const { platform, label, credential_ref: credentialRef } = connection;
 
-  const templateFile = TEMPLATE_FILE_BY_PLATFORM[platform];
+  const templateFile = MODELO_DE_COLETOR[platform];
   if (!templateFile) return { ok: false, motivo: 'fora_do_v1' };
 
   const credentialId = credentialIdOf(credentialRef);
@@ -69,19 +68,10 @@ async function provisionar(connection) {
   const corpo = montarWorkflow(template, CREDENTIAL_TYPE[platform], credentialId, `ORLA · coletor · ${label}`);
   if (!corpo) return { ok: false, motivo: 'template_sem_credencial' };
 
-  const response = await fetch(new URL('/api/v1/workflows', env.N8N_API_URL).toString(), {
-    method: 'POST',
-    headers: { 'X-N8N-API-KEY': env.N8N_API_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify(corpo),
-    signal: AbortSignal.timeout(15_000),
-  });
+  const workflowId = await n8n().criar(corpo, { platform, conexaoId: connection.id });
+  if (!workflowId) return { ok: false, motivo: 'n8n_recusou' };
 
-  if (!response.ok) return { ok: false, motivo: `n8n_${response.status}` };
-
-  const criado = await response.json();
-  if (!criado.id) return { ok: false, motivo: 'n8n_sem_id' };
-
-  return { ok: true, workflowId: criado.id };
+  return { ok: true, workflowId };
 }
 
 async function main() {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { MODELO_DE_COLETOR, MODELO_DE_EXECUTOR, PASTAS_DE_MODELO } from './modelos.ts';
-import { NOTA_DE_ORIGEM, arquivoDeOrigem, localizarImplantado, mesclar, versaoDoModelo, versaoImplantada, type Workflow } from './sincronizacao.ts';
+import { NOTA_DE_ORIGEM, arquivoDeOrigem, avaliarAlvo, localizarImplantado, mesclar, versaoDoModelo, versaoImplantada, type Workflow } from './sincronizacao.ts';
 
 const CREDENCIAL_REAL = { id: 'AbCdEfGh12345678', name: 'ORLA · worker token' };
 const ARQUIVO = 'n8n/workflows/exemplo.json';
@@ -139,5 +139,31 @@ describe('sincronização de workflows do n8n', () => {
     const semNota = { ...implantado, id: 'wfC' };
     assert.equal(localizarImplantado(ARQUIVO, implantado.name, [semNota])?.por, 'nome');
     assert.throws(() => localizarImplantado(ARQUIVO, implantado.name, [semNota, { ...semNota, id: 'wfD' }]), /mais de um/);
+  });
+});
+
+describe('segurança da sincronização: quem pode ser alterado', () => {
+  const comOrigem = mesclar(doRepositorio, null, 'ORLA · exemplo', ARQUIVO).corpo as Workflow;
+  const semOrigem = { ...doRepositorio, tags: [] as { name: string }[] };
+  const opcoes = { adotar: false, tagDaPlataforma: 'platform' };
+
+  it('workflow com tag credaz ou agencia nunca é tocado, nem com --adotar', () => {
+    for (const tag of ['credaz', 'agencia', 'Credaz']) {
+      const alvo = { ...comOrigem, tags: [{ name: 'platform' }, { name: tag }] };
+      assert.equal(avaliarAlvo(alvo, opcoes).permitido, false);
+      assert.equal(avaliarAlvo(alvo, { ...opcoes, adotar: true }).permitido, false);
+    }
+  });
+
+  it('sem nota de origem nem tag platform só é assumido com --adotar', () => {
+    const recusa = avaliarAlvo(semOrigem, opcoes);
+    assert.equal(recusa.permitido, false);
+    assert.match((recusa as { motivo: string }).motivo, /--adotar/);
+    assert.equal(avaliarAlvo(semOrigem, { ...opcoes, adotar: true }).permitido, true);
+  });
+
+  it('com nota de origem ou com a tag platform segue normalmente', () => {
+    assert.equal(avaliarAlvo({ ...comOrigem, tags: [] }, opcoes).permitido, true);
+    assert.equal(avaliarAlvo({ ...semOrigem, tags: [{ name: 'platform' }] }, opcoes).permitido, true);
   });
 });
