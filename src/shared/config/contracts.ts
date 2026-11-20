@@ -91,9 +91,12 @@ export const qualidadeResumoBody = z.object({
   }),
 });
 
+export const GRAVAR_COLETA_MAX_LINHAS = 10_000;
+export const GRAVAR_COLETA_MAX_BYTES = 12_000_000;
+
 export const gravarColetaBody = z.object({
   coletaId: uuid,
-  linhas: z.array(z.record(z.string(), z.unknown())).max(50_000),
+  linhas: z.array(z.record(z.string(), z.unknown())).max(GRAVAR_COLETA_MAX_LINHAS),
 });
 
 export const fecharColetaBody = z.object({

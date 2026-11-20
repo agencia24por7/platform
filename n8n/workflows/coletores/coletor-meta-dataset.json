@@ -37,7 +37,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const { fonte, janela } = $json;\nconst versaoApi = 'v23.0';\nconst FUSO = 'America/Sao_Paulo';\nconst datasetId = String(fonte?.externalId ?? '');\n\nfunction deslocamento(instante) {\n  const partes = new Intl.DateTimeFormat('en-US', {\n    timeZone: FUSO, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',\n    hour: '2-digit', minute: '2-digit', second: '2-digit',\n  }).formatToParts(instante);\n  const valor = (tipo) => Number(partes.find((parte) => parte.type === tipo)?.value);\n  const comoUtc = Date.UTC(valor('year'), valor('month') - 1, valor('day'), valor('hour'), valor('minute'), valor('second'));\n  return comoUtc - Math.floor(instante.getTime() / 1000) * 1000;\n}\n\nfunction meiaNoite(dia) {\n  const [ano, mes, diaDoMes] = dia.split('-').map(Number);\n  const ingenuo = Date.UTC(ano, mes - 1, diaDoMes);\n  const primeira = ingenuo - deslocamento(new Date(ingenuo));\n  return Math.floor((ingenuo - deslocamento(new Date(primeira))) / 1000);\n}\n\nconst [ano, mes, dia] = janela.end.split('-').map(Number);\nconst diaSeguinte = new Date(Date.UTC(ano, mes - 1, dia + 1)).toISOString().slice(0, 10);\nconst startTime = meiaNoite(janela.start);\nconst endTime = meiaNoite(diaSeguinte);\nconst base = `https://graph.facebook.com/${versaoApi}/${encodeURIComponent(datasetId)}/stats?aggregation=event&start_time=${startTime}&end_time=${endTime}`;\n\nreturn [{\n  json: {\n    inicio: Date.now(),\n    versaoApi,\n    janela,\n    datasetIdValido: /^\\d{5,25}$/.test(datasetId),\n    startTime,\n    endTime,\n    urls: {\n      total: base,\n      navegador: `${base}&event_source=WEB_ONLY`,\n      servidor: `${base}&event_source=SERVER_ONLY`,\n    },\n  },\n}];\n"
+        "jsCode": "const { fonte, janela } = $json;\nconst versaoApi = 'v23.0';\nconst FUSO = 'America/Sao_Paulo';\nconst datasetId = String(fonte?.externalId ?? '');\n\nfunction deslocamento(instante) {\n  const partes = new Intl.DateTimeFormat('en-US', {\n    timeZone: FUSO, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',\n    hour: '2-digit', minute: '2-digit', second: '2-digit',\n  }).formatToParts(instante);\n  const valor = (tipo) => Number(partes.find((parte) => parte.type === tipo)?.value);\n  const comoUtc = Date.UTC(valor('year'), valor('month') - 1, valor('day'), valor('hour'), valor('minute'), valor('second'));\n  return comoUtc - Math.floor(instante.getTime() / 1000) * 1000;\n}\n\nfunction meiaNoite(dia) {\n  const [ano, mes, diaDoMes] = dia.split('-').map(Number);\n  const ingenuo = Date.UTC(ano, mes - 1, diaDoMes);\n  const primeira = ingenuo - deslocamento(new Date(ingenuo));\n  return Math.floor((ingenuo - deslocamento(new Date(primeira))) / 1000);\n}\n\nconst [ano, mes, dia] = janela.end.split('-').map(Number);\nconst diaSeguinte = new Date(Date.UTC(ano, mes - 1, dia + 1)).toISOString().slice(0, 10);\nconst startTime = meiaNoite(janela.start);\nconst endTime = meiaNoite(diaSeguinte);\nconst raiz = `https://graph.facebook.com/${versaoApi}/${encodeURIComponent(datasetId)}`;\nconst intervalo = `start_time=${startTime}&end_time=${endTime}`;\nconst base = `${raiz}/stats?aggregation=event&${intervalo}`;\nconst RECORTES = {\"dispositivo\":\"device_type\",\"sistema_operacional\":\"device_os\",\"navegador_do_visitante\":\"browser_type\",\"host\":\"host\",\"chave_de_correspondencia\":\"match_keys\",\"resultado_do_processamento\":\"event_processing_results\"};\nconst recortes = Object.fromEntries(Object.entries(RECORTES).map(([nome, agregacao]) => [nome, `${raiz}/stats?aggregation=${agregacao}&${intervalo}`]));\nconst urlDoDataset = `${raiz}?fields=id,name,is_unavailable,enable_automatic_matching,first_party_cookie_status,data_use_setting`;\n\nreturn [{\n  json: {\n    inicio: Date.now(),\n    versaoApi,\n    janela,\n    datasetIdValido: /^\\d{5,25}$/.test(datasetId),\n    startTime,\n    endTime,\n    urls: {\n      total: base,\n      navegador: `${base}&event_source=WEB_ONLY`,\n      servidor: `${base}&event_source=SERVER_ONLY`,\n    },\n    recortes,\n    urlDoDataset,\n  },\n}];\n"
       }
     },
     {
@@ -183,8 +183,306 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const contexto = $('Montar requisição').first().json;\nconst FUSO = 'America/Sao_Paulo';\nconst ORIGENS = ['total', 'navegador', 'servidor'];\nconst NO_DA_ORIGEM = { total: 'Eventos (total)', navegador: 'Eventos (navegador)', servidor: 'Eventos (servidor)' };\nconst TAMANHO_MAXIMO_DO_EVENTO = 200;\n\nconst respostasPorOrigem = {};\nfor (const origem of ORIGENS) {\n  respostasPorOrigem[origem] = $(NO_DA_ORIGEM[origem]).all()\n    .map((item) => item.json)\n    .filter((json) => json && (json.statusCode !== undefined || json.error));\n}\nconst todas = ORIGENS.flatMap((origem) => respostasPorOrigem[origem]);\nconst requests = todas.length;\nconst bytes = todas.reduce((total, resposta) => total + JSON.stringify(resposta.body ?? {}).length, 0);\n\nfunction devolver(linhas, falhas) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - contexto.inicio },\n      falhas,\n      requests,\n      versaoApi: contexto.versaoApi,\n    },\n  }];\n}\n\nfunction falhaDe(respostas) {\n  if (respostas.length === 0) return { causa: 'api_recusou', detalhe: 'a Meta não respondeu' };\n  const deRede = respostas.find((resposta) => resposta.error);\n  if (deRede) {\n    const detalhe = deRede.error?.message ?? String(deRede.error);\n    return { causa: 'api_recusou', detalhe: `falha de rede: ${detalhe}`.replace(/access_token=[^&\\s\"']+/g, 'access_token=[removido]').slice(0, 500) };\n  }\n  const recusada = respostas.find((resposta) => !(resposta.statusCode >= 200 && resposta.statusCode < 300));\n  if (!recusada) return null;\n  const erro = recusada.body?.error;\n  const detalhe = String(erro?.message || `HTTP ${recusada.statusCode}`).slice(0, 500);\n  const semAcesso = recusada.statusCode === 401 || recusada.statusCode === 403 || [190, 10, 200].includes(erro?.code);\n  return { causa: semAcesso ? 'reauth_pending' : 'api_recusou', detalhe };\n}\n\nif (!contexto.datasetIdValido) return devolver([], [{ causa: 'api_recusou', detalhe: 'id do conjunto de dados inválido' }]);\n\nconst falhaDoTotal = falhaDe(respostasPorOrigem.total);\nif (falhaDoTotal) return devolver([], [falhaDoTotal]);\n\nconst formatoDoDia = new Intl.DateTimeFormat('en-CA', { timeZone: FUSO, year: 'numeric', month: '2-digit', day: '2-digit' });\n\nfunction instanteDoBalde(valor) {\n  if (typeof valor === 'number' && Number.isFinite(valor)) return new Date(valor * 1000);\n  if (typeof valor !== 'string' || !valor) return null;\n  if (/^\\d+$/.test(valor)) return new Date(Number(valor) * 1000);\n  const data = new Date(valor.replace(/([+-]\\d{2})(\\d{2})$/, '$1:$2'));\n  return Number.isNaN(data.getTime()) ? null : data;\n}\n\nfunction nomeDoEvento(valor) {\n  if (typeof valor !== 'string') return null;\n  const limpo = valor.trim();\n  return limpo ? limpo.slice(0, TAMANHO_MAXIMO_DO_EVENTO) : null;\n}\n\nfunction contagem(valor) {\n  const numero = typeof valor === 'string' && valor.trim() !== '' ? Number(valor) : valor;\n  return typeof numero === 'number' && Number.isFinite(numero) && numero >= 0 ? Math.trunc(numero) : null;\n}\n\nfunction agregar(respostas, origem) {\n  const somas = new Map();\n  for (const resposta of respostas) {\n    const baldes = Array.isArray(resposta.body?.data) ? resposta.body.data : [];\n    for (const balde of baldes) {\n      const instante = instanteDoBalde(balde?.start_time);\n      if (!instante || !Array.isArray(balde.data)) continue;\n      const dataDia = formatoDoDia.format(instante);\n      if (dataDia < contexto.janela.start || dataDia > contexto.janela.end) continue;\n      for (const item of balde.data) {\n        const evento = nomeDoEvento(item?.value);\n        const quantidade = contagem(item?.count);\n        if (!evento || quantidade === null) continue;\n        const chave = `${dataDia}|${evento}`;\n        const anterior = somas.get(chave);\n        somas.set(chave, { dataDia, evento, origem, quantidade: (anterior?.quantidade ?? 0) + quantidade });\n      }\n    }\n  }\n  return [...somas.values()];\n}\n\nconst linhas = [];\nconst origensIncompletas = [];\nfor (const origem of ORIGENS) {\n  const falha = origem === 'total' ? null : falhaDe(respostasPorOrigem[origem]);\n  if (falha) {\n    origensIncompletas.push(`${origem}: ${falha.detalhe}`);\n    continue;\n  }\n  linhas.push(...agregar(respostasPorOrigem[origem], origem));\n}\n\nif (!linhas.some((linha) => linha.origem === 'total')) return devolver([], [{ causa: 'sem_dados_no_periodo', detalhe: null }]);\nif (origensIncompletas.length > 0) {\n  return devolver(linhas, [{ causa: 'coleta_incompleta', detalhe: `recorte por origem indisponível: ${origensIncompletas.join('; ')}`.slice(0, 500) }]);\n}\nreturn devolver(linhas, []);\n"
+        "jsCode": "const contexto = $('Montar requisição').first().json;\nconst FUSO = 'America/Sao_Paulo';\nconst ORIGENS = ['total', 'navegador', 'servidor'];\nconst NO_DA_ORIGEM = { total: 'Eventos (total)', navegador: 'Eventos (navegador)', servidor: 'Eventos (servidor)' };\nconst TAMANHO_MAXIMO_DO_EVENTO = 200;\n\nconst respostasPorOrigem = {};\nfor (const origem of ORIGENS) {\n  respostasPorOrigem[origem] = $(NO_DA_ORIGEM[origem]).all()\n    .map((item) => item.json)\n    .filter((json) => json && (json.statusCode !== undefined || json.error));\n}\nconst RECORTES = {\"dispositivo\":\"Recorte (dispositivo)\",\"sistema_operacional\":\"Recorte (sistema operacional)\",\"navegador_do_visitante\":\"Recorte (navegador do visitante)\",\"host\":\"Recorte (host)\",\"chave_de_correspondencia\":\"Recorte (chaves de correspondência)\",\"resultado_do_processamento\":\"Recorte (resultado do processamento)\"};\nfunction respostasDe(nome) {\n  try {\n    return $(nome).all().map((item) => item.json).filter((json) => json && (json.statusCode !== undefined || json.error));\n  } catch {\n    return [];\n  }\n}\nconst respostasDosRecortes = Object.fromEntries(Object.entries(RECORTES).map(([recorte, no]) => [recorte, respostasDe(no)]));\nconst respostasDoDataset = respostasDe('Dataset');\nconst todas = [\n  ...ORIGENS.flatMap((origem) => respostasPorOrigem[origem]),\n  ...Object.values(respostasDosRecortes).flat(),\n  ...respostasDoDataset,\n];\nconst requests = todas.length;\nconst bytes = todas.reduce((total, resposta) => total + JSON.stringify(resposta.body ?? {}).length, 0);\n\nfunction devolver(linhas, falhas) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - contexto.inicio },\n      falhas,\n      requests,\n      versaoApi: contexto.versaoApi,\n    },\n  }];\n}\n\nfunction falhaDe(respostas) {\n  if (respostas.length === 0) return { causa: 'api_recusou', detalhe: 'a Meta não respondeu' };\n  const deRede = respostas.find((resposta) => resposta.error);\n  if (deRede) {\n    const detalhe = deRede.error?.message ?? String(deRede.error);\n    return { causa: 'api_recusou', detalhe: `falha de rede: ${detalhe}`.replace(/access_token=[^&\\s\"']+/g, 'access_token=[removido]').slice(0, 500) };\n  }\n  const recusada = respostas.find((resposta) => !(resposta.statusCode >= 200 && resposta.statusCode < 300));\n  if (!recusada) return null;\n  const erro = recusada.body?.error;\n  const detalhe = String(erro?.message || `HTTP ${recusada.statusCode}`).slice(0, 500);\n  const semAcesso = recusada.statusCode === 401 || recusada.statusCode === 403 || [190, 10, 200].includes(erro?.code);\n  return { causa: semAcesso ? 'reauth_pending' : 'api_recusou', detalhe };\n}\n\nif (!contexto.datasetIdValido) return devolver([], [{ causa: 'api_recusou', detalhe: 'id do conjunto de dados inválido' }]);\n\nconst falhaDoTotal = falhaDe(respostasPorOrigem.total);\nif (falhaDoTotal) return devolver([], [falhaDoTotal]);\n\nconst formatoDoDia = new Intl.DateTimeFormat('en-CA', { timeZone: FUSO, year: 'numeric', month: '2-digit', day: '2-digit' });\n\nfunction instanteDoBalde(valor) {\n  if (typeof valor === 'number' && Number.isFinite(valor)) return new Date(valor * 1000);\n  if (typeof valor !== 'string' || !valor) return null;\n  if (/^\\d+$/.test(valor)) return new Date(Number(valor) * 1000);\n  const data = new Date(valor.replace(/([+-]\\d{2})(\\d{2})$/, '$1:$2'));\n  return Number.isNaN(data.getTime()) ? null : data;\n}\n\nfunction nomeDoEvento(valor) {\n  if (typeof valor !== 'string') return null;\n  const limpo = valor.trim();\n  return limpo ? limpo.slice(0, TAMANHO_MAXIMO_DO_EVENTO) : null;\n}\n\nfunction contagem(valor) {\n  const numero = typeof valor === 'string' && valor.trim() !== '' ? Number(valor) : valor;\n  return typeof numero === 'number' && Number.isFinite(numero) && numero >= 0 ? Math.trunc(numero) : null;\n}\n\nfunction agregar(respostas, origem) {\n  const somas = new Map();\n  for (const resposta of respostas) {\n    const baldes = Array.isArray(resposta.body?.data) ? resposta.body.data : [];\n    for (const balde of baldes) {\n      const instante = instanteDoBalde(balde?.start_time);\n      if (!instante || !Array.isArray(balde.data)) continue;\n      const dataDia = formatoDoDia.format(instante);\n      if (dataDia < contexto.janela.start || dataDia > contexto.janela.end) continue;\n      for (const item of balde.data) {\n        const evento = nomeDoEvento(item?.value);\n        const quantidade = contagem(item?.count);\n        if (!evento || quantidade === null) continue;\n        const chave = `${dataDia}|${evento}`;\n        const anterior = somas.get(chave);\n        somas.set(chave, { dataDia, evento, origem, quantidade: (anterior?.quantidade ?? 0) + quantidade });\n      }\n    }\n  }\n  return [...somas.values()];\n}\n\nconst HOST = /^[a-z0-9]([a-z0-9.-]{0,198}[a-z0-9])?$/;\nconst VALOR_ENUMERADO = /^[A-Za-z0-9_ .+-]{1,60}$/;\nfunction valorDoRecorte(recorte, valor) {\n  if (typeof valor !== 'string') return null;\n  const limpo = valor.trim();\n  if (recorte === 'host') {\n    const host = limpo.toLowerCase().replace(/^[a-z]+:\\/\\//, '').split(/[/?#:]/)[0];\n    return HOST.test(host) ? host : null;\n  }\n  return VALOR_ENUMERADO.test(limpo) ? limpo : null;\n}\n\nfunction agregarRecorte(respostas, recorte) {\n  const somas = new Map();\n  for (const resposta of respostas) {\n    const baldes = Array.isArray(resposta.body?.data) ? resposta.body.data : [];\n    for (const balde of baldes) {\n      const instante = instanteDoBalde(balde?.start_time);\n      if (!instante || !Array.isArray(balde.data)) continue;\n      const dataDia = formatoDoDia.format(instante);\n      if (dataDia < contexto.janela.start || dataDia > contexto.janela.end) continue;\n      for (const item of balde.data) {\n        const valor = valorDoRecorte(recorte, item?.value);\n        const quantidade = contagem(item?.count);\n        if (!valor || quantidade === null) continue;\n        const chave = `${dataDia}|${valor}`;\n        const anterior = somas.get(chave);\n        somas.set(chave, { _tabela: 'recortes', dataDia, recorte, valor, quantidade: (anterior?.quantidade ?? 0) + quantidade });\n      }\n    }\n  }\n  return [...somas.values()];\n}\n\nfunction textoCurto(valor) {\n  return typeof valor === 'string' && valor.trim() ? valor.trim().slice(0, TAMANHO_MAXIMO_DO_EVENTO) : null;\n}\nfunction booleano(valor) {\n  return typeof valor === 'boolean' ? valor : null;\n}\n\nconst linhas = [];\nconst origensIncompletas = [];\nfor (const origem of ORIGENS) {\n  const falha = origem === 'total' ? null : falhaDe(respostasPorOrigem[origem]);\n  if (falha) {\n    origensIncompletas.push(`${origem}: ${falha.detalhe}`);\n    continue;\n  }\n  linhas.push(...agregar(respostasPorOrigem[origem], origem));\n}\n\nfor (const recorte of Object.keys(RECORTES)) {\n  const falha = falhaDe(respostasDosRecortes[recorte]);\n  if (falha) {\n    origensIncompletas.push(`${recorte}: ${falha.detalhe}`);\n    continue;\n  }\n  linhas.push(...agregarRecorte(respostasDosRecortes[recorte], recorte));\n}\n\nconst falhaDoDataset = falhaDe(respostasDoDataset);\nif (falhaDoDataset) {\n  origensIncompletas.push(`dataset: ${falhaDoDataset.detalhe}`);\n} else {\n  const ficha = respostasDoDataset[0]?.body ?? {};\n  const cookie = typeof ficha.first_party_cookie_status === 'string' && /^[A-Z_]{1,60}$/.test(ficha.first_party_cookie_status) ? ficha.first_party_cookie_status : null;\n  const usoDeDados = typeof ficha.data_use_setting === 'string' && /^[A-Z_]{1,60}$/.test(ficha.data_use_setting) ? ficha.data_use_setting : null;\n  linhas.push({\n    _tabela: 'dim_dataset',\n    nome: textoCurto(ficha.name),\n    indisponivel: booleano(ficha.is_unavailable),\n    correspondenciaAutomatica: booleano(ficha.enable_automatic_matching),\n    cookiePrimeiraParte: cookie,\n    usoDeDados,\n  });\n}\n\nif (!linhas.some((linha) => linha.origem === 'total')) return devolver([], [{ causa: 'sem_dados_no_periodo', detalhe: null }]);\nif (origensIncompletas.length > 0) {\n  return devolver(linhas, origensIncompletas.map((detalhe) => ({ causa: 'coleta_incompleta', detalhe: detalhe.slice(0, 500) })));\n}\nreturn devolver(linhas, []);\n"
       }
+    },
+    {
+      "id": "dataset",
+      "name": "Dataset",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        0
+      ],
+      "executeOnce": true,
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Montar requisição').first().json.urlDoDataset }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "facebookGraphApi",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "recorte-dispositivo",
+      "name": "Recorte (dispositivo)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        0
+      ],
+      "executeOnce": true,
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Montar requisição').first().json.recortes.dispositivo }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "facebookGraphApi",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.paging?.next }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body?.paging?.next }}",
+              "limitPagesFetched": true,
+              "maxRequests": 300
+            }
+          }
+        }
+      },
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "recorte-sistema_operacional",
+      "name": "Recorte (sistema operacional)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        0
+      ],
+      "executeOnce": true,
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Montar requisição').first().json.recortes.sistema_operacional }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "facebookGraphApi",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.paging?.next }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body?.paging?.next }}",
+              "limitPagesFetched": true,
+              "maxRequests": 300
+            }
+          }
+        }
+      },
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "recorte-navegador_do_visitante",
+      "name": "Recorte (navegador do visitante)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        0
+      ],
+      "executeOnce": true,
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Montar requisição').first().json.recortes.navegador_do_visitante }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "facebookGraphApi",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.paging?.next }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body?.paging?.next }}",
+              "limitPagesFetched": true,
+              "maxRequests": 300
+            }
+          }
+        }
+      },
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "recorte-host",
+      "name": "Recorte (host)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1800,
+        0
+      ],
+      "executeOnce": true,
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Montar requisição').first().json.recortes.host }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "facebookGraphApi",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.paging?.next }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body?.paging?.next }}",
+              "limitPagesFetched": true,
+              "maxRequests": 300
+            }
+          }
+        }
+      },
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "recorte-chave_de_correspondencia",
+      "name": "Recorte (chaves de correspondência)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2000,
+        0
+      ],
+      "executeOnce": true,
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Montar requisição').first().json.recortes.chave_de_correspondencia }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "facebookGraphApi",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.paging?.next }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body?.paging?.next }}",
+              "limitPagesFetched": true,
+              "maxRequests": 300
+            }
+          }
+        }
+      },
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "recorte-resultado_do_processamento",
+      "name": "Recorte (resultado do processamento)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2200,
+        0
+      ],
+      "executeOnce": true,
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Montar requisição').first().json.recortes.resultado_do_processamento }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "facebookGraphApi",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.paging?.next }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body?.paging?.next }}",
+              "limitPagesFetched": true,
+              "maxRequests": 300
+            }
+          }
+        }
+      },
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
     }
   ],
   "connections": {
@@ -233,6 +531,83 @@
       ]
     },
     "Eventos (servidor)": {
+      "main": [
+        [
+          {
+            "node": "Dataset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dataset": {
+      "main": [
+        [
+          {
+            "node": "Recorte (dispositivo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recorte (dispositivo)": {
+      "main": [
+        [
+          {
+            "node": "Recorte (sistema operacional)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recorte (sistema operacional)": {
+      "main": [
+        [
+          {
+            "node": "Recorte (navegador do visitante)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recorte (navegador do visitante)": {
+      "main": [
+        [
+          {
+            "node": "Recorte (host)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recorte (host)": {
+      "main": [
+        [
+          {
+            "node": "Recorte (chaves de correspondência)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recorte (chaves de correspondência)": {
+      "main": [
+        [
+          {
+            "node": "Recorte (resultado do processamento)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recorte (resultado do processamento)": {
       "main": [
         [
           {

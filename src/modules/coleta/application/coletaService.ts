@@ -16,7 +16,7 @@ export type GravarColetaInput = { readonly coletaId: string; readonly linhas: re
 export type ColetaService = {
   fontes(limit: number, modo: ModoColeta, worker: WorkerIdentity): Promise<readonly FonteElegivel[]>;
   abrir(input: AbrirColetaInput, worker: WorkerIdentity): Promise<Result<Coleta, Failure>>;
-  gravar(input: GravarColetaInput, worker: WorkerIdentity): Promise<Result<{ linhasGravadas: number }, Failure>>;
+  gravar(input: GravarColetaInput, worker: WorkerIdentity): Promise<Result<{ linhasGravadas: number; linhasDescartadas: number }, Failure>>;
   fechar(input: FecharColetaInput, worker: WorkerIdentity): Promise<Result<Coleta, Failure>>;
 };
 
@@ -113,17 +113,17 @@ export function createColetaService(coletas: ColetaRepository, audit: AuditRecor
         targetId: input.coletaId,
         requestId: worker.requestId,
         sourceIp: worker.sourceIp,
-        metadata: { platform: contexto.platform, linhasGravadas: resultado.linhasGravadas },
+        metadata: { platform: contexto.platform, linhasGravadas: resultado.linhasGravadas, linhasDescartadas: resultado.linhasDescartadas },
       });
 
-      return ok({ linhasGravadas: resultado.linhasGravadas });
+      return ok({ linhasGravadas: resultado.linhasGravadas, linhasDescartadas: resultado.linhasDescartadas });
     },
 
     async fechar(input, worker) {
       const closed = await coletas.fechar(input);
       if (!closed) return err(failure('conflict', 'Execução já encerrada.'));
 
-      if (closed.status === 'success') {
+      if (closed.status === 'success' || closed.status === 'partial') {
         const fonteConcluida = closed.fonteTipo === 'ad_account' ? closed.adAccountId : closed.connectionAccountId;
         if (fonteConcluida) await coletas.marcarColetaConcluida(closed.fonteTipo, fonteConcluida, closed.finishedAt ?? new Date());
       }

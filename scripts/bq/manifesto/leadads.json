@@ -1,0 +1,6 @@
+[
+  { "tabela": "fato_meta_formularios", "chave": "page_id", "plataforma": "leadads", "data": "data_snapshot", "grao": ["organization_id", "page_id", "form_id", "data_snapshot"], "entidades": [{ "coluna": "form_id", "dimensao": "dim_meta_formulario_scd2", "chaveDim": "form_id" }] },
+  { "tabela": "dim_meta_pagina_scd2", "chave": "page_id", "plataforma": "leadads", "todoPeriodo": true, "grao": ["organization_id", "page_id"] },
+  { "tabela": "dim_meta_formulario_scd2", "chave": "page_id", "plataforma": "leadads", "todoPeriodo": true, "grao": ["organization_id", "page_id", "form_id"] },
+  { "tabela": "fato_meta_leads_diario", "chave": "page_id", "plataforma": "leadads", "data": "data_dia", "grao": ["organization_id", "page_id", "form_id", "data_dia", "anuncio_id", "campanha_id"], "entidades": [{ "coluna": "form_id", "dimensao": "dim_meta_formulario_scd2", "chaveDim": "form_id" }] }
+]

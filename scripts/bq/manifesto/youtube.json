@@ -1,0 +1,11 @@
+[
+  { "tabela": "fato_youtube_diario", "chave": "channel_id", "plataforma": "youtube", "data": "data_dia", "grao": ["organization_id", "channel_id", "data_dia"] },
+  { "tabela": "fato_youtube_video_diario", "chave": "channel_id", "plataforma": "youtube", "data": "data_dia", "grao": ["organization_id", "channel_id", "video_id", "data_dia"], "entidades": [{ "coluna": "video_id", "dimensao": "dim_youtube_video_scd2", "chaveDim": "video_id" }] },
+  { "tabela": "fato_youtube_origem_trafego_diario", "chave": "channel_id", "plataforma": "youtube", "data": "data_dia", "grao": ["organization_id", "channel_id", "data_dia", "origem_trafego"] },
+  { "tabela": "fato_youtube_dispositivo_diario", "chave": "channel_id", "plataforma": "youtube", "data": "data_dia", "grao": ["organization_id", "channel_id", "data_dia", "dispositivo"] },
+  { "tabela": "fato_youtube_local_reproducao_diario", "chave": "channel_id", "plataforma": "youtube", "data": "data_dia", "grao": ["organization_id", "channel_id", "data_dia", "local_reproducao"] },
+  { "tabela": "fato_youtube_pais_diario", "chave": "channel_id", "plataforma": "youtube", "data": "data_dia", "grao": ["organization_id", "channel_id", "data_dia", "pais"] },
+  { "tabela": "fato_youtube_audiencia_diario", "chave": "channel_id", "plataforma": "youtube", "data": "data_dia", "grao": ["organization_id", "channel_id", "data_dia", "faixa_etaria", "genero"] },
+  { "tabela": "dim_youtube_video_scd2", "chave": "channel_id", "plataforma": "youtube", "todoPeriodo": true, "grao": ["organization_id", "channel_id", "video_id"] },
+  { "tabela": "dim_youtube_playlist_scd2", "chave": "channel_id", "plataforma": "youtube", "todoPeriodo": true, "grao": ["organization_id", "channel_id", "playlist_id"] }
+]

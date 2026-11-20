@@ -1,0 +1,12 @@
+[
+  { "tabela": "fato_rd_negociacoes", "chave": "conta_id", "plataforma": "rdstation", "data": "data_snapshot", "grao": ["organization_id", "conta_id", "deal_id", "data_snapshot"] },
+  { "tabela": "dim_rd_funil_scd2", "chave": "conta_id", "plataforma": "rdstation", "todoPeriodo": true, "grao": ["organization_id", "conta_id", "funil_id"] },
+  { "tabela": "dim_rd_etapa_scd2", "chave": "conta_id", "plataforma": "rdstation", "todoPeriodo": true, "grao": ["organization_id", "conta_id", "etapa_id"] },
+  { "tabela": "dim_rd_fonte_scd2", "chave": "conta_id", "plataforma": "rdstation", "todoPeriodo": true, "grao": ["organization_id", "conta_id", "fonte_id"] },
+  { "tabela": "dim_rd_campanha_scd2", "chave": "conta_id", "plataforma": "rdstation", "todoPeriodo": true, "grao": ["organization_id", "conta_id", "campanha_id"] },
+  { "tabela": "dim_rd_produto_scd2", "chave": "conta_id", "plataforma": "rdstation", "todoPeriodo": true, "grao": ["organization_id", "conta_id", "produto_id"] },
+  { "tabela": "dim_rd_usuario_scd2", "chave": "conta_id", "plataforma": "rdstation", "todoPeriodo": true, "grao": ["organization_id", "conta_id", "usuario_id"] },
+  { "tabela": "fato_rd_negociacao_produtos", "chave": "conta_id", "plataforma": "rdstation", "data": "data_snapshot", "grao": ["organization_id", "conta_id", "deal_id", "deal_produto_id", "data_snapshot"] },
+  { "tabela": "fato_rd_negociacao_etapas", "chave": "conta_id", "plataforma": "rdstation", "data": "data_dia", "grao": ["organization_id", "conta_id", "deal_id", "etapa_id", "entrou_em"], "entidades": [{ "coluna": "etapa_id", "dimensao": "dim_rd_etapa_scd2", "chaveDim": "etapa_id" }] },
+  { "tabela": "fato_rd_tarefas_diarias", "chave": "conta_id", "plataforma": "rdstation", "data": "data_dia", "grao": ["organization_id", "conta_id", "data_dia", "tipo", "status"] }
+]

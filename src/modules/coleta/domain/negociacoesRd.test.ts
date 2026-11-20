@@ -82,6 +82,8 @@ const negociacaoComDadosPessoais = (sobrescrever: Record<string, unknown>) => ({
 
 const resposta = (body: unknown, statusCode = 200) => ({ statusCode, headers: {}, body });
 
+const soNegociacoes = (linhas: readonly Record<string, unknown>[]) => linhas.filter((linha) => !linha._tabela);
+
 type SaidaDoColetor = { linhas: Record<string, unknown>[]; falhas: { causa: string; detalhe: string | null }[] };
 
 function rodarNormalizar(respostaDosFunis: unknown, paginas: readonly unknown[]): SaidaDoColetor {
@@ -90,7 +92,13 @@ function rodarNormalizar(respostaDosFunis: unknown, paginas: readonly unknown[])
     'Montar requisição': { inicio: Date.now(), versaoApi: 'crm-v1', fonte: {} },
     'Listar funis': respostaDosFunis,
   };
-  const $ = (nome: string) => ({ first: () => ({ json: porNo[nome] }) });
+  const $ = (nome: string) => ({
+    first: () => ({ json: porNo[nome] }),
+    all: () => {
+      if (!(nome in porNo)) throw new Error('nó não executado');
+      return [{ json: porNo[nome] }];
+    },
+  });
   const $input = { all: () => paginas.map((json) => ({ json })) };
   const executar = new Function('$', '$input', codigo) as (seletor: typeof $, entrada: typeof $input) => { json: SaidaDoColetor }[];
   return executar($, $input)[0]!.json;
@@ -99,7 +107,7 @@ function rodarNormalizar(respostaDosFunis: unknown, paginas: readonly unknown[])
 describe('coletor do RD Station (modelo do n8n)', () => {
   it('toda chamada HTTP usa a credencial httpQueryAuth que o provisioner substitui', () => {
     const chamadas = modelo.nodes.filter((candidato) => candidato.type === 'n8n-nodes-base.httpRequest');
-    assert.equal(chamadas.length, 2);
+    assert.equal(chamadas.length, 7);
     for (const chamada of chamadas) {
       assert.equal(chamada.parameters.authentication, 'genericCredentialType');
       assert.equal(chamada.parameters.genericAuthType, 'httpQueryAuth');
@@ -125,8 +133,8 @@ describe('coletor do RD Station (modelo do n8n)', () => {
     const saida = rodarNormalizar(resposta(funis), [pagina]);
 
     assert.deepEqual(saida.falhas, []);
-    assert.equal(saida.linhas.length, 1);
-    assert.deepEqual(Object.keys(saida.linhas[0]!).sort(), [...CAMPOS_DA_NEGOCIACAO].sort());
+    assert.equal(soNegociacoes(saida.linhas).length, 1);
+    assert.deepEqual(Object.keys(soNegociacoes(saida.linhas)[0]!).sort(), [...CAMPOS_DA_NEGOCIACAO].sort());
 
     const serializado = JSON.stringify(saida);
     for (const dado of DADOS_PESSOAIS) assert.ok(!serializado.includes(dado), `vazou: ${dado}`);
@@ -134,7 +142,7 @@ describe('coletor do RD Station (modelo do n8n)', () => {
 
   it('liga a etapa ao funil e à ordem vindos de /deal_pipelines', () => {
     const pagina = resposta({ deals: [negociacaoComDadosPessoais({})], has_more: false, total: 1 });
-    const [linha] = rodarNormalizar(resposta(funis), [pagina]).linhas;
+    const [linha] = soNegociacoes(rodarNormalizar(resposta(funis), [pagina]).linhas);
     assert.equal(linha!.pipelineId, 'f1');
     assert.equal(linha!.pipelineName, 'Funil de crédito');
     assert.equal(linha!.stageId, 'e2');
@@ -147,7 +155,7 @@ describe('coletor do RD Station (modelo do n8n)', () => {
   it('o que o coletor entrega passa pelo domínio sem perder campo e sem dado pessoal', () => {
     const ganha = negociacaoComDadosPessoais({ win: true, closed_at: '2026-11-15T09:00:00.000-03:00' });
     const pagina = resposta({ deals: [ganha], has_more: false, total: 1 });
-    const [negociacao] = negociacoesUnicas(rodarNormalizar(resposta(funis), [pagina]).linhas);
+    const [negociacao] = negociacoesUnicas(soNegociacoes(rodarNormalizar(resposta(funis), [pagina]).linhas));
     assert.equal(negociacao!.situacao, Situacao.Ganha);
     assert.equal(negociacao!.amountTotal, 15000.5);
     assert.equal(negociacao!.closedAt, '2026-11-15T12:00:00.000Z');
@@ -158,7 +166,7 @@ describe('coletor do RD Station (modelo do n8n)', () => {
   it('negociação repetida entre páginas vira uma linha só', () => {
     const pagina = resposta({ deals: [negociacaoComDadosPessoais({})], has_more: true, next_page: 'x', total: 1 });
     const saida = rodarNormalizar(resposta(funis), [pagina, pagina]);
-    assert.equal(saida.linhas.length, 1);
+    assert.equal(soNegociacoes(saida.linhas).length, 1);
   });
 
   it('token recusado vira reauth_pending, sem linhas', () => {
@@ -177,7 +185,7 @@ describe('coletor do RD Station (modelo do n8n)', () => {
       resposta({ deals: [negociacaoComDadosPessoais({ id: `d${indice}`, _id: `d${indice}` })], has_more: true, next_page: 'x', total: 99999 }),
     );
     const saida = rodarNormalizar(resposta(funis), paginas);
-    assert.equal(saida.linhas.length, 60);
+    assert.equal(soNegociacoes(saida.linhas).length, 60);
     assert.equal(saida.falhas[0]!.causa, 'coleta_incompleta');
   });
 });
