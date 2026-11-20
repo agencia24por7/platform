@@ -81,7 +81,7 @@ function anonimizar(email) {
     console.log('\nRode de novo com --confirmar para anonimizar.');
     return;
   }
-  console.log(consultar(`SELECT jsonb_pretty(core.anonimizar_titular(${literal(email)}));`));
+  console.log(consultar(`SELECT jsonb_pretty(core.anonimizar_titular_e_encerrar(${literal(email)}));`));
 }
 
 function tabelasComCliente() {

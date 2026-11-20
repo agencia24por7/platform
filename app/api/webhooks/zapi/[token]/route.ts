@@ -1,4 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { resumirAvisoDoWhatsapp } from '@/modules/connections/domain/whatsappWebhook';
+import { env } from '@/shared/config/env';
 import { sql } from '@/shared/db/client';
 import { logger } from '@/shared/logging/logger';
 import { consume } from '@/shared/security/rateLimit';
@@ -60,7 +62,7 @@ export async function POST(
   }
 
   await sql()`
-    SELECT integrations.record_whatsapp_inbound(${conexao.connection_id}, 'zapi', ${conexao.connection_id}, ${sql().json(payload as object)})
+    SELECT integrations.record_whatsapp_inbound(${conexao.connection_id}, 'zapi', ${conexao.connection_id}, ${sql().json(resumirAvisoDoWhatsapp(payload, env().TRIA_SESSION_SECRET) as never)})
   `;
 
   return NextResponse.json({ recebido: true });
