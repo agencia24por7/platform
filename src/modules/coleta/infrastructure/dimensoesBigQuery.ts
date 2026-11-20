@@ -14,14 +14,14 @@ const VALIDADE = {
   valido_de: 'TIMESTAMP',
   valido_ate: 'TIMESTAMP',
   atual: 'BOOL',
-  hash: 'STRING',
+  hash_versao: 'STRING',
 } as const;
 
 const validade = <A>(versao: NovaVersao<A>) => ({
   valido_de: versao.validoDe,
   valido_ate: versao.validoAte,
   atual: versao.atual,
-  hash: versao.hash,
+  hash_versao: versao.hash,
 });
 
 const DIM_FONTE: ConfiguracaoDaDimensao<EstadoDaFonte> = {
@@ -89,7 +89,7 @@ export function createDimensoesBigQuery(): DimensoesBigQuery {
     const [linhas] = await cliente().query({
       query: `SELECT ${expressaoDaChave(cfg.colunasDaChave)} AS chave,
                 COUNTIF(atual) AS abertas,
-                MAX(IF(atual, hash, NULL)) AS hash_aberta
+                MAX(IF(atual, hash_versao, NULL)) AS hash_aberta
               FROM ${tabela(cfg.tabela)}
               GROUP BY ${cfg.colunasDaChave.join(', ')}`,
     });

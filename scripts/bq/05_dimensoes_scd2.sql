@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS `{{DATASET}}.dim_fonte_scd2` (
   valido_de        TIMESTAMP NOT NULL,
   valido_ate       TIMESTAMP NOT NULL,
   atual            BOOL NOT NULL,
-  hash             STRING NOT NULL,
+  hash_versao      STRING NOT NULL,
   carregado_em     TIMESTAMP NOT NULL
 )
 CLUSTER BY organization_id, platform, external_id;
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS `{{DATASET}}.dim_cliente_scd2` (
   valido_de         TIMESTAMP NOT NULL,
   valido_ate        TIMESTAMP NOT NULL,
   atual             BOOL NOT NULL,
-  hash              STRING NOT NULL,
+  hash_versao       STRING NOT NULL,
   carregado_em      TIMESTAMP NOT NULL
 )
 CLUSTER BY organization_id, client_id;
