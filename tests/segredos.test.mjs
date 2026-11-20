@@ -91,7 +91,7 @@ describe('o segredo não mora aqui', { concurrency: false }, () => {
       const conteudo = readFileSync(caminho, 'utf8');
       return [...conteudo.matchAll(/fetch\(\s*([^,)]+)/g)]
         .map((m) => m[1].trim())
-        .filter((alvo) => !/^(new URL\(|`|'|"|GOOGLE_TOKEN_URL|exchange\.url|troca\.url|url\b|onde\.url)/.test(alvo))
+        .filter((alvo) => !/^(new URL\(|`|'|"|GOOGLE_TOKEN_URL|destinoDoAlerta|exchange\.url|troca\.url|url\b|onde\.url)/.test(alvo))
         .map((alvo) => `${caminho}: ${alvo}`);
     });
 

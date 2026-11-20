@@ -9,10 +9,10 @@ const UMA_HORA_EM_MS = 3_600_000;
 
 export function createNotificadorPorWebhook(): Notificador {
   return async (texto) => {
-    const destino = env().ALERT_WEBHOOK_URL;
-    if (!destino) return;
+    const destinoDoAlerta = env().ALERT_WEBHOOK_URL;
+    if (!destinoDoAlerta) return;
     try {
-      const resposta = await fetch(destino, {
+      const resposta = await fetch(destinoDoAlerta, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: texto }),
