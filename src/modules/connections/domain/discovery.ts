@@ -231,6 +231,11 @@ export function parseYoutubeChannels(payload: unknown): readonly DiscoveredAccou
     );
 }
 
+export function urlDosLocaisDoGbp(contaId: string): string {
+  const consulta = new URLSearchParams({ readMask: 'name,title', pageSize: '100' });
+  return `https://mybusinessbusinessinformation.googleapis.com/v1/accounts/${contaId}/locations?${consulta}`;
+}
+
 export function parseGbpLocations(payload: unknown): readonly DiscoveredAccount[] {
   if (payload === null || typeof payload !== 'object') return [];
   const locations = (payload as { locations?: unknown }).locations;
