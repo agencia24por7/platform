@@ -127,3 +127,18 @@ export const fecharColetaBody = z.object({
     minutos: z.coerce.number().int().min(0).max(1440).nullable().default(null),
   }).nullable().default(null),
 });
+
+export const publicarBrainsPendentesBody = z
+  .object({ limite: z.number().int().min(1).max(200).default(20) })
+  .strict();
+
+export const reconstruirBrainBody = z
+  .object({
+    organizationId: uuid.optional(),
+    clientId: uuid.optional(),
+    todos: z.literal(true).optional(),
+  })
+  .strict()
+  .refine((corpo) => (corpo.todos ? !corpo.organizationId && !corpo.clientId : Boolean(corpo.organizationId)), {
+    message: 'informe organizationId (e opcionalmente clientId) ou todos: true',
+  });

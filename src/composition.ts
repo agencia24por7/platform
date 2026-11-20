@@ -6,6 +6,11 @@ import { createExecutorProvisioner } from '@/modules/connections/infrastructure/
 import { createBigQueryGravador } from '@/modules/coleta/infrastructure/bigQueryGravador';
 import { createClientService } from '@/modules/clients/application/clientService';
 import { createClientRepository } from '@/modules/clients/infrastructure/clientRepository';
+import { createContextoService } from '@/modules/clients/application/contextoService';
+import { adaptarArmazenamento } from '@/modules/clients/infrastructure/armazenamentoAdaptado';
+import { criarArmazenamentoDeContexto } from '@/shared/storage/criarArmazenamentoDeContexto';
+import { env } from '@/shared/config/env';
+import { createContextoRepository } from '@/modules/clients/infrastructure/contextoRepository';
 import { createAuthorizationService } from '@/modules/connections/application/authorizationService';
 import { createConnectionService } from '@/modules/connections/application/connectionService';
 import { createAdAccountRepository } from '@/modules/connections/infrastructure/adAccountRepository';
@@ -56,6 +61,11 @@ function build() {
     organizations,
     identity: createIdentityService(createUserRepository(), audit),
     clients: createClientService(clientRepository, audit),
+    contexto: createContextoService({
+      repositorio: createContextoRepository(),
+      audit,
+      armazenamento: adaptarArmazenamento(criarArmazenamentoDeContexto(env())),
+    }),
     team: createTeamService(createTeamRepository(), audit),
     connections: createConnectionService(
       connectionRepository,

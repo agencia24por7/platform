@@ -27,7 +27,7 @@ describe('execuções do n8n não guardam resposta de API externa', () => {
 
   it('cobre coletores, executores, orquestrador e backfill', () => {
     const nomes = alvos.map(relativo);
-    for (const esperado of ['coleta-orquestrador.json', 'coleta-backfill-janela.json', 'coletores/coletor-meta-insights.json', 'executores/executor-meta-partner.json', 'plataforma/retencao-diaria.json', 'plataforma/dimensoes-diarias.json']) {
+    for (const esperado of ['coleta-orquestrador.json', 'coleta-backfill-janela.json', 'coletores/coletor-meta-insights.json', 'executores/executor-meta-partner.json', 'plataforma/retencao-diaria.json', 'plataforma/dimensoes-diarias.json', 'plataforma/contexto-brain-diario.json']) {
       assert.ok(nomes.includes(esperado), `faltou ${esperado}`);
     }
   });

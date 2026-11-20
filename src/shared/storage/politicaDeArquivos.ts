@@ -14,7 +14,8 @@ export type TipoPermitido =
   | 'txt'
   | 'xlsx'
   | 'docx'
-  | 'zip'
+  | 'mp4'
+  | 'mov'
   | 'ttf'
   | 'otf'
   | 'woff2';
@@ -47,11 +48,8 @@ export const TIPOS_PERMITIDOS: Record<TipoPermitido, DefinicaoDeTipo> = {
     extensoes: ['docx'],
     contentTypesAceitos: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
   },
-  zip: {
-    contentType: 'application/zip',
-    extensoes: ['zip'],
-    contentTypesAceitos: ['application/zip', 'application/x-zip-compressed'],
-  },
+  mp4: { contentType: 'video/mp4', extensoes: ['mp4'], contentTypesAceitos: ['video/mp4'] },
+  mov: { contentType: 'video/quicktime', extensoes: ['mov'], contentTypesAceitos: ['video/quicktime'] },
   ttf: { contentType: 'font/ttf', extensoes: ['ttf'], contentTypesAceitos: ['font/ttf', 'application/x-font-ttf', 'font/sfnt'] },
   otf: { contentType: 'font/otf', extensoes: ['otf'], contentTypesAceitos: ['font/otf', 'application/x-font-opentype', 'font/sfnt'] },
   woff2: { contentType: 'font/woff2', extensoes: ['woff2'], contentTypesAceitos: ['font/woff2', 'application/font-woff2'] },
@@ -150,7 +148,11 @@ export function identificarPorConteudo(amostra: Uint8Array, extensao: string): T
     const janela = amostra.subarray(0, BYTES_NECESSARIOS_PARA_IDENTIFICAR);
     if (extensao === 'docx' && contemTexto(janela, 'word/')) return 'docx';
     if (extensao === 'xlsx' && contemTexto(janela, 'xl/')) return 'xlsx';
-    return 'zip';
+    return null;
+  }
+  if (comecaCom(amostra, ascii('ftyp'), 4)) {
+    if (comecaCom(amostra, ascii('qt  '), 8)) return 'mov';
+    return extensao === 'mov' ? 'mov' : 'mp4';
   }
   if (extensao === 'csv' || extensao === 'txt') {
     if (!textoEhSeguro(amostraTextualDecodificavel(amostra))) return null;

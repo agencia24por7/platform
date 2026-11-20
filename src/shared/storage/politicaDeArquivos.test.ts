@@ -40,10 +40,18 @@ describe('avaliarArquivo: aceita', () => {
     assert.equal(motivoDe(avaliar('manual.pdf', PDF, { tipo: 'application/pdf' })), 'ok');
   });
 
-  it('documentos do Office e zip', () => {
+  it('documentos do Office', () => {
     assert.equal(motivoDe(avaliar('texto.docx', ZIP_DOCX)), 'ok');
     assert.equal(motivoDe(avaliar('planilha.xlsx', ZIP_XLSX)), 'ok');
-    assert.equal(motivoDe(avaliar('marca.zip', ZIP_PURO)), 'ok');
+  });
+
+  it('vídeo mp4 e mov pelo ftyp', () => {
+    const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom')]);
+    const mov = Buffer.concat([Buffer.from([0, 0, 0, 0x14]), Buffer.from('ftypqt  ')]);
+    const r = avaliar('depoimento.mp4', mp4, { tipo: 'video/mp4' });
+    assert.equal(r.ok && r.contentType, 'video/mp4');
+    assert.equal(motivoDe(avaliar('depoimento.mov', mov, { tipo: 'video/quicktime' })), 'ok');
+    assert.equal(motivoDe(avaliar('depoimento.mp4', mov)), 'extensao_divergente');
   });
 
   it('csv e txt em UTF-8, tolerando o tipo genérico do navegador', () => {
@@ -68,6 +76,11 @@ describe('avaliarArquivo: aceita', () => {
 });
 
 describe('avaliarArquivo: recusa', () => {
+  it('zip, mesmo com extensão de Office sem conteúdo de Office', () => {
+    assert.equal(motivoDe(avaliar('marca.zip', ZIP_PURO)), 'tipo_nao_permitido');
+    assert.equal(motivoDe(avaliar('texto.docx', ZIP_PURO)), 'tipo_nao_permitido');
+  });
+
   it('html, svg e js, mesmo com extensão enganosa', () => {
     assert.equal(motivoDe(avaliar('a.html', Buffer.from('<html><script>1</script>'))), 'tipo_nao_permitido');
     assert.equal(motivoDe(avaliar('a.svg', Buffer.from('<svg onload=alert(1)>'))), 'tipo_nao_permitido');
@@ -88,7 +101,7 @@ describe('avaliarArquivo: recusa', () => {
     assert.equal(motivoDe(avaliar('foto.pdf', PNG)), 'extensao_divergente');
     assert.equal(motivoDe(avaliar('foto.php', PNG)), 'extensao_divergente');
     assert.equal(motivoDe(avaliar('foto', PNG)), 'extensao_divergente');
-    assert.equal(motivoDe(avaliar('doc.docx', ZIP_PURO)), 'extensao_divergente');
+    assert.equal(motivoDe(avaliar('doc.docx', ZIP_PURO)), 'tipo_nao_permitido');
   });
 
   it('Content-Type declarado que contradiz o conteúdo', () => {
