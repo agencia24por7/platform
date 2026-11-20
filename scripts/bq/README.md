@@ -369,6 +369,31 @@ Configuração: `tabelas/ga4.ts`. Manifesto: `manifesto/ga4.json`. DDL: `22_ga4*
 - Partição `data_dia`; cluster `organization_id, property_id`.
 - Staging `stg_ga4_diario`; view `vw_ga4_diario`.
 
+Decisões: ADR [0016](../../docs/adr/0016-ga4-searchconsole-modelagem.md). DDL:
+`22_ga4.sql`. Todas as tabelas abaixo seguem o mesmo molde: fato diário
+`PARTITION BY data_dia`, `CLUSTER BY organization_id, property_id, <1ª
+dimensão>`; staging `stg_<mesmo sufixo>`; view `vw_<mesmo sufixo>` (dedupe +
+`cliente_na_epoca_*`/`cliente_atual_*` via `dim_fonte_scd2`, `platform =
+'ga4'`). Dimensão sem valor grava `(not set)`; `(other)` é a cauda que o GA4
+agrupa quando a cardinalidade estoura. Origem: `POST
+analyticsdata.googleapis.com/v1beta/properties/{id}:runReport`, um pedido por
+recorte (`date` + dimensões), `limit` 100000 paginado por `offset`. Valor em
+parênteses é o campo da API; `_tabela` entre crases.
+
+| `_tabela` | Tabela | Grão (além de `organization_id`, `property_id`, `data_dia`) | Dimensões da API | Métricas (API → coluna) |
+|---|---|---|---|---|
+| `aquisicao` | `fato_ga4_aquisicao_diario` | `fonte`, `midia`, `campanha`, `canal_padrao` | sessionSource, sessionMedium, sessionCampaignName, sessionDefaultChannelGroup | sessions → `sessoes`, engagedSessions → `sessoes_engajadas`, totalUsers → `usuarios`, newUsers → `novos_usuarios`, keyEvents → `eventos_chave`, totalRevenue → `receita`, userEngagementDuration → `duracao_engajamento_seg` |
+| `pagina` | `fato_ga4_pagina_diario` | `pagina` | pagePath (sem query string) | screenPageViews → `visualizacoes`, activeUsers → `usuarios_ativos`, sessions → `sessoes`, eventCount → `eventos`, keyEvents → `eventos_chave`, userEngagementDuration → `duracao_engajamento_seg` |
+| `pagina_entrada` | `fato_ga4_pagina_entrada_diario` | `pagina_entrada` | landingPage | sessões, sessões engajadas, usuários, novos usuários, `eventos_chave`, `receita` (como em `aquisicao`) |
+| `evento` | `fato_ga4_evento_diario` | `evento` | eventName | eventCount → `contagem`, totalUsers → `usuarios`, eventValue → `valor`, keyEvents → `eventos_chave` (evento marcado como principal) |
+| `dispositivo` | `fato_ga4_dispositivo_diario` | `categoria_dispositivo`, `sistema_operacional`, `navegador`, `plataforma` | deviceCategory, operatingSystem, browser, platform | mesmas de `pagina_entrada` |
+| `geo` | `fato_ga4_geo_diario` | `pais`, `regiao`, `cidade` | country, region, city | mesmas de `pagina_entrada` |
+| `item` | `fato_ga4_item_diario` | `item` | itemName (só agregado; vazio sem e-commerce) | itemsViewed → `itens_visualizados`, itemsAddedToCart → `itens_no_carrinho`, itemsPurchased → `itens_comprados`, itemRevenue → `receita_item` |
+
+Cada tabela de recorte tem também `execucao_id` e `inserido_em`. Os recortes
+não somam entre si (escopos de sessão, evento e item diferem); compare totais
+só dentro do recorte. `fato_ga4_diario` (acima) continua como total por canal.
+
 <!-- GA4: novas tabelas acima desta linha -->
 
 ## Search Console
@@ -383,6 +408,30 @@ Configuração: `tabelas/searchconsole.ts`. Manifesto: `manifesto/searchconsole.
   `inserido_em`.
 - Partição `data_dia`; cluster `organization_id, site`.
 - Staging `stg_search_console_diario`; view `vw_search_console_diario`.
+
+Decisões: ADR [0016](../../docs/adr/0016-ga4-searchconsole-modelagem.md). DDL:
+`23_searchconsole.sql`. Mesmo molde das tabelas de recorte do GA4: partição
+`data_dia`, `CLUSTER BY organization_id, site, <1ª dimensão>`, staging
+`stg_<sufixo>`, view `vw_<sufixo>` com `platform = 'searchconsole'`. Origem:
+`POST webmasters/v3/sites/{site}/searchAnalytics/query` (`date` + dimensões),
+`rowLimit` 25000 paginado por `startRow`, `dataState: final`, tipo de busca
+`web`. Colunas de métrica em todas: `cliques`, `impressoes`, `ctr` (fração),
+`posicao_media` (média da API, 1 = topo; para reagregar, pondere por
+`impressoes`).
+
+| `_tabela` | Tabela | Grão (além de `organization_id`, `site`, `data_dia`) | Dimensões da API |
+|---|---|---|---|
+| `consulta_pagina` | `fato_search_console_consulta_pagina_diario` | `consulta`, `pagina` | query, page |
+| `pagina` | `fato_search_console_pagina_diario` | `pagina` | page |
+| `pais_dispositivo` | `fato_search_console_pais_dispositivo_diario` | `pais` (ISO 3166-1 alfa-3, minúsculo), `dispositivo` | country, device |
+| `aparencia` | `fato_search_console_aparencia_diario` | `aparencia` | searchAppearance (ex.: AMP, rich results; recorte opcional: 400 não falha a coleta) |
+
+Consultas são termos agregados; a API omite as anonimizadas (raras), então
+`consulta_pagina` soma menos que `pagina`, e `pagina` (agregação por página)
+não bate exatamente com `fato_search_console_diario` (por propriedade). A
+API devolve só as linhas de maior tráfego por dia; não há garantia de
+completude da cauda. `fato_search_console_diario` (acima) continua como
+total por dispositivo.
 
 <!-- Search Console: novas tabelas acima desta linha -->
 

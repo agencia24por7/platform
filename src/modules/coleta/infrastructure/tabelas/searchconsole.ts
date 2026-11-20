@@ -1,4 +1,6 @@
 import { agora, type TabelasDaPlataforma } from '@/modules/coleta/infrastructure/tabelas/tipos';
+import { configuracoesDosRecortes } from '@/modules/coleta/infrastructure/tabelas/recortes';
+import { RECORTES_SEARCH_CONSOLE } from '@/modules/coleta/domain/recortesSearchConsole';
 
 export const TABELAS_SEARCHCONSOLE: TabelasDaPlataforma = {
   padrao: {
@@ -25,4 +27,5 @@ export const TABELAS_SEARCHCONSOLE: TabelasDaPlataforma = {
       inserido_em: agora(),
     }),
   },
+  ...configuracoesDosRecortes(RECORTES_SEARCH_CONSOLE),
 };
