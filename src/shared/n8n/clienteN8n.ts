@@ -31,7 +31,7 @@ export type ClienteN8n = {
   listar(): Promise<WorkflowImplantado[]>;
   atualizar(workflowId: string, corpo: CorpoDeWorkflow): Promise<boolean>;
   publicar(workflowId: string): Promise<boolean>;
-  marcarDaPlataforma(workflowId: string): Promise<boolean>;
+  marcarDaPlataforma(workflowId: string, tagsAtuais?: readonly { readonly id: string }[]): Promise<boolean>;
 };
 
 const TENTATIVAS_DE_REMOCAO = 10;
@@ -66,11 +66,24 @@ export function criarClienteN8n(configuracao: ConfiguracaoN8n, logger: Registrad
     return tagDaPlataforma;
   };
 
-  const marcarDaPlataforma = async (workflowId: string): Promise<boolean> => {
+  const tagsDoWorkflow = async (workflowId: string): Promise<{ id: string }[] | null> => {
+    const resposta = await chamar('GET', `workflows/${workflowId}`);
+    if (!resposta.ok) return null;
+    const { tags } = (await resposta.json()) as { tags?: { id: string }[] | null };
+    return (tags ?? []).map((tag) => ({ id: tag.id }));
+  };
+
+  const marcarDaPlataforma = async (workflowId: string, tagsAtuais?: readonly { readonly id: string }[]): Promise<boolean> => {
     try {
       const tagId = await idDaTagDaPlataforma();
       if (!tagId) return false;
-      const resposta = await chamar('PUT', `workflows/${workflowId}/tags`, [{ id: tagId }]);
+      const atuais = tagsAtuais ? tagsAtuais.map((tag) => ({ id: tag.id })) : await tagsDoWorkflow(workflowId);
+      if (!atuais) {
+        logger.warn('n8n.workflow.tag.leitura_falhou', { workflowId });
+        return false;
+      }
+      if (atuais.some((tag) => tag.id === tagId)) return true;
+      const resposta = await chamar('PUT', `workflows/${workflowId}/tags`, [...atuais, { id: tagId }]);
       if (!resposta.ok) logger.warn('n8n.workflow.tag.falhou', { workflowId, status: resposta.status });
       return resposta.ok;
     } catch (error) {
@@ -93,7 +106,7 @@ export function criarClienteN8n(configuracao: ConfiguracaoN8n, logger: Registrad
         const criado = (await resposta.json()) as { id?: string };
         if (!criado.id) return null;
 
-        await marcarDaPlataforma(criado.id);
+        await marcarDaPlataforma(criado.id, []);
 
         const publicacao = await chamar('POST', `workflows/${criado.id}/activate`);
         if (!publicacao.ok) {

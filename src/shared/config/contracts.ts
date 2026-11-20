@@ -67,7 +67,7 @@ export const abrirColetaBody = z.object({
 
 export const faltanteBody = z.object({
   fonte: z.string().min(1).max(120),
-  causa: z.enum(['sem_credencial', 'reauth_pending', 'api_recusou', 'sem_dados_no_periodo', 'coleta_incompleta', 'fora_do_v1']),
+  causa: z.enum(['sem_credencial', 'reauth_pending', 'api_recusou', 'sem_dados_no_periodo', 'coleta_incompleta', 'fora_do_v1', 'falha_coletor']),
   detalhe: z.string().max(500).nullable().default(null),
 });
 

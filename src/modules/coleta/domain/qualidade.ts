@@ -5,6 +5,7 @@ export const CausaFaltante = {
   SemDadosNoPeriodo: 'sem_dados_no_periodo',
   ColetaIncompleta: 'coleta_incompleta',
   ForaDoV1: 'fora_do_v1',
+  FalhaColetor: 'falha_coletor',
 } as const;
 export type CausaFaltante = (typeof CausaFaltante)[keyof typeof CausaFaltante];
 

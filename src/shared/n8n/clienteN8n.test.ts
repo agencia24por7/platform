@@ -9,6 +9,7 @@ type Responder = (chamada: Chamada) => { status: number; corpo?: unknown };
 
 let chamadas: Chamada[] = [];
 let responder: Responder = () => ({ status: 200, corpo: {} });
+let servidorCaptura: (chamada: Chamada, corpo: string) => void = () => {};
 let servidor: ReturnType<typeof createServer>;
 let url = '';
 
@@ -17,10 +18,14 @@ const corpo = { name: 'teste', nodes: [], connections: {}, settings: {} };
 
 before(async () => {
   servidor = createServer((req: IncomingMessage, res: ServerResponse) => {
-    req.resume();
+    let recebido = '';
+    req.on('data', (parte) => {
+      recebido += String(parte);
+    });
     req.on('end', () => {
       const chamada = { metodo: req.method ?? '', caminho: req.url ?? '', chave: req.headers['x-n8n-api-key'] as string | undefined };
       chamadas.push(chamada);
+      servidorCaptura(chamada, recebido);
       const { status, corpo: resposta } = responder(chamada);
       res.writeHead(status, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(resposta ?? {}));
@@ -34,6 +39,7 @@ after(() => servidor.close());
 
 beforeEach(() => {
   chamadas = [];
+  servidorCaptura = () => {};
   responder = () => ({ status: 200, corpo: {} });
 });
 
@@ -100,7 +106,41 @@ describe('cliente do n8n', () => {
     assert.equal(await cliente().marcarDaPlataforma('wf9'), true);
     assert.deepEqual(
       chamadas.map((c) => `${c.metodo} ${c.caminho}`),
-      ['GET /api/v1/tags?limit=250', 'POST /api/v1/tags', 'PUT /api/v1/workflows/wf9/tags'],
+      ['GET /api/v1/tags?limit=250', 'POST /api/v1/tags', 'GET /api/v1/workflows/wf9', 'PUT /api/v1/workflows/wf9/tags'],
     );
+  });
+
+  it('marca preservando as tags que o workflow já tem', async () => {
+    let corpoDoPut: unknown = null;
+    servidorCaptura = (c, corpoRecebido) => {
+      if (c.metodo === 'PUT') corpoDoPut = JSON.parse(corpoRecebido);
+    };
+    responder = (c) => {
+      if (c.metodo === 'GET' && c.caminho.startsWith('/api/v1/tags')) return { status: 200, corpo: { data: [{ id: 'tp', name: 'platform' }] } };
+      if (c.metodo === 'GET' && c.caminho === '/api/v1/workflows/wf5') return { status: 200, corpo: { tags: [{ id: 'tc', name: 'credaz' }] } };
+      return { status: 200 };
+    };
+    assert.equal(await cliente().marcarDaPlataforma('wf5'), true);
+    assert.deepEqual(corpoDoPut, [{ id: 'tc' }, { id: 'tp' }]);
+  });
+
+  it('não escreve nada quando as tags atuais não puderam ser lidas', async () => {
+    responder = (c) => {
+      if (c.metodo === 'GET' && c.caminho.startsWith('/api/v1/tags')) return { status: 200, corpo: { data: [{ id: 'tp', name: 'platform' }] } };
+      if (c.metodo === 'GET' && c.caminho === '/api/v1/workflows/wf6') return { status: 500 };
+      return { status: 200 };
+    };
+    assert.equal(await cliente().marcarDaPlataforma('wf6'), false);
+    assert.ok(!chamadas.some((c) => c.metodo === 'PUT'));
+  });
+
+  it('não reescreve as tags quando a plataforma já está entre elas', async () => {
+    responder = (c) => {
+      if (c.metodo === 'GET' && c.caminho.startsWith('/api/v1/tags')) return { status: 200, corpo: { data: [{ id: 'tp', name: 'platform' }] } };
+      if (c.metodo === 'GET' && c.caminho === '/api/v1/workflows/wf7') return { status: 200, corpo: { tags: [{ id: 'tp', name: 'platform' }] } };
+      return { status: 200 };
+    };
+    assert.equal(await cliente().marcarDaPlataforma('wf7'), true);
+    assert.ok(!chamadas.some((c) => c.metodo === 'PUT'));
   });
 });
