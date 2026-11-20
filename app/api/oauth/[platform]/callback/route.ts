@@ -16,6 +16,7 @@ import { decodeStateCookie, type StateCookie } from '@/modules/connections/domai
 import { ORGANIZACAO_INTEIRA, escopoDeCliente } from '@/shared/db/escopo';
 import { temRecursoParaVincular, type Platform } from '@/modules/connections/domain/connection';
 import type { AuthorizationOutcome } from '@/modules/connections/application/authorizationService';
+import { destinoDoErroDeAutorizacao } from '@/modules/connections/domain/erroDeAutorizacao';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,11 +29,10 @@ function clear(response: NextResponse): NextResponse {
   return response;
 }
 
-function backTo(_request: NextRequest, reason: string): NextResponse {
+function backTo(reason: string, origem: string | null, platform: string): NextResponse {
+  const seguro = origem && isSafeReturnPath(origem) ? origem : null;
   return clear(
-    NextResponse.redirect(
-      new URL(`/comecar?passo=conectar&erro=${reason}`, env().TRIA_APP_BASE_URL),
-    ),
+    NextResponse.redirect(new URL(destinoDoErroDeAutorizacao(seguro, reason, platform), env().TRIA_APP_BASE_URL)),
   );
 }
 
@@ -67,7 +67,7 @@ async function completarViaConvite(input: {
 }): Promise<NextResponse> {
   const { request, platform, plataforma, binding, code, clientId, clientSecret } = input;
   const itemId = binding.inviteItemId;
-  if (!itemId) return backTo(request, 'convite_invalido');
+  if (!itemId) return backTo('convite_invalido', binding.returnTo, platform);
 
   const destino = isSafeReturnPath(binding.returnTo) ? binding.returnTo : '/convite';
 
@@ -144,13 +144,14 @@ export async function GET(
   context: { params: Promise<{ platform: string }> },
 ): Promise<NextResponse> {
   const { platform } = await context.params;
-  if (!falaOauth(platform as Platform)) return backTo(request, 'plataforma_desconhecida');
+  if (!falaOauth(platform as Platform)) return backTo('plataforma_desconhecida', null, platform);
   const plataforma = platform as PlataformaOauth;
 
   const query = request.nextUrl.searchParams;
   const binding = decodeStateCookie(request.cookies.get(STATE_COOKIE)?.value ?? '', env().TRIA_SESSION_SECRET);
   const expectedState = binding?.state ?? '';
   const returnTo = binding?.returnTo ?? '/comecar?passo=contas';
+  const origem = binding?.returnTo ?? null;
 
   if (
     !expectedState ||
@@ -159,19 +160,19 @@ export async function GET(
     !secureCompare(query.get('state') ?? '', expectedState)
   ) {
     logger.warn('oauth.callback.state_mismatch', { platform });
-    return backTo(request, 'estado_invalido');
+    return backTo('estado_invalido', origem, platform);
   }
 
   if (query.get('error')) {
     logger.info('oauth.callback.denied', { platform, reason: query.get('error') });
-    return backTo(request, 'autorizacao_negada');
+    return backTo('autorizacao_negada', origem, platform);
   }
 
   const code = query.get('code');
-  if (!code) return backTo(request, 'sem_codigo');
+  if (!code) return backTo('sem_codigo', origem, platform);
 
   const credentials = credenciaisDaPlataforma(plataforma);
-  if (!credentials.clientId || !credentials.clientSecret) return backTo(request, 'app_indisponivel');
+  if (!credentials.clientId || !credentials.clientSecret) return backTo('app_indisponivel', origem, platform);
 
   if (binding.inviteItemId) {
     return completarViaConvite({
@@ -186,11 +187,11 @@ export async function GET(
   }
 
   const sessao = await currentUser();
-  if (!sessao) return backTo(request, 'sessao_expirada');
+  if (!sessao) return backTo('sessao_expirada', origem, platform);
 
   if (!binding.userId || binding.userId !== sessao.user.id) {
     logger.warn('oauth.callback.sessao_trocada', { platform });
-    return backTo(request, 'sessao_trocada');
+    return backTo('sessao_trocada', origem, platform);
   }
 
   const papelNaOrganizacao = binding.organizationId
@@ -201,7 +202,7 @@ export async function GET(
     const escopo = await escopoDeCliente(binding.organizationId);
     if (escopo !== ORGANIZACAO_INTEIRA) {
       logger.warn('oauth.callback.recusado_recorte', { platform, userId: sessao.user.id });
-      return backTo(request, 'autorizacao_recusada');
+      return backTo('autorizacao_recusada', origem, platform);
     }
   }
 
@@ -224,8 +225,9 @@ export async function GET(
   if (!outcome.ok) {
     logger.warn('oauth.callback.authorization_failed', { platform, code: outcome.error.code });
     return backTo(
-      request,
       outcome.error.code === 'forbidden' ? 'autorizacao_recusada' : 'falha_autorizacao',
+      origem,
+      platform,
     );
   }
 
