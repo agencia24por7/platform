@@ -1,5 +1,5 @@
 import { logger } from '@/shared/logging/logger';
-import { criarWorkflow, montarWorkflow, n8nDisponivel, type WorkflowTemplate } from '@/shared/n8n/workflowComCredencial';
+import { criarWorkflow, montarWorkflow, n8nDisponivel, removerWorkflow, type WorkflowTemplate } from '@/shared/n8n/workflowComCredencial';
 import { credentialIdOf } from '@/modules/connections/application/credentialVault';
 import { CREDENTIAL_TYPE } from '@/modules/connections/infrastructure/n8nCredentialVault';
 import type { Platform } from '@/modules/connections/domain/connection';
@@ -24,6 +24,7 @@ const TEMPLATE_BY_PLATFORM: Partial<Record<Platform, WorkflowTemplate>> = {
 export type ColetorProvisioner = {
   readonly available: boolean;
   provisionar(input: { readonly platform: Platform; readonly credentialRef: string; readonly label: string }): Promise<string | null>;
+  remover(workflowId: string): Promise<boolean>;
 };
 
 export function createColetorProvisioner(): ColetorProvisioner {
@@ -48,6 +49,11 @@ export function createColetorProvisioner(): ColetorProvisioner {
       }
 
       return criarWorkflow(corpo, { tipo: 'coletor', platform: input.platform });
+    },
+
+    async remover(workflowId) {
+      if (!available) return false;
+      return removerWorkflow(workflowId, { tipo: 'coletor' });
     },
   };
 }

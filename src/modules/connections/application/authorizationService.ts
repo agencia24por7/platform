@@ -332,7 +332,10 @@ export function createAuthorizationService(
             credentialRef: connection.credentialRef,
             label: connection.label,
           });
-          if (coletorRef) await connections.setColetorRef(organizationId, connection.id, coletorRef);
+          if (coletorRef) {
+            const anterior = await connections.trocarColetorRef(organizationId, connection.id, coletorRef);
+            if (anterior && anterior !== coletorRef) await coletorProvisioner.remover(anterior);
+          }
         } catch (error) {
           logger.warn('coletor.provisionar.ignorado', {
             platform: input.platform,
@@ -347,7 +350,10 @@ export function createAuthorizationService(
             credentialRef: connection.credentialRef,
             label: connection.label,
           });
-          if (executorRef) await connections.setExecutorRef(organizationId, connection.id, executorRef);
+          if (executorRef) {
+            const anterior = await connections.trocarExecutorRef(organizationId, connection.id, executorRef);
+            if (anterior && anterior !== executorRef) await executorProvisioner.remover(anterior);
+          }
         } catch (error) {
           logger.warn('executor.provisionar.ignorado', {
             platform: input.platform,

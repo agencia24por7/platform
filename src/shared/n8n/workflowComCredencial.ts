@@ -1,5 +1,6 @@
 import { env } from '@/shared/config/env';
 import { logger } from '@/shared/logging/logger';
+import { criarClienteN8n, type ClienteN8n } from '@/shared/n8n/clienteN8n';
 
 type WorkflowNode = {
   readonly credentials?: Record<string, { id: string; name: string }>;
@@ -37,28 +38,15 @@ export function montarWorkflow(
   return encontrada ? corpo : null;
 }
 
-export async function criarWorkflow(corpo: WorkflowTemplate, contexto: Record<string, string>): Promise<string | null> {
+export function clienteN8nDoAmbiente(): ClienteN8n {
   const config = env();
-  try {
-    const response = await fetch(new URL('/api/v1/workflows', config.N8N_API_URL).toString(), {
-      method: 'POST',
-      headers: { 'X-N8N-API-KEY': config.N8N_API_KEY!, 'Content-Type': 'application/json' },
-      body: JSON.stringify(corpo),
-      signal: AbortSignal.timeout(15_000),
-    });
+  return criarClienteN8n({ url: config.N8N_API_URL!, apiKey: config.N8N_API_KEY! }, logger);
+}
 
-    if (!response.ok) {
-      logger.error('n8n.workflow.criar.falhou', { ...contexto, status: response.status });
-      return null;
-    }
+export async function criarWorkflow(corpo: WorkflowTemplate, contexto: Record<string, string>): Promise<string | null> {
+  return clienteN8nDoAmbiente().criar(corpo, contexto);
+}
 
-    const criado = (await response.json()) as { id?: string };
-    if (!criado.id) return null;
-
-    logger.info('n8n.workflow.criar.ok', { ...contexto, workflowId: criado.id });
-    return criado.id;
-  } catch (error) {
-    logger.error('n8n.workflow.criar.erro', { ...contexto, error: error instanceof Error ? error.message : 'desconhecido' });
-    return null;
-  }
+export async function removerWorkflow(workflowId: string, contexto: Record<string, string>): Promise<boolean> {
+  return clienteN8nDoAmbiente().remover(workflowId, contexto);
 }
