@@ -1,0 +1,68 @@
+{
+  "name": "ORLA · revogação · Meta (modelo)",
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false,
+    "callerPolicy": "workflowsFromSameOwner",
+    "timezone": "America/Sao_Paulo"
+  },
+  "nodes": [
+    {
+      "id": "entrada",
+      "name": "Entrada",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 0],
+      "parameters": {
+        "workflowInputs": {
+          "values": [{ "name": "connectionId" }]
+        }
+      }
+    },
+    {
+      "id": "revogar-na-meta",
+      "name": "Revogar na Meta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 0],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "DELETE",
+        "url": "https://graph.facebook.com/v26.0/me/permissions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "facebookGraphApi",
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      }
+    },
+    {
+      "id": "resultado",
+      "name": "Resultado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 0],
+      "parameters": {
+        "jsCode": "const resposta = $input.first().json;\nconst status = typeof resposta.statusCode === 'number' ? resposta.statusCode : null;\nreturn [{ json: { revogado: status === 200 && resposta.body?.success === true, status } }];"
+      }
+    }
+  ],
+  "connections": {
+    "Entrada": { "main": [[{ "node": "Revogar na Meta", "type": "main", "index": 0 }]] },
+    "Revogar na Meta": { "main": [[{ "node": "Resultado", "type": "main", "index": 0 }]] }
+  }
+}

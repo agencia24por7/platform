@@ -31,6 +31,17 @@ import { createRetencaoRepository } from '@/modules/privacidade/infrastructure/r
 import { createDimensoesService } from '@/modules/coleta/application/dimensoesService';
 import { createDimensoesRepository } from '@/modules/coleta/infrastructure/dimensoesRepository';
 import { createDimensoesBigQuery } from '@/modules/coleta/infrastructure/dimensoesBigQuery';
+import { createRevogadorNoProvedor } from '@/modules/privacidade/application/revogacaoNoProvedor';
+import { createExpurgoDeFontesService } from '@/modules/privacidade/application/expurgoDeFontes';
+import { createPedidosDeExclusaoService } from '@/modules/privacidade/application/pedidosDeExclusao';
+import {
+  createAcessosCompartilhados,
+  createFilaDeExpurgo,
+  createPedidosDeExclusaoRepository,
+} from '@/modules/privacidade/infrastructure/privacidadeRepository';
+import { createExpurgoNoBigQuery } from '@/modules/privacidade/infrastructure/expurgoNoBigQuery';
+import { executorDeRevogacaoDoAmbiente } from '@/modules/privacidade/infrastructure/executorDeRevogacaoDoAmbiente';
+import { env } from '@/shared/config/env';
 
 function build() {
   const audit = createAuditRepository();
@@ -43,6 +54,9 @@ function build() {
   const vault = createN8nCredentialVault();
   const credentialTester = createCredentialTester();
   const dimensoes = createDimensoesService(createDimensoesRepository(), createDimensoesBigQuery(), audit);
+  const revogador = createRevogadorNoProvedor(executorDeRevogacaoDoAmbiente(), createAcessosCompartilhados());
+  const expurgoDeFontes = createExpurgoDeFontesService(createFilaDeExpurgo(), createExpurgoNoBigQuery(), audit);
+  const config = env();
 
   return {
     audit,
@@ -64,6 +78,10 @@ function build() {
       createColetorProvisioner(),
       discoveredAccounts,
       dimensoes,
+      {
+        revogarNoProvedor: (conexao) => revogador.revogar(conexao),
+        expurgarDadosDaConexao: (input) => expurgoDeFontes.expurgarDadosDaConexao(input),
+      },
     ),
     authorization: createAuthorizationService(
       organizations,
@@ -84,6 +102,12 @@ function build() {
     coleta: createColetaService(createColetaRepository(), audit, createBigQueryGravador()),
     retencao: createRetencaoService(createRetencaoRepository(), audit),
     dimensoes,
+    expurgoDeFontes,
+    pedidosDeExclusao: createPedidosDeExclusaoService(createPedidosDeExclusaoRepository(), {
+      segredoDoApp: config.META_APP_SECRET,
+      pimenta: config.TRIA_SESSION_SECRET,
+      enderecoPublico: config.TRIA_APP_BASE_URL,
+    }),
   };
 }
 

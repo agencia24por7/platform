@@ -202,12 +202,12 @@ describe('fronteiras entre inquilinos', { concurrency: false }, () => {
       SELECT coalesce(string_agg(n.nspname||'.'||c.relname, ', '), '')
       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE c.relkind = 'r'
-        AND n.nspname IN ('core','integrations','metrics','automation','audit')
+        AND n.nspname IN ('core','integrations','metrics','automation','audit','privacidade')
         AND NOT (c.relrowsecurity AND c.relforcerowsecurity)`);
     assert.equal(umaLinha(frouxas), '', `tabelas sem RLS forçada: ${frouxas}`);
   });
 
-  const SEM_POLITICA_POR_DESENHO = "ARRAY['integrations.whatsapp_inbound_events']";
+  const SEM_POLITICA_POR_DESENHO = "ARRAY['integrations.whatsapp_inbound_events','privacidade.expurgos_de_fonte']";
 
   it('tabelas sem política por desenho só são tocadas por funções SECURITY DEFINER', () => {
     const acessoDireto = dono(`
@@ -224,7 +224,7 @@ describe('fronteiras entre inquilinos', { concurrency: false }, () => {
       SELECT coalesce(string_agg(n.nspname||'.'||c.relname, ', '), '')
       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE c.relkind = 'r'
-        AND n.nspname IN ('core','integrations','metrics','automation','audit')
+        AND n.nspname IN ('core','integrations','metrics','automation','audit','privacidade')
         AND c.relrowsecurity
         AND NOT EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid)
         AND (n.nspname||'.'||c.relname) <> ALL (${SEM_POLITICA_POR_DESENHO})`);
@@ -235,7 +235,7 @@ describe('fronteiras entre inquilinos', { concurrency: false }, () => {
     const soltas = dono(`
       SELECT coalesce(string_agg(p.proname, ', '), '')
       FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-      WHERE n.nspname IN ('core','integrations','metrics','automation','audit')
+      WHERE n.nspname IN ('core','integrations','metrics','automation','audit','privacidade')
         AND p.prosecdef
         AND NOT EXISTS (
           SELECT 1 FROM unnest(coalesce(p.proconfig, ARRAY[]::text[])) c
@@ -247,7 +247,7 @@ describe('fronteiras entre inquilinos', { concurrency: false }, () => {
     const abertas = dono(`
       SELECT coalesce(string_agg(p.proname, ', '), '')
       FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-      WHERE n.nspname IN ('core','integrations','metrics','automation','audit')
+      WHERE n.nspname IN ('core','integrations','metrics','automation','audit','privacidade')
         AND p.prosecdef
         AND has_function_privilege('public', p.oid, 'EXECUTE')`);
     assert.equal(umaLinha(abertas), '', `definer aberta ao público: ${abertas}`);

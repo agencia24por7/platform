@@ -217,3 +217,12 @@ gravações que quebravam por uma linha ruim ou por concorrência:
   `fato_rd_negociacao_etapas`): fora do escopo desta revisão.
 - Anonimizar nome antigo de cliente renomeado (a trilha guardou o nome da
   época): só o id permitiria; linhas novas já têm `deId`/`paraId`.
+
+## Adendo (ADR 0029)
+
+- O expurgo apaga também a `stg_*` de cada entrada do manifesto (campo `staging`), por organização + chave da
+  fonte. Deixa de valer "As `stg_*` não entram no expurgo" e o primeiro item de "Adiado".
+- "Dono desconhecido empurra o histórico" foi substituído: o período desconhecido fica em `dim_fonte_scd2` com
+  `client_id NULL` e `status = 'desconhecido'`, e o expurgo não o apaga nem trata a fonte como só do cliente.
+- "Cliente renomeado": a migração 0080 preenche `deId`/`paraId`/`clientId` nas linhas antigas cujo nome aponta
+  para exatamente um cliente na história da organização, inclusive nome antigo visto ao lado de um id.

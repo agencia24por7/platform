@@ -18,6 +18,8 @@ type EntradaDoManifesto = {
   data?: string;
   momento?: string;
   todoPeriodo?: true;
+  staging?: string;
+  colunaPlataforma?: string;
   grao?: string[];
   entidades?: Entidade[];
 };
@@ -47,9 +49,12 @@ const { TABELAS_POR_PLATAFORMA } = (await import('./index.ts')) as { TABELAS_POR
 
 const configuracoes = Object.values(TABELAS_POR_PLATAFORMA).flatMap((tabelas) => Object.values(tabelas));
 const chaveNoRegistro = new Map<string, readonly string[]>();
+const stagingNoRegistro = new Map<string, string>();
 for (const cfg of configuracoes) {
   if (cfg.tipo === 'fato') chaveNoRegistro.set(cfg.fato, cfg.chave);
   if (cfg.tipo === 'scd2') chaveNoRegistro.set(cfg.dimensao, cfg.chave);
+  if (cfg.tipo === 'fato') stagingNoRegistro.set(cfg.fato, cfg.staging);
+  if (cfg.tipo === 'scd2') stagingNoRegistro.set(cfg.dimensao, cfg.staging);
 }
 
 const manifestos = readdirSync(resolve(DIR_BQ, 'manifesto'))
@@ -75,6 +80,19 @@ describe('registro de tabelas x manifesto', () => {
   it('toda tabela gravada pelo registro está em algum manifesto (exclusão de cliente)', () => {
     const noManifesto = new Set(manifestos.map(({ entrada }) => entrada.tabela));
     for (const tabela of chaveNoRegistro.keys()) assert.ok(noManifesto.has(tabela), `${tabela} fora do manifesto`);
+  });
+
+  it('toda entrada do manifesto declara a staging que o registro grava, e a staging tem a chave da fonte (expurgo)', () => {
+    for (const { arquivo, entrada } of manifestos) {
+      const daTabela = stagingNoRegistro.get(entrada.tabela);
+      assert.equal(entrada.staging, daTabela, `${arquivo}: ${entrada.tabela} staging do manifesto difere do registro`);
+      if (!daTabela) continue;
+      const corpo = ddl.match(new RegExp(`CREATE TABLE IF NOT EXISTS \`\\{\\{DATASET\\}\\}\\.${daTabela}\` \\(([\\s\\S]*?)\\n\\)`))?.[1];
+      assert.ok(corpo, `${arquivo}: ${daTabela} fora do DDL`);
+      for (const coluna of ['organization_id', entrada.chave, ...(entrada.colunaPlataforma ? [entrada.colunaPlataforma] : [])]) {
+        assert.match(corpo!, new RegExp(`^\\s*${coluna}\\s`, 'm'), `${daTabela} sem ${coluna}`);
+      }
+    }
   });
 
   it('entrada segue o formato do titular.mjs (um recorte de período)', () => {

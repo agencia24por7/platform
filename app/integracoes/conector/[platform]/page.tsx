@@ -32,6 +32,7 @@ import {
   vincularRecurso,
 } from '@/../app/integracoes/acoes';
 import { env } from '@/shared/config/env';
+import { provedorDaPlataforma } from '@/modules/privacidade/domain/revogacao';
 
 export const dynamic = 'force-dynamic';
 
@@ -76,12 +77,15 @@ export default async function ConectorPage({
 
   const voltarPara = `/integracoes/conector/${plataforma}`;
 
-  const [todasConexoes, todasContas, todasAlcancaveis, tarefas, clientes] = await Promise.all([
+  const [todasConexoes, todasContas, todasAlcancaveis, tarefas, clientes, pedidosDeExclusao] = await Promise.all([
     modules().connections.listConnections(organization.id),
     modules().connections.listAccounts(organization.id),
     modules().discoveredAccounts.listAll(organization.id),
     modules().tasks.listRecentes(organization.id),
     modules().clients.list(organization.id),
+    provedorDaPlataforma(plataforma) === 'meta'
+      ? modules().pedidosDeExclusao.abertosDaOrganizacao(organization.id)
+      : Promise.resolve([]),
   ]);
 
   const conexoes = todasConexoes.filter(
@@ -224,6 +228,25 @@ export default async function ConectorPage({
           </div>
         ) : null}
       </section>
+
+      {pedidosDeExclusao.length > 0 ? (
+        <div className="aviso" role="status">
+          <strong>Pedido de exclusão de dados recebido da Meta.</strong> Quem autorizou removeu o app da conta do
+          Facebook e pediu a exclusão dos dados. Remova a conexão abaixo e siga
+          <span className="mono"> docs/lgpd/atendimento-ao-titular.md</span> (pedidos de exclusão da Meta) para concluir.
+          <ul>
+            {pedidosDeExclusao.map((pedido) => (
+              <li key={`${pedido.codigo}-${pedido.connectionId}`}>
+                código <span className="mono">{pedido.codigo}</span>, {pedido.situacao.replace('_', ' ')}, recebido em{' '}
+                {pedido.criadoEm.toLocaleDateString('pt-BR')}
+                {porConexao.get(pedido.connectionId)
+                  ? ` · conexão ${porConexao.get(pedido.connectionId)!.accountEmail ?? porConexao.get(pedido.connectionId)!.externalId}`
+                  : ''}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {plataforma === 'meta' ? (
         <div className="aviso">

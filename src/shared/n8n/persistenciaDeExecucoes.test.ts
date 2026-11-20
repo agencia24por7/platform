@@ -6,8 +6,8 @@ import { PASTA_DOS_WORKFLOWS } from './modelos.ts';
 
 type Modelo = { settings: Record<string, unknown> };
 
-const PASTAS_SEM_PERSISTENCIA = ['coletores', 'executores'];
-const FLUXOS_SEM_PERSISTENCIA = ['coleta-orquestrador.json', 'coleta-backfill-janela.json', 'coleta-backfill.json', 'coleta-metricas.json', 'tarefas-de-conta.json'];
+const PASTAS_SEM_PERSISTENCIA = ['coletores', 'executores', 'plataforma/revogacao'];
+const FLUXOS_SEM_PERSISTENCIA = ['coleta-orquestrador.json', 'coleta-backfill-janela.json', 'coleta-backfill.json', 'coleta-metricas.json', 'tarefas-de-conta.json', 'plataforma/revogar-acesso.json'];
 
 function arquivosJson(pasta: string): string[] {
   return readdirSync(pasta, { withFileTypes: true }).flatMap((entrada) => {

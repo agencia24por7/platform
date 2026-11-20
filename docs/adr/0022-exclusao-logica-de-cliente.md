@@ -96,3 +96,8 @@ de exclusão de cliente no app; o atendimento é pelo `titular.mjs`.
   clientes excluídos; a convenção é ler as `vw_*` (README do BigQuery).
 - Ordem de aplicação: migração 0043, deploy do app (repositório de dimensões),
   `node scripts/bq-ddl.mjs` (views).
+
+## Adendo (ADR 0029)
+
+O BigQuery passa a ter `DELETE` fora do expurgo, só para dado da API do YouTube: prazo de 30 dias das
+`dim_youtube_*` e expurgo do canal cuja autorização acabou (ADR 0029). A exclusão de cliente continua lógica.

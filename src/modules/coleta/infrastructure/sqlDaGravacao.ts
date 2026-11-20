@@ -178,7 +178,21 @@ export function sqlHashDosAtributos(atributos: readonly string[], alias = ''): s
   return `TO_HEX(SHA256(TO_JSON_STRING(STRUCT(${atributos.map((coluna) => `${alias}${coluna} AS ${coluna}`).join(', ')}))))`;
 }
 
-export function sqlScd2(dimensao: string, staging: string, cfg: Pick<ConfiguracaoScd2, 'chave' | 'atributos'>): string {
+function sqlRenovacaoDoCarregadoEm(dimensao: string, origem: string, mesmaChave: string, daOrganizacao: string): string {
+  return `
+
+      UPDATE ${dimensao} AS d
+      SET carregado_em = @agora
+      FROM (${origem}
+      ) AS o
+      WHERE d.atual AND ${mesmaChave}${daOrganizacao} AND d.hash_versao = o.hash_versao;`;
+}
+
+export function sqlScd2(
+  dimensao: string,
+  staging: string,
+  cfg: Pick<ConfiguracaoScd2, 'chave' | 'atributos' | 'renovaCarregadoEm'>,
+): string {
   const colunas = [...cfg.chave, ...cfg.atributos];
   const mesmaChave = cfg.chave.map((coluna) => `d.${coluna} = o.${coluna}`).join(' AND ');
   const daOrganizacao = filtroDaOrganizacao(cfg.chave, 'd');
@@ -203,7 +217,8 @@ export function sqlScd2(dimensao: string, staging: string, cfg: Pick<Configuraca
         ${VALIDO_ATE_ABERTO}, TRUE, o.hash_versao, @execucaoId, @agora
       FROM (${origem}
       ) AS o
-      WHERE NOT EXISTS (SELECT 1 FROM ${dimensao} d WHERE d.atual AND ${mesmaChave}${daOrganizacao});
+      WHERE NOT EXISTS (SELECT 1 FROM ${dimensao} d WHERE d.atual AND ${mesmaChave}${daOrganizacao});${
+        cfg.renovaCarregadoEm ? sqlRenovacaoDoCarregadoEm(dimensao, origem, mesmaChave, daOrganizacao) : ''}
 
       COMMIT TRANSACTION;
     `;

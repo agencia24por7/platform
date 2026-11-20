@@ -10,6 +10,7 @@ import { checkbox, text, toActionState } from '@/shared/http/actions';
 import { atorAtual } from '@/shared/http/ator';
 import { requireContext } from '@/shared/http/currentOrganization';
 import { canAdminister, canOperate } from '@/modules/identity/domain/user';
+import { mensagemDaRemocao } from '@/modules/privacidade/domain/revogacao';
 
 async function contextoDeConexoes() {
   const contexto = await requireContext();
@@ -313,5 +314,5 @@ export async function removerConexao(formData: FormData): Promise<void> {
     voltar(toActionState(resultado.error).error ?? 'Não deu para remover a conexão.');
     return;
   }
-  voltar('Conexão removida. A credencial foi apagada do cofre e a coleta dessa conta parou.');
+  voltar(mensagemDaRemocao(resultado.value));
 }

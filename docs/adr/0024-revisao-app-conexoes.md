@@ -144,3 +144,10 @@ Proposta:
 - Os testes de integração de exclusão de cliente vista por usuário com recorte
   de cliente e da migração do papel do worker dependem do banco real e ficam
   para a mudança que implementar o item 6.
+
+## Adendo (ADR 0029)
+
+- O item "revogar no provedor" saiu do desenho: `removerConexao` revoga antes de `vault.discard` e registra
+  `revogadoNoProvedor` em `connection.removed` (ADR 0029, seção 1).
+- Os testes de integração de exclusão vista por usuário com recorte de clientes estão em
+  `tests/privacidade.test.mjs`; os do papel do worker continuam com o item 6.

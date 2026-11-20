@@ -137,6 +137,37 @@ export function avaliarAlvo(
   return { permitido: true };
 }
 
+const chaveDaCredencial = (tipo: string, nome: string) => `${tipo}|${nome}`;
+
+export function credenciaisPorNome(implantados: readonly Workflow[]): ReadonlyMap<string, Credencial> {
+  const vistas = new Map<string, Credencial | null>();
+  for (const no of implantados.flatMap((workflow) => workflow.nodes)) {
+    for (const [tipo, credencial] of Object.entries(no.credentials ?? {})) {
+      if (MARCADOR.test(credencial.id) || MARCADOR.test(credencial.name)) continue;
+      const chave = chaveDaCredencial(tipo, credencial.name);
+      const anterior = vistas.get(chave);
+      vistas.set(chave, anterior === undefined || anterior?.id === credencial.id ? credencial : null);
+    }
+  }
+  return new Map([...vistas].filter((par): par is [string, Credencial] => par[1] !== null));
+}
+
+export function modeloComCredenciaisPorNome(modelo: Workflow, conhecidas: ReadonlyMap<string, Credencial>): Workflow {
+  return {
+    ...modelo,
+    nodes: modelo.nodes.map((no) => {
+      if (!no.credentials) return no;
+      const credenciais = Object.fromEntries(
+        Object.entries(no.credentials).map(([tipo, credencial]) => [
+          tipo,
+          MARCADOR.test(credencial.id) ? (conhecidas.get(chaveDaCredencial(tipo, credencial.name)) ?? credencial) : credencial,
+        ]),
+      );
+      return { ...no, credentials: credenciais };
+    }),
+  };
+}
+
 function notaDeOrigem(arquivo: string, versao: string): No {
   return {
     name: NOTA_DE_ORIGEM,

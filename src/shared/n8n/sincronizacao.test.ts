@@ -1,8 +1,30 @@
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { describe, it } from 'node:test';
-import { MODELO_DE_COLETOR, MODELO_DE_EXECUTOR, PASTAS_DE_MODELO } from './modelos.ts';
-import { NOTA_DE_ORIGEM, arquivoDeOrigem, avaliarAlvo, localizarImplantado, mesclar, versaoDoModelo, versaoImplantada, type Workflow } from './sincronizacao.ts';
+import {
+  MODELO_DE_COLETOR,
+  MODELO_DE_EXECUTOR,
+  MODELO_DE_REVOGACAO,
+  PASTAS_DE_MODELO,
+  WEBHOOK_DE_REVOGACAO,
+  WEBHOOK_DO_PORTADOR_DO_GOOGLE,
+  WORKFLOW_DE_CONFORMIDADE_DO_YOUTUBE,
+  WORKFLOW_DE_REVOGACAO,
+  ehModelo,
+} from './modelos.ts';
+import {
+  NOTA_DE_ORIGEM,
+  arquivoDeOrigem,
+  avaliarAlvo,
+  credenciaisPorNome,
+  localizarImplantado,
+  mesclar,
+  modeloComCredenciaisPorNome,
+  versaoDoModelo,
+  versaoImplantada,
+  type Workflow,
+} from './sincronizacao.ts';
+import { META_GRAPH_VERSION } from '../../modules/connections/domain/metaGraphVersion.ts';
 
 const CREDENCIAL_REAL = { id: 'AbCdEfGh12345678', name: 'ORLA · worker token' };
 const ARQUIVO = 'n8n/workflows/exemplo.json';
@@ -118,7 +140,7 @@ describe('sincronização de workflows do n8n', () => {
   });
 
   it('o mapa de modelos cobre todo arquivo de modelo e só aponta para arquivos que existem', () => {
-    const mapeados = new Set([...Object.values(MODELO_DE_COLETOR), ...Object.values(MODELO_DE_EXECUTOR)]);
+    const mapeados = new Set([...Object.values(MODELO_DE_COLETOR), ...Object.values(MODELO_DE_EXECUTOR), ...Object.values(MODELO_DE_REVOGACAO)]);
     for (const caminho of mapeados) assert.ok(existsSync(caminho), caminho);
 
     const arquivos = PASTAS_DE_MODELO.flatMap((pasta) => readdirSync(pasta).map((arquivo) => `${pasta}${arquivo}`));
@@ -165,5 +187,90 @@ describe('segurança da sincronização: quem pode ser alterado', () => {
   it('com nota de origem ou com a tag platform segue normalmente', () => {
     assert.equal(avaliarAlvo({ ...comOrigem, tags: [] }, opcoes).permitido, true);
     assert.equal(avaliarAlvo({ ...semOrigem, tags: [{ name: 'platform' }] }, opcoes).permitido, true);
+  });
+});
+
+type NoDoModelo = { name: string; type: string; parameters?: Record<string, unknown>; credentials?: Record<string, { id: string; name: string }> };
+type ModeloLido = { name: string; nodes: NoDoModelo[]; settings: Record<string, unknown> };
+const ler = (caminho: string) => JSON.parse(readFileSync(caminho, 'utf8')) as ModeloLido;
+
+describe('workflows de privacidade da plataforma (ADR 0029)', () => {
+  const revogacao = ler(WORKFLOW_DE_REVOGACAO);
+  const webhook = (path: string) => revogacao.nodes.find((no) => no.type === 'n8n-nodes-base.webhook' && no.parameters?.['path'] === path);
+
+  it('a revogação é workflow da plataforma (sincronizado), e os modelos por conexão não', () => {
+    assert.equal(ehModelo(WORKFLOW_DE_REVOGACAO), false);
+    assert.equal(ehModelo(WORKFLOW_DE_CONFORMIDADE_DO_YOUTUBE), false);
+    for (const caminho of Object.values(MODELO_DE_REVOGACAO)) assert.equal(ehModelo(caminho), true);
+  });
+
+  it('o pedido de revogação exige o token do worker, como os outros webhooks da plataforma', () => {
+    const pedido = webhook(WEBHOOK_DE_REVOGACAO)!;
+    assert.equal(pedido.parameters?.['authentication'], 'headerAuth');
+    assert.equal(pedido.credentials?.['httpHeaderAuth']?.name, 'ORLA · worker token');
+  });
+
+  it('o portador do Google só revoga o token que recebe, e o modelo do Google o chama com a própria credencial', () => {
+    assert.ok(webhook(WEBHOOK_DO_PORTADOR_DO_GOOGLE));
+    const revogar = revogacao.nodes.find((no) => no.name === 'Revogar com o portador')!;
+    assert.equal(revogar.parameters?.['url'], 'https://oauth2.googleapis.com/revoke');
+    assert.equal(revogar.credentials, undefined);
+
+    const google = ler(MODELO_DE_REVOGACAO.google!);
+    const chamada = google.nodes.find((no) => no.credentials?.['googleOAuth2Api'])!;
+    assert.equal(chamada.parameters?.['nodeCredentialType'], 'googleOAuth2Api');
+    assert.ok(String(chamada.parameters?.['url']).endsWith(`/webhook/${WEBHOOK_DO_PORTADOR_DO_GOOGLE}`));
+  });
+
+  it('o modelo da Meta apaga as permissões do usuário na versão da Graph usada pelo app', () => {
+    const meta = ler(MODELO_DE_REVOGACAO.meta!);
+    const chamada = meta.nodes.find((no) => no.credentials?.['facebookGraphApi'])!;
+    assert.equal(chamada.parameters?.['method'], 'DELETE');
+    assert.equal(chamada.parameters?.['url'], `https://graph.facebook.com/${META_GRAPH_VERSION}/me/permissions`);
+  });
+
+  it('nenhum deles salva execução: o token do Google passa pelo portador', () => {
+    for (const caminho of [WORKFLOW_DE_REVOGACAO, ...Object.values(MODELO_DE_REVOGACAO)]) {
+      const { settings } = ler(caminho);
+      assert.equal(settings['saveDataSuccessExecution'], 'none', caminho);
+      assert.equal(settings['saveDataErrorExecution'], 'none', caminho);
+      assert.equal(settings['saveManualExecutions'], false, caminho);
+      assert.equal(settings['errorWorkflow'], undefined, caminho);
+    }
+  });
+
+  it('o job diário do YouTube chama a rota de manutenção com o token do worker', () => {
+    const job = ler(WORKFLOW_DE_CONFORMIDADE_DO_YOUTUBE);
+    const chamada = job.nodes.find((no) => no.type === 'n8n-nodes-base.httpRequest')!;
+    assert.equal(chamada.parameters?.['url'], '=http://app:3000/api/v0/manutencao/youtube');
+    assert.equal(chamada.credentials?.['httpHeaderAuth']?.name, 'ORLA · worker token');
+  });
+});
+
+describe('criar workflow da plataforma que ainda não foi implantado', () => {
+  const implantados: Workflow[] = [
+    { name: 'A', connections: {}, settings: {}, nodes: [{ name: 'x', type: 't', credentials: { httpHeaderAuth: { id: 'cred-worker', name: 'ORLA · worker token' } } }] },
+    { name: 'B', connections: {}, settings: {}, nodes: [{ name: 'y', type: 't', credentials: { httpHeaderAuth: { id: 'cred-zapi', name: 'ORLA · Z-API' } } }] },
+    { name: 'C', connections: {}, settings: {}, nodes: [{ name: 'z', type: 't', credentials: { httpHeaderAuth: { id: 'cred-z2', name: 'ORLA · Z-API' } } }] },
+  ];
+
+  it('liga a credencial pelo tipo e nome, e não liga nome ambíguo', () => {
+    const conhecidas = credenciaisPorNome(implantados);
+    assert.equal(conhecidas.get('httpHeaderAuth|ORLA · worker token')?.id, 'cred-worker');
+    assert.equal(conhecidas.has('httpHeaderAuth|ORLA · Z-API'), false);
+
+    const modelo: Workflow = {
+      name: 'novo',
+      connections: {},
+      settings: {},
+      nodes: [
+        { name: 'g', type: 't', credentials: { httpHeaderAuth: { id: 'a-definir-pelo-provisioner', name: 'ORLA · worker token' } } },
+        { name: 'h', type: 't', credentials: { httpHeaderAuth: { id: 'a-definir-pelo-provisioner', name: 'ORLA · Z-API' } } },
+      ],
+    };
+    const ligado = modeloComCredenciaisPorNome(modelo, conhecidas);
+    assert.equal(ligado.nodes[0]!.credentials!['httpHeaderAuth']!.id, 'cred-worker');
+    assert.equal(ligado.nodes[1]!.credentials!['httpHeaderAuth']!.id, 'a-definir-pelo-provisioner');
+    assert.deepEqual(mesclar(ligado, null, 'novo', 'arq.json').pendencias, ['h: credencial httpHeaderAuth sem vínculo']);
   });
 });
