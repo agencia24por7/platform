@@ -88,3 +88,17 @@ npm run n8n:sincronizar -- --conexoes conexoes.json --aplicar  # grava
   quebra o vínculo. O nome serve só para **adotar** um workflow que ainda não tem nota; dois candidatos com o
   mesmo arquivo ou o mesmo nome param a sincronização em vez de escolher um.
 - Tags são só identificação visual: nenhum código seleciona ou filtra workflows por tag.
+
+## Adendo (ADR 0032, 2026-11-20): só workflows da plataforma, sem cópia por conexão
+
+- Não existe mais cópia por conexão: `--conexoes` foi removido (o script recusa a opção e aponta para a ADR 0032).
+  Os coletores (`n8n/workflows/coletores/`) e executores (`n8n/workflows/executores/`) viraram workflows da
+  plataforma, genéricos por plataforma (`ORLA · {Plataforma} · coletor|executor`), sincronizados como os demais.
+- Ordem de implantação: alertas da plataforma, genéricos, `coleta · backfill · janela`, demais. Quem chama um
+  genérico (orquestrador, janela do backfill, tarefas de conta) declara o alvo como `origem:<arquivo>` dentro da
+  expressão do `workflowId`; `resolverSubWorkflows` troca pelo id implantado com aquela nota de origem, no mesmo
+  molde de `resolverFluxoDeErro`. Genérico ainda não implantado bloqueia quem o chama (rode de novo com `--criar`).
+- Workflows por conexão do modelo antigo (`Coletor · ORLA · coletor · …`, `Executor · ORLA · tarefas · …`) são
+  ignorados pela sincronização e removidos por `scripts/n8n-limpar-legado.mjs`.
+- O item "Coletores e executores por conexão: pelo ID do workflow gravado na conexão" do adendo anterior não vale
+  mais: `coletor_ref`/`executor_ref` foram removidos (migração 0122).

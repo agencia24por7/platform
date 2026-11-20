@@ -13,8 +13,8 @@ type QueueRow = {
   account_name: string;
   currency: string;
   timezone: string;
-  credential_ref: string;
   connection_id: string;
+  tem_token: boolean;
   window_start: Date;
   window_end: Date;
   last_sync_at: Date | null;
@@ -93,8 +93,8 @@ export function createSyncRunRepository(): SyncRunRepository {
         accountName: row.account_name,
         currency: row.currency,
         timezone: row.timezone,
-        credentialRef: row.credential_ref,
         connectionId: row.connection_id,
+        temToken: row.tem_token,
         window: { start: isoDate(row.window_start), end: isoDate(row.window_end) },
         lastSyncAt: row.last_sync_at,
       }));

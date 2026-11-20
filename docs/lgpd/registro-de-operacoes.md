@@ -14,7 +14,7 @@ que altere o que é tratado, por quê, com quem ou por quanto tempo exige atuali
 | Login com Google | Equipe da agência e pessoas indicadas pelos clientes | nome, e-mail, foto, ID Google, último acesso | `core.users` | identificar e autorizar | execução de contrato (art. 7º, V) | controladora |
 | Equipe e convites | Equipe e convidados | e-mail do convidado, papel, recorte por cliente | `core.members`, `core.invitations`, `core.member_clients` | controle de acesso | execução de contrato | controladora |
 | Trilha de auditoria | Quem age na plataforma | ID do autor, IP, e-mail no metadata de eventos de equipe | `audit.audit_log` | segurança e prestação de contas | legítimo interesse e obrigação legal (art. 7º, II e IX) | controladora |
-| Conexões com plataformas | Quem autoriza a conexão | e-mail da conta que autorizou, token (cifrado no n8n) | `integrations.connections.account_email`, cofre do n8n | coletar métricas e executar tarefas pedidas; ao remover, revogar o acesso no Google ou na Meta (ADR 0029) | execução de contrato | operadora |
+| Conexões com plataformas | Quem autoriza a conexão | e-mail da conta que autorizou, token de longa duração (refresh token do Google, token de 60 dias da Meta ou chave de API), cifrado | `integrations.connections.account_email`; `integrations.connection_tokens` (ciphertext por envelope AES-256-GCM, chave de dados embrulhada no Cloud KMS, AAD por conexão; ADR 0032) | coletar métricas e executar tarefas pedidas; renovar o token antes do fim; ao remover, revogar o acesso no Google ou na Meta e apagar o ciphertext (ADR 0029, ADR 0032) | execução de contrato | operadora; o n8n recebe só access token de curta duração em memória, sem salvar execução |
 | Dados da API do YouTube | Em regra nenhum (canal da marca) | métricas do canal, títulos e detalhes de vídeos e playlists, nome do canal | BigQuery `tria_dw.fato_youtube_*`, `dim_youtube_*`, `dim_fonte_scd2`; `integrations.connection_accounts` | relatórios do canal | execução de contrato | operadora; títulos renovados ou apagados a cada 30 dias e tudo apagado em até 7 dias da remoção da conexão (ADR 0029) |
 | Pedidos de exclusão da Meta | Quem remove o app da conta do Facebook | pseudônimo do usuário (HMAC, sem o id da Meta), código de confirmação, situação, conexões afetadas, evidência do atendimento | `privacidade.pedidos_de_exclusao`, `privacidade.pedidos_de_exclusao_conexoes` | atender o pedido e provar o atendimento | obrigação legal e exercício de direitos (art. 7º, II e VI; art. 18, VI) | controladora |
 | Métricas de marketing | Em regra nenhum (dados agregados de campanha) | métricas e nomes de campanhas, locais, canais | `metrics.*`, BigQuery `tria_dw` | relatórios | execução de contrato | operadora |
@@ -30,7 +30,7 @@ que altere o que é tratado, por quê, com quem ou por quanto tempo exige atuali
 
 | Fornecedor | O que recebe | País |
 |---|---|---|
-| Google Cloud | hospedagem, banco, BigQuery, backups, segredos | EUA |
+| Google Cloud | hospedagem, banco, BigQuery, backups, segredos; Cloud KMS como suboperador técnico de chave (só embrulha chaves de dados; não recebe dado pessoal nem token em claro) | EUA |
 | Google (APIs) e Meta (APIs) | chamadas autorizadas | EUA |
 | RD Station | leads, quando o cliente contrata a automação | Brasil/EUA |
 | Z-API, Apify | chamadas com a chave do cliente | Brasil/EUA |

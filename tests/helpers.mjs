@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from 'node:crypto';
+import { createCipheriv, createHash, createHmac, hkdfSync, randomBytes, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
@@ -192,3 +192,60 @@ export const post = (path, body) =>
 export const get = (path) => fetch(`${BASE}${path}`, { headers: workerHeaders() });
 
 export const browse = (path) => fetch(`${BASE}${path}`, { headers: authHeaders(), redirect: 'manual' });
+
+function selar(chave, texto, aad) {
+  const iv = randomBytes(12);
+  const cifra = createCipheriv('aes-256-gcm', chave, iv);
+  cifra.setAAD(aad);
+  const corpo = Buffer.concat([cifra.update(texto), cifra.final()]);
+  return Buffer.concat([iv, cifra.getAuthTag(), corpo]);
+}
+
+export function envelopeLocal(texto, connectionId, platform, finalidade = 'segredo') {
+  const chaveMestra = Buffer.from(hkdfSync('sha256', env().TRIA_SESSION_SECRET, 'orla.tokens.local', 'chave-mestra-local:v1', 32));
+  const aad = Buffer.from(`orla.tokens.v1|${connectionId}|${platform}|${finalidade}`);
+  const chaveDeDados = randomBytes(32);
+  const selado = selar(chaveDeDados, Buffer.from(texto), aad);
+  const embrulhada = selar(chaveMestra, chaveDeDados, aad);
+  const tamanho = Buffer.alloc(2);
+  tamanho.writeUInt16BE(embrulhada.length);
+  return Buffer.concat([Buffer.from([1]), tamanho, embrulhada, selado]).toString('hex');
+}
+
+export const acessoDeTeste = (segredo) => `teste-acesso-${createHash('sha256').update(segredo).digest('hex').slice(0, 24)}`;
+
+const TIPO_DO_SEGREDO = (platform, grantType) => {
+  if (grantType === 'api_key') return 'api_key';
+  return ['meta', 'pixel', 'leadads', 'whatsapp'].includes(platform) ? 'oauth_long_lived' : 'oauth_refresh';
+};
+
+const literal = (valor) => (valor === null || valor === undefined ? 'NULL' : `'${String(valor).replaceAll("'", "''")}'`);
+
+export function sqlDeConexao({
+  id = randomUUID(),
+  organizationId,
+  platform,
+  grantType = 'oauth_user',
+  label,
+  externalId,
+  scopes = [],
+  accountEmail = null,
+  status = 'active',
+  comToken = status !== 'revoked' && status !== 'reauth_pending',
+  segredo = `orla-teste:${randomUUID()}`,
+}) {
+  const escopos = `array[${scopes.map(literal).join(', ')}]::text[]`;
+  const conexao = `INSERT INTO integrations.connections
+      (id, organization_id, platform, grant_type, label, external_id, scopes, account_email, status)
+    VALUES ('${id}', '${organizationId}', '${platform}', '${grantType}', ${literal(label)}, ${literal(externalId)},
+            ${escopos}, ${literal(accountEmail)}, '${status}')`;
+  if (!comToken) return { id, segredo: null, sql: `${conexao} RETURNING id` };
+
+  const tipo = TIPO_DO_SEGREDO(platform, grantType);
+  const expira = tipo === 'oauth_long_lived' ? "now() + interval '50 days'" : 'NULL';
+  const sql = `WITH c AS (${conexao} RETURNING id, organization_id)
+    INSERT INTO integrations.connection_tokens (connection_id, organization_id, tipo, ciphertext, kms_key_version, algoritmo, segredo_expira_em)
+    SELECT id, organization_id, '${tipo}', decode('${envelopeLocal(segredo, id, platform)}', 'hex'), 'local:v1', 'aes-256-gcm+local', ${expira}
+    FROM c RETURNING connection_id`;
+  return { id, segredo, sql };
+}

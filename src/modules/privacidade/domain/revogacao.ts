@@ -20,7 +20,28 @@ export type ResultadoDaRevogacao = {
   readonly motivo: MotivoDaRevogacao;
 };
 
-export type ConexaoARevogar = Pick<Connection, 'id' | 'organizationId' | 'platform' | 'grantType' | 'credentialRef'>;
+export type ConexaoARevogar = Pick<Connection, 'id' | 'organizationId' | 'platform' | 'grantType'>;
+
+export type DecisaoDeRevogacao =
+  | { readonly tentar: true }
+  | { readonly tentar: false; readonly resultado: ResultadoDaRevogacao };
+
+export type DesfechoNoCofre = 'revogado' | 'sem_suporte' | 'falhou' | 'sem_token' | 'nao_tentada';
+
+export function resultadoDaRevogacaoNoCofre(desfecho: DesfechoNoCofre): ResultadoDaRevogacao {
+  switch (desfecho) {
+    case 'revogado':
+      return { revogadoNoProvedor: true, motivo: 'revogado' };
+    case 'sem_suporte':
+      return { revogadoNoProvedor: 'nao_suportado', motivo: 'plataforma_sem_revogacao' };
+    case 'sem_token':
+      return { revogadoNoProvedor: false, motivo: 'sem_credencial_no_cofre' };
+    case 'nao_tentada':
+      return { revogadoNoProvedor: false, motivo: 'revogador_indisponivel' };
+    default:
+      return { revogadoNoProvedor: false, motivo: 'falhou' };
+  }
+}
 
 export function provedorDaPlataforma(platform: Platform): ProvedorRevogavel | null {
   if ((FAMILIA_GOOGLE as readonly string[]).includes(platform)) return 'google';
@@ -37,8 +58,8 @@ const NOME_DO_PROVEDOR: Readonly<Record<ProvedorRevogavel, string>> = { google: 
 
 const POR_QUE_NAO_REVOGOU: Partial<Readonly<Record<MotivoDaRevogacao, string>>> = {
   acesso_compartilhado: 'a mesma conta autoriza outra conexão ativa da orla, que pararia junto',
-  sem_credencial_no_cofre: 'a credencial não estava no cofre',
-  revogador_indisponivel: 'o n8n não estava disponível',
+  sem_credencial_no_cofre: 'não havia token guardado no cofre para esta conexão',
+  revogador_indisponivel: 'o cofre de tokens não estava disponível',
   recusado_pelo_provedor: 'o provedor recusou o pedido',
   falhou: 'o pedido ao provedor falhou',
 };
@@ -58,7 +79,7 @@ export type ResumoDaRemocao = {
 };
 
 export function mensagemDaRemocao(resumo: ResumoDaRemocao): string {
-  const partes = ['Conexão removida. A credencial foi apagada do cofre e a coleta dessa conta parou.'];
+  const partes = ['Conexão removida. O token foi apagado do cofre e a coleta dessa conta parou.'];
   if (resumo.revogadoNoProvedor === true) partes.push('O acesso também foi revogado no provedor.');
   if (resumo.avisoDeRevogacao) partes.push(resumo.avisoDeRevogacao);
   if (resumo.expurgo.enfileirados > resumo.expurgo.concluidos) {

@@ -57,14 +57,17 @@ export type RegistroDeToken = {
   readonly versao: number;
 };
 
+export type Reivindicacao = {
+  readonly registro: RegistroDeToken | null;
+  readonly dono: boolean;
+};
+
 export type MudancaDeToken = {
   readonly acesso?: { readonly cifrado: Cifrado; readonly expiraEm: Date } | null;
   readonly segredo?: { readonly cifrado: Cifrado; readonly expiraEm: Date | null };
   readonly falha?: string | null;
   readonly renovadoEm?: Date;
 };
-
-export type Gravar = (mudanca: MudancaDeToken) => Promise<boolean>;
 
 export type NovoSegredo = {
   readonly tipo: TipoDeSegredo;
@@ -76,7 +79,9 @@ export type RepositorioDeTokens = {
   plataformaDa(alvo: Alvo): Promise<Platform | null>;
   carregar(alvo: Alvo): Promise<RegistroDeToken | null>;
   guardar(alvo: Alvo, novo: NovoSegredo): Promise<void>;
-  comTrava<T>(alvo: Alvo, trabalho: (registro: RegistroDeToken | null, gravar: Gravar) => Promise<T>): Promise<T>;
+  reivindicarRenovacao(alvo: Alvo, prazoMs: number): Promise<Reivindicacao>;
+  concluirRenovacao(alvo: Alvo, versaoLida: number, mudanca: MudancaDeToken): Promise<boolean>;
+  liberarRenovacao(alvo: Alvo, falha?: string | null): Promise<void>;
   apagar(alvo: Alvo): Promise<boolean>;
   aRenovar(antes: Date, limite: number): Promise<readonly Alvo[]>;
 };
@@ -92,3 +97,5 @@ export type Registro = {
 };
 
 export type Relogio = () => Date;
+
+export type Espera = (ms: number) => Promise<void>;

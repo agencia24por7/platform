@@ -6,13 +6,8 @@ import { err, ok, type Result } from '@/shared/result/result';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import type { AdAccount, NewAdAccount } from '@/modules/connections/domain/adAccount';
 import { isValidExternalId, normalizeExternalId, recusaParaDesvincularConta } from '@/modules/connections/domain/adAccount';
-import type { Connection, NewConnection, Platform } from '@/modules/connections/domain/connection';
-import {
-  MENSAGEM_DE_CONEXAO_ALTERADA,
-  ROTULO_DA_PLATAFORMA,
-  grantTypesFor,
-  missingScopes,
-} from '@/modules/connections/domain/connection';
+import type { Connection, Platform } from '@/modules/connections/domain/connection';
+import { MENSAGEM_DE_CONEXAO_ALTERADA, ROTULO_DA_PLATAFORMA } from '@/modules/connections/domain/connection';
 import {
   MOTIVO_DA_CHAVE,
   contaDaChave,
@@ -21,7 +16,6 @@ import {
   usaChaveDeApi,
   validarChave,
 } from '@/modules/connections/domain/chaveDeApi';
-import { descartarCredencial, type CredentialVault } from '@/modules/connections/application/credentialVault';
 import type { CredentialTester } from '@/modules/connections/application/credentialTester';
 import type { AdAccountRepository } from '@/modules/connections/infrastructure/adAccountRepository';
 import type { ConnectionRepository } from '@/modules/connections/infrastructure/connectionRepository';
@@ -29,10 +23,16 @@ import type { DiscoveredAccountRepository } from '@/modules/connections/infrastr
 import { logger } from '@/shared/logging/logger';
 import { avisarMudancaDePosse, semAvisoDePosse, type AvisoDePosse } from '@/modules/connections/application/avisoDePosse';
 import { liberarContasDaConexao } from '@/modules/connections/application/liberacaoDeContas';
-import { executarComCompensacao } from '@/shared/result/compensacao';
-import { avisoDaRevogacao, type ConexaoARevogar, type ResultadoDaRevogacao, type RevogadoNoProvedor } from '@/modules/privacidade/domain/revogacao';
+import {
+  avisoDaRevogacao,
+  resultadoDaRevogacaoNoCofre,
+  type ConexaoARevogar,
+  type DecisaoDeRevogacao,
+  type RevogadoNoProvedor,
+} from '@/modules/privacidade/domain/revogacao';
 import type { ResultadoDoExpurgoDaConexao } from '@/modules/privacidade/application/expurgoDeFontes';
-import { randomBytes } from 'node:crypto';
+import type { CofreDeTokens } from '@/modules/tokens/application/cofreDeTokens';
+import { randomBytes, randomUUID } from 'node:crypto';
 
 function violouUnicidade(erro: unknown): boolean {
   return typeof erro === 'object' && erro !== null && (erro as { code?: unknown }).code === '23505';
@@ -44,7 +44,6 @@ export type LinkAccountInput = Omit<NewAdAccount, 'organizationId'> & {
 };
 
 export type ConnectionService = {
-  createConnection(input: NewConnection, ator: Ator): Promise<Result<Connection, Failure>>;
   linkAccount(input: LinkAccountInput, ator: Ator): Promise<Result<AdAccount, Failure>>;
   listConnections(organizationId: string): Promise<readonly Connection[]>;
   listAccountsByClient(organizationId: string, clientId: string): Promise<readonly AdAccount[]>;
@@ -85,7 +84,7 @@ export type ClientOwnership = {
 };
 
 export type PrivacidadeDaRemocao = {
-  revogarNoProvedor(conexao: ConexaoARevogar): Promise<ResultadoDaRevogacao>;
+  decidirRevogacao(conexao: ConexaoARevogar): Promise<DecisaoDeRevogacao>;
   expurgarDadosDaConexao(input: {
     readonly organizationId: string;
     readonly connectionId: string;
@@ -94,7 +93,7 @@ export type PrivacidadeDaRemocao = {
 };
 
 export const semPrivacidadeNaRemocao: PrivacidadeDaRemocao = {
-  revogarNoProvedor: async () => ({ revogadoNoProvedor: 'nao_suportado', motivo: 'plataforma_sem_revogacao' }),
+  decidirRevogacao: async () => ({ tentar: false, resultado: { revogadoNoProvedor: 'nao_suportado', motivo: 'plataforma_sem_revogacao' } }),
   expurgarDadosDaConexao: async () => ({ enfileirados: 0, concluidos: 0 }),
 };
 
@@ -104,48 +103,22 @@ export type ResultadoDaRemocao = {
   readonly expurgo: ResultadoDoExpurgoDaConexao;
 };
 
-const MENSAGEM_DE_COFRE_QUE_FALHOU = 'Não deu para apagar a credencial no cofre. Nada foi alterado; tente de novo.';
-const MENSAGEM_DE_COFRE_QUE_FALHOU_DEPOIS_DE_REVOGAR =
-  'O acesso já foi revogado no provedor, mas não deu para apagar a credencial no cofre. A conexão continua na lista; tente remover de novo.';
+const MENSAGEM_DE_REMOCAO_QUE_FALHOU_DEPOIS_DE_REVOGAR =
+  'O acesso já foi revogado no provedor, mas a conexão mudou enquanto era removida. Ela continua na lista; recarregue e remova de novo.';
 
-export type ProvisionadorDeColetor = {
-  provisionar(input: { readonly platform: Platform; readonly credentialRef: string; readonly label: string }): Promise<string | null>;
-  remover(workflowId: string): Promise<boolean>;
-};
+export type CofreDaConexao = Pick<CofreDeTokens, 'selar' | 'revogarEApagar' | 'esquecer'>;
 
 export function createConnectionService(
   connections: ConnectionRepository,
   accounts: AdAccountRepository,
   audit: AuditRecorder,
   clients: ClientOwnership,
-  vault: CredentialVault,
+  cofre: CofreDaConexao,
   tester: CredentialTester,
-  workflows: ProvisionadorDeColetor,
   contasDescobertas: Pick<DiscoveredAccountRepository, 'replace' | 'liberarDaConexao'>,
   aviso: AvisoDePosse = semAvisoDePosse,
   privacidade: PrivacidadeDaRemocao = semPrivacidadeNaRemocao,
 ): ConnectionService {
-  async function provisionarColetor(organizationId: string, connection: Connection): Promise<string | null> {
-    try {
-      const coletorRef = await workflows.provisionar({
-        platform: connection.platform,
-        credentialRef: connection.credentialRef,
-        label: connection.label,
-      });
-      if (!coletorRef) return null;
-      const anterior = await connections.trocarColetorRef(organizationId, connection.id, coletorRef);
-      if (anterior && anterior !== coletorRef) await workflows.remover(anterior);
-      return coletorRef;
-    } catch (error) {
-      logger.warn('coletor.provisionar.ignorado', {
-        platform: connection.platform,
-        connectionId: connection.id,
-        error: error instanceof Error ? error.message : 'desconhecido',
-      });
-      return null;
-    }
-  }
-
   return {
     async guardarChave(input, ator) {
       if (!usaChaveDeApi(input.platform)) {
@@ -157,8 +130,6 @@ export function createConnectionService(
 
       const motivo = validarChave(input.chave);
       if (motivo) return err(failure('validation', MOTIVO_DA_CHAVE[motivo]));
-      if (!vault.available) return err(failure('unavailable', MOTIVO_DA_CHAVE.cofre_indisponivel));
-
       const chave = input.chave.trim();
 
       const teste = await tester.testar(input.platform, chave);
@@ -168,32 +139,16 @@ export function createConnectionService(
       const identidade = identidadeDaConexao();
       const label = ROTULO_DA_PLATAFORMA[input.platform];
 
-      const credentialRef = await vault.store({
-        label: `ORLA · ${label} · ${input.organizationSlug}`,
-        platform: input.platform,
-        accessToken: chave,
-        refreshToken: null,
-        clientId: '',
-        clientSecret: '',
-      });
-
-      const descartarChaveNova = async (): Promise<void> => {
-        try {
-          await vault.discard(credentialRef);
-        } catch (erro) {
-          logger.error('chave.credencial_orfa', { platform: input.platform, error: erro instanceof Error ? erro.message : 'desconhecido' });
-        }
-      };
-
-      const existente = await executarComCompensacao(
-        () => connections.findByExternalId(input.organizationId, input.platform, identidade),
-        descartarChaveNova,
-      );
+      const existente = await connections.findByExternalId(input.organizationId, input.platform, identidade);
+      const connectionId = existente?.id ?? randomUUID();
+      const selado = await cofre.selar({ connectionId, platform: input.platform }, { tipo: 'api_key', segredo: chave });
+      if (!selado.ok) return err(failure('unavailable', MOTIVO_DA_CHAVE.cofre_indisponivel));
 
       const webhookToken =
         existente?.webhookToken ?? (input.platform === 'zapi' ? randomBytes(24).toString('base64url') : null);
 
       const proposta = {
+        id: connectionId,
         organizationId: input.organizationId,
         platform: input.platform,
         grantType: 'api_key' as const,
@@ -201,7 +156,6 @@ export function createConnectionService(
         externalId: identidade,
         accountEmail: null,
         scopes: [],
-        credentialRef,
         status: 'active' as const,
         expiresAt: null,
         webhookToken,
@@ -210,32 +164,20 @@ export function createConnectionService(
 
       let connection: Connection | null;
       try {
-        connection = await executarComCompensacao(
-          () =>
-            existente
-              ? connections.renew({ ...proposta, id: existente.id }, existente.credentialRef)
-              : connections.insert(proposta),
-          descartarChaveNova,
-        );
+        connection = existente
+          ? await connections.renew(proposta, selado.value, existente.versaoDoToken)
+          : await connections.insert(proposta, selado.value);
       } catch (erro) {
         if (!violouUnicidade(erro)) throw erro;
         return err(failure('conflict', MENSAGEM_DE_CONEXAO_ALTERADA));
       }
+      cofre.esquecer(connectionId);
 
-      if (!connection) {
-        await descartarChaveNova();
-        return err(failure('conflict', MENSAGEM_DE_CONEXAO_ALTERADA));
-      }
-
-      if (existente && existente.credentialRef !== credentialRef) {
-        await descartarCredencial(vault, existente.credentialRef);
-      }
+      if (!connection) return err(failure('conflict', MENSAGEM_DE_CONEXAO_ALTERADA));
 
       await contasDescobertas.replace(input.organizationId, connection.id, [
         contaDaChave({ platform: input.platform, externalId: connection.externalId, label: connection.label }),
       ]);
-
-      const coletorRef = await provisionarColetor(input.organizationId, connection);
 
       await audit.record({
         organizationId: input.organizationId,
@@ -246,7 +188,7 @@ export function createConnectionService(
         targetId: connection.id,
         requestId: ator.requestId,
         sourceIp: ator.sourceIp,
-        metadata: { platform: input.platform, apelido, rotacionou: Boolean(existente), coletorProvisionado: Boolean(coletorRef) },
+        metadata: { platform: input.platform, apelido, rotacionou: Boolean(existente), segredoNoCofre: 'api_key' },
       });
 
       return ok(connection);
@@ -262,12 +204,20 @@ export function createConnectionService(
         return err(failure('not_found', 'Conexão não encontrada.'));
       }
 
-      const revogacao = await privacidade.revogarNoProvedor(conexao).catch(
-        (): ResultadoDaRevogacao => ({ revogadoNoProvedor: false, motivo: 'falhou' }),
+      const decisao = await privacidade.decidirRevogacao(conexao).catch(
+        (): DecisaoDeRevogacao => ({ tentar: false, resultado: { revogadoNoProvedor: false, motivo: 'falhou' } }),
       );
 
-      const descarte = await descartarCredencial(vault, conexao.credentialRef);
-      if (descarte === 'falhou' || descarte === 'sem_permissao') {
+      const remocao = await cofre.revogarEApagar(
+        { organizationId: input.organizationId, connectionId: conexao.id },
+        {
+          revogarNoProvedor: decisao.tentar,
+          apagar: (versaoLida) => connections.revogar(input.organizationId, conexao.id, versaoLida),
+        },
+      );
+      const revogacao = decisao.tentar ? resultadoDaRevogacaoNoCofre(remocao.revogacao) : decisao.resultado;
+
+      if (!remocao.apagado) {
         if (revogacao.revogadoNoProvedor === true) {
           await audit.record({
             organizationId: input.organizationId,
@@ -278,19 +228,12 @@ export function createConnectionService(
             targetId: conexao.id,
             requestId: ator.requestId,
             sourceIp: ator.sourceIp,
-            metadata: { platform: conexao.platform, revogadoNoProvedor: true, credencialNoCofre: true },
+            metadata: { platform: conexao.platform, revogadoNoProvedor: true, tokenNoCofre: true },
           });
         }
-        return err(
-          failure('conflict', revogacao.revogadoNoProvedor === true ? MENSAGEM_DE_COFRE_QUE_FALHOU_DEPOIS_DE_REVOGAR : MENSAGEM_DE_COFRE_QUE_FALHOU),
-        );
-      }
-
-      const revogada = await connections.revogar(input.organizationId, conexao.id, conexao.credentialRef);
-      if (!revogada) {
         const atual = await connections.findById(input.organizationId, conexao.id);
         if (!atual || atual.status === 'revoked') return err(failure('not_found', 'Conexão não encontrada.'));
-        return err(failure('conflict', MENSAGEM_DE_CONEXAO_ALTERADA));
+        return err(failure('conflict', revogacao.revogadoNoProvedor === true ? MENSAGEM_DE_REMOCAO_QUE_FALHOU_DEPOIS_DE_REVOGAR : MENSAGEM_DE_CONEXAO_ALTERADA));
       }
 
       const liberadas = await liberarContasDaConexao(
@@ -300,20 +243,6 @@ export function createConnectionService(
         { organizationId: input.organizationId, connectionId: conexao.id },
         ator,
       );
-
-      const workflowsNaoRemovidos: string[] = [];
-      for (const workflowId of [revogada.coletorRef, revogada.executorRef]) {
-        if (!workflowId) continue;
-        const removido = await workflows.remover(workflowId).catch(() => false);
-        if (!removido) {
-          workflowsNaoRemovidos.push(workflowId);
-          logger.warn('conexao.remover.workflow_orfao', {
-            connectionId: conexao.id,
-            platform: conexao.platform,
-            workflowId,
-          });
-        }
-      }
 
       const expurgo = await privacidade
         .expurgarDadosDaConexao({ organizationId: input.organizationId, connectionId: conexao.id, platform: conexao.platform })
@@ -331,8 +260,7 @@ export function createConnectionService(
         metadata: {
           platform: conexao.platform,
           contasLiberadas: liberadas.length,
-          coletorRemovido: workflowsNaoRemovidos.length === 0,
-          ...(workflowsNaoRemovidos.length > 0 ? { workflowsOrfaos: workflowsNaoRemovidos } : {}),
+          tokenApagado: true,
           revogadoNoProvedor: revogacao.revogadoNoProvedor,
           motivoDaRevogacao: revogacao.motivo,
           ...(expurgo.enfileirados > 0 ? { expurgoDeFontes: expurgo } : {}),
@@ -345,46 +273,6 @@ export function createConnectionService(
         avisoDeRevogacao: avisoDaRevogacao(conexao.platform, revogacao),
         expurgo,
       });
-    },
-
-    async createConnection(input, ator) {
-      if (!grantTypesFor(input.platform).includes(input.grantType)) {
-        return err(failure('validation', 'Caminho de autorização incompatível com a plataforma.'));
-      }
-
-      const absent = missingScopes(input.platform, input.scopes);
-      if (absent.length > 0) {
-        return err(failure('validation', `Escopo obrigatório ausente: ${absent.join(', ')}.`));
-      }
-
-      const existente = await connections.findByExternalId(input.organizationId, input.platform, input.externalId);
-      if (existente && existente.status !== 'revoked') {
-        return err(failure('conflict', 'Esta autorização já existe nesta organização.'));
-      }
-
-      const connection = existente
-        ? await connections.renew({ ...input, id: existente.id }, existente.credentialRef)
-        : await connections.insert(input);
-      if (!connection) return err(failure('conflict', MENSAGEM_DE_CONEXAO_ALTERADA));
-
-      await audit.record({
-        organizationId: connection.organizationId,
-        actorType: 'user',
-        actorId: ator.userId,
-        action: 'connection.create',
-        targetType: 'connection',
-        targetId: connection.id,
-        requestId: ator.requestId,
-        sourceIp: ator.sourceIp,
-        metadata: {
-          platform: connection.platform,
-          grantType: connection.grantType,
-          scopes: connection.scopes,
-          credentialRefPresent: connection.credentialRef.length > 0,
-        },
-      });
-
-      return ok(connection);
     },
 
     async linkAccount(input, ator) {

@@ -81,11 +81,12 @@ function rodarNormalizar(
 const comToken = resposta({ access_token: TOKEN_DA_PAGINA, id: '999888777' });
 
 describe('coletor de formulários da Meta (modelo do n8n)', () => {
-  it('pede o token da Página com a credencial do usuário e lista os formulários com ele, sem credencial no nó', () => {
+  it('pede o token da Página com o token do usuário vindo do cofre e lista os formulários com ele, sem credencial no nó', () => {
     const token = no('Token da Página');
-    assert.equal(token.parameters.authentication, 'predefinedCredentialType');
-    assert.equal(token.parameters.nodeCredentialType, 'facebookGraphApi');
-    assert.ok(token.credentials && 'facebookGraphApi' in token.credentials);
+    assert.equal(token.parameters.authentication, 'none');
+    assert.equal(token.credentials, undefined);
+    const cabecalhos = (token.parameters.headerParameters as { parameters: { name: string; value: string }[] }).parameters;
+    assert.ok(cabecalhos.find((cabecalho) => cabecalho.name === 'Authorization')!.value.includes("$('Obter token')"));
 
     const listar = no('Listar formulários');
     assert.equal(listar.parameters.authentication, 'none');

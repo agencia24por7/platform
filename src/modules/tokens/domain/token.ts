@@ -26,6 +26,8 @@ export type Alvo = {
 };
 
 export const MARGEM_DE_EXPIRACAO_MS = 5 * 60_000;
+export const MARGEM_DO_ACESSO_EMITIDO_MS = 30 * 60_000;
+export const PRAZO_DA_RENOVACAO_MS = 15_000;
 export const TETO_DO_CACHE_SEM_VALIDADE_MS = 15 * 60_000;
 export const ANTECEDENCIA_DA_RENOVACAO_META_MS = 15 * 86_400_000;
 
@@ -37,10 +39,14 @@ export function aindaValido(expiraEm: Date | null, agora: Date, margemMs = MARGE
   return expiraEm === null || expiraEm.getTime() - margemMs > agora.getTime();
 }
 
-export function validadeDoCache(expiraEm: Date | null, agora: Date): number {
+export function validadeDoCache(expiraEm: Date | null, agora: Date, margemMs = MARGEM_DE_EXPIRACAO_MS): number {
   const teto = agora.getTime() + TETO_DO_CACHE_SEM_VALIDADE_MS;
   if (expiraEm === null) return teto;
-  return Math.min(teto, expiraEm.getTime() - MARGEM_DE_EXPIRACAO_MS);
+  return Math.min(teto, expiraEm.getTime() - margemMs);
+}
+
+export function margemDoAcesso(tipo: TipoDeSegredo): number {
+  return tipo === 'oauth_refresh' ? MARGEM_DO_ACESSO_EMITIDO_MS : MARGEM_DE_EXPIRACAO_MS;
 }
 
 export function precisaRenovarProativamente(segredoExpiraEm: Date | null, agora: Date): boolean {

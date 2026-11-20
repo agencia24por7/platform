@@ -24,6 +24,7 @@ function montar(contexto: ContextoDaOrigem | null, opcoes: { permitir?: boolean;
   const eventos: AuditEvent[] = [];
   let pedidosAoCofre = 0;
   const cofre: CofreDeTokens = {
+    selar: async () => ({ ok: false, error: 'indisponivel' }),
     guardar: async () => ({ ok: true, value: undefined }),
     obterAcesso: async () => {
       pedidosAoCofre += 1;

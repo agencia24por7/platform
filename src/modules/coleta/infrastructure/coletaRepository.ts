@@ -17,9 +17,8 @@ type FonteRow = {
   nome: string;
   currency: string;
   timezone: string;
-  credential_ref: string;
-  coletor_ref: string | null;
   connection_id: string;
+  tem_token: boolean;
 };
 
 type HistoricoRow = {
@@ -85,9 +84,8 @@ const toFonte = (row: FonteRow): FonteBruta => ({
   nome: row.nome,
   currency: row.currency,
   timezone: row.timezone,
-  credentialRef: row.credential_ref,
-  coletorRef: row.coletor_ref,
   connectionId: row.connection_id,
+  temToken: row.tem_token,
 });
 
 const toColeta = (row: ColetaRow): Coleta => ({

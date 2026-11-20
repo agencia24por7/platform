@@ -1,8 +1,6 @@
 import { createAuditRepository } from '@/modules/audit/infrastructure/auditRepository';
 import { createColetaService } from '@/modules/coleta/application/coletaService';
 import { createColetaRepository } from '@/modules/coleta/infrastructure/coletaRepository';
-import { createColetorProvisioner } from '@/modules/coleta/infrastructure/coletorProvisioner';
-import { createExecutorProvisioner } from '@/modules/connections/infrastructure/executorProvisioner';
 import { createBigQueryGravador } from '@/modules/coleta/infrastructure/bigQueryGravador';
 import { createClientService } from '@/modules/clients/application/clientService';
 import { createClientRepository } from '@/modules/clients/infrastructure/clientRepository';
@@ -18,7 +16,6 @@ import { createConnectionRepository } from '@/modules/connections/infrastructure
 import { createConnectionInviteRepository } from '@/modules/connections/infrastructure/connectionInviteRepository';
 import { createDiscoveredAccountRepository } from '@/modules/connections/infrastructure/discoveredAccountRepository';
 import { createTaskRepository } from '@/modules/connections/infrastructure/taskRepository';
-import { createN8nCredentialVault } from '@/modules/connections/infrastructure/n8nCredentialVault';
 import { createCredentialTester } from '@/modules/connections/infrastructure/credentialTester';
 import { createPlatformDiscovery } from '@/modules/connections/infrastructure/platformDiscovery';
 import { createIdentityService } from '@/modules/identity/application/identityService';
@@ -40,7 +37,7 @@ import { createDimensoesService } from '@/modules/coleta/application/dimensoesSe
 import { createDimensoesRepository } from '@/modules/coleta/infrastructure/dimensoesRepository';
 import { createDimensoesBigQuery } from '@/modules/coleta/infrastructure/dimensoesBigQuery';
 import { criarModuloDeTokens } from '@/modules/tokens/infrastructure/criarModuloDeTokens';
-import { createRevogadorNoProvedor } from '@/modules/privacidade/application/revogacaoNoProvedor';
+import { createPoliticaDeRevogacao } from '@/modules/privacidade/application/revogacaoNoProvedor';
 import { createExpurgoDeFontesService } from '@/modules/privacidade/application/expurgoDeFontes';
 import { createPedidosDeExclusaoService } from '@/modules/privacidade/application/pedidosDeExclusao';
 import {
@@ -49,7 +46,6 @@ import {
   createPedidosDeExclusaoRepository,
 } from '@/modules/privacidade/infrastructure/privacidadeRepository';
 import { createExpurgoNoBigQuery } from '@/modules/privacidade/infrastructure/expurgoNoBigQuery';
-import { executorDeRevogacaoDoAmbiente } from '@/modules/privacidade/infrastructure/executorDeRevogacaoDoAmbiente';
 
 function build() {
   const audit = createAuditRepository();
@@ -59,10 +55,10 @@ function build() {
   const organizations = createOrganizationService(createOrganizationRepository(), audit);
 
   const clientRepository = createClientRepository();
-  const vault = createN8nCredentialVault();
+  const tokens = criarModuloDeTokens(audit);
   const credentialTester = createCredentialTester();
   const dimensoes = createDimensoesService(createDimensoesRepository(), createDimensoesBigQuery(), audit);
-  const revogador = createRevogadorNoProvedor(executorDeRevogacaoDoAmbiente(), createAcessosCompartilhados());
+  const politicaDeRevogacao = createPoliticaDeRevogacao(createAcessosCompartilhados());
   const expurgoDeFontes = createExpurgoDeFontesService(createFilaDeExpurgo(), createExpurgoNoBigQuery(), audit);
   const config = env();
 
@@ -86,13 +82,12 @@ function build() {
       adAccounts,
       audit,
       clientRepository,
-      vault,
+      tokens.cofre,
       credentialTester,
-      createColetorProvisioner(),
       discoveredAccounts,
       dimensoes,
       {
-        revogarNoProvedor: (conexao) => revogador.revogar(conexao),
+        decidirRevogacao: (conexao) => politicaDeRevogacao.decidir(conexao),
         expurgarDadosDaConexao: (input) => expurgoDeFontes.expurgarDadosDaConexao(input),
       },
     ),
@@ -101,10 +96,8 @@ function build() {
       connectionRepository,
       discoveredAccounts,
       createPlatformDiscovery(),
-      vault,
+      tokens.cofre,
       audit,
-      createColetorProvisioner(),
-      createExecutorProvisioner(),
     ),
     ingestion: createIngestionService(
       createSyncRunRepository(),
@@ -116,7 +109,7 @@ function build() {
     retencao: createRetencaoService(createRetencaoRepository(), audit),
     alertas: createAlertaService(createAlertaRepository(), audit, createNotificadorPorWebhook(), createLimiteDeAlertasNovos()),
     dimensoes,
-    tokens: criarModuloDeTokens(audit),
+    tokens,
     expurgoDeFontes,
     pedidosDeExclusao: createPedidosDeExclusaoService(createPedidosDeExclusaoRepository(), {
       segredoDoApp: config.META_APP_SECRET,

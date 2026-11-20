@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
-import { appIsUp, browse, ensureUser, get, makeOwner, post, signIn, submitForm } from './helpers.mjs';
+import { appIsUp, browse, ensureUser, get, makeOwner, post, signIn, sqlDeConexao, submitForm } from './helpers.mjs';
 
 const query = (sql) =>
   execFileSync('docker', ['exec', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
@@ -48,12 +48,14 @@ async function ensureAccount(userId) {
   );
 
   const connectionId = query(
-    `insert into integrations.connections
-       (organization_id, platform, grant_type, label, external_id, scopes, credential_ref)
-     values ('${organizationId}', 'meta', 'system_user', 'BM de ingestão',
-             '10948872${Math.floor(Math.random() * 90 + 10)}',
-             array['ads_read'], 'n8n:credential:meta')
-     returning id`,
+    sqlDeConexao({
+      organizationId,
+      platform: 'meta',
+      grantType: 'system_user',
+      label: 'BM de ingestão',
+      externalId: `10948872${Math.floor(Math.random() * 90 + 10)}`,
+      scopes: ['ads_read'],
+    }).sql,
   );
 
   return query(

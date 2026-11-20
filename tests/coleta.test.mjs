@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
-import { BASE, appIsUp, ensureUser, get, makeOwner, post, signIn, submitForm, workerHeaders } from './helpers.mjs';
+import { BASE, appIsUp, ensureUser, get, makeOwner, post, signIn, sqlDeConexao, submitForm, workerHeaders } from './helpers.mjs';
 
 const query = (sql) =>
   execFileSync('docker', ['exec', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
@@ -32,12 +32,14 @@ async function ensureAccount(userId) {
   );
 
   const connectionId = query(
-    `insert into integrations.connections
-       (organization_id, platform, grant_type, label, external_id, scopes, credential_ref)
-     values ('${organizationId}', 'google', 'mcc', 'MCC de coleta',
-             '10948872${Math.floor(Math.random() * 90 + 10)}',
-             array['https://www.googleapis.com/auth/adwords'], 'n8n:credential:google')
-     returning id`,
+    sqlDeConexao({
+      organizationId,
+      platform: 'google',
+      grantType: 'mcc',
+      label: 'MCC de coleta',
+      externalId: `10948872${Math.floor(Math.random() * 90 + 10)}`,
+      scopes: ['https://www.googleapis.com/auth/adwords'],
+    }).sql,
   );
 
   const accountId = query(
@@ -90,7 +92,17 @@ describe('camada de coleta', { concurrency: false }, () => {
 
   it('lista a fonte recém-criada entre as elegíveis', async () => {
     const result = await get('/api/v0/coleta/fontes?limit=200').then((r) => r.json());
-    assert.ok(result.fontes.some((fonte) => fonte.fonteId === accountId && fonte.fonteTipo === 'ad_account'));
+    const fonte = result.fontes.find((item) => item.fonteId === accountId && item.fonteTipo === 'ad_account');
+    assert.ok(fonte);
+    assert.equal(fonte.temToken, true, 'a fonte diz se a conexão tem token no cofre');
+    for (const campo of ['coletorRef', 'credentialRef', 'executorRef']) assert.equal(campo in fonte, false, campo);
+  });
+
+  it('conexão sem token no cofre não é elegível: só volta depois de reautorizar', async () => {
+    query(`update integrations.connections set status = 'reauth_pending' where id = '${connectionId}'`);
+    const sem = await get('/api/v0/coleta/fontes?limit=200').then((r) => r.json());
+    assert.ok(!sem.fontes.some((item) => item.fonteId === accountId));
+    query(`update integrations.connections set status = 'active' where id = '${connectionId}'`);
   });
 
   it('a janela sugerida muda com o modo e sempre termina ontem', async () => {

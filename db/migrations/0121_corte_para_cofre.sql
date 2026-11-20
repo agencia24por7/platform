@@ -10,7 +10,7 @@ BEGIN
 END $$;
 
 CREATE TABLE IF NOT EXISTS integrations.corte_para_cofre_refs (
-  connection_id    uuid PRIMARY KEY REFERENCES integrations.connections(id) ON DELETE CASCADE,
+  connection_id    uuid PRIMARY KEY,
   organization_id  uuid NOT NULL,
   platform         text NOT NULL,
   status_anterior  text NOT NULL,
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS integrations.corte_para_cofre_refs (
 );
 
 COMMENT ON TABLE integrations.corte_para_cofre_refs IS
-  'Estado do corte para o cofre de tokens (ADR 0032): os ponteiros do n8n de cada conexão no instante do corte. É a fonte de verdade do script de limpeza do n8n (scripts/n8n-limpar-pos-corte.mjs), que marca limpo_em por conexão. Some na migração de limpeza final, depois da verificação.';
+  'Estado do corte para o cofre de tokens (ADR 0032): os ponteiros do n8n de cada conexão no instante do corte. É a fonte de verdade do script de limpeza do n8n (scripts/n8n-limpar-legado.mjs), que marca limpo_em por conexão. Sem chave estrangeira de propósito: a linha sobrevive à remoção da conexão para que a limpeza do n8n não perca o ponteiro. Some numa migração posterior, depois da verificação.';
 
 REVOKE ALL ON integrations.corte_para_cofre_refs FROM PUBLIC;
 
@@ -49,7 +49,7 @@ WHERE NOT EXISTS (
 ALTER TABLE integrations.connections ALTER COLUMN credential_ref DROP NOT NULL;
 
 COMMENT ON COLUMN integrations.connections.credential_ref IS
-  'DEPRECADA desde o corte para o cofre (ADR 0032): sempre nula. O segredo vive em integrations.connection_tokens. A coluna sai na migração de limpeza final.';
+  'DEPRECADA desde o corte para o cofre (ADR 0032): sempre nula. O segredo vive em integrations.connection_tokens. A coluna sai na 0122.';
 
 UPDATE integrations.connections n
 SET status = CASE WHEN n.status = 'revoked' THEN n.status ELSE 'reauth_pending' END,

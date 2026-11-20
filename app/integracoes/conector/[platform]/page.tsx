@@ -11,6 +11,7 @@ import {
   ROTULO_DA_PLATAFORMA,
   ROTULO_DO_RECURSO,
   concordaComRecurso,
+  precisaReautorizar,
   temRecursoParaVincular,
   veiculaAnuncio,
   type Connection,
@@ -123,8 +124,10 @@ export default async function ConectorPage({
     : [];
   const clientesPorId = new Map(clientes.map((cliente) => [cliente.id, cliente]));
 
-  const oauth = falaOauth(plataforma);
+  const oauth = falaOauth(plataforma) && !usaChaveDeApi(plataforma);
   const pronto = oauth && isConfigured(credenciaisDaPlataforma(plataforma), plataforma);
+  const inicioDoOauth = `/api/oauth/${plataforma}/start?returnTo=${encodeURIComponent(voltarPara)}`;
+  const aReautorizar = conexoes.filter((conexao) => precisaReautorizar(conexao));
 
   return (
     <Shell title={ROTULO_DA_PLATAFORMA[plataforma]} organization={organization} active="/integracoes">
@@ -138,6 +141,18 @@ export default async function ConectorPage({
       </div>
 
       <Feedback message={aviso} tone="info" />
+
+      {aReautorizar.length > 0 ? (
+        <div className="aviso" role="status">
+          <strong>
+            {aReautorizar.length === 1 ? 'Uma conexão precisa' : `${aReautorizar.length} conexões precisam`} ser
+            reautorizada{aReautorizar.length === 1 ? '' : 's'}.
+          </strong>{' '}
+          {oauth
+            ? 'Use Reautorizar e entre com a mesma conta que concedeu o acesso (o e-mail aparece na lista): a conexão volta com o mesmo nome, as mesmas contas vinculadas e o histórico de coleta.'
+            : 'Cole a chave de novo no formulário abaixo: a conexão volta com as mesmas contas vinculadas e o histórico de coleta.'}
+        </div>
+      ) : null}
 
       <section className="fornecedor">
         <header className="fornecedor__head">
@@ -161,10 +176,7 @@ export default async function ConectorPage({
             ))}
             {oauth ? (
               pronto ? (
-                <Link
-                  className="btn btn--compacto"
-                  href={`/api/oauth/${plataforma}/start?returnTo=${encodeURIComponent(voltarPara)}`}
-                >
+                <Link className="btn btn--compacto" href={inicioDoOauth}>
                   {conexoes.length > 0 ? 'Autorizar outra conta' : 'Autorizar'}
                 </Link>
               ) : (
@@ -202,6 +214,19 @@ export default async function ConectorPage({
                         <span className="row">
                           <span className={`dot ${PONTO_DO_ESTADO[conexao.status]}`} />
                           {conexao.status}
+                          {precisaReautorizar(conexao) ? (
+                            oauth && pronto ? (
+                              <Link
+                                className="btn btn--compacto"
+                                href={inicioDoOauth}
+                                title="Entre com a mesma conta que concedeu o acesso: a mesma conexão é renovada, com os vínculos e o histórico."
+                              >
+                                Reautorizar
+                              </Link>
+                            ) : (
+                              <span className="pill pill--warn">{oauth ? 'reautorizar' : 'cole a chave de novo'}</span>
+                            )
+                          ) : null}
                         </span>
                       </td>
                       <td className="muted">{conexao.authorizedAt.toLocaleString('pt-BR')}</td>
@@ -213,7 +238,7 @@ export default async function ConectorPage({
                             <BotaoDeEnvio
                               className="btn btn--compacto"
                               pendente="Removendo…"
-                              title="Apaga a credencial do cofre, para a coleta e solta as contas dos clientes. O histórico de métricas fica."
+                              title="Revoga o acesso no provedor quando possível, apaga o token do cofre, para a coleta e solta as contas dos clientes. O histórico de métricas fica."
                             >
                               Remover
                             </BotaoDeEnvio>

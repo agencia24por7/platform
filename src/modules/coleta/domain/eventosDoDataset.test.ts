@@ -158,13 +158,14 @@ describe('linha do fato de eventos', () => {
 });
 
 describe('coletor do conjunto de dados da Meta (modelo do n8n)', () => {
-  it('toda chamada HTTP usa a credencial facebookGraphApi que o provisioner substitui', () => {
-    const chamadas = modelo.nodes.filter((candidato) => candidato.type === 'n8n-nodes-base.httpRequest');
+  it('toda chamada à Graph leva o Bearer do cofre, sem credencial por conexão no nó', () => {
+    const chamadas = modelo.nodes.filter((candidato) => candidato.type === 'n8n-nodes-base.httpRequest' && candidato.name !== 'Obter token');
     assert.equal(chamadas.length, 3 + 1 + NOS_DOS_RECORTES.length);
     for (const chamada of chamadas) {
-      assert.equal(chamada.parameters.authentication, 'predefinedCredentialType');
-      assert.equal(chamada.parameters.nodeCredentialType, 'facebookGraphApi');
-      assert.ok(chamada.credentials && 'facebookGraphApi' in chamada.credentials);
+      assert.equal(chamada.parameters.authentication, 'none');
+      assert.equal(chamada.credentials, undefined);
+      const cabecalhos = (chamada.parameters.headerParameters as { parameters: { name: string; value: string }[] }).parameters;
+      assert.equal(cabecalhos.find((cabecalho) => cabecalho.name === 'Authorization')!.value, "={{ 'Bearer ' + $('Obter token').first().json.body.token }}");
       assert.equal(chamada.executeOnce, true);
     }
   });

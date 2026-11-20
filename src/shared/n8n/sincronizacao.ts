@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { CorpoDeWorkflow } from './clienteN8n.ts';
+import { ARQUIVO_DO_ALERTA_DA_PLATAFORMA } from './modelos.ts';
 
 type Credencial = { readonly id: string; readonly name: string };
 
@@ -169,7 +170,7 @@ export function modeloComCredenciaisPorNome(modelo: Workflow, conhecidas: Readon
 }
 
 export const PREFIXO_DO_FLUXO_DE_ERRO = 'origem:';
-export const ARQUIVO_DOS_ALERTAS = 'n8n/workflows/plataforma/alertas-de-falha.json';
+export const ARQUIVO_DOS_ALERTAS = ARQUIVO_DO_ALERTA_DA_PLATAFORMA;
 
 export type FluxoDeErroResolvido = { readonly modelo: Workflow; readonly aviso: string | null };
 
@@ -185,6 +186,35 @@ export function resolverFluxoDeErro(modelo: Workflow, implantados: readonly Work
   const id = (alvos[0] as (Workflow & { readonly id?: string }) | undefined)?.id;
   if (!id) return { modelo: { ...modelo, settings: restante }, aviso: `fluxo de erro ${arquivo} ainda não implantado: o workflow fica sem errorWorkflow` };
   return { modelo: { ...modelo, settings: { ...restante, errorWorkflow: id } }, aviso: null };
+}
+
+const REFERENCIA_DE_ORIGEM = /origem:(n8n\/workflows\/[A-Za-z0-9_./-]+\.json)/g;
+
+export type SubWorkflowsResolvidos = { readonly modelo: Workflow; readonly pendencias: readonly string[] };
+
+function idPorOrigem(arquivo: string, implantados: readonly Workflow[]): string | null {
+  const alvos = implantados.filter((implantado) => arquivoDeOrigem(implantado) === arquivo);
+  if (alvos.length > 1) throw new Error(`mais de um workflow implantado aponta para ${arquivo}`);
+  return (alvos[0] as (Workflow & { readonly id?: string }) | undefined)?.id ?? null;
+}
+
+export function resolverSubWorkflows(modelo: Workflow, implantados: readonly Workflow[]): SubWorkflowsResolvidos {
+  const pendencias: string[] = [];
+  const nodes = modelo.nodes.map((no) => {
+    const referencia = no.parameters?.['workflowId'];
+    if (!referencia || typeof referencia !== 'object') return no;
+    const valor = (referencia as { value?: unknown }).value;
+    if (typeof valor !== 'string' || !valor.includes(PREFIXO_DO_FLUXO_DE_ERRO)) return no;
+
+    const resolvido = valor.replace(REFERENCIA_DE_ORIGEM, (original, arquivo: string) => {
+      const id = idPorOrigem(arquivo, implantados);
+      if (id) return id;
+      pendencias.push(`${no.name}: sub-workflow ${arquivo} ainda não implantado`);
+      return original;
+    });
+    return { ...no, parameters: { ...no.parameters, workflowId: { ...(referencia as object), value: resolvido } } };
+  });
+  return { modelo: { ...modelo, nodes }, pendencias };
 }
 
 function notaDeOrigem(arquivo: string, versao: string): No {

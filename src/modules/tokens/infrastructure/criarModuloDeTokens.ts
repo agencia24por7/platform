@@ -25,7 +25,7 @@ export function criarModuloDeTokens(audit: AuditRecorder) {
   const cofre = createCofreDeTokens({
     repositorio: createTokenRepository(),
     cifra: createCifraEnvelope(escolherChaveMestra(config)),
-    provedores: comProvedorDeTeste(provedoresReais, config.NODE_ENV),
+    provedores: comProvedorDeTeste(provedoresReais, config),
     marcador: createMarcadorDeReautorizacao(),
     registro: { info: logger.info, aviso: logger.warn, erro: logger.error },
   });

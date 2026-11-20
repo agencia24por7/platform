@@ -5,6 +5,7 @@ import type { Alvo, TipoDeSegredo } from '@/modules/tokens/domain/token';
 import type {
   MarcadorDeReautorizacao,
   MudancaDeToken,
+  NovoSegredo,
   RegistroDeToken,
   RepositorioDeTokens,
 } from '@/modules/tokens/application/portas';
@@ -37,22 +38,46 @@ function paraRegistro(linha: Linha): RegistroDeToken {
   };
 }
 
-async function lerLinha(tx: TenantSession, connectionId: string, travar: boolean): Promise<RegistroDeToken | null> {
-  const linhas = (travar
-    ? await tx`
-        SELECT t.connection_id, t.organization_id, n.platform::text AS platform, t.tipo, t.ciphertext, t.segredo_expira_em,
-               t.access_token_ciphertext, t.access_expires_at, t.refreshed_at, t.versao
-        FROM integrations.connection_tokens t
-        JOIN integrations.connections n ON n.id = t.connection_id
-        WHERE t.connection_id = ${connectionId}
-        FOR UPDATE OF t`
-    : await tx`
-        SELECT t.connection_id, t.organization_id, n.platform::text AS platform, t.tipo, t.ciphertext, t.segredo_expira_em,
-               t.access_token_ciphertext, t.access_expires_at, t.refreshed_at, t.versao
-        FROM integrations.connection_tokens t
-        JOIN integrations.connections n ON n.id = t.connection_id
-        WHERE t.connection_id = ${connectionId}`) as unknown as Linha[];
+async function lerLinha(tx: TenantSession, connectionId: string): Promise<RegistroDeToken | null> {
+  const linhas = (await tx`
+    SELECT t.connection_id, t.organization_id, n.platform::text AS platform, t.tipo, t.ciphertext, t.segredo_expira_em,
+           t.access_token_ciphertext, t.access_expires_at, t.refreshed_at, t.versao
+    FROM integrations.connection_tokens t
+    JOIN integrations.connections n ON n.id = t.connection_id
+    WHERE t.connection_id = ${connectionId}`) as unknown as Linha[];
   return linhas[0] ? paraRegistro(linhas[0]) : null;
+}
+
+export async function gravarSegredoNaTransacao(tx: TenantSession, alvo: Alvo, novo: NovoSegredo): Promise<void> {
+  await tx`
+    INSERT INTO integrations.connection_tokens
+      (connection_id, organization_id, tipo, ciphertext, kms_key_version, algoritmo, segredo_expira_em)
+    VALUES (${alvo.connectionId}, ${alvo.organizationId}, ${novo.tipo}, ${novo.cifrado.bytes},
+            ${novo.cifrado.versaoDaChave}, ${novo.cifrado.algoritmo}, ${novo.expiraEm})
+    ON CONFLICT (connection_id) DO UPDATE SET
+      tipo = EXCLUDED.tipo,
+      ciphertext = EXCLUDED.ciphertext,
+      kms_key_version = EXCLUDED.kms_key_version,
+      algoritmo = EXCLUDED.algoritmo,
+      segredo_expira_em = EXCLUDED.segredo_expira_em,
+      access_token_ciphertext = NULL,
+      access_kms_key_version = NULL,
+      access_expires_at = NULL,
+      ultima_falha_codigo = NULL,
+      ultima_falha_em = NULL,
+      renovacao_iniciada_em = NULL,
+      versao = integrations.connection_tokens.versao + 1`;
+}
+
+export async function versaoDoTokenNaTransacao(tx: TenantSession, connectionId: string): Promise<number | null> {
+  const linhas = (await tx`
+    SELECT versao FROM integrations.connection_tokens WHERE connection_id = ${connectionId}
+    FOR UPDATE`) as unknown as { versao: number }[];
+  return linhas[0]?.versao ?? null;
+}
+
+export async function apagarTokenNaTransacao(tx: TenantSession, connectionId: string): Promise<void> {
+  await tx`DELETE FROM integrations.connection_tokens WHERE connection_id = ${connectionId}`;
 }
 
 function colunasDa(mudanca: MudancaDeToken): Record<string, unknown> {
@@ -94,56 +119,52 @@ export function createTokenRepository(): RepositorioDeTokens {
     },
 
     async carregar(alvo) {
-      return withTenant(alvo.organizationId, (tx) => lerLinha(tx, alvo.connectionId, false));
+      return withTenant(alvo.organizationId, (tx) => lerLinha(tx, alvo.connectionId));
     },
 
     async guardar(alvo, novo) {
-      await withTenant(alvo.organizationId, async (tx) => {
-        await tx`
-          INSERT INTO integrations.connection_tokens
-            (connection_id, organization_id, tipo, ciphertext, kms_key_version, algoritmo, segredo_expira_em)
-          VALUES (${alvo.connectionId}, ${alvo.organizationId}, ${novo.tipo}, ${novo.cifrado.bytes},
-                  ${novo.cifrado.versaoDaChave}, ${novo.cifrado.algoritmo}, ${novo.expiraEm})
-          ON CONFLICT (connection_id) DO UPDATE SET
-            tipo = EXCLUDED.tipo,
-            ciphertext = EXCLUDED.ciphertext,
-            kms_key_version = EXCLUDED.kms_key_version,
-            algoritmo = EXCLUDED.algoritmo,
-            segredo_expira_em = EXCLUDED.segredo_expira_em,
-            access_token_ciphertext = NULL,
-            access_kms_key_version = NULL,
-            access_expires_at = NULL,
-            ultima_falha_codigo = NULL,
-            ultima_falha_em = NULL,
-            versao = integrations.connection_tokens.versao + 1`;
+      await withTenant(alvo.organizationId, (tx) => gravarSegredoNaTransacao(tx, alvo, novo));
+    },
+
+    async reivindicarRenovacao(alvo, prazoMs) {
+      return withTenant(alvo.organizationId, async (tx) => {
+        const reivindicadas = (await tx`
+          UPDATE integrations.connection_tokens
+          SET renovacao_iniciada_em = now()
+          WHERE connection_id = ${alvo.connectionId}
+            AND (renovacao_iniciada_em IS NULL OR renovacao_iniciada_em < now() - make_interval(secs => ${prazoMs / 1000}))
+          RETURNING connection_id`) as unknown as unknown[];
+        const registro = await lerLinha(tx, alvo.connectionId);
+        return { registro, dono: reivindicadas.length > 0 && registro !== null };
       });
     },
 
-    async comTrava(alvo, trabalho) {
+    async concluirRenovacao(alvo, versaoLida, mudanca) {
       return withTenant(alvo.organizationId, async (tx) => {
-        const registro = await lerLinha(tx, alvo.connectionId, true);
-        let versao = registro?.versao ?? 0;
+        const colunas = { ...colunasDa(mudanca), renovacao_iniciada_em: null };
+        const linhas = (await tx`
+          UPDATE integrations.connection_tokens
+          SET ${tx(colunas)}, versao = versao + 1
+          WHERE connection_id = ${alvo.connectionId} AND versao = ${versaoLida}
+          RETURNING tipo`) as unknown as { tipo: TipoDeSegredo }[];
+        if (!linhas[0]) {
+          await tx`UPDATE integrations.connection_tokens SET renovacao_iniciada_em = NULL WHERE connection_id = ${alvo.connectionId}`;
+          return false;
+        }
+        if (mudanca.segredo && linhas[0].tipo === 'oauth_long_lived') {
+          await tx`
+            UPDATE integrations.connections SET expires_at = ${mudanca.segredo.expiraEm}
+            WHERE id = ${alvo.connectionId}`;
+        }
+        return true;
+      });
+    },
 
-        return trabalho(registro, async (mudanca) => {
-          if (!registro) return false;
-          const colunas = colunasDa(mudanca);
-          if (Object.keys(colunas).length === 0) return true;
-
-          const linhas = (await tx`
-            UPDATE integrations.connection_tokens
-            SET ${tx(colunas)}, versao = versao + 1
-            WHERE connection_id = ${alvo.connectionId} AND versao = ${versao}
-            RETURNING versao`) as unknown as { versao: number }[];
-          if (!linhas[0]) return false;
-          versao = linhas[0].versao;
-
-          if (mudanca.segredo && registro.tipo === 'oauth_long_lived') {
-            await tx`
-              UPDATE integrations.connections SET expires_at = ${mudanca.segredo.expiraEm}
-              WHERE id = ${alvo.connectionId}`;
-          }
-          return true;
-        });
+    async liberarRenovacao(alvo, falha) {
+      await withTenant(alvo.organizationId, async (tx) => {
+        const colunas: Record<string, unknown> = { renovacao_iniciada_em: null };
+        if (falha !== undefined) Object.assign(colunas, { ultima_falha_codigo: falha, ultima_falha_em: falha === null ? null : new Date() });
+        await tx`UPDATE integrations.connection_tokens SET ${tx(colunas)} WHERE connection_id = ${alvo.connectionId}`;
       });
     },
 

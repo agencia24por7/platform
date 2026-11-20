@@ -2,17 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { before, describe, it } from 'node:test';
-import {
-  BASE,
-  acaoComCampo,
-  appIsUp,
-  browse,
-  ensureUser,
-  sessionCookie,
-  signIn,
-  signOut,
-  submitAction,
-} from './helpers.mjs';
+import { acaoComCampo, appIsUp, BASE, browse, ensureUser, sessionCookie, signIn, signOut, sqlDeConexao, submitAction } from './helpers.mjs';
 
 function senhaDoApp() {
   return readFileSync('.env', 'utf8')
@@ -205,12 +195,14 @@ describe('equipe, convites e recorte por cliente', { concurrency: false }, () =>
   });
 
   it('pausar o cliente tira as contas dele da fila de coleta', () => {
-    const conexao = umaLinha(dono(
-      `INSERT INTO integrations.connections (organization_id, platform, grant_type, label, external_id, scopes, credential_ref)
-       VALUES ('${org}', 'google', 'mcc', 'MCC teste', '111-222-3333',
-               ARRAY['https://www.googleapis.com/auth/adwords'], 'cred-teste')
-       RETURNING id`,
-    ));
+    const conexao = umaLinha(dono(sqlDeConexao({
+      organizationId: org,
+      platform: 'google',
+      grantType: 'mcc',
+      label: 'MCC teste',
+      externalId: '111-222-3333',
+      scopes: ['https://www.googleapis.com/auth/adwords'],
+    }).sql));
     const conta = umaLinha(dono(
       `INSERT INTO integrations.ad_accounts (organization_id, client_id, connection_id, platform, external_id, name)
        VALUES ('${org}', '${clienteA}', '${conexao}', 'google', '444-555-6666', 'Conta do A')

@@ -58,3 +58,11 @@ Uma revisão dos coletores e do orquestrador achou falhas silenciosas e vazament
 - Pendente fora do escopo: `pagePath` e `landingPage` do GA4 também podem trazer query string.
 - O dataset da Meta com teto atingido marca incompleta mas ainda grava as somas parciais.
 - O sync dos workflows precisa rodar para valer (nada muda no n8n até lá).
+
+## Adendo (ADR 0032, 2026-11-20): coletores genéricos
+
+Os modelos por conexão viraram coletores genéricos por plataforma (`ORLA · {Plataforma} · coletor`): o primeiro
+nó pede o access token ao app (`POST /api/v0/coleta/token {coletaId}` com a credencial "ORLA · worker token") e
+todo nó HTTP do provedor usa `authentication: none` com `Authorization: Bearer …` (ou `?token=` no RD). A lógica
+de cada coletor (janelas, lookback, coleta_incompleta, limite_de_uso, sem_acesso, Graph v27.0, saveData none e a
+limpeza de segredo nas mensagens) não mudou. `provisionar-coletores` foi removido.

@@ -11,5 +11,8 @@ out/
 *.tfstate
 *.tfstate.backup
 
+# Relatórios do scripts/n8n-limpar-legado.mjs (ids de workflow e credencial do n8n)
+n8n-limpeza-*.json
+
 # Documentos jurídicos em negociação: ficam só na máquina
 docs/lgpd/minuta-*.md

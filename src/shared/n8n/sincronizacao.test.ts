@@ -2,15 +2,15 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import {
-  MODELO_DE_COLETOR,
-  MODELO_DE_EXECUTOR,
-  MODELO_DE_REVOGACAO,
-  PASTAS_DE_MODELO,
-  WEBHOOK_DE_REVOGACAO,
-  WEBHOOK_DO_PORTADOR_DO_GOOGLE,
+  COLETOR_DA_PLATAFORMA,
+  EXECUTOR_DA_PLATAFORMA,
+  PASTA_DOS_COLETORES,
+  PASTA_DOS_EXECUTORES,
+  WORKFLOWS_DA_PLATAFORMA,
   WORKFLOW_DE_CONFORMIDADE_DO_YOUTUBE,
-  WORKFLOW_DE_REVOGACAO,
-  ehModelo,
+  WORKFLOW_DE_RENOVACAO_DE_TOKENS,
+  ehSubWorkflowGenerico,
+  ordemDeImplantacao,
 } from './modelos.ts';
 import {
   NOTA_DE_ORIGEM,
@@ -20,11 +20,11 @@ import {
   localizarImplantado,
   mesclar,
   modeloComCredenciaisPorNome,
+  resolverSubWorkflows,
   versaoDoModelo,
   versaoImplantada,
   type Workflow,
 } from './sincronizacao.ts';
-import { META_GRAPH_VERSION } from '../../modules/connections/domain/metaGraphVersion.ts';
 
 const CREDENCIAL_REAL = { id: 'AbCdEfGh12345678', name: 'ORLA · worker token' };
 const ARQUIVO = 'n8n/workflows/exemplo.json';
@@ -139,12 +139,22 @@ describe('sincronização de workflows do n8n', () => {
     assert.equal(deNovo.nodes.filter((n) => (n as { name: string }).name === NOTA_DE_ORIGEM).length, 1);
   });
 
-  it('o mapa de modelos cobre todo arquivo de modelo e só aponta para arquivos que existem', () => {
-    const mapeados = new Set([...Object.values(MODELO_DE_COLETOR), ...Object.values(MODELO_DE_EXECUTOR), ...Object.values(MODELO_DE_REVOGACAO)]);
+  it('o mapa dos genéricos cobre todo coletor e executor e só aponta para arquivos que existem', () => {
+    const mapeados = new Set([...Object.values(COLETOR_DA_PLATAFORMA), ...Object.values(EXECUTOR_DA_PLATAFORMA)]);
     for (const caminho of mapeados) assert.ok(existsSync(caminho), caminho);
 
-    const arquivos = PASTAS_DE_MODELO.flatMap((pasta) => readdirSync(pasta).map((arquivo) => `${pasta}${arquivo}`));
-    for (const arquivo of arquivos) assert.ok(mapeados.has(arquivo), `${arquivo} fora do mapa de modelos`);
+    const arquivos = [PASTA_DOS_COLETORES, PASTA_DOS_EXECUTORES].flatMap((pasta) => readdirSync(pasta).map((arquivo) => `${pasta}${arquivo}`));
+    for (const arquivo of arquivos) assert.ok(mapeados.has(arquivo), `${arquivo} fora do mapa dos genéricos`);
+    for (const arquivo of arquivos) assert.equal(ehSubWorkflowGenerico(arquivo), true, arquivo);
+  });
+
+  it('implanta alertas, depois os genéricos, depois a janela do backfill e por fim quem os chama', () => {
+    assert.equal(ordemDeImplantacao('n8n/workflows/plataforma/alertas-de-falha.json'), 0);
+    assert.equal(ordemDeImplantacao(COLETOR_DA_PLATAFORMA.ga4!), 1);
+    assert.equal(ordemDeImplantacao(EXECUTOR_DA_PLATAFORMA.google!), 1);
+    assert.ok(ordemDeImplantacao('n8n/workflows/coleta-backfill-janela.json') < ordemDeImplantacao('n8n/workflows/coleta-backfill.json'));
+    assert.ok(ordemDeImplantacao(COLETOR_DA_PLATAFORMA.ga4!) < ordemDeImplantacao('n8n/workflows/coleta-orquestrador.json'));
+    assert.ok(ordemDeImplantacao(EXECUTOR_DA_PLATAFORMA.meta!) < ordemDeImplantacao('n8n/workflows/tarefas-de-conta.json'));
   });
   it('localiza pelo arquivo de origem gravado na nota, mesmo se o workflow foi renomeado', () => {
     const { corpo } = mesclar(doRepositorio, implantado, 'Nome antigo', ARQUIVO);
@@ -194,49 +204,10 @@ type NoDoModelo = { name: string; type: string; parameters?: Record<string, unkn
 type ModeloLido = { name: string; nodes: NoDoModelo[]; settings: Record<string, unknown> };
 const ler = (caminho: string) => JSON.parse(readFileSync(caminho, 'utf8')) as ModeloLido;
 
-describe('workflows de privacidade da plataforma (ADR 0029)', () => {
-  const revogacao = ler(WORKFLOW_DE_REVOGACAO);
-  const webhook = (path: string) => revogacao.nodes.find((no) => no.type === 'n8n-nodes-base.webhook' && no.parameters?.['path'] === path);
-
-  it('a revogação é workflow da plataforma (sincronizado), e os modelos por conexão não', () => {
-    assert.equal(ehModelo(WORKFLOW_DE_REVOGACAO), false);
-    assert.equal(ehModelo(WORKFLOW_DE_CONFORMIDADE_DO_YOUTUBE), false);
-    for (const caminho of Object.values(MODELO_DE_REVOGACAO)) assert.equal(ehModelo(caminho), true);
-  });
-
-  it('o pedido de revogação exige o token do worker, como os outros webhooks da plataforma', () => {
-    const pedido = webhook(WEBHOOK_DE_REVOGACAO)!;
-    assert.equal(pedido.parameters?.['authentication'], 'headerAuth');
-    assert.equal(pedido.credentials?.['httpHeaderAuth']?.name, 'ORLA · worker token');
-  });
-
-  it('o portador do Google só revoga o token que recebe, e o modelo do Google o chama com a própria credencial', () => {
-    assert.ok(webhook(WEBHOOK_DO_PORTADOR_DO_GOOGLE));
-    const revogar = revogacao.nodes.find((no) => no.name === 'Revogar com o portador')!;
-    assert.equal(revogar.parameters?.['url'], 'https://oauth2.googleapis.com/revoke');
-    assert.equal(revogar.credentials, undefined);
-
-    const google = ler(MODELO_DE_REVOGACAO.google!);
-    const chamada = google.nodes.find((no) => no.credentials?.['googleOAuth2Api'])!;
-    assert.equal(chamada.parameters?.['nodeCredentialType'], 'googleOAuth2Api');
-    assert.ok(String(chamada.parameters?.['url']).endsWith(`/webhook/${WEBHOOK_DO_PORTADOR_DO_GOOGLE}`));
-  });
-
-  it('o modelo da Meta apaga as permissões do usuário na versão da Graph usada pelo app', () => {
-    const meta = ler(MODELO_DE_REVOGACAO.meta!);
-    const chamada = meta.nodes.find((no) => no.credentials?.['facebookGraphApi'])!;
-    assert.equal(chamada.parameters?.['method'], 'DELETE');
-    assert.equal(chamada.parameters?.['url'], `https://graph.facebook.com/${META_GRAPH_VERSION}/me/permissions`);
-  });
-
-  it('nenhum deles salva execução: o token do Google passa pelo portador', () => {
-    for (const caminho of [WORKFLOW_DE_REVOGACAO, ...Object.values(MODELO_DE_REVOGACAO)]) {
-      const { settings } = ler(caminho);
-      assert.equal(settings['saveDataSuccessExecution'], 'none', caminho);
-      assert.equal(settings['saveDataErrorExecution'], 'none', caminho);
-      assert.equal(settings['saveManualExecutions'], false, caminho);
-    }
-    for (const caminho of Object.values(MODELO_DE_REVOGACAO)) assert.equal(ler(caminho).settings['errorWorkflow'], undefined, caminho);
+describe('jobs da plataforma (ADR 0029, ADR 0032)', () => {
+  it('não há mais workflow de revogação no n8n: quem revoga é o cofre do app', () => {
+    assert.equal(existsSync('n8n/workflows/plataforma/revogar-acesso.json'), false);
+    assert.equal(existsSync('n8n/workflows/plataforma/revogacao'), false);
   });
 
   it('o job diário do YouTube chama a rota de manutenção com o token do worker', () => {
@@ -244,6 +215,79 @@ describe('workflows de privacidade da plataforma (ADR 0029)', () => {
     const chamada = job.nodes.find((no) => no.type === 'n8n-nodes-base.httpRequest')!;
     assert.equal(chamada.parameters?.['url'], '=http://app:3000/api/v0/manutencao/youtube');
     assert.equal(chamada.credentials?.['httpHeaderAuth']?.name, 'ORLA · worker token');
+  });
+
+  it('a renovação proativa roda a cada 6 horas, chama a rota do cofre e cai no alerta da plataforma', () => {
+    assert.ok((WORKFLOWS_DA_PLATAFORMA as readonly string[]).includes(WORKFLOW_DE_RENOVACAO_DE_TOKENS));
+    const job = ler(WORKFLOW_DE_RENOVACAO_DE_TOKENS);
+    assert.equal(job.name, 'ORLA · tokens · renovação');
+    const gatilho = job.nodes.find((no) => no.type === 'n8n-nodes-base.scheduleTrigger')!;
+    assert.match(JSON.stringify(gatilho.parameters), /\*\/6 \* \* \*/);
+    const chamada = job.nodes.find((no) => no.type === 'n8n-nodes-base.httpRequest')!;
+    assert.equal(chamada.parameters?.['url'], '=http://app:3000/api/v0/tokens/renovar-proativo');
+    assert.equal(chamada.credentials?.['httpHeaderAuth']?.name, 'ORLA · worker token');
+    assert.equal(job.settings['saveDataSuccessExecution'], 'none');
+    assert.equal(job.settings['saveDataErrorExecution'], 'none');
+    assert.equal(job.settings['errorWorkflow'], 'origem:n8n/workflows/plataforma/alertas-de-falha.json');
+  });
+});
+
+describe('sub-workflows genéricos resolvidos pela nota de origem (ADR 0032)', () => {
+  const comOrigem = (id: string, arquivo: string): Workflow & { id: string } => ({
+    ...(mesclar(doRepositorio, null, `ORLA · ${id}`, arquivo).corpo as Workflow),
+    id,
+  });
+  const chamador: Workflow = {
+    ...doRepositorio,
+    nodes: [
+      {
+        name: 'Chamar coletor',
+        type: 'n8n-nodes-base.executeWorkflow',
+        parameters: {
+          workflowId: {
+            __rl: true,
+            mode: 'id',
+            value: "={{ ({ ga4: 'origem:n8n/workflows/coletores/coletor-ga4.json', gtm: 'origem:n8n/workflows/coletores/coletor-gtm.json' })[$json.platform] }}",
+          },
+        },
+      },
+    ],
+  };
+
+  it('troca cada origem pelo id implantado, dentro da expressão', () => {
+    const implantados = [comOrigem('wfGa4', 'n8n/workflows/coletores/coletor-ga4.json'), comOrigem('wfGtm', 'n8n/workflows/coletores/coletor-gtm.json')];
+    const { modelo, pendencias } = resolverSubWorkflows(chamador, implantados);
+    assert.deepEqual(pendencias, []);
+    assert.equal(
+      (modelo.nodes[0]!.parameters!['workflowId'] as { value: string }).value,
+      "={{ ({ ga4: 'wfGa4', gtm: 'wfGtm' })[$json.platform] }}",
+    );
+  });
+
+  it('genérico ainda não implantado vira pendência e bloqueia', () => {
+    const { pendencias } = resolverSubWorkflows(chamador, [comOrigem('wfGa4', 'n8n/workflows/coletores/coletor-ga4.json')]);
+    assert.deepEqual(pendencias, ['Chamar coletor: sub-workflow n8n/workflows/coletores/coletor-gtm.json ainda não implantado']);
+  });
+
+  it('dois workflows com a mesma origem (cópia por conexão antiga) recusam a resolução', () => {
+    const duplicados = [comOrigem('a', 'n8n/workflows/coletores/coletor-ga4.json'), comOrigem('b', 'n8n/workflows/coletores/coletor-ga4.json')];
+    assert.throws(() => resolverSubWorkflows(chamador, duplicados), /mais de um/);
+  });
+
+  it('o orquestrador, a janela do backfill e as tarefas de conta só chamam genéricos por origem, nunca por ref da conexão', () => {
+    for (const arquivo of ['n8n/workflows/coleta-orquestrador.json', 'n8n/workflows/coleta-backfill-janela.json', 'n8n/workflows/tarefas-de-conta.json']) {
+      const texto = readFileSync(arquivo, 'utf8');
+      assert.ok(!/coletorRef|executorRef|credentialRef/.test(texto), arquivo);
+    }
+    const orquestrador = ler('n8n/workflows/coleta-orquestrador.json');
+    const chamar = orquestrador.nodes.find((no) => no.name === 'Chamar coletor')!;
+    const valor = String((chamar.parameters?.['workflowId'] as { value: string }).value);
+    for (const [plataforma, arquivo] of Object.entries(COLETOR_DA_PLATAFORMA)) assert.ok(valor.includes(`${plataforma}: 'origem:${arquivo}'`), plataforma);
+
+    const tarefas = ler('n8n/workflows/tarefas-de-conta.json');
+    const executar = tarefas.nodes.find((no) => no.name === 'Executar tarefa')!;
+    const doExecutor = String((executar.parameters?.['workflowId'] as { value: string }).value);
+    for (const [plataforma, arquivo] of Object.entries(EXECUTOR_DA_PLATAFORMA)) assert.ok(doExecutor.includes(`${plataforma}: 'origem:${arquivo}'`), plataforma);
   });
 });
 
