@@ -86,20 +86,16 @@ describe('cabeçalhos de segurança', () => {
     assert.equal(response.headers.get('x-powered-by'), null);
   });
 
-  it('não libera eval fora de desenvolvimento', async () => {
+  it('script só com nonce, e eval só em desenvolvimento', async () => {
     const response = await browse('/clientes');
-    const csp = response.headers.get('content-security-policy') ?? '';
-    const { readFileSync } = await import('node:fs');
-    const config = readFileSync('next.config.mjs', 'utf8');
+    const politica = response.headers.get('content-security-policy') ?? '';
+    const scripts = politica.split('; ').find((diretiva) => diretiva.startsWith('script-src ')) ?? '';
 
-    assert.match(config, /isDevelopment\s*\?[\s\S]*unsafe-eval/, 'unsafe-eval precisa ser condicional');
-    assert.ok(
-      !config.includes("\"script-src 'self' 'unsafe-inline' 'unsafe-eval'\";"),
-      'unsafe-eval não pode ser incondicional',
-    );
+    assert.match(scripts, /'nonce-[A-Za-z0-9+/=]+' 'strict-dynamic'/);
+    assert.ok(!scripts.includes("'unsafe-inline'"), 'script inline só entra com nonce');
 
     if (process.env.NODE_ENV === 'production') {
-      assert.ok(!csp.includes('unsafe-eval'), 'produção não pode permitir eval');
+      assert.ok(!scripts.includes('unsafe-eval'), 'produção não pode permitir eval');
     }
   });
 
