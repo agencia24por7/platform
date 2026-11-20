@@ -151,6 +151,17 @@ gravação inteira (`tabela_desconhecida:<nome>`).
    `src/modules/privacidade/infrastructure/manifestoDoBigQuery.ts` (há teste).
 5. **Esta página**: seção da plataforma, com granularidade.
 6. **ADR** quando houver decisão de modelagem (granularidade, semântica).
+7. **Catálogo do company brain** (ADR 0030): descrição da tabela (título,
+   uma ou duas frases para o agente, view, coluna de data, relacionadas,
+   sensibilidade) em `src/modules/brain/dados/descricoes.ts` e significado de
+   toda coluna nova em `src/modules/brain/dados/glossario.ts` (ou específico
+   da tabela). `dados.test.ts` falha se faltar. Com isso a tabela aparece
+   sozinha no catálogo de todo cliente que tem a plataforma vinculada; se ela
+   habilita uma pergunta nova, acrescente a capacidade em
+   `src/modules/brain/dados/capacidades.ts`. Fonte que não sai do registro da
+   coleta (planilha, CRM próprio, outro sistema) entra como provedor: um
+   arquivo em `src/modules/brain/infrastructure/provedores/` e uma linha em
+   `provedores/index.ts`.
 
 ### Manifesto de expurgo
 
@@ -208,6 +219,7 @@ chamada de gravação e expiram a partição em 7 dias. O time travel do dataset
 | `26` | RD Station |
 | `27` | Meta Pixel e Lead Ads |
 | `28` | Google Tag Manager |
+| `29` | Company brain (catálogo e cobertura por cliente, ADR 0030) |
 
 Precisa de mais de um arquivo? Use sufixo (`20_meta.sql`, `20b_meta_criativos.sql`).
 
@@ -929,6 +941,31 @@ Todas com chave `organization_id` e `conteiner_id` (o ID público `GTM-XXXX`). D
 - Partição `DATE(criado_em)`; cluster `organization_id, client_id`.
   Escrita: `registrarQc` em `bigQueryGravador.ts`.
 
+### `gov_cobertura_cliente`
+
+- Granularidade: uma linha por `organization_id`, `client_id` e `tabela`
+  (o nome da tabela-base medida, ex.: `fato_ads_diario`). MERGE por essa
+  chave: cada medida substitui a anterior.
+- Colunas: `desde`, `ate` (menor e maior data com dado do cliente na janela
+  medida de 400 dias; na dimensão SCD2, a data da primeira e da última
+  versão), `linhas` (no fato, linhas na janela; na dimensão, versões
+  atuais), `dias_com_dado` (dias distintos com dado; `NULL` na dimensão),
+  `medido_em`.
+- Como é medida: `POST /api/v0/brain/cobertura/medir` (workflow
+  `plataforma/brain-cobertura-diaria`) roda, por cliente com fonte vinculada
+  e no máximo uma vez a cada 20 horas, uma consulta só (`UNION ALL`) sobre
+  as `vw_*` das plataformas do cliente, filtrada por `cliente_atual_id` e
+  pela coluna de partição, com `maximumBytesBilled`. A mesma medida é
+  copiada em `core.client_brain_coverage` no Postgres, que é o que o
+  catálogo lê (vale por 36 horas; depois cai para a cobertura derivada de
+  `automation.coletas`).
+- Tem `client_id` por desenho, como `gov_paridade` e `qc_execucoes`: o
+  expurgo apaga por `client_id` (o `titular.mjs` descobre toda tabela com a
+  coluna `client_id`). Não entra no manifesto de fatos porque não tem chave
+  de fonte. A medida segue o dono atual, então cliente excluído (some das
+  `vw_*`) não é medido.
+- Cluster `organization_id, client_id, tabela`. DDL: `29_brain.sql`.
+
 <!-- Transversais: novas tabelas acima desta linha -->
 
 ## Views (`vw_*`)
@@ -1097,7 +1134,7 @@ npm run bq:verificar -- --prod --imprimir-sql   # só mostra as consultas
 
 | Verificação | Grave? |
 |---|---|
-| Tabelas do manifesto, `dim_fonte_scd2`, `dim_cliente_scd2`, `gov_*` e `qc_execucoes` existem | sim |
+| Tabelas do manifesto, `dim_fonte_scd2`, `dim_cliente_scd2`, `gov_*` (inclusive `gov_cobertura_cliente`) e `qc_execucoes` existem | sim |
 | Toda tabela/view do dataset (fora `stg_*`) está neste README, e todo nome de tabela citado aqui existe | sim |
 | Fato sem duplicata no `grao` do manifesto | sim |
 | SCD2 (`dim_*_scd2`): uma versão atual por chave, sem sobreposição nem lacuna entre versões, `valido_de < valido_ate`, `atual` ⇔ `valido_ate = 9999-12-31` | sim |

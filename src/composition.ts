@@ -36,6 +36,7 @@ import { createLimiteDeAlertasNovos, createNotificadorPorWebhook } from '@/modul
 import { createDimensoesService } from '@/modules/coleta/application/dimensoesService';
 import { createDimensoesRepository } from '@/modules/coleta/infrastructure/dimensoesRepository';
 import { createDimensoesBigQuery } from '@/modules/coleta/infrastructure/dimensoesBigQuery';
+import { criarBrain } from '@/modules/brain/infrastructure/criarBrain';
 import { criarModuloDeTokens } from '@/modules/tokens/infrastructure/criarModuloDeTokens';
 import { createPoliticaDeRevogacao } from '@/modules/privacidade/application/revogacaoNoProvedor';
 import { createExpurgoDeFontesService } from '@/modules/privacidade/application/expurgoDeFontes';
@@ -61,6 +62,11 @@ function build() {
   const politicaDeRevogacao = createPoliticaDeRevogacao(createAcessosCompartilhados());
   const expurgoDeFontes = createExpurgoDeFontesService(createFilaDeExpurgo(), createExpurgoNoBigQuery(), audit);
   const config = env();
+  const contexto = createContextoService({
+    repositorio: createContextoRepository(),
+    audit,
+    armazenamento: adaptarArmazenamento(criarArmazenamentoDeContexto(env())),
+  });
 
   return {
     audit,
@@ -71,11 +77,7 @@ function build() {
     organizations,
     identity: createIdentityService(createUserRepository(), audit),
     clients: createClientService(clientRepository, audit),
-    contexto: createContextoService({
-      repositorio: createContextoRepository(),
-      audit,
-      armazenamento: adaptarArmazenamento(criarArmazenamentoDeContexto(env())),
-    }),
+    contexto,
     team: createTeamService(createTeamRepository(), audit),
     connections: createConnectionService(
       connectionRepository,
@@ -109,6 +111,7 @@ function build() {
     retencao: createRetencaoService(createRetencaoRepository(), audit),
     alertas: createAlertaService(createAlertaRepository(), audit, createNotificadorPorWebhook(), createLimiteDeAlertasNovos()),
     dimensoes,
+    brain: criarBrain(audit, contexto),
     tokens,
     expurgoDeFontes,
     pedidosDeExclusao: createPedidosDeExclusaoService(createPedidosDeExclusaoRepository(), {

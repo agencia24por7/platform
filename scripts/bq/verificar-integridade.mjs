@@ -22,7 +22,7 @@ const TRANSVERSAIS = {
   dim_fonte_scd2: ['organization_id', 'platform', 'external_id'],
   dim_cliente_scd2: ['organization_id', 'client_id'],
 };
-const OPERACIONAIS = ['gov_snapshot_fontes', 'gov_paridade', 'qc_execucoes'];
+const OPERACIONAIS = ['gov_snapshot_fontes', 'gov_paridade', 'qc_execucoes', 'gov_cobertura_cliente'];
 
 const CONSISTENCIAS = [
   {
