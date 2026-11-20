@@ -431,8 +431,10 @@ SELECT
   f.*,
   fonte_epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   fonte_atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   fonte_atual.status AS fonte_status_atual,
   fonte_atual.nome AS fonte_nome_atual
 FROM fatos f
@@ -446,7 +448,9 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` fonte_atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = fonte_epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = fonte_atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = fonte_atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE OR REPLACE VIEW `{{DATASET}}.vw_meta_acoes_diarias` AS
 WITH fatos AS (
@@ -462,8 +466,10 @@ SELECT
   f.*,
   fonte_epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   fonte_atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   fonte_atual.status AS fonte_status_atual,
   fonte_atual.nome AS fonte_nome_atual
 FROM fatos f
@@ -477,7 +483,9 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` fonte_atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = fonte_epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = fonte_atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = fonte_atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE OR REPLACE VIEW `{{DATASET}}.vw_meta_recorte_idade_genero` AS
 WITH fatos AS (
@@ -493,8 +501,10 @@ SELECT
   f.*,
   fonte_epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   fonte_atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   fonte_atual.status AS fonte_status_atual,
   fonte_atual.nome AS fonte_nome_atual
 FROM fatos f
@@ -508,7 +518,9 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` fonte_atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = fonte_epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = fonte_atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = fonte_atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE OR REPLACE VIEW `{{DATASET}}.vw_meta_recorte_posicionamento` AS
 WITH fatos AS (
@@ -524,8 +536,10 @@ SELECT
   f.*,
   fonte_epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   fonte_atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   fonte_atual.status AS fonte_status_atual,
   fonte_atual.nome AS fonte_nome_atual
 FROM fatos f
@@ -539,7 +553,9 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` fonte_atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = fonte_epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = fonte_atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = fonte_atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE OR REPLACE VIEW `{{DATASET}}.vw_meta_recorte_regiao` AS
 WITH fatos AS (
@@ -555,8 +571,10 @@ SELECT
   f.*,
   fonte_epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   fonte_atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   fonte_atual.status AS fonte_status_atual,
   fonte_atual.nome AS fonte_nome_atual
 FROM fatos f
@@ -570,15 +588,19 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` fonte_atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = fonte_epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = fonte_atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = fonte_atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE OR REPLACE VIEW `{{DATASET}}.vw_meta_campanha` AS
 SELECT
   f.*,
   fonte_epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   fonte_atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   fonte_atual.status AS fonte_status_atual,
   fonte_atual.nome AS fonte_nome_atual
 FROM `{{DATASET}}.dim_meta_campanha_scd2` f
@@ -592,15 +614,19 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` fonte_atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = fonte_epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = fonte_atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = fonte_atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE OR REPLACE VIEW `{{DATASET}}.vw_meta_conjunto` AS
 SELECT
   f.*,
   fonte_epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   fonte_atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   fonte_atual.status AS fonte_status_atual,
   fonte_atual.nome AS fonte_nome_atual
 FROM `{{DATASET}}.dim_meta_conjunto_scd2` f
@@ -614,15 +640,19 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` fonte_atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = fonte_epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = fonte_atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = fonte_atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE OR REPLACE VIEW `{{DATASET}}.vw_meta_anuncio` AS
 SELECT
   f.*,
   fonte_epoca.client_id AS cliente_na_epoca_id,
   cliente_epoca.nome AS cliente_na_epoca_nome,
+  cliente_epoca.status AS cliente_na_epoca_status,
   fonte_atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   fonte_atual.status AS fonte_status_atual,
   fonte_atual.nome AS fonte_nome_atual
 FROM `{{DATASET}}.dim_meta_anuncio_scd2` f
@@ -636,4 +666,6 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` fonte_atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_epoca
   ON cliente_epoca.organization_id = f.organization_id AND cliente_epoca.client_id = fonte_epoca.client_id AND cliente_epoca.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = fonte_atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = f.organization_id AND cliente_atual.client_id = fonte_atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_epoca.status, '') != 'excluido'
+  AND IFNULL(cliente_atual.status, '') != 'excluido';

@@ -6,10 +6,14 @@ import { fileURLToPath } from 'node:url';
 const USO = `uso:
   node scripts/titular.mjs exportar <email>
   node scripts/titular.mjs anonimizar <email> [--confirmar]
-  node scripts/titular.mjs excluir-cliente <client_id> [--confirmar]
+  node scripts/titular.mjs excluir-cliente <client_id> [--confirmar] [--por <quem>]
+  node scripts/titular.mjs restaurar-cliente <client_id> [--confirmar] [--por <quem>]
+  node scripts/titular.mjs expurgar-cliente <client_id> [--confirmar]
 
+excluir-cliente é a exclusão lógica (nada é apagado; restaurar-cliente desfaz).
+expurgar-cliente apaga de vez no Postgres e no BigQuery: só para obrigação legal.
 Opções: --local (banco do docker local em vez da VM de produção).
-Sem --confirmar, anonimizar e excluir-cliente só mostram o que seria afetado.
+Sem --confirmar, nenhum comando que altera dados executa: só mostra o que seria afetado.
 Veja docs/lgpd/atendimento-ao-titular.md.`;
 
 const VM = process.env.VM ?? 'tria-producao-vm';
@@ -21,6 +25,8 @@ const PSQL = ['docker', 'exec', '-i', 'orla-postgres', 'psql', '-U', 'postgres',
 const [comando, alvo, ...resto] = process.argv.slice(2);
 const confirmar = resto.includes('--confirmar');
 const local = resto.includes('--local') || process.argv.includes('--local');
+const indiceDoPor = resto.indexOf('--por');
+const por = indiceDoPor >= 0 ? resto[indiceDoPor + 1] : `titular.mjs (${process.env.USER ?? 'operador'})`;
 
 function falhar(mensagem) {
   console.error(mensagem);
@@ -110,7 +116,7 @@ function lerManifesto() {
 
 const FATOS_POR_FONTE = lerManifesto();
 
-function sqlExclusao(fato) {
+function sqlExpurgo(fato) {
   const alvo = `\`${PROJETO}.${DATASET}.${fato.tabela}\``;
   const dim = `\`${PROJETO}.${DATASET}.dim_fonte_scd2\``;
   const plataforma = `'${fato.plataforma}'`;
@@ -132,10 +138,10 @@ function sqlExclusao(fato) {
            AND ${momento} >= d.valido_de AND ${momento} < d.valido_ate)${filtroPlataforma}`;
 }
 
-function excluirFatosDoCliente(clientId) {
+function expurgarFatosDoCliente(clientId) {
   for (const fato of FATOS_POR_FONTE) {
     execFileSync('bq', [
-      '--project_id', PROJETO, 'query', '--use_legacy_sql=false', `--parameter=id:STRING:${clientId}`, sqlExclusao(fato),
+      '--project_id', PROJETO, 'query', '--use_legacy_sql=false', `--parameter=id:STRING:${clientId}`, sqlExpurgo(fato),
     ], { stdio: 'inherit' });
   }
 }
@@ -148,16 +154,55 @@ function tabelasComCliente() {
   return saida.split('\n').slice(1).map((linha) => linha.trim()).filter(Boolean);
 }
 
-function excluirCliente(clientId) {
-  const id = literal(clientId);
-  const resumo = consultar(`
+function exigirPor(valor) {
+  if (!valor || valor.startsWith('--') || valor.length > 200) falhar(`--por inválido.\n\n${USO}`);
+  return valor;
+}
+
+function resumoDoCliente(id) {
+  return consultar(`
     SELECT jsonb_pretty(jsonb_build_object(
       'cliente', (SELECT name FROM core.clients WHERE id = ${id}::uuid),
+      'status', (SELECT status FROM core.clients WHERE id = ${id}::uuid),
+      'excluidoEm', (SELECT excluido_em FROM core.clients WHERE id = ${id}::uuid),
       'contas', (SELECT count(*) FROM integrations.ad_accounts WHERE client_id = ${id}::uuid),
       'metricas', (SELECT count(*) FROM metrics.metrics_daily d JOIN integrations.ad_accounts a ON a.id = d.ad_account_id
                    WHERE a.client_id = ${id}::uuid)
     ));`);
-  console.log(resumo);
+}
+
+const AVISO_BIGQUERY =
+  'BigQuery: nada é apagado. A sincronização diária de dimensões grava a nova versão do cliente em dim_cliente_scd2 e as views vw_* passam a refletir o estado (ADR 0022).';
+
+function excluirCliente(clientId) {
+  const id = literal(clientId);
+  const quem = literal(exigirPor(por));
+  console.log(resumoDoCliente(id));
+  console.log(AVISO_BIGQUERY);
+  if (!confirmar) {
+    console.log('\nSimulação. Rode de novo com --confirmar para a exclusão lógica (some do app, sai da coleta, nada é apagado).');
+    return;
+  }
+  console.log(consultar(`SELECT jsonb_pretty(core.excluir_cliente(${id}::uuid, ${quem}));`));
+  console.log(`Cliente excluído logicamente. Para desfazer: node scripts/titular.mjs restaurar-cliente ${clientId} --confirmar`);
+}
+
+function restaurarCliente(clientId) {
+  const id = literal(clientId);
+  const quem = literal(exigirPor(por));
+  console.log(resumoDoCliente(id));
+  console.log(AVISO_BIGQUERY);
+  if (!confirmar) {
+    console.log('\nSimulação. Rode de novo com --confirmar para restaurar (o cliente volta pausado).');
+    return;
+  }
+  console.log(consultar(`SELECT jsonb_pretty(core.restaurar_cliente(${id}::uuid, ${quem}));`));
+  console.log('Cliente restaurado e pausado. Retome a coleta na tela do cliente.');
+}
+
+function expurgarCliente(clientId) {
+  const id = literal(clientId);
+  console.log(resumoDoCliente(id));
   const tabelas = local ? [] : tabelasComCliente();
   if (!local) {
     console.log(`BigQuery: tabelas do manifesto (scripts/bq/manifesto), pelo período de posse em dim_fonte_scd2: ${FATOS_POR_FONTE.map((f) => `${f.tabela}[${f.plataforma}${f.todoPeriodo ? ', todo o período' : ''}]`).join(', ')}`);
@@ -165,19 +210,20 @@ function excluirCliente(clientId) {
   }
 
   if (!confirmar) {
-    console.log('\nSimulação. Rode de novo com --confirmar para excluir no Postgres e no BigQuery.');
+    console.log('\nSimulação. EXPURGO apaga de vez e não tem volta: use só por obrigação legal de eliminação (docs/lgpd/atendimento-ao-titular.md).');
+    console.log('Rode de novo com --confirmar para expurgar no Postgres e no BigQuery.');
     return;
   }
 
-  console.log(consultar(`SELECT jsonb_pretty(core.excluir_cliente(${id}::uuid));`));
-  if (!local) excluirFatosDoCliente(clientId);
+  console.log(consultar(`SELECT jsonb_pretty(core.expurgar_cliente(${id}::uuid));`));
+  if (!local) expurgarFatosDoCliente(clientId);
   for (const tabela of tabelas) {
     execFileSync('bq', [
       '--project_id', PROJETO, 'query', '--use_legacy_sql=false', `--parameter=id:STRING:${clientId}`,
       `DELETE FROM \`${PROJETO}.${DATASET}.${tabela}\` WHERE CAST(client_id AS STRING) = @id`,
     ], { stdio: 'inherit' });
   }
-  console.log('Cliente excluído. Os backups expiram em até 30 dias (docs/lgpd/retencao.md).');
+  console.log('Cliente expurgado. Os backups expiram em até 30 dias (docs/lgpd/retencao.md).');
 }
 
 switch (comando) {
@@ -189,6 +235,12 @@ switch (comando) {
     break;
   case 'excluir-cliente':
     excluirCliente(exigirUuid(alvo));
+    break;
+  case 'restaurar-cliente':
+    restaurarCliente(exigirUuid(alvo));
+    break;
+  case 'expurgar-cliente':
+    expurgarCliente(exigirUuid(alvo));
     break;
   default:
     falhar(USO);

@@ -35,6 +35,7 @@ SELECT
   d.*,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM `{{DATASET}}.dim_gtm_conteiner_scd2` d
@@ -42,7 +43,8 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
   ON atual.organization_id = d.organization_id AND atual.platform = 'gtm' AND atual.external_id = d.conteiner_id
   AND atual.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = d.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = d.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.dim_gtm_workspace_scd2` (
   organization_id               STRING NOT NULL,
@@ -75,6 +77,7 @@ SELECT
   d.*,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM `{{DATASET}}.dim_gtm_workspace_scd2` d
@@ -82,7 +85,8 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
   ON atual.organization_id = d.organization_id AND atual.platform = 'gtm' AND atual.external_id = d.conteiner_id
   AND atual.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = d.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = d.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.dim_gtm_versao_scd2` (
   organization_id               STRING NOT NULL,
@@ -121,6 +125,7 @@ SELECT
   d.*,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM `{{DATASET}}.dim_gtm_versao_scd2` d
@@ -128,7 +133,8 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
   ON atual.organization_id = d.organization_id AND atual.platform = 'gtm' AND atual.external_id = d.conteiner_id
   AND atual.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = d.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = d.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.dim_gtm_tag_scd2` (
   organization_id               STRING NOT NULL,
@@ -169,6 +175,7 @@ SELECT
   d.*,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM `{{DATASET}}.dim_gtm_tag_scd2` d
@@ -176,7 +183,8 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
   ON atual.organization_id = d.organization_id AND atual.platform = 'gtm' AND atual.external_id = d.conteiner_id
   AND atual.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = d.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = d.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.dim_gtm_acionador_scd2` (
   organization_id               STRING NOT NULL,
@@ -211,6 +219,7 @@ SELECT
   d.*,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM `{{DATASET}}.dim_gtm_acionador_scd2` d
@@ -218,7 +227,8 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
   ON atual.organization_id = d.organization_id AND atual.platform = 'gtm' AND atual.external_id = d.conteiner_id
   AND atual.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = d.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = d.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_atual.status, '') != 'excluido';
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.dim_gtm_variavel_scd2` (
   organization_id               STRING NOT NULL,
@@ -253,6 +263,7 @@ SELECT
   d.*,
   atual.client_id AS cliente_atual_id,
   cliente_atual.nome AS cliente_atual_nome,
+  cliente_atual.status AS cliente_atual_status,
   atual.status AS fonte_status_atual,
   atual.nome AS fonte_nome_atual
 FROM `{{DATASET}}.dim_gtm_variavel_scd2` d
@@ -260,4 +271,5 @@ LEFT JOIN `{{DATASET}}.dim_fonte_scd2` atual
   ON atual.organization_id = d.organization_id AND atual.platform = 'gtm' AND atual.external_id = d.conteiner_id
   AND atual.atual
 LEFT JOIN `{{DATASET}}.dim_cliente_scd2` cliente_atual
-  ON cliente_atual.organization_id = d.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual;
+  ON cliente_atual.organization_id = d.organization_id AND cliente_atual.client_id = atual.client_id AND cliente_atual.atual
+WHERE IFNULL(cliente_atual.status, '') != 'excluido';

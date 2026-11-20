@@ -1,4 +1,5 @@
 import { sql } from '@/shared/db/client';
+import { statusDoClienteNaDimensao } from '@/modules/coleta/domain/dimensoes';
 import type { EstadoDaFonte, EstadoDoCliente, MudancaDePosse, OrigemDaFonte } from '@/modules/coleta/domain/dimensoes';
 
 type FonteRow = {
@@ -18,6 +19,7 @@ type ClienteRow = {
   status: string;
   parent_client_id: string | null;
   business_model: string;
+  excluido_em: Date | null;
 };
 
 type MudancaRow = {
@@ -57,7 +59,7 @@ export function createDimensoesRepository(): DimensoesRepository {
         organizationId: row.organization_id,
         clientId: row.client_id,
         nome: row.nome,
-        status: row.status,
+        status: statusDoClienteNaDimensao(row.status, row.excluido_em),
         parentClientId: row.parent_client_id,
         businessModel: row.business_model,
       }));
