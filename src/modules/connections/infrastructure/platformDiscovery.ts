@@ -11,6 +11,7 @@ import {
   parseSearchConsoleSites,
   parseYoutubeChannels,
   parseGbpAccounts,
+  urlDosLocaisDoGbp,
   parseGbpLocations,
   sortForSelection,
   type DiscoveredAccount,
@@ -298,7 +299,7 @@ export function createPlatformDiscovery(): PlatformDiscovery {
       const locais: DiscoveredAccount[] = [];
       for (const contaId of contas) {
         const paginasDeLocais = await fetchTodasAsPaginas(
-          `https://mybusinessbusinessinformation.googleapis.com/v1/accounts/${contaId}/locations?readMask=title&pageSize=100`,
+          urlDosLocaisDoGbp(contaId),
           headers,
           'pageToken',
         );

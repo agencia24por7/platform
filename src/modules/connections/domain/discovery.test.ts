@@ -6,6 +6,7 @@ import {
   parseAccessibleCustomers,
   parseGbpAccounts,
   parseGbpLocations,
+  urlDosLocaisDoGbp,
   parseGa4Properties,
   parseGoogleCustomerClients,
   parseGtmAccountIds,
@@ -239,6 +240,12 @@ describe('parseYoutubeChannels', () => {
 });
 
 describe('parseGbpAccounts e parseGbpLocations', () => {
+  it('pede o name de cada local, sem o qual o parser não reconhece nenhum', () => {
+    const url = new URL(urlDosLocaisDoGbp('109942550426920194824'));
+    assert.equal(url.pathname, '/v1/accounts/109942550426920194824/locations');
+    assert.deepEqual(url.searchParams.get('readMask')?.split(','), ['name', 'title']);
+  });
+
   it('extrai o id numérico do nome da conta', () => {
     assert.deepEqual(parseGbpAccounts({ accounts: [{ name: 'accounts/555' }] }), ['555']);
   });
