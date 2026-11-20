@@ -1,6 +1,5 @@
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_ads_diario` (
   organization_id       STRING NOT NULL,
-  client_id             STRING NOT NULL,
   platform              STRING NOT NULL,
   ad_account_id         STRING NOT NULL,
   external_campaign_id  STRING NOT NULL,
@@ -17,11 +16,10 @@ CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_ads_diario` (
   inserido_em           TIMESTAMP NOT NULL
 )
 PARTITION BY data_dia
-CLUSTER BY organization_id, client_id;
+CLUSTER BY organization_id, ad_account_id;
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_ga4_diario` (
   organization_id   STRING NOT NULL,
-  client_id         STRING NOT NULL,
   property_id       STRING NOT NULL,
   canal             STRING,
   data_dia          DATE NOT NULL,
@@ -34,11 +32,10 @@ CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_ga4_diario` (
   inserido_em       TIMESTAMP NOT NULL
 )
 PARTITION BY data_dia
-CLUSTER BY organization_id, client_id;
+CLUSTER BY organization_id, property_id;
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_search_console_diario` (
   organization_id  STRING NOT NULL,
-  client_id        STRING NOT NULL,
   site             STRING NOT NULL,
   device           STRING,
   data_dia         DATE NOT NULL,
@@ -50,11 +47,10 @@ CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_search_console_diario` (
   inserido_em      TIMESTAMP NOT NULL
 )
 PARTITION BY data_dia
-CLUSTER BY organization_id, client_id;
+CLUSTER BY organization_id, site;
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_youtube_diario` (
   organization_id     STRING NOT NULL,
-  client_id           STRING NOT NULL,
   channel_id          STRING NOT NULL,
   data_dia            DATE NOT NULL,
   views               INT64,
@@ -66,11 +62,10 @@ CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_youtube_diario` (
   inserido_em         TIMESTAMP NOT NULL
 )
 PARTITION BY data_dia
-CLUSTER BY organization_id, client_id;
+CLUSTER BY organization_id, channel_id;
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_gbp_diario` (
   organization_id  STRING NOT NULL,
-  client_id        STRING NOT NULL,
   location_id      STRING NOT NULL,
   data_dia         DATE NOT NULL,
   metrica          STRING NOT NULL,
@@ -79,11 +74,11 @@ CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_gbp_diario` (
   inserido_em      TIMESTAMP NOT NULL
 )
 PARTITION BY data_dia
-CLUSTER BY organization_id, client_id;
+CLUSTER BY organization_id, location_id;
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_rd_negociacoes` (
   organization_id  STRING NOT NULL,
-  client_id        STRING NOT NULL,
+  conta_id         STRING NOT NULL,
   deal_id          STRING NOT NULL,
   data_snapshot    DATE NOT NULL,
   pipeline_id      STRING,
@@ -105,4 +100,4 @@ CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_rd_negociacoes` (
   inserido_em      TIMESTAMP NOT NULL
 )
 PARTITION BY data_snapshot
-CLUSTER BY organization_id, client_id, pipeline_id;
+CLUSTER BY organization_id, conta_id;

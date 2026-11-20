@@ -84,6 +84,28 @@ function anonimizar(email) {
   console.log(consultar(`SELECT jsonb_pretty(core.anonimizar_titular_e_encerrar(${literal(email)}));`));
 }
 
+const FATOS_POR_FONTE = [
+  { tabela: 'fato_ads_diario', chave: 'ad_account_id', plataforma: 'f.platform', data: 'data_dia' },
+  { tabela: 'fato_ga4_diario', chave: 'property_id', plataforma: "'ga4'", data: 'data_dia' },
+  { tabela: 'fato_search_console_diario', chave: 'site', plataforma: "'searchconsole'", data: 'data_dia' },
+  { tabela: 'fato_youtube_diario', chave: 'channel_id', plataforma: "'youtube'", data: 'data_dia' },
+  { tabela: 'fato_gbp_diario', chave: 'location_id', plataforma: "'gbp'", data: 'data_dia' },
+  { tabela: 'fato_rd_negociacoes', chave: 'conta_id', plataforma: "'rdstation'", data: 'data_snapshot' },
+];
+
+function excluirFatosDoCliente(clientId) {
+  for (const fato of FATOS_POR_FONTE) {
+    const momento = `TIMESTAMP(f.${fato.data}, 'America/Sao_Paulo')`;
+    execFileSync('bq', [
+      '--project_id', PROJETO, 'query', '--use_legacy_sql=false', `--parameter=id:STRING:${clientId}`,
+      `DELETE FROM \`${PROJETO}.${DATASET}.${fato.tabela}\` f WHERE EXISTS (
+         SELECT 1 FROM \`${PROJETO}.${DATASET}.dim_fonte_scd2\` d
+         WHERE d.client_id = @id AND d.organization_id = f.organization_id AND d.platform = ${fato.plataforma}
+           AND d.external_id = f.${fato.chave} AND ${momento} >= d.valido_de AND ${momento} < d.valido_ate)`,
+    ], { stdio: 'inherit' });
+  }
+}
+
 function tabelasComCliente() {
   const saida = execFileSync('bq', [
     '--project_id', PROJETO, 'query', '--use_legacy_sql=false', '--format=csv',
@@ -103,7 +125,10 @@ function excluirCliente(clientId) {
     ));`);
   console.log(resumo);
   const tabelas = local ? [] : tabelasComCliente();
-  if (!local) console.log(`BigQuery: ${tabelas.length} tabela(s) com client_id em ${DATASET}: ${tabelas.join(', ')}`);
+  if (!local) {
+    console.log(`BigQuery: fatos das fontes que foram do cliente, pelo período de posse (dim_fonte_scd2): ${FATOS_POR_FONTE.map((f) => f.tabela).join(', ')}`);
+    console.log(`BigQuery: depois, linhas com client_id em ${tabelas.join(', ')}`);
+  }
 
   if (!confirmar) {
     console.log('\nSimulação. Rode de novo com --confirmar para excluir no Postgres e no BigQuery.');
@@ -111,6 +136,7 @@ function excluirCliente(clientId) {
   }
 
   console.log(consultar(`SELECT jsonb_pretty(core.excluir_cliente(${id}::uuid));`));
+  if (!local) excluirFatosDoCliente(clientId);
   for (const tabela of tabelas) {
     execFileSync('bq', [
       '--project_id', PROJETO, 'query', '--use_legacy_sql=false', `--parameter=id:STRING:${clientId}`,
