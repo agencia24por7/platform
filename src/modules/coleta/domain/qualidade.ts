@@ -6,6 +6,7 @@ export const CausaFaltante = {
   ColetaIncompleta: 'coleta_incompleta',
   ForaDoV1: 'fora_do_v1',
   FalhaColetor: 'falha_coletor',
+  LimiteDeUso: 'limite_de_uso',
 } as const;
 export type CausaFaltante = (typeof CausaFaltante)[keyof typeof CausaFaltante];
 
@@ -22,6 +23,12 @@ export type AchadoDeParidade = {
   readonly observado: string | null;
 };
 
+export type AvisoDeQualidade = {
+  readonly fonte: string;
+  readonly tipo: 'versao_da_api' | 'uso_de_cota' | 'limiar_de_privacidade' | 'linhas_agrupadas' | 'alcance_omitido' | 'receita_indisponivel' | 'parcial_aceita';
+  readonly detalhe: string | null;
+};
+
 export type Volumetria = {
   readonly linhas: number;
   readonly bytes: number;
@@ -34,6 +41,7 @@ export type RelatorioDeExecucao = {
   readonly fontesColetadas: number;
   readonly faltantes: readonly Faltante[];
   readonly paridade: readonly AchadoDeParidade[];
+  readonly avisos?: readonly AvisoDeQualidade[];
   readonly volumetria: Volumetria;
 };
 

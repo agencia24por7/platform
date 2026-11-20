@@ -112,7 +112,7 @@ describe('coletor de formulários: dimensões e leads por dia', () => {
         lead({ id: '778', created_time: '2026-11-18T12:00:00+0000' }),
         lead({ id: '779', created_time: '2026-11-18T13:00:00+0000' }),
       ],
-      paging: { next: `https://graph.facebook.com/v23.0/x?access_token=${TOKEN}` },
+      paging: { next: `https://graph.facebook.com/v26.0/x?access_token=${TOKEN}` },
     });
     const saida = rodar([paginaDeFormularios], [cortada]);
     const dias = daTabela(saida, TabelaLeadAds.LeadsDiarios).map((linha) => leadsDoDiaDaLinha(linha)!.data_dia);

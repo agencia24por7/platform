@@ -58,12 +58,12 @@ tipo `SugestorDeContexto`; a chamada à IA não existe ainda.
 
 ### 3. Armazenamento de arquivos: um bucket, um prefixo por cliente
 
-Um único bucket (criado em `infra/terraform` por outra frente), com prefixo por
+Um único bucket (`infra/terraform/contexto.tf`, ADR 0027), com prefixo por
 organização e cliente:
 
 ```
-orgs/{orgId}/clientes/{clientId}/contexto/brain/...                (exportação)
-orgs/{orgId}/clientes/{clientId}/contexto/arquivos/{fileId}-{nome}  (uploads)
+orgs/{orgId}/clientes/{clientId}/contexto/brain/...        (exportação derivada)
+orgs/{orgId}/clientes/{clientId}/arquivos/{fileId}-{nome}  (uploads)
 ```
 
 **Não** um bucket por cliente: criar bucket tem limite de taxa e é operação de
@@ -82,24 +82,35 @@ residência de dados diferente; o volume passar de dezenas de TB ou de milhões 
 objetos por cliente; ou surgir acesso direto do cliente ao bucket (aí bucket ou
 pasta gerenciada com IAM próprio).
 
-O app fala com o bucket por uma porta (`ArmazenamentoDeContexto`,
-`src/modules/clients/application/armazenamentoDeContexto.ts`): `put`, `get`,
+Uma porta só para os serviços: `PortaDoArmazenamento`
+(`src/modules/clients/application/portaDoArmazenamento.ts`; `put`, `get`,
 `list`, `delete`, `deletePrefix`, `saudavel`, `configurado`, todas com
-`Result`. Sem bucket configurado, `composition.ts` usa
-`criarArmazenamentoNulo()`: o texto do contexto funciona; anexos e brain ficam
-desligados e o estado diz isso (`brain.armazenamentoConfigurado = false`).
+`Result`). O cliente GCS do ADR 0027 (`src/shared/storage`, que lança
+`ArmazenamentoIndisponivelError`/`CaminhoInvalidoError`) é traduzido por um
+adaptador fino (`infrastructure/armazenamentoAdaptado.ts`: exceção → `Result`,
+paginação da listagem resolvida ali). Escolhemos traduzir na borda em vez de
+espalhar `try/catch` pelos casos de uso: o serviço segue o padrão `Result` do
+resto do app e o cliente GCS continua testado sozinho. `composition.ts` monta
+`adaptarArmazenamento(criarArmazenamentoDeContexto(env()))`: GCS quando
+`CONTEXT_BUCKET` existe, nulo caso contrário. Sem bucket o texto do contexto
+funciona; anexos ficam indisponíveis, nada é agendado e o estado do brain diz
+`situacao: 'desativado'`.
 
 ### 4. Política de arquivos
 
-`avaliarArquivo` + `assinaturaConfere` (`domain/contexto/arquivos.ts`), para o
-adaptador de armazenamento reaproveitar:
+Fonte única: `src/shared/storage/politicaDeArquivos.ts` (ADR 0027: detecção
+pelos bytes iniciais, `nomeSeguro`, cabeçalhos de download). O domínio
+(`domain/contexto/arquivos.ts`, `avaliarAnexo`) só acrescenta a categoria que o
+campo do catálogo aceita (`imagem`, `documento`, `planilha`, `video`, `fonte`).
 
-- Aceitos: PNG, JPEG, WEBP, GIF, PDF, DOCX, TXT, CSV, XLSX, MP4 e MOV.
+- Aceitos: PNG, JPEG, WEBP, GIF, PDF, DOCX, TXT, CSV, XLSX, vídeo MP4/MOV
+  (depoimentos, criativos) e fontes TTF/OTF/WOFF2 (marca).
 - Recusados: SVG e HTML (executam script no navegador se servidos inline),
-  executáveis e **ZIP** (pode conter qualquer coisa, inclusive executável e
-  bomba de descompressão, e nenhum indexador futuro lê o conteúdo). Pasta
-  grande vai como link (`links_de_midia`).
-- Tipo declarado precisa bater com a extensão **e** com os primeiros bytes.
+  executáveis e **ZIP**: o pacote pode conter qualquer coisa (executável, html,
+  bomba de descompressão) que a checagem por bytes iniciais não enxerga, e
+  nenhum indexador do brain lê o conteúdo. Pasta grande vai como link
+  (`links_de_midia`). Isso reverte o zip que o ADR 0027 previa.
+- O tipo vem dos bytes; extensão e tipo declarado só confirmam.
 - 25 MB por arquivo; 500 MB por cliente (cota conferida sob trava por cliente
   no caminho público).
 - O nome gravado é saneado (`nomeSeguro`); o id vem antes, então dois uploads
@@ -126,9 +137,22 @@ gravado (idempotente). Cada arquivo tem 3 tentativas com recuo; o
 `manifest.json` vai por último, então manifest novo significa conjunto
 completo. Falha fica em `client_context_brain.last_error` + `attempts`, no
 evento `client.context.brain_failed` e no estado devolvido por `carregar`.
-`core.contexto_brains_pendentes` + `publicarPendentes` são a varredura de
-recuperação (para um cron/rota de worker no próximo passo), com recuo
-crescente para quem falhou.
+Disparo em três camadas:
+
+1. **Na hora**: todo salvar/alterar/remover bem-sucedido agenda
+   `publicarBrain` em memória, com espera de 5 s por cliente (rajada de
+   autosave vira uma publicação), sem bloquear a resposta.
+2. **Varredura**: `POST /api/v0/contexto/publicar-pendentes` (`workerRoute`,
+   corpo `{ limite }`) chama `publicarPendentes`, que usa
+   `core.contexto_brains_pendentes` (mudou depois da última tentativa, ou falhou
+   e venceu o recuo crescente). O workflow
+   `n8n/workflows/plataforma/contexto-brain-diario.json` chama a rota de hora em
+   hora; cobre reinício do processo e falha do bucket.
+3. **Reconstrução total**: `POST /api/v0/contexto/reconstruir`
+   (`{ organizationId, clientId? }` ou `{ todos: true }`) regrava ignorando o
+   hash; `scripts/contexto-reconstruir-brain.mjs --org --cliente | --todos`
+   (token do Secret Manager, ou `--local`). Usar depois de mudar o formato do
+   brain ou de restaurar o bucket.
 
 Pensado para um indexador futuro (ex.: Vertex AI Search sobre o prefixo
 `orgs/*/clientes/*/contexto/brain/`): ingere por prefixo, reindexa quando o
@@ -186,8 +210,15 @@ depoimento tem "quem aparece autorizou o uso?". Registro e retenção em
 
 - Indexação para agentes (RAG/vetor) e completude por agente.
 - Chamada de IA para pré-preenchimento (só o gancho `sugerido`).
-- Ligar `expurgarArmazenamento` ao `scripts/titular.mjs expurgar-cliente` e a
-  varredura `publicarPendentes` a uma rota de worker/cron.
+- Ligar o expurgo do bucket ao `scripts/titular.mjs` (outra frente está
+  alterando o script). Ponto exato: em `expurgarCliente`, **depois** de
+  `core.expurgar_cliente` confirmar, apagar
+  `orgs/{org}/clientes/{cliente}/` com todas as versões. Pelo app é
+  `modules().contexto.expurgarArmazenamento({ organizationId, clientId })`
+  (`deletePrefix` da porta); do script, sem o app, é `deletePrefix` de
+  `src/shared/storage` ou `gcloud storage rm -r --all-versions`. A organização
+  precisa ser lida antes do expurgo, porque depois a linha do cliente não
+  existe mais. Até lá, o expurgo apaga o Postgres e deixa os objetos.
 - UI da página do cliente e do formulário público.
 
 ## Consequências

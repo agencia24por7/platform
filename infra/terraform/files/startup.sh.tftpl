@@ -49,6 +49,7 @@ umask 077
   echo "ACME_EMAIL=$ACME_EMAIL"
   echo "BQ_PROJECT_ID=$PROJECT_ID"
   echo "BQ_DATASET=tria_dw"
+  echo "CONTEXT_BUCKET=${contexto_bucket}"
   echo "GOOGLE_OAUTH_CLIENT_ID=$(read_optional_secret google-oauth-client-id)"
   echo "GOOGLE_OAUTH_CLIENT_SECRET=$(read_optional_secret google-oauth-client-secret)"
   echo "META_APP_ID=$(read_optional_secret meta-app-id)"

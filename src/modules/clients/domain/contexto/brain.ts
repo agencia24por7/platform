@@ -8,7 +8,7 @@ import {
   type CampoSimples,
   type Secao,
 } from './catalogo.ts';
-import { prefixoDoBrain } from './arquivos.ts';
+import { caminhoDoBrain } from './arquivos.ts';
 import { calcularCompletude } from './completude.ts';
 import { jsonEstavel } from './jsonEstavel.ts';
 import { entraNoBrain, type ArquivoDeContexto, type ContextoBruto, type ItemDeLista, type Marcacao } from './tipos.ts';
@@ -275,10 +275,9 @@ export function hashDoConteudo(arquivos: readonly Pick<ArquivoDoBrain, 'nome' | 
 
 export function construirBrain(entrada: EntradaDoBrain): Brain {
   const org = organizar(entrada.contexto);
-  const prefixo = prefixoDoBrain(entrada.organizationId, entrada.clientId);
   const arquivo = (nome: string, contentType: string, conteudo: string): ArquivoDoBrain => ({
     nome,
-    caminho: `${prefixo}${nome}`,
+    caminho: caminhoDoBrain(entrada.organizationId, entrada.clientId, nome),
     contentType,
     conteudo,
   });

@@ -198,6 +198,9 @@ export type ContextoRepository = {
       | { readonly ok: false; readonly erro: string },
   ): Promise<void>;
   brainsPendentes(limite: number, esperaSegundos: number): Promise<readonly { readonly organizationId: string; readonly clientId: string }[]>;
+  clientesParaReconstruir(
+    organizationId: string | null,
+  ): Promise<readonly { readonly organizationId: string; readonly clientId: string }[]>;
   abrirLink(tokenHash: string): Promise<EscopoDoLink | null>;
   lerPeloLink(tokenHash: string, campos: readonly string[]): Promise<VistoPeloLink | null>;
   salvarCampoPeloLink(
@@ -684,6 +687,17 @@ export function createContextoRepository(): ContextoRepository {
       return withoutTenant(async (tx) => {
         const rows = (await tx`
           SELECT * FROM core.contexto_brains_pendentes(${limite}, make_interval(secs => ${esperaSegundos}))`) as unknown as {
+          organization_id: string;
+          client_id: string;
+        }[];
+        return rows.map((row) => ({ organizationId: row.organization_id, clientId: row.client_id }));
+      });
+    },
+
+    async clientesParaReconstruir(organizationId) {
+      return withoutTenant(async (tx) => {
+        const rows = (await tx`
+          SELECT * FROM core.contexto_clientes_para_reconstruir(${organizationId}::uuid)`) as unknown as {
           organization_id: string;
           client_id: string;
         }[];

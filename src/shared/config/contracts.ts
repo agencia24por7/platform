@@ -51,7 +51,7 @@ export const closeRunBody = z.object({
 
 export const fontesColetaQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
-  modo: z.enum(['amostra', 'completa']).default('amostra'),
+  modo: z.enum(['amostra', 'incremental', 'completa']).default('incremental'),
 });
 
 export const janela = z.object({ start: isoDate, end: isoDate });
@@ -59,7 +59,7 @@ export const janela = z.object({ start: isoDate, end: isoDate });
 export const abrirColetaBody = z.object({
   fonteTipo: z.enum(['ad_account', 'connection_account']),
   fonteId: uuid,
-  mode: z.enum(['amostra', 'completa']),
+  mode: z.enum(['amostra', 'incremental', 'completa']),
   window: janela,
   idempotencyKey: z.string().min(8).max(160),
   n8nExecutionId: z.string().max(64).nullable().default(null),
@@ -67,7 +67,7 @@ export const abrirColetaBody = z.object({
 
 export const faltanteBody = z.object({
   fonte: z.string().min(1).max(120),
-  causa: z.enum(['sem_credencial', 'reauth_pending', 'api_recusou', 'sem_dados_no_periodo', 'coleta_incompleta', 'fora_do_v1', 'falha_coletor']),
+  causa: z.enum(['sem_credencial', 'reauth_pending', 'api_recusou', 'sem_dados_no_periodo', 'coleta_incompleta', 'fora_do_v1', 'falha_coletor', 'limite_de_uso']),
   detalhe: z.string().max(500).nullable().default(null),
 });
 
@@ -78,11 +78,18 @@ export const achadoDeParidadeBody = z.object({
   observado: z.string().max(500).nullable().default(null),
 });
 
+export const avisoDeQualidadeBody = z.object({
+  fonte: z.string().min(1).max(120),
+  tipo: z.enum(['versao_da_api', 'uso_de_cota', 'limiar_de_privacidade', 'linhas_agrupadas', 'alcance_omitido', 'receita_indisponivel', 'parcial_aceita']),
+  detalhe: z.string().max(500).nullable().default(null),
+});
+
 export const qualidadeResumoBody = z.object({
   fontesEsperadas: z.coerce.number().int().min(0),
   fontesColetadas: z.coerce.number().int().min(0),
   faltantes: z.array(faltanteBody).max(500),
   paridade: z.array(achadoDeParidadeBody).max(500),
+  avisos: z.array(avisoDeQualidadeBody).max(50).default([]),
   volumetria: z.object({
     linhas: z.coerce.number().int().min(0),
     bytes: z.coerce.number().int().min(0),
@@ -108,4 +115,23 @@ export const fecharColetaBody = z.object({
   qualidadeResumo: qualidadeResumoBody.nullable().default(null),
   errorCode: z.string().max(80).nullable().default(null),
   errorMessage: z.string().max(1000).nullable().default(null),
+  pausa: z.object({
+    motivo: z.enum(['cota_diaria', 'limite_temporario']),
+    minutos: z.coerce.number().int().min(0).max(1440).nullable().default(null),
+  }).nullable().default(null),
 });
+
+export const publicarBrainsPendentesBody = z
+  .object({ limite: z.number().int().min(1).max(200).default(20) })
+  .strict();
+
+export const reconstruirBrainBody = z
+  .object({
+    organizationId: uuid.optional(),
+    clientId: uuid.optional(),
+    todos: z.literal(true).optional(),
+  })
+  .strict()
+  .refine((corpo) => (corpo.todos ? !corpo.organizationId && !corpo.clientId : Boolean(corpo.organizationId)), {
+    message: 'informe organizationId (e opcionalmente clientId) ou todos: true',
+  });

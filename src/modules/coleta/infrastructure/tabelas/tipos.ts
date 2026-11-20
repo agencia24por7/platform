@@ -22,6 +22,7 @@ export type ConfiguracaoFato = Mapeamento & {
   readonly chave: readonly string[];
   readonly colunas: readonly string[];
   readonly tipos: TiposDasColunas;
+  readonly preservarSeNulo?: readonly string[];
 };
 
 export type ConfiguracaoScd2 = Mapeamento & {
@@ -36,6 +37,8 @@ export type ConfiguracaoScd2 = Mapeamento & {
 export type ConfiguracaoSnapshot = Mapeamento & {
   readonly tipo: 'snapshot';
   readonly tabela: string;
+  readonly chave: readonly string[];
+  readonly colunaMomento: string;
   readonly tipos: TiposDasColunas;
 };
 

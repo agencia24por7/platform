@@ -35,6 +35,11 @@ output "backup_bucket" {
   value       = google_storage_bucket.backups.name
 }
 
+output "contexto_bucket" {
+  description = "Bucket do contexto do cliente. Chega ao app como CONTEXT_BUCKET; confira com scripts/contexto-verificar-bucket.mjs."
+  value       = google_storage_bucket.contexto.name
+}
+
 output "secret_names" {
   description = "Preencha os valores antes do primeiro boot."
   value       = [for secret in google_secret_manager_secret.app : secret.secret_id]

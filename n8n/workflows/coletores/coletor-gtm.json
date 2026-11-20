@@ -68,6 +68,12 @@
               "neverError": true,
               "responseFormat": "json"
             }
+          },
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 4500
+            }
           }
         }
       },
@@ -78,7 +84,10 @@
         }
       },
       "onError": "continueRegularOutput",
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000
     },
     {
       "id": "contas",
@@ -91,7 +100,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "function falhaDe(resposta) {\n  if (resposta.error) return { causa: 'api_recusou', detalhe: `falha de rede: ${resposta.error?.message ?? resposta.error}`.slice(0, 500) };\n  if (resposta.statusCode >= 200 && resposta.statusCode < 300) return null;\n  const erro = resposta.body?.error;\n  const detalhe = String(erro?.message || `HTTP ${resposta.statusCode}`).slice(0, 500);\n  const configuracaoDoProjeto = resposta.statusCode === 429 || /SERVICE_DISABLED|accessNotConfigured|has not been used in project|RESOURCE_EXHAUSTED|RATE_LIMIT/.test(JSON.stringify(erro ?? {}));\n  const semAcesso = !configuracaoDoProjeto && (resposta.statusCode === 401 || resposta.statusCode === 403);\n  return { causa: semAcesso ? 'reauth_pending' : 'api_recusou', detalhe };\n}\n\nconst resposta = $input.first().json;\nconst falha = falhaDe(resposta);\nif (falha) return [{ json: { falha } }];\n\nconst contas = resposta.body?.account ?? [];\nif (contas.length === 0) return [{ json: { falha: { causa: 'api_recusou', detalhe: 'credencial não enxerga nenhuma conta do GTM' } } }];\nreturn contas.map((conta) => ({ json: { path: conta.path } }));\n"
+        "jsCode": "const CONFIGURACAO_DO_PROJETO = /SERVICE_DISABLED|accessNotConfigured|has not been used in project/;\nconst SINAIS_DE_LIMITE = /RESOURCE_EXHAUSTED|RATE_LIMIT|rateLimitExceeded|userRateLimitExceeded|quotaExceeded|dailyLimitExceeded|Quota exceeded|Exhausted|Too many requests/i;\nconst SINAIS_DE_COTA_DIARIA = /dailyLimitExceeded|quotaExceeded|per day|PerDay|daily|Number of operations/i;\nfunction falhaDaRecusa(statusCode, erro, detalhe) {\n  const texto = JSON.stringify(erro ?? {});\n  if (CONFIGURACAO_DO_PROJETO.test(texto)) return { causa: 'api_recusou', detalhe };\n  if (statusCode === 429 || SINAIS_DE_LIMITE.test(texto)) {\n    return { causa: 'limite_de_uso', detalhe: String(detalhe).slice(0, 500), pausa: SINAIS_DE_COTA_DIARIA.test(texto) ? 'cota_diaria' : 'limite_temporario', minutos: null };\n  }\n  if (statusCode === 401 || statusCode === 403) return { causa: 'reauth_pending', detalhe };\n  return { causa: 'api_recusou', detalhe };\n}\n\nfunction falhaDe(resposta) {\n  if (resposta.error) return { causa: 'api_recusou', detalhe: `falha de rede: ${resposta.error?.message ?? resposta.error}`.slice(0, 500) };\n  if (resposta.statusCode >= 200 && resposta.statusCode < 300) return null;\n  const erro = resposta.body?.error;\n  const detalhe = String(erro?.message || `HTTP ${resposta.statusCode}`).slice(0, 500);\n  return falhaDaRecusa(resposta.statusCode, erro, detalhe);\n}\n\nconst resposta = $input.first().json;\nconst falha = falhaDe(resposta);\nif (falha) return [{ json: { falha } }];\n\nconst contas = resposta.body?.account ?? [];\nif (contas.length === 0) return [{ json: { falha: { causa: 'api_recusou', detalhe: 'credencial não enxerga nenhuma conta do GTM' } } }];\nreturn contas.map((conta) => ({ json: { path: conta.path } }));\n"
       }
     },
     {
@@ -148,6 +157,12 @@
               "neverError": true,
               "responseFormat": "json"
             }
+          },
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 4500
+            }
           }
         }
       },
@@ -171,7 +186,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "function falhaDe(resposta) {\n  if (resposta.error) return { causa: 'api_recusou', detalhe: `falha de rede: ${resposta.error?.message ?? resposta.error}`.slice(0, 500) };\n  if (resposta.statusCode >= 200 && resposta.statusCode < 300) return null;\n  const erro = resposta.body?.error;\n  const detalhe = String(erro?.message || `HTTP ${resposta.statusCode}`).slice(0, 500);\n  const configuracaoDoProjeto = resposta.statusCode === 429 || /SERVICE_DISABLED|accessNotConfigured|has not been used in project|RESOURCE_EXHAUSTED|RATE_LIMIT/.test(JSON.stringify(erro ?? {}));\n  const semAcesso = !configuracaoDoProjeto && (resposta.statusCode === 401 || resposta.statusCode === 403);\n  return { causa: semAcesso ? 'reauth_pending' : 'api_recusou', detalhe };\n}\n\nconst publicId = String($('Montar requisição').first().json.fonte.externalId);\nconst respostas = $input.all().map((item) => item.json);\nconst falha = respostas.map(falhaDe).find(Boolean);\nif (falha) return [{ json: { falha } }];\n\nconst container = respostas.flatMap((resposta) => resposta.body?.container ?? []).find((item) => item.publicId === publicId);\nif (!container) return [{ json: { falha: { causa: 'api_recusou', detalhe: `contêiner ${publicId} não aparece para esta credencial` } } }];\nreturn [{\n  json: {\n    path: container.path,\n    name: container.name,\n    accountId: container.accountId ?? null,\n    containerId: container.containerId ?? null,\n    usageContext: Array.isArray(container.usageContext) ? container.usageContext.join(',') : null,\n    domainName: Array.isArray(container.domainName) ? container.domainName.join(',') : null,\n  },\n}];\n"
+        "jsCode": "const CONFIGURACAO_DO_PROJETO = /SERVICE_DISABLED|accessNotConfigured|has not been used in project/;\nconst SINAIS_DE_LIMITE = /RESOURCE_EXHAUSTED|RATE_LIMIT|rateLimitExceeded|userRateLimitExceeded|quotaExceeded|dailyLimitExceeded|Quota exceeded|Exhausted|Too many requests/i;\nconst SINAIS_DE_COTA_DIARIA = /dailyLimitExceeded|quotaExceeded|per day|PerDay|daily|Number of operations/i;\nfunction falhaDaRecusa(statusCode, erro, detalhe) {\n  const texto = JSON.stringify(erro ?? {});\n  if (CONFIGURACAO_DO_PROJETO.test(texto)) return { causa: 'api_recusou', detalhe };\n  if (statusCode === 429 || SINAIS_DE_LIMITE.test(texto)) {\n    return { causa: 'limite_de_uso', detalhe: String(detalhe).slice(0, 500), pausa: SINAIS_DE_COTA_DIARIA.test(texto) ? 'cota_diaria' : 'limite_temporario', minutos: null };\n  }\n  if (statusCode === 401 || statusCode === 403) return { causa: 'reauth_pending', detalhe };\n  return { causa: 'api_recusou', detalhe };\n}\n\nfunction falhaDe(resposta) {\n  if (resposta.error) return { causa: 'api_recusou', detalhe: `falha de rede: ${resposta.error?.message ?? resposta.error}`.slice(0, 500) };\n  if (resposta.statusCode >= 200 && resposta.statusCode < 300) return null;\n  const erro = resposta.body?.error;\n  const detalhe = String(erro?.message || `HTTP ${resposta.statusCode}`).slice(0, 500);\n  return falhaDaRecusa(resposta.statusCode, erro, detalhe);\n}\n\nconst publicId = String($('Montar requisição').first().json.fonte.externalId);\nconst respostas = $input.all().map((item) => item.json);\nconst falha = respostas.map(falhaDe).find(Boolean);\nif (falha) return [{ json: { falha } }];\n\nconst container = respostas.flatMap((resposta) => resposta.body?.container ?? []).find((item) => item.publicId === publicId);\nif (!container) return [{ json: { falha: { causa: 'api_recusou', detalhe: `contêiner ${publicId} não aparece para esta credencial` } } }];\nreturn [{\n  json: {\n    path: container.path,\n    name: container.name,\n    accountId: container.accountId ?? null,\n    containerId: container.containerId ?? null,\n    usageContext: Array.isArray(container.usageContext) ? container.usageContext.join(',') : null,\n    domainName: Array.isArray(container.domainName) ? container.domainName.join(',') : null,\n  },\n}];\n"
       }
     },
     {
@@ -228,6 +243,12 @@
               "neverError": true,
               "responseFormat": "json"
             }
+          },
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 4500
+            }
           }
         }
       },
@@ -251,7 +272,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "function falhaDe(resposta) {\n  if (resposta.error) return { causa: 'api_recusou', detalhe: `falha de rede: ${resposta.error?.message ?? resposta.error}`.slice(0, 500) };\n  if (resposta.statusCode >= 200 && resposta.statusCode < 300) return null;\n  const erro = resposta.body?.error;\n  const detalhe = String(erro?.message || `HTTP ${resposta.statusCode}`).slice(0, 500);\n  const configuracaoDoProjeto = resposta.statusCode === 429 || /SERVICE_DISABLED|accessNotConfigured|has not been used in project|RESOURCE_EXHAUSTED|RATE_LIMIT/.test(JSON.stringify(erro ?? {}));\n  const semAcesso = !configuracaoDoProjeto && (resposta.statusCode === 401 || resposta.statusCode === 403);\n  return { causa: semAcesso ? 'reauth_pending' : 'api_recusou', detalhe };\n}\n\nconst contexto = $('Montar requisição').first().json;\n\nfunction respostasDe(nome) {\n  try {\n    return $(nome).all().map((item) => item.json);\n  } catch {\n    return [];\n  }\n}\n\nconst chamadas = [...respostasDe('Listar contas'), ...respostasDe('Listar contêineres'), ...respostasDe('Versão publicada'), ...respostasDe('Workspaces')];\nconst requests = chamadas.length;\nconst bytes = chamadas.reduce((total, resposta) => total + JSON.stringify(resposta.body ?? {}).length, 0);\n\nfunction devolver(linhas, falhas) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - contexto.inicio },\n      falhas,\n      requests,\n      versaoApi: contexto.versaoApi,\n    },\n  }];\n}\n\nconst entrada = $input.first().json;\nif (entrada.falha) return devolver([], [entrada.falha]);\nconst atual = respostasDe('Versão publicada')[0] ?? {};\nconst respostaDosWorkspaces = respostasDe('Workspaces')[0] ?? {};\n\nconst semVersao = atual.statusCode === 404;\nconst falha = semVersao ? null : falhaDe(atual);\nif (falha) return devolver([], [falha]);\n\nconst container = $('Encontrar contêiner').first().json;\nconst versao = semVersao ? null : atual.body;\nconst estado = versao\n  ? `live v${versao.containerVersionId} · ${(versao.tag ?? []).length} tags · ${(versao.trigger ?? []).length} acionadores · ${(versao.variable ?? []).length} variáveis`\n  : 'sem_versao_publicada';\n\nconst listaDe = (valor) => (Array.isArray(valor) ? valor : []);\nconst ids = (valor) => listaDe(valor).map(String).join(',');\nconst catalogo = [{\n  _tabela: 'dim_conteiner',\n  nome: container.name,\n  contaGtmId: container.accountId,\n  conteinerGtmId: container.containerId,\n  contextoDeUso: container.usageContext,\n  dominios: container.domainName,\n}];\n\nconst workspacesOk = respostaDosWorkspaces.statusCode >= 200 && respostaDosWorkspaces.statusCode < 300;\nfor (const workspace of workspacesOk ? listaDe(respostaDosWorkspaces.body?.workspace) : []) {\n  catalogo.push({ _tabela: 'dim_workspace', workspaceId: workspace.workspaceId, nome: workspace.name });\n}\n\nif (versao) {\n  catalogo.push({\n    _tabela: 'dim_versao',\n    versaoId: versao.containerVersionId,\n    nome: versao.name,\n    totalTags: listaDe(versao.tag).length,\n    totalAcionadores: listaDe(versao.trigger).length,\n    totalVariaveis: listaDe(versao.variable).length,\n  });\n  for (const tag of listaDe(versao.tag)) {\n    catalogo.push({\n      _tabela: 'dim_tag',\n      tagId: tag.tagId,\n      nome: tag.name,\n      tipo: tag.type,\n      acionadoresDisparo: ids(tag.firingTriggerId),\n      acionadoresBloqueio: ids(tag.blockingTriggerId),\n      pausada: tag.paused === true,\n    });\n  }\n  for (const acionador of listaDe(versao.trigger)) {\n    catalogo.push({ _tabela: 'dim_acionador', acionadorId: acionador.triggerId, nome: acionador.name, tipo: acionador.type });\n  }\n  for (const variavel of listaDe(versao.variable)) {\n    catalogo.push({ _tabela: 'dim_variavel', variavelId: variavel.variableId, nome: variavel.name, tipo: variavel.type });\n  }\n}\n\nreturn devolver([{\n  nome: container.name,\n  estado,\n  inactive: false,\n  rotuloEsperado: contexto.fonte.nome ?? null,\n  rotuloObservado: container.name,\n}, ...catalogo], []);\n"
+        "jsCode": "const CONFIGURACAO_DO_PROJETO = /SERVICE_DISABLED|accessNotConfigured|has not been used in project/;\nconst SINAIS_DE_LIMITE = /RESOURCE_EXHAUSTED|RATE_LIMIT|rateLimitExceeded|userRateLimitExceeded|quotaExceeded|dailyLimitExceeded|Quota exceeded|Exhausted|Too many requests/i;\nconst SINAIS_DE_COTA_DIARIA = /dailyLimitExceeded|quotaExceeded|per day|PerDay|daily|Number of operations/i;\nfunction falhaDaRecusa(statusCode, erro, detalhe) {\n  const texto = JSON.stringify(erro ?? {});\n  if (CONFIGURACAO_DO_PROJETO.test(texto)) return { causa: 'api_recusou', detalhe };\n  if (statusCode === 429 || SINAIS_DE_LIMITE.test(texto)) {\n    return { causa: 'limite_de_uso', detalhe: String(detalhe).slice(0, 500), pausa: SINAIS_DE_COTA_DIARIA.test(texto) ? 'cota_diaria' : 'limite_temporario', minutos: null };\n  }\n  if (statusCode === 401 || statusCode === 403) return { causa: 'reauth_pending', detalhe };\n  return { causa: 'api_recusou', detalhe };\n}\n\nfunction falhaDe(resposta) {\n  if (resposta.error) return { causa: 'api_recusou', detalhe: `falha de rede: ${resposta.error?.message ?? resposta.error}`.slice(0, 500) };\n  if (resposta.statusCode >= 200 && resposta.statusCode < 300) return null;\n  const erro = resposta.body?.error;\n  const detalhe = String(erro?.message || `HTTP ${resposta.statusCode}`).slice(0, 500);\n  return falhaDaRecusa(resposta.statusCode, erro, detalhe);\n}\n\nconst contexto = $('Montar requisição').first().json;\n\nfunction respostasDe(nome) {\n  try {\n    return $(nome).all().map((item) => item.json);\n  } catch {\n    return [];\n  }\n}\n\nconst chamadas = [...respostasDe('Listar contas'), ...respostasDe('Listar contêineres'), ...respostasDe('Versão publicada'), ...respostasDe('Workspaces')];\nconst requests = chamadas.length;\nconst bytes = chamadas.reduce((total, resposta) => total + JSON.stringify(resposta.body ?? {}).length, 0);\n\nfunction devolver(linhas, falhas) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - contexto.inicio },\n      falhas,\n      requests,\n      versaoApi: contexto.versaoApi,\n    },\n  }];\n}\n\nconst entrada = $input.first().json;\nif (entrada.falha) return devolver([], [entrada.falha]);\nconst atual = respostasDe('Versão publicada')[0] ?? {};\nconst respostaDosWorkspaces = respostasDe('Workspaces')[0] ?? {};\n\nconst semVersao = atual.statusCode === 404;\nconst falha = semVersao ? null : falhaDe(atual);\nif (falha) return devolver([], [falha]);\n\nconst container = $('Encontrar contêiner').first().json;\nconst versao = semVersao ? null : atual.body;\nconst estado = versao\n  ? `live v${versao.containerVersionId} · ${(versao.tag ?? []).length} tags · ${(versao.trigger ?? []).length} acionadores · ${(versao.variable ?? []).length} variáveis`\n  : 'sem_versao_publicada';\n\nconst listaDe = (valor) => (Array.isArray(valor) ? valor : []);\nconst ids = (valor) => listaDe(valor).map(String).join(',');\nconst catalogo = [{\n  _tabela: 'dim_conteiner',\n  nome: container.name,\n  contaGtmId: container.accountId,\n  conteinerGtmId: container.containerId,\n  contextoDeUso: container.usageContext,\n  dominios: container.domainName,\n}];\n\nconst workspacesOk = respostaDosWorkspaces.statusCode >= 200 && respostaDosWorkspaces.statusCode < 300;\nfor (const workspace of workspacesOk ? listaDe(respostaDosWorkspaces.body?.workspace) : []) {\n  catalogo.push({ _tabela: 'dim_workspace', workspaceId: workspace.workspaceId, nome: workspace.name });\n}\n\nif (versao) {\n  catalogo.push({\n    _tabela: 'dim_versao',\n    versaoId: versao.containerVersionId,\n    nome: versao.name,\n    totalTags: listaDe(versao.tag).length,\n    totalAcionadores: listaDe(versao.trigger).length,\n    totalVariaveis: listaDe(versao.variable).length,\n  });\n  for (const tag of listaDe(versao.tag)) {\n    catalogo.push({\n      _tabela: 'dim_tag',\n      tagId: tag.tagId,\n      nome: tag.name,\n      tipo: tag.type,\n      acionadoresDisparo: ids(tag.firingTriggerId),\n      acionadoresBloqueio: ids(tag.blockingTriggerId),\n      pausada: tag.paused === true,\n    });\n  }\n  for (const acionador of listaDe(versao.trigger)) {\n    catalogo.push({ _tabela: 'dim_acionador', acionadorId: acionador.triggerId, nome: acionador.name, tipo: acionador.type });\n  }\n  for (const variavel of listaDe(versao.variable)) {\n    catalogo.push({ _tabela: 'dim_variavel', variavelId: variavel.variableId, nome: variavel.name, tipo: variavel.type });\n  }\n}\n\nreturn devolver([{\n  nome: container.name,\n  estado,\n  inactive: false,\n  rotuloEsperado: contexto.fonte.nome ?? null,\n  rotuloObservado: container.name,\n}, ...catalogo], []);\n"
       }
     },
     {
@@ -274,6 +295,12 @@
               "fullResponse": true,
               "neverError": true,
               "responseFormat": "json"
+            }
+          },
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 4500
             }
           }
         }

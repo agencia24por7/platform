@@ -42,6 +42,8 @@ const schema = z.object({
   N8N_API_KEY: opcional(z.string().min(20)),
   BQ_PROJECT_ID: opcional(z.string().min(3)),
   BQ_DATASET: z.string().min(3).default('tria_dw'),
+  CONTEXT_BUCKET: opcional(z.string().regex(/^[a-z0-9][a-z0-9._-]{2,221}$/, 'nome de bucket inválido')),
+  BQ_MAXIMO_BYTES_FATURADOS: z.coerce.number().int().min(10_000_000).default(10_000_000_000),
 });
 
 export type Env = z.infer<typeof schema>;

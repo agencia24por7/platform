@@ -25,7 +25,7 @@ export const ROTULO_FONTE: Record<Fonte, string> = {
   ia: 'IA',
 };
 
-export const CATEGORIAS_DE_ARQUIVO = ['imagem', 'documento', 'planilha', 'video'] as const;
+export const CATEGORIAS_DE_ARQUIVO = ['imagem', 'documento', 'planilha', 'video', 'fonte'] as const;
 export type CategoriaDeArquivo = (typeof CATEGORIAS_DE_ARQUIVO)[number];
 
 export type Opcao = { readonly valor: string; readonly rotulo: string };
@@ -562,6 +562,7 @@ const marca: Secao = {
     arquivo('logo', 'Logo', ['imagem'], { maxArquivos: 5 }),
     texto('cores', 'Cores', { exemplo: '#0A3D62, #F6B93B', max: 200 }),
     texto('fontes', 'Fontes', { max: 200 }),
+    arquivo('arquivos_de_fonte', 'Arquivos das fontes', ['fonte'], { ajuda: 'TTF, OTF ou WOFF2.', maxArquivos: 10 }),
     selecao(
       'arquetipo',
       'Arquétipo',

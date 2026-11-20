@@ -2,6 +2,14 @@ import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  executarPassos,
+  passosPorClientId,
+  planoDoExpurgo,
+  sqlVersoesDoCliente,
+  validarEntrada as entradaValida,
+  validarFontes,
+} from './bq/expurgo.mjs';
 
 const USO = `uso:
   node scripts/titular.mjs exportar <email>
@@ -11,7 +19,8 @@ const USO = `uso:
   node scripts/titular.mjs expurgar-cliente <client_id> [--confirmar]
 
 excluir-cliente é a exclusão lógica (nada é apagado; restaurar-cliente desfaz).
-expurgar-cliente apaga de vez no Postgres e no BigQuery: só para obrigação legal.
+expurgar-cliente apaga de vez no BigQuery e depois no Postgres: só para obrigação legal,
+com o cliente já excluído logicamente. Se falhar no meio, rode o mesmo comando de novo.
 Opções: --local (banco do docker local em vez da VM de produção).
 Sem --confirmar, nenhum comando que altera dados executa: só mostra o que seria afetado.
 Veja docs/lgpd/atendimento-ao-titular.md.`;
@@ -56,7 +65,7 @@ function exigirUuid(valor) {
   if (!valor || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(valor)) {
     falhar(`client_id inválido.\n\n${USO}`);
   }
-  return valor;
+  return valor.toLowerCase();
 }
 
 function exportar(email) {
@@ -95,16 +104,8 @@ function anonimizar(email) {
   console.log(consultar(`SELECT jsonb_pretty(core.anonimizar_titular_e_encerrar(${literal(email)}));`));
 }
 
-const IDENTIFICADOR = /^[a-z][a-z0-9_]*$/;
-
 function validarEntrada(arquivo, entrada) {
-  const { tabela, chave, plataforma, colunaPlataforma, data, momento, todoPeriodo } = entrada;
-  const recorte = [data !== undefined, momento !== undefined, todoPeriodo === true].filter(Boolean).length;
-  const valido = [tabela, chave, plataforma].every((valor) => IDENTIFICADOR.test(valor ?? ''))
-    && [colunaPlataforma, data, momento].every((valor) => valor === undefined || IDENTIFICADOR.test(valor))
-    && (todoPeriodo === undefined || todoPeriodo === true)
-    && recorte === 1;
-  if (!valido) falhar(`manifesto inválido em ${arquivo}: ${JSON.stringify(entrada)}`);
+  if (!entradaValida(entrada)) falhar(`manifesto inválido em ${arquivo}: ${JSON.stringify(entrada)}`);
   return entrada;
 }
 
@@ -117,35 +118,55 @@ function lerManifesto() {
 }
 
 const FATOS_POR_FONTE = lerManifesto();
+const DESTINO = { projeto: PROJETO, dataset: DATASET };
 
-function sqlExpurgo(fato) {
-  const alvo = `\`${PROJETO}.${DATASET}.${fato.tabela}\``;
-  const dim = `\`${PROJETO}.${DATASET}.dim_fonte_scd2\``;
-  const plataforma = `'${fato.plataforma}'`;
-  const mesmaFonte = (alias) =>
-    `${alias}.organization_id = f.organization_id AND ${alias}.platform = ${plataforma} AND ${alias}.external_id = f.${fato.chave}`;
-  const filtroPlataforma = fato.colunaPlataforma ? ` AND f.${fato.colunaPlataforma} = ${plataforma}` : '';
-
-  if (fato.todoPeriodo) {
-    return `DELETE FROM ${alvo} f WHERE EXISTS (
-         SELECT 1 FROM ${dim} d WHERE d.client_id = @id AND ${mesmaFonte('d')})
-       AND NOT EXISTS (
-         SELECT 1 FROM ${dim} o WHERE o.client_id IS NOT NULL AND o.client_id != @id AND ${mesmaFonte('o')})${filtroPlataforma}`;
-  }
-
-  const momento = fato.momento ? `f.${fato.momento}` : `TIMESTAMP(f.${fato.data}, 'America/Sao_Paulo')`;
-  return `DELETE FROM ${alvo} f WHERE EXISTS (
-         SELECT 1 FROM ${dim} d
-         WHERE d.client_id = @id AND ${mesmaFonte('d')}
-           AND ${momento} >= d.valido_de AND ${momento} < d.valido_ate)${filtroPlataforma}`;
+function executarNoBigQuery(clientId) {
+  return (passo) => {
+    console.log(`BigQuery: ${passo.nome}`);
+    execFileSync('bq', [
+      '--project_id', PROJETO, 'query', '--use_legacy_sql=false', `--parameter=id:STRING:${clientId}`, passo.sql,
+    ], { stdio: 'inherit' });
+  };
 }
 
-function expurgarFatosDoCliente(clientId) {
-  for (const fato of FATOS_POR_FONTE) {
-    execFileSync('bq', [
-      '--project_id', PROJETO, 'query', '--use_legacy_sql=false', `--parameter=id:STRING:${clientId}`, sqlExpurgo(fato),
-    ], { stdio: 'inherit' });
-  }
+function rodarPassos(passos, clientId, contexto) {
+  const resultado = executarPassos(passos, executarNoBigQuery(clientId));
+  if (resultado.ok) return;
+  console.error(`\nFALHOU no BigQuery em ${resultado.falhou} (${resultado.erro?.message ?? 'erro'}).`);
+  console.error(`Pendentes (${resultado.pendentes.length}): ${resultado.pendentes.join(', ')}`);
+  console.error(contexto);
+  process.exit(1);
+}
+
+function fontesDoCliente(id) {
+  const saida = consultar(`
+    SELECT coalesce(json_agg(json_build_object('organizationId', organization_id, 'platform', platform, 'externalId', external_id)), '[]')
+    FROM (
+      SELECT organization_id, platform::text AS platform, external_id FROM integrations.ad_accounts WHERE client_id = ${id}::uuid
+      UNION
+      SELECT organization_id, platform::text, external_id FROM integrations.connection_accounts
+      WHERE client_id = ${id}::uuid AND platform NOT IN ('google', 'meta')
+    ) f;`);
+  return validarFontes(JSON.parse(saida || '[]'));
+}
+
+function estadoDoCliente(id) {
+  return JSON.parse(consultar(`
+    SELECT json_build_object(
+      'existe', count(*) > 0,
+      'id', min(id::text),
+      'excluido', bool_or(excluido_em IS NOT NULL),
+      'expurgado', EXISTS (SELECT 1 FROM audit.audit_log
+                           WHERE action = 'client.purged' AND target_type = 'client' AND target_id = ${id}::uuid::text))
+    FROM core.clients WHERE id = ${id}::uuid;`));
+}
+
+function versoesDoClienteEmDimFonte(clientId) {
+  const saida = execFileSync('bq', [
+    '--project_id', PROJETO, 'query', '--use_legacy_sql=false', '--format=csv', `--parameter=id:STRING:${clientId}`,
+    sqlVersoesDoCliente(DESTINO),
+  ], { encoding: 'utf8' });
+  return Number(saida.split('\n')[1]?.trim() ?? 'NaN');
 }
 
 function tabelasComCliente() {
@@ -184,7 +205,7 @@ function tokenDoWorker() {
   }).trim();
 }
 
-async function sincronizarDimensoes() {
+async function sincronizarDimensoes({ obrigatoria = false } = {}) {
   const base = local ? 'http://localhost:3000' : APP_URL;
   try {
     const token = tokenDoWorker();
@@ -199,6 +220,9 @@ async function sincronizarDimensoes() {
     if (!resposta.ok) throw new Error(`HTTP ${resposta.status}: ${corpo.slice(0, 500)}`);
     console.log(`Dimensões sincronizadas no BigQuery: ${corpo.slice(0, 500)}`);
   } catch (erro) {
+    if (obrigatoria) {
+      falhar(`A sincronização de dimensões falhou (${erro.message}). Expurgo abortado antes de apagar qualquer coisa: o período de posse em dim_fonte_scd2 precisa estar em dia. Corrija e rode de novo.`);
+    }
     console.warn(`AVISO: a mudança no Postgres foi feita, mas a sincronização de dimensões falhou (${erro.message}).`);
     console.warn('As views vw_* refletem na próxima sincronização diária, ou rode de novo pelo workflow de dimensões.');
   }
@@ -232,31 +256,66 @@ async function restaurarCliente(clientId) {
   console.log('Cliente restaurado e pausado. Retome a coleta na tela do cliente.');
 }
 
-async function expurgarCliente(clientId) {
+async function expurgarCliente(idInformado) {
+  const estado = estadoDoCliente(literal(idInformado));
+  if (!estado.existe && !estado.expurgado) {
+    falhar(`Cliente ${idInformado} não existe e não há client.purged para esse id na auditoria. Confira o id.`);
+  }
+  const clientId = estado.existe ? estado.id : idInformado;
   const id = literal(clientId);
-  console.log(resumoDoCliente(id));
   const tabelas = local ? [] : tabelasComCliente();
+
+  if (!estado.existe) {
+    console.log('O cliente já não existe no Postgres: o expurgo foi até o fim lá. Só falta repetir a limpeza por client_id no BigQuery.');
+    if (!confirmar) {
+      console.log(`Simulação. Rode de novo com --confirmar para apagar as linhas com client_id em ${tabelas.join(', ') || '(nenhuma tabela)'}.`);
+      return;
+    }
+    if (!local) rodarPassos(passosPorClientId(tabelas, DESTINO), clientId, 'Rode o mesmo comando de novo: cada passo é idempotente.');
+    await sincronizarDimensoes();
+    console.log('Limpeza por client_id concluída.');
+    return;
+  }
+
+  console.log(resumoDoCliente(id));
+  const fontes = fontesDoCliente(id);
   if (!local) {
     console.log(`BigQuery: tabelas do manifesto (scripts/bq/manifesto), pelo período de posse em dim_fonte_scd2: ${FATOS_POR_FONTE.map((f) => `${f.tabela}[${f.plataforma}${f.todoPeriodo ? ', todo o período' : ''}]`).join(', ')}`);
-    console.log(`BigQuery: depois, linhas com client_id em ${tabelas.join(', ')}`);
+    console.log(`BigQuery: depois, as linhas das fontes que só foram deste cliente (${fontes.length} fonte(s)), e por fim as linhas com client_id em ${tabelas.join(', ')}`);
+  }
+  if (!estado.excluido) {
+    console.log('\nO cliente ainda não foi excluído logicamente. Rode antes excluir-cliente (tira o cliente da coleta) e depois o expurgo.');
+    if (confirmar) process.exit(1);
   }
 
   if (!confirmar) {
     console.log('\nSimulação. EXPURGO apaga de vez e não tem volta: use só por obrigação legal de eliminação (docs/lgpd/atendimento-ao-titular.md).');
-    console.log('Rode de novo com --confirmar para expurgar no Postgres e no BigQuery.');
+    console.log('Rode de novo com --confirmar para expurgar no BigQuery e depois no Postgres.');
     return;
   }
 
+  if (!local) {
+    await sincronizarDimensoes({ obrigatoria: true });
+    if (fontes.length > 0) {
+      const versoes = versoesDoClienteEmDimFonte(clientId);
+      if (!(versoes > 0)) {
+        falhar(`dim_fonte_scd2 não tem versões do cliente ${clientId}, que tem ${fontes.length} fonte(s) no Postgres. Expurgo abortado antes de apagar qualquer coisa: confira a sincronização de dimensões.`);
+      }
+    }
+    const plano = planoDoExpurgo({ manifesto: FATOS_POR_FONTE, tabelasComCliente: tabelas, fontes, destino: DESTINO });
+    rodarPassos(plano, clientId, 'O Postgres ainda não foi tocado. Rode o mesmo comando de novo: cada passo é idempotente.');
+  }
+
   console.log(consultar(`SELECT jsonb_pretty(core.expurgar_cliente(${id}::uuid));`));
-  if (!local) expurgarFatosDoCliente(clientId);
-  for (const tabela of tabelas) {
-    execFileSync('bq', [
-      '--project_id', PROJETO, 'query', '--use_legacy_sql=false', `--parameter=id:STRING:${clientId}`,
-      `DELETE FROM \`${PROJETO}.${DATASET}.${tabela}\` WHERE CAST(client_id AS STRING) = @id`,
-    ], { stdio: 'inherit' });
+  if (!local) {
+    rodarPassos(
+      passosPorClientId(tabelas, DESTINO),
+      clientId,
+      'O Postgres já foi expurgado. Rode o mesmo comando de novo: ele só repete a limpeza por client_id.',
+    );
   }
   await sincronizarDimensoes();
-  console.log('Cliente expurgado. Os backups expiram em até 30 dias (docs/lgpd/retencao.md).');
+  console.log('Cliente expurgado. Os backups expiram em até 30 dias e o time travel do BigQuery em até 7 (docs/lgpd/retencao.md).');
 }
 
 switch (comando) {

@@ -37,7 +37,7 @@ atualiza este arquivo no mesmo PR. Decisões de fundo: ADR
 | `dim_` | Dimensão. Entidade versionada leva sufixo `_scd2` | `tipo: 'scd2'` ou carga própria (`dim_fonte_scd2`, `dim_cliente_scd2`) |
 | `stg_` | Staging de uma execução, efêmera | INSERT do gravador, uma por tabela de destino |
 | `vw_` | View de consumo: dedupe + dono via `dim_fonte_scd2` | `CREATE OR REPLACE VIEW` no DDL |
-| `gov_` | Governança (inventário, paridade) | `tipo: 'snapshot'` (append) ou carga própria |
+| `gov_` | Governança (inventário, paridade) | `tipo: 'snapshot'` (MERGE só-insere por `chave`) ou carga própria |
 | `qc_` | Qualidade das execuções | `registrarQc` do gravador |
 
 Identificadores em português no padrão do código ao redor (`data_dia`,
@@ -161,6 +161,22 @@ exatamente um de "data" | "momento" | "todoPeriodo": true, "grao",
   de entidade do fato à dimensão SCD2 dela (`coluna` e `chaveDim` podem ser
   listas). O `bq:verificar` conta ids do fato sem versão na dimensão.
 
+Ordem do expurgo (`scripts/bq/expurgo.mjs`, ADR 0023): exige o cliente já
+excluído logicamente (fora da coleta); sincroniza as dimensões e **aborta** se
+falhar; apaga cada entrada pelo período de posse; apaga as **sobras** das
+fontes que o Postgres ainda liga ao cliente (`ad_accounts` e recursos fora de
+Google/Meta), por `organization_id` + chave da fonte, se a fonte nunca foi de
+outro cliente em `dim_fonte_scd2` (a mesma regra de `todoPeriodo`); apaga as
+linhas com `client_id` (`dim_fonte_scd2` por último, porque os passos
+anteriores dependem dela); só então expurga o Postgres e repete a limpeza por
+`client_id`. Todo passo é idempotente: se um falhar, o script lista os
+pendentes e basta rodar o mesmo comando de novo.
+
+As tabelas `stg_*` não entram no expurgo: não têm `client_id`, guardam só a
+chamada de gravação e expiram a partição em 7 dias. O time travel do dataset
+(7 dias) também guarda as linhas apagadas por esse prazo
+(`docs/lgpd/retencao.md`).
+
 ## Numeração dos arquivos de DDL
 
 | Faixa | Dono |
@@ -202,7 +218,7 @@ do `ad_account_id` (o `externalId`), com dono pela `dim_fonte_scd2`
 (`platform = 'meta'`) nas views `vw_*`: `cliente_na_epoca_*` e
 `cliente_atual_*`. Nas dimensões a "época" é o início da versão (`valido_de`).
 
-Origem na API (Marketing API v23.0): relatórios assíncronos
+Origem na API (Marketing API v26.0, fixada; plano para v27.0 no ADR 0025): relatórios assíncronos
 `POST /{act}/insights` + `GET /{report_run_id}/insights` (insights) e `GET
 /{act}/campaigns|adsets|ads` (dimensões), paginados. Janelas de 28 dias do
 backfill. Valores monetários com a moeda da conta em `moeda`.
@@ -314,11 +330,15 @@ backfill. Valores monetários com a moeda da conta em `moeda`.
 ### Coleta e cotas
 
 O coletor cria quatro relatórios assíncronos (anúncio, idade × gênero,
-posicionamento, região), consulta a cada 20 s (até 30 vezes) e baixa páginas de
-500 linhas. Chamadas por fonte e janela: 4 criações, até 120 consultas, 3 listas
-paginadas (200 por página) e os downloads. Limite de uso da Meta
-(códigos 4, 17, 32, 613, 80000-80014) vira `api_recusou`; autorização
-(401/403/190) vira `reauth_pending`.
+posicionamento, região), consulta a cada 20 s (até 30 vezes; 60-300 s quando o
+uso informado em `X-Business-Use-Case-Usage`/`X-FB-Ads-Insights-Throttle` passa de
+75%) e baixa páginas de 500 linhas. Chamadas por fonte e janela: 4 criações, até
+120 consultas, 3 listas paginadas (200 por página, só na primeira incremental do
+dia) e os downloads. Limite de uso da Meta (429, códigos 4, 17, 32, 341, 613,
+80000-80014) vira `limite_de_uso`: a coleta fecha como `failed`, não avança a
+marca d'água e a próxima rodada de 6h tenta de novo (ADR 0025); autorização
+(401/403/190) vira `reauth_pending`. Nos recortes com início há mais de 13 meses
+o coletor não pede `reach` e grava `alcance` nulo.
 
 <!-- Meta Ads: novas tabelas acima desta linha -->
 
@@ -403,6 +423,10 @@ Configuração: `tabelas/ga4.ts`. Manifesto: `manifesto/ga4.json`. DDL: `22_ga4*
   `data_dia`.
 - Colunas: `sessoes`, `usuarios`, `novos_usuarios`, `conversoes`, `receita`,
   `execucao_id`, `inserido_em`.
+- `canal` ausente é gravado como `(not set)` (`textoDaDimensao`), nunca
+  `NULL`: `NULL` na chave nunca casa no MERGE e o reprocesso duplicava a
+  linha (ADR 0023). Linhas antigas com `canal IS NULL`: ver "Limpeza única
+  de chave nula" abaixo.
 - Partição `data_dia`; cluster `organization_id, property_id`.
 - Staging `stg_ga4_diario`; view `vw_ga4_diario`.
 
@@ -443,6 +467,8 @@ Configuração: `tabelas/searchconsole.ts`. Manifesto: `manifesto/searchconsole.
   `data_dia`.
 - Colunas: `cliques`, `impressoes`, `ctr`, `posicao_media`, `execucao_id`,
   `inserido_em`.
+- `device` ausente é gravado como `(not set)`, como `canal` em
+  `fato_ga4_diario` (ADR 0023).
 - Partição `data_dia`; cluster `organization_id, site`.
 - Staging `stg_search_console_diario`; view `vw_search_console_diario`.
 
@@ -839,9 +865,13 @@ Todas com chave `organization_id` e `conteiner_id` (o ID público `GTM-XXXX`). D
 ### `gov_snapshot_fontes`
 
 - Granularidade: uma linha por observação (`organization_id`, `platform`,
-  `fonte_id`, `visto_em`); append.
+  `fonte_id`, `visto_em`). A gravação é um MERGE que só insere, pela chave
+  `organization_id`, `fonte_id`, `execucao_id` (janela de 7 dias em
+  `visto_em`): repetir a mesma chamada de `/coleta/gravar` não duplica a
+  observação (ADR 0023). Linhas anteriores à coluna têm `execucao_id NULL`.
 - Colunas: `fonte_tipo`, `nome`, `estado`, `inactive`, `rotulo_esperado`,
-  `rotulo_observado`.
+  `rotulo_observado`, `execucao_id` (`ALTER TABLE ... ADD COLUMN IF NOT
+  EXISTS` em `03_governanca.sql`; aplicar o DDL antes do deploy do app).
 - Partição `DATE(visto_em)`; cluster `organization_id, platform, fonte_id`.
 - DDL: `03_governanca.sql`.
 
@@ -965,6 +995,53 @@ Decisões: ADR [0021](../../docs/adr/0021-gravacao-em-lotes-coleta-parcial-e-int
   do coletor. Teto de 20 contas Google por disparo
   (`MAX_FONTES_POR_PLATAFORMA`; ≈ 456 operações por conta no nível Básico).
   Para as demais, dispare de novo com `"fontes": ["<fonteId>", ...]`.
+- **Filtro constante no MERGE (ADR 0023).** O `ON` do MERGE de fato leva
+  `alvo.organization_id = @organizationId` e `alvo.<data da chave> BETWEEN
+  data_minima AND data_maxima`, com os limites declarados (`DECLARE`) a
+  partir das linhas do próprio lote na staging. A coluna de data é a única
+  `DATE`/`TIMESTAMP` da `chave` (`registro.test.ts` exige exatamente uma em
+  todo fato). Sem `WHEN NOT MATCHED BY SOURCE`, filtrar o alvo não apaga
+  nada; só poda partição e cluster. O SCD2 filtra `d.organization_id` no
+  `UPDATE` e nos dois `EXISTS`. Todo job do gravador e da sincronização de
+  dimensões leva `maximumBytesBilled` (`BQ_MAXIMO_BYTES_FATURADOS`, padrão
+  10 GB).
+- **Retentativa.** Cada job do gravador (INSERT na staging, MERGE, transação
+  SCD2) e a transação da sincronização de dimensões são repetidos até 4 vezes
+  com espera exponencial e jitter (0,5 s a 8 s) quando o BigQuery recusa por
+  concorrência (`could not serialize access`, `transaction is aborted`,
+  `concurrent update`, `too many DML statements`, limite de taxa,
+  `backendError`, HTTP 429/503). Erro de SQL, de esquema ou de custo não é
+  repetido. Como MERGE, SCD2 e snapshot são idempotentes, o n8n pode repetir
+  a chamada inteira depois de uma falha no meio do laço de tabelas.
+- **Chave inválida.** Depois do `mapear`, linha com coluna da `chave` nula,
+  `DATE` que não é `AAAA-MM-DD` válida, `TIMESTAMP` ilegível, `INT64` não
+  inteiro ou `BOOL` não booleano é descartada antes da staging e somada em
+  `linhasDescartadas` (texto vazio continua valendo como chave). A soma
+  `linhasGravadas + linhasDescartadas` da chamada continua igual ao número de
+  linhas enviadas.
+
+### Limpeza única de chave nula (não rodar sem revisar)
+
+Antes do ADR 0023, `fato_ga4_diario.canal` e `fato_search_console_diario.device`
+podiam ser gravados `NULL`, e cada reprocesso inseria de novo. Depois do
+deploy, o mesmo dia regravado vai como `(not set)`. Para alinhar o histórico,
+revisar e rodar uma vez (exemplo para GA4; o Search Console é igual com
+`site`/`device`):
+
+```sql
+DELETE FROM `tria_dw.fato_ga4_diario` f
+WHERE f.canal IS NULL AND EXISTS (
+  SELECT 1 FROM `tria_dw.fato_ga4_diario` o
+  WHERE o.organization_id = f.organization_id AND o.property_id = f.property_id
+    AND o.data_dia = f.data_dia
+    AND (o.canal = '(not set)' OR (o.canal IS NULL AND o.inserido_em > f.inserido_em)));
+
+UPDATE `tria_dw.fato_ga4_diario` SET canal = '(not set)' WHERE canal IS NULL;
+```
+
+O primeiro comando deixa, por dia, só a linha `NULL` mais recente (ou nenhuma,
+se já existe `(not set)`); o segundo a renomeia. As views `vw_*` já
+deduplicavam pela chave, mas tratavam cada `NULL` como linha distinta.
 
 ## Qualidade e integridade
 

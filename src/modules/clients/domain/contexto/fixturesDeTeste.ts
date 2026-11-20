@@ -56,7 +56,7 @@ export function anexo(fieldKey: string, nome: string, id = '33333333-3333-4333-8
     secao: secaoDe(fieldKey),
     fieldKey,
     itemId: null,
-    caminho: `orgs/${ORG}/clientes/${CLIENTE}/contexto/arquivos/${id}-${nome}`,
+    caminho: `orgs/${ORG}/clientes/${CLIENTE}/arquivos/${id}-${nome}`,
     nome,
     mime: 'image/png',
     tamanhoBytes: 1024,

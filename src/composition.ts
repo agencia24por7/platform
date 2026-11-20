@@ -7,7 +7,9 @@ import { createBigQueryGravador } from '@/modules/coleta/infrastructure/bigQuery
 import { createClientService } from '@/modules/clients/application/clientService';
 import { createClientRepository } from '@/modules/clients/infrastructure/clientRepository';
 import { createContextoService } from '@/modules/clients/application/contextoService';
-import { criarArmazenamentoNulo } from '@/modules/clients/application/armazenamentoDeContexto';
+import { adaptarArmazenamento } from '@/modules/clients/infrastructure/armazenamentoAdaptado';
+import { criarArmazenamentoDeContexto } from '@/shared/storage/criarArmazenamentoDeContexto';
+import { env } from '@/shared/config/env';
 import { createContextoRepository } from '@/modules/clients/infrastructure/contextoRepository';
 import { createAuthorizationService } from '@/modules/connections/application/authorizationService';
 import { createConnectionService } from '@/modules/connections/application/connectionService';
@@ -59,7 +61,7 @@ function build() {
     contexto: createContextoService({
       repositorio: createContextoRepository(),
       audit,
-      armazenamento: criarArmazenamentoNulo(),
+      armazenamento: adaptarArmazenamento(criarArmazenamentoDeContexto(env())),
     }),
     team: createTeamService(createTeamRepository(), audit),
     connections: createConnectionService(

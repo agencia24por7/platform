@@ -429,7 +429,9 @@ export function createConnectionService(
         metadata: {
           externalId: movida.externalId,
           de: origem?.name ?? conta.clientId,
+          deId: conta.clientId,
           para: destino.name,
+          paraId: destino.id,
           historico: 'scd2',
         },
       });
@@ -460,6 +462,7 @@ export function createConnectionService(
           platform: solta.platform,
           externalId: solta.externalId,
           de: cliente?.name ?? conta!.clientId,
+          deId: conta!.clientId,
           historico: 'scd2',
         },
       });

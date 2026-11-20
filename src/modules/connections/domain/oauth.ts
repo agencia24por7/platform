@@ -1,4 +1,5 @@
 import type { Platform } from '@/modules/connections/domain/connection';
+import { META_DIALOG_BASE, META_GRAPH_BASE } from './metaGraphVersion.ts';
 
 export type OauthProvider = {
   readonly platform: PlataformaOauth;
@@ -65,9 +66,9 @@ export const PROVIDERS: Readonly<Record<PlataformaOauth, OauthProvider>> = {
   meta: {
     platform: 'meta',
     label: 'Meta Ads',
-    authorizeUrl: 'https://www.facebook.com/v23.0/dialog/oauth',
-    tokenUrl: 'https://graph.facebook.com/v23.0/oauth/access_token',
-    scopes: ['ads_read', 'ads_management', 'business_management', 'leads_retrieval'],
+    authorizeUrl: `${META_DIALOG_BASE}/dialog/oauth`,
+    tokenUrl: `${META_GRAPH_BASE}/oauth/access_token`,
+    scopes: ['ads_read', 'business_management', 'leads_retrieval'],
     usesPkce: false,
     usesConfigId: true,
   },
@@ -101,8 +102,8 @@ export const PROVIDERS: Readonly<Record<PlataformaOauth, OauthProvider>> = {
   pixel: {
     platform: 'pixel',
     label: 'Meta Pixel',
-    authorizeUrl: 'https://www.facebook.com/v23.0/dialog/oauth',
-    tokenUrl: 'https://graph.facebook.com/v23.0/oauth/access_token',
+    authorizeUrl: `${META_DIALOG_BASE}/dialog/oauth`,
+    tokenUrl: `${META_GRAPH_BASE}/oauth/access_token`,
     scopes: ['ads_read', 'business_management'],
     usesPkce: false,
     usesConfigId: true,
@@ -110,9 +111,9 @@ export const PROVIDERS: Readonly<Record<PlataformaOauth, OauthProvider>> = {
   leadads: {
     platform: 'leadads',
     label: 'Meta Lead Ads',
-    authorizeUrl: 'https://www.facebook.com/v23.0/dialog/oauth',
-    tokenUrl: 'https://graph.facebook.com/v23.0/oauth/access_token',
-    scopes: ['pages_show_list', 'pages_read_engagement', 'pages_manage_ads', 'leads_retrieval', 'ads_management'],
+    authorizeUrl: `${META_DIALOG_BASE}/dialog/oauth`,
+    tokenUrl: `${META_GRAPH_BASE}/oauth/access_token`,
+    scopes: ['pages_show_list', 'pages_read_engagement', 'pages_manage_ads', 'leads_retrieval', 'ads_read'],
     usesPkce: false,
     usesConfigId: true,
   },
@@ -151,8 +152,8 @@ export const PROVIDERS: Readonly<Record<PlataformaOauth, OauthProvider>> = {
   whatsapp: {
     platform: 'whatsapp',
     label: 'WhatsApp',
-    authorizeUrl: 'https://www.facebook.com/v23.0/dialog/oauth',
-    tokenUrl: 'https://graph.facebook.com/v23.0/oauth/access_token',
+    authorizeUrl: `${META_DIALOG_BASE}/dialog/oauth`,
+    tokenUrl: `${META_GRAPH_BASE}/oauth/access_token`,
     scopes: ['whatsapp_business_management', 'whatsapp_business_messaging'],
     usesPkce: false,
     usesConfigId: true,

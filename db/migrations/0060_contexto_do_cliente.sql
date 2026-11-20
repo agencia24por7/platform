@@ -745,6 +745,23 @@ $$;
 COMMENT ON FUNCTION core.contexto_brains_pendentes IS
   'Fila de reexportação do brain para uma varredura periódica: cliente mudou depois da última tentativa (já passado o tempo de espera) ou falhou e venceu o recuo.';
 
+CREATE OR REPLACE FUNCTION core.contexto_clientes_para_reconstruir(p_organizacao uuid)
+RETURNS TABLE (organization_id uuid, client_id uuid)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+STABLE
+AS $$
+  SELECT c.organization_id, c.id
+  FROM core.clients c
+  WHERE c.excluido_em IS NULL
+    AND (p_organizacao IS NULL OR c.organization_id = p_organizacao)
+  ORDER BY c.organization_id, c.id;
+$$;
+
+COMMENT ON FUNCTION core.contexto_clientes_para_reconstruir IS
+  'Reconstrução total do brain (scripts/contexto-reconstruir-brain.mjs): todos os clientes não excluídos, de uma organização ou de todas. Só devolve ids.';
+
 DO $$
 DECLARE
   assinatura text;
@@ -758,7 +775,8 @@ BEGIN
     'core.contexto_link_concluir(text)',
     'core.contexto_link_registrar_arquivo(text, uuid, text, text, uuid, text, text, text, bigint, text, bigint)',
     'core.contexto_link_pelo_convite(text)',
-    'core.contexto_brains_pendentes(integer, interval)'
+    'core.contexto_brains_pendentes(integer, interval)',
+    'core.contexto_clientes_para_reconstruir(uuid)'
   ]
   LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', assinatura);

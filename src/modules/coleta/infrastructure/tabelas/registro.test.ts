@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { TabelasDaPlataforma } from './tipos.ts';
+import { colunaDeDataDaChave } from '../sqlDaGravacao.ts';
 
 type Resolver = (especificador: string, contexto: { parentURL?: string }, proximo: (especificador: string, contexto: unknown) => unknown) => unknown;
 type ComGanchos = { registerHooks: (ganchos: { resolve: Resolver }) => void };
@@ -96,6 +97,28 @@ describe('registro de tabelas x manifesto', () => {
     }
   });
 
+  it('todo fato tem organization_id e exatamente uma coluna de data na chave (filtro constante do MERGE)', () => {
+    for (const cfg of configuracoes) {
+      if (cfg.tipo !== 'fato') continue;
+      assert.ok(cfg.chave.includes('organization_id'), cfg.fato);
+      assert.ok(colunaDeDataDaChave(cfg), cfg.fato);
+    }
+  });
+
+  it('dimensão nula da chave vira (not set), senão o MERGE nunca casa e o reprocesso duplica', () => {
+    const ctx = { organizationId: 'o', clientId: 'c', externalId: 'f', currency: 'BRL', execucaoId: 'e' };
+    assert.equal(TABELAS_POR_PLATAFORMA.ga4!.padrao!.mapear({ metricDate: '2026-11-01' }, ctx).canal, '(not set)');
+    assert.equal(TABELAS_POR_PLATAFORMA.searchconsole!.padrao!.mapear({ metricDate: '2026-11-01', device: null }, ctx).device, '(not set)');
+  });
+
+  it('snapshot do GTM grava a execução, que entra na chave do MERGE idempotente', () => {
+    const ctx = { organizationId: 'o', clientId: 'c', externalId: 'f', currency: 'BRL', execucaoId: 'e' };
+    const snapshot = TABELAS_POR_PLATAFORMA.gtm!.padrao!;
+    assert.equal(snapshot.tipo, 'snapshot');
+    assert.equal(snapshot.mapear({}, ctx).execucao_id, 'e');
+    assert.ok(snapshot.tipo === 'snapshot' && snapshot.chave.every((coluna) => coluna in snapshot.tipos));
+  });
+
   it('fatos gravam execucao_id e inserido_em (o MERGE filtra o lote por eles)', () => {
     for (const cfg of configuracoes) {
       if (cfg.tipo !== 'fato') continue;
@@ -133,6 +156,30 @@ describe('views vw_* x exclusão lógica de cliente (ADR 0022)', () => {
     for (const { nome, corpo } of views.filter((view) => view.corpo.includes('cliente_epoca'))) {
       assert.ok(corpo.includes('cliente_epoca.status AS cliente_na_epoca_status'), `${nome} sem cliente_na_epoca_status`);
       assert.ok(corpo.includes("IFNULL(cliente_epoca.status, '') != 'excluido'"), `${nome} sem o filtro do dono na época`);
+    }
+  });
+});
+
+describe('métricas opcionais preservadas quando a origem vem nula', () => {
+  const ctx = { organizationId: 'o', clientId: 'c', externalId: 'UC1', currency: 'BRL', execucaoId: 'e' };
+
+  it('YouTube: receita nula continua nula no mapper e é preservada no MERGE', () => {
+    const cfg = TABELAS_POR_PLATAFORMA.youtube!.padrao!;
+    assert.equal(cfg.tipo, 'fato');
+    if (cfg.tipo !== 'fato') return;
+    assert.equal(cfg.mapear({ metricDate: '2026-11-01', views: 1, estimatedRevenue: null }, ctx).receita_estimada, null);
+    assert.equal(cfg.mapear({ metricDate: '2026-11-01', views: 1 }, ctx).receita_estimada, null);
+    assert.equal(cfg.mapear({ metricDate: '2026-11-01', views: 1, estimatedRevenue: 2.5 }, ctx).receita_estimada, 2.5);
+    assert.deepEqual(cfg.preservarSeNulo, ['receita_estimada']);
+  });
+
+  it('Meta: alcance e frequência ficam em preservarSeNulo onde existem', () => {
+    const entrega = configuracoes.find((cfg) => cfg.tipo === 'fato' && cfg.fato === 'fato_meta_entrega_diaria');
+    assert.ok(entrega && entrega.tipo === 'fato');
+    assert.deepEqual([...(entrega.preservarSeNulo ?? [])].sort(), ['alcance', 'frequencia']);
+    for (const cfg of configuracoes) {
+      if (cfg.tipo !== 'fato') continue;
+      for (const coluna of cfg.preservarSeNulo ?? []) assert.ok(cfg.colunas.includes(coluna), `${cfg.fato}: ${coluna}`);
     }
   });
 });

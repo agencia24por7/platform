@@ -4,7 +4,7 @@ import '../../../shared/testing/registrarAlias.mjs';
 import type { AuditEvent } from '@/modules/audit/domain/auditEvent';
 import type { ContextoRepository, EscopoDoLink, LinkDeContexto } from '@/modules/clients/infrastructure/contextoRepository';
 import type { EntradaDeCampo, ItemDeLista } from '@/modules/clients/domain/contexto/tipos';
-import type { ArmazenamentoDeContexto } from './armazenamentoDeContexto.ts';
+import type { PortaDoArmazenamento } from './portaDoArmazenamento.ts';
 
 Object.assign(process.env, {
   DATABASE_URL: 'postgres://teste:teste@localhost:5432/teste',
@@ -15,7 +15,9 @@ Object.assign(process.env, {
 });
 
 const { createContextoService } = await import('./contextoService.ts');
-const { criarArmazenamentoNulo } = await import('./armazenamentoDeContexto.ts');
+const { adaptarArmazenamento } = await import('@/modules/clients/infrastructure/armazenamentoAdaptado.ts');
+const { criarArmazenamentoNulo: nuloCompartilhado } = await import('@/shared/storage/armazenamentoNulo.ts');
+const criarArmazenamentoNulo = () => adaptarArmazenamento(nuloCompartilhado());
 const { hashDoToken, gerarTokenDeContexto } = await import('@/modules/clients/domain/contexto/link.ts');
 const { ok, err } = await import('@/shared/result/result.ts');
 const { failure } = await import('@/shared/result/failure.ts');
@@ -29,7 +31,7 @@ const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2
 
 type Chamada = { metodo: string; args: unknown[] };
 
-function montar(opcoes: { armazenamento?: ArmazenamentoDeContexto; escopo?: EscopoDoLink | null; liberar?: boolean } = {}) {
+function montar(opcoes: { armazenamento?: PortaDoArmazenamento; escopo?: EscopoDoLink | null; liberar?: boolean } = {}) {
   const eventos: AuditEvent[] = [];
   const chamadas: Chamada[] = [];
   const agendados: string[] = [];
@@ -183,13 +185,13 @@ function armazenamentoEmMemoria(falharEm: string | null = null) {
   const objetos = new Map<string, Uint8Array>();
   const gravacoes: string[] = [];
   const apagados: string[] = [];
-  const armazenamento: ArmazenamentoDeContexto = {
+  const armazenamento: PortaDoArmazenamento = {
     configurado: true,
     async put(caminho, conteudo, meta) {
       gravacoes.push(caminho);
       if (falharEm && caminho.endsWith(falharEm)) return err(failure('unavailable', 'bucket fora'));
       objetos.set(caminho, conteudo as Uint8Array);
-      return ok({ caminho, contentType: meta.contentType, tamanhoBytes: 1, atualizadoEm: AGORA, sha256: null });
+      return ok({ caminho, contentType: meta.contentType, tamanhoBytes: 1, atualizadoEm: AGORA });
     },
     get: async () => err(failure('not_found', 'x')),
     list: async () => ok([]),
@@ -401,11 +403,16 @@ describe('arquivos', () => {
       ator,
     );
     assert.equal(svg.ok ? 'ok' : svg.error.details?.motivo, 'tipo_nao_permitido');
+    const zip = await servico.anexarArquivo(
+      { ...comando, fieldKey: 'banco_de_midia', nome: 'midia.zip', mime: 'application/zip', conteudo: new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1]) },
+      ator,
+    );
+    assert.equal(zip.ok ? 'ok' : zip.error.details?.motivo, 'tipo_nao_permitido');
     const falso = await servico.anexarArquivo(
       { ...comando, fieldKey: 'logo', nome: 'logo.png', mime: 'image/png', conteudo: new TextEncoder().encode('<html>') },
       ator,
     );
-    assert.equal(falso.ok ? 'ok' : falso.error.details?.motivo, 'assinatura_divergente');
+    assert.equal(falso.ok ? 'ok' : falso.error.details?.motivo, 'tipo_nao_permitido');
   });
 
   it('grava sob o prefixo do cliente e desfaz o objeto se o registro falhar', async () => {
@@ -413,7 +420,7 @@ describe('arquivos', () => {
     const { servico } = montar({ armazenamento: memoria.armazenamento });
     const r = await servico.anexarArquivo({ ...comando, fieldKey: 'logo', nome: 'Logo Final.png', mime: 'image/png', conteudo: PNG }, ator);
     assert.ok(r.ok);
-    assert.match(r.value.caminho, new RegExp(`^orgs/${ORG}/clientes/${CLIENTE}/contexto/arquivos/[0-9a-f-]{36}-logo-final[.]png$`));
+    assert.match(r.value.caminho, new RegExp(`^orgs/${ORG}/clientes/${CLIENTE}/arquivos/[0-9a-f-]{36}-logo-final[.]png$`));
 
     await assert.rejects(
       servico.anexarArquivo({ ...comando, fieldKey: 'logo', nome: 'falha.png', mime: 'image/png', conteudo: PNG }, ator),
@@ -423,10 +430,25 @@ describe('arquivos', () => {
 });
 
 describe('publicação do brain', () => {
-  it('sem bucket não publica e diz por quê', async () => {
-    const { servico } = montar();
+  it('sem bucket não publica, não agenda e o estado diz desativado', async () => {
+    const { servico, agendados } = montar();
     const r = await servico.publicarBrain({ organizationId: ORG, clientId: CLIENTE });
     assert.equal(r.ok && r.value.situacao, 'sem_armazenamento');
+    await servico.salvarCampo({ ...comando, fieldKey: 'segmento', valor: 'x', versaoEsperada: 0 }, ator);
+    assert.deepEqual(agendados, []);
+    const contexto = await servico.carregar({ organizationId: ORG, clientId: CLIENTE });
+    assert.equal(contexto.ok && contexto.value.brain.situacao, 'desativado');
+    assert.deepEqual(await servico.publicarPendentes(), { publicados: 0, inalterados: 0, falhas: 0, desativado: true });
+  });
+
+  it('reconstruir força a regravação mesmo sem mudança', async () => {
+    const memoria = armazenamentoEmMemoria();
+    const { servico } = montar({ armazenamento: memoria.armazenamento });
+    await servico.publicarBrain({ organizationId: ORG, clientId: CLIENTE });
+    const antes = memoria.gravacoes.length;
+    const r = await servico.reconstruirBrains({ tipo: 'cliente', organizationId: ORG, clientId: CLIENTE });
+    assert.deepEqual(r.ok && r.value, { publicados: 1, inalterados: 0, falhas: 0, desativado: false });
+    assert.equal(memoria.gravacoes.length, antes * 2);
   });
 
   it('grava todos os arquivos com o manifest por último e pula quando nada mudou', async () => {

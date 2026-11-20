@@ -25,9 +25,7 @@ import {
 } from '@/modules/clients/domain/contexto/catalogo';
 import {
   COTA_POR_CLIENTE,
-  MOTIVO_DO_ARQUIVO,
-  assinaturaConfere,
-  avaliarArquivo,
+  avaliarAnexo,
   caminhoDoArquivo,
   prefixoDoCliente,
 } from '@/modules/clients/domain/contexto/arquivos';
@@ -52,8 +50,7 @@ import type {
   Marcacao,
 } from '@/modules/clients/domain/contexto/tipos';
 import { validarItem, validarValor } from '@/modules/clients/domain/contexto/valores';
-import type { ArmazenamentoDeContexto } from '@/modules/clients/application/armazenamentoDeContexto';
-import { bytesDeTexto } from '@/modules/clients/application/armazenamentoDeContexto';
+import type { PortaDoArmazenamento } from '@/modules/clients/application/portaDoArmazenamento';
 import type {
   ContextoRepository,
   EscopoDoLink,
@@ -64,7 +61,10 @@ import type {
   RevisaoRegistrada,
 } from '@/modules/clients/infrastructure/contextoRepository';
 
+export type SituacaoDoEstadoDoBrain = 'desativado' | 'nunca_publicado' | 'em_dia' | 'pendente' | 'com_erro';
+
 export type EstadoDoBrain = {
+  readonly situacao: SituacaoDoEstadoDoBrain;
   readonly armazenamentoConfigurado: boolean;
   readonly pendente: boolean;
   readonly solicitadoEm: Date | null;
@@ -261,17 +261,33 @@ export type ContextoService = {
   salvarPeloLink(acesso: AcessoPublico, alteracao: AlteracaoPeloLink): Promise<Result<SalvoPeloLink, Failure>>;
   anexarArquivoPeloLink(acesso: AcessoPublico, anexo: NovoAnexo): Promise<Result<{ readonly id: string }, Failure>>;
   concluirPeloLink(acesso: AcessoPublico): Promise<Result<{ readonly concluidoEm: Date }, Failure>>;
-  publicarBrain(escopo: Escopo): Promise<Result<{ readonly situacao: SituacaoDoBrain; readonly contentHash: string | null }, Failure>>;
-  publicarPendentes(limite?: number): Promise<{ readonly publicados: number; readonly falhas: number }>;
+  publicarBrain(
+    escopo: Escopo,
+    opcoes?: { readonly forcar?: boolean },
+  ): Promise<Result<{ readonly situacao: SituacaoDoBrain; readonly contentHash: string | null }, Failure>>;
+  publicarPendentes(limite?: number): Promise<ResumoDePublicacao>;
+  reconstruirBrains(alvo: AlvoDaReconstrucao): Promise<Result<ResumoDePublicacao, Failure>>;
   expurgarArmazenamento(escopo: Escopo): Promise<Result<{ readonly apagados: number }, Failure>>;
 };
 
 export type AgendadorDoBrain = { agendar(escopo: Escopo): void };
 
+export type ResumoDePublicacao = {
+  readonly publicados: number;
+  readonly inalterados: number;
+  readonly falhas: number;
+  readonly desativado: boolean;
+};
+
+export type AlvoDaReconstrucao =
+  | { readonly tipo: 'cliente'; readonly organizationId: string; readonly clientId: string }
+  | { readonly tipo: 'organizacao'; readonly organizationId: string }
+  | { readonly tipo: 'todos' };
+
 export type DependenciasDoContexto = {
   readonly repositorio: ContextoRepository;
   readonly audit: AuditRecorder;
-  readonly armazenamento: ArmazenamentoDeContexto;
+  readonly armazenamento: PortaDoArmazenamento;
   readonly agora?: () => Date;
   readonly limitar?: (pedidos: readonly RateLimitPedido[], janelaMs: number) => RateLimitVerdict;
   readonly agendador?: (publicar: (escopo: Escopo) => Promise<unknown>) => AgendadorDoBrain;
@@ -421,9 +437,22 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
 
   async function estadoDoBrain(escopo: Escopo): Promise<EstadoDoBrain> {
     const estado: EstadoDoBrainRegistrado | null = await repositorio.estadoDoBrain(escopo.organizationId, escopo.clientId);
+    const pendente = Boolean(
+      estado && (!estado.ultimaTentativaEm || estado.solicitadoEm > estado.ultimaTentativaEm || estado.ultimoErro),
+    );
+    const situacao: SituacaoDoEstadoDoBrain = !armazenamento.configurado
+      ? 'desativado'
+      : estado?.ultimoErro
+        ? 'com_erro'
+        : pendente
+          ? 'pendente'
+          : estado?.hashExportado
+            ? 'em_dia'
+            : 'nunca_publicado';
     return {
+      situacao,
       armazenamentoConfigurado: armazenamento.configurado,
-      pendente: Boolean(estado && (!estado.ultimaTentativaEm || estado.solicitadoEm > estado.ultimaTentativaEm || estado.ultimoErro)),
+      pendente,
       solicitadoEm: estado?.solicitadoEm ?? null,
       exportadoEm: estado?.exportadoEm ?? null,
       hash: estado?.hashExportado ?? null,
@@ -436,7 +465,7 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
   async function gravarComRetentativa(caminho: string, conteudo: Uint8Array, contentType: string): Promise<Result<void, Failure>> {
     let ultimo: Failure = failure('unavailable', 'Falha ao gravar no armazenamento.');
     for (let tentativa = 1; tentativa <= TENTATIVAS_DE_GRAVACAO; tentativa++) {
-      const resultado = await armazenamento.put(caminho, conteudo, { contentType, tamanhoBytes: conteudo.byteLength });
+      const resultado = await armazenamento.put(caminho, conteudo, { contentType });
       if (resultado.ok) return ok(undefined);
       ultimo = resultado.error;
       if (tentativa < TENTATIVAS_DE_GRAVACAO) await esperar(200 * 4 ** (tentativa - 1));
@@ -444,7 +473,10 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
     return err(ultimo);
   }
 
-  async function publicarBrain(escopo: Escopo): Promise<Result<{ situacao: SituacaoDoBrain; contentHash: string | null }, Failure>> {
+  async function publicarBrain(
+    escopo: Escopo,
+    opcoes: { readonly forcar?: boolean } = {},
+  ): Promise<Result<{ situacao: SituacaoDoBrain; contentHash: string | null }, Failure>> {
     if (!armazenamento.configurado) return ok({ situacao: 'sem_armazenamento', contentHash: null });
 
     const carregado = await repositorio.carregar(escopo.organizationId, escopo.clientId);
@@ -459,7 +491,7 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
     });
 
     const anterior = await repositorio.estadoDoBrain(escopo.organizationId, escopo.clientId);
-    if (anterior?.hashExportado === brain.contentHash && anterior.versaoDoEsquema === VERSAO_DO_BRAIN) {
+    if (!opcoes.forcar && anterior?.hashExportado === brain.contentHash && anterior.versaoDoEsquema === VERSAO_DO_BRAIN) {
       await repositorio.registrarTentativaDoBrain(escopo.organizationId, escopo.clientId, {
         ok: true,
         hash: brain.contentHash,
@@ -472,7 +504,7 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
     const manifesto = brain.arquivos.find((a) => a.nome === 'manifest.json')!;
     const ordem = [...brain.arquivos.filter((a) => a !== manifesto), manifesto];
     for (const arquivo of ordem) {
-      const gravado = await gravarComRetentativa(arquivo.caminho, bytesDeTexto(arquivo.conteudo), arquivo.contentType);
+      const gravado = await gravarComRetentativa(arquivo.caminho, new TextEncoder().encode(arquivo.conteudo), arquivo.contentType);
       if (!gravado.ok) {
         const erro = `${arquivo.nome}: ${gravado.error.message}`;
         await repositorio.registrarTentativaDoBrain(escopo.organizationId, escopo.clientId, { ok: false, erro });
@@ -514,6 +546,19 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
         .catch(() => undefined);
     }),
   );
+
+  async function publicarVarios(alvos: readonly Escopo[], forcar: boolean): Promise<ResumoDePublicacao> {
+    let publicados = 0;
+    let inalterados = 0;
+    let falhas = 0;
+    for (const escopo of alvos) {
+      const resultado = await publicarBrain(escopo, { forcar }).catch((erro) => err(failure('unavailable', mensagemDeErro(erro))));
+      if (!resultado.ok) falhas += 1;
+      else if (resultado.value.situacao === 'inalterado') inalterados += 1;
+      else publicados += 1;
+    }
+    return { publicados, inalterados, falhas, desativado: false };
+  }
 
   async function lerAlvo(escopo: Escopo, alvo: AlvoDeMarcacao) {
     return alvo.tipo === 'campo'
@@ -578,28 +623,21 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
     }
     const secao = definicao.secao;
 
-    const avaliado = avaliarArquivo({
+    const avaliado = avaliarAnexo({
       nome: anexo.nome,
       mime: anexo.mime,
-      tamanhoBytes: anexo.conteudo.byteLength,
+      conteudo: anexo.conteudo,
       categoriasAceitas: definicao.campo.categorias,
       usoAtualDoClienteBytes: usoAtual,
     });
-    if (!avaliado.ok) return err(failure('validation', MOTIVO_DO_ARQUIVO[avaliado.motivo], { motivo: avaliado.motivo }));
-    if (!assinaturaConfere(avaliado.tipo, anexo.conteudo.subarray(0, 64))) {
-      return err(failure('validation', MOTIVO_DO_ARQUIVO.assinatura_divergente, { motivo: 'assinatura_divergente' }));
-    }
+    if (!avaliado.ok) return err(failure('validation', avaliado.mensagem, { motivo: avaliado.motivo }));
 
     const id = randomUUID();
     const caminho = caminhoDoArquivo(escopo.organizationId, escopo.clientId, id, anexo.nome);
     const sha256 = createHash('sha256').update(anexo.conteudo).digest('hex');
-    const gravado = await armazenamento.put(caminho, anexo.conteudo, {
-      contentType: avaliado.tipo.mime,
-      tamanhoBytes: anexo.conteudo.byteLength,
-      sha256,
-    });
+    const gravado = await armazenamento.put(caminho, anexo.conteudo, { contentType: avaliado.contentType, sha256 });
     if (!gravado.ok) return err(failure('unavailable', 'Não foi possível guardar o arquivo agora. Tente de novo.'));
-    return ok({ id, caminho, sha256, secao, mime: avaliado.tipo.mime });
+    return ok({ id, caminho, sha256, secao, mime: avaliado.contentType });
   }
 
   async function resolverHash(credencial: CredencialPublica): Promise<string | null> {
@@ -634,7 +672,7 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
       case 'limite':
         return failure('validation', 'Esta lista chegou ao limite de itens.');
       case 'cota_excedida':
-        return failure('validation', MOTIVO_DO_ARQUIVO.cota_excedida, { motivo: 'cota_excedida' });
+        return failure('validation', 'O cliente atingiu o limite de 500 MB de arquivos.', { motivo: 'cota_excedida' });
       case 'nao_encontrado':
         return failure('not_found', 'Item não encontrado.');
       default:
@@ -1186,19 +1224,18 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
       return ok({ concluidoEm });
     },
 
-    publicarBrain,
+    publicarBrain: (escopo, opcoes) => publicarBrain(escopo, opcoes),
 
     async publicarPendentes(limite = 20) {
-      if (!armazenamento.configurado) return { publicados: 0, falhas: 0 };
-      const pendentes = await repositorio.brainsPendentes(limite, ESPERA_DA_VARREDURA_S);
-      let publicados = 0;
-      let falhas = 0;
-      for (const escopo of pendentes) {
-        const resultado = await publicarBrain(escopo).catch((erro) => err(failure('unavailable', mensagemDeErro(erro))));
-        if (resultado.ok) publicados += 1;
-        else falhas += 1;
-      }
-      return { publicados, falhas };
+      if (!armazenamento.configurado) return { publicados: 0, inalterados: 0, falhas: 0, desativado: true };
+      return publicarVarios(await repositorio.brainsPendentes(limite, ESPERA_DA_VARREDURA_S), false);
+    },
+
+    async reconstruirBrains(alvo) {
+      if (!armazenamento.configurado) return ok({ publicados: 0, inalterados: 0, falhas: 0, desativado: true });
+      if (alvo.tipo === 'cliente') return ok(await publicarVarios([alvo], true));
+      const clientes = await repositorio.clientesParaReconstruir(alvo.tipo === 'organizacao' ? alvo.organizationId : null);
+      return ok(await publicarVarios(clientes, true));
     },
 
     async expurgarArmazenamento(escopo) {
