@@ -2,7 +2,7 @@
 
 - Versão: 1 (rascunho) — 2026-11-20
 - Elaborado por: Agência 24/7 (operadora), para validação da Credaz (controladora)
-- Encarregado da operadora: Bruno Abreu, contato@agencia24por7.com
+- Encarregado da operadora: Filipe Jones, contato@agencia24por7.com
 - Base: LGPD, art. 38; Guia de RIPD da ANPD
 
 > O RIPD é de responsabilidade da controladora (Credaz). Este rascunho descreve o tratamento que a Agência
@@ -56,7 +56,7 @@ fim do contrato. Retenção no RD Station: definida pela Credaz.
 
 ## 5. Plano de ação
 
-1. Assinar o acordo de tratamento (`docs/lgpd/minuta-contrato-operador-credaz.md`).
+1. Assinar o acordo de tratamento de dados com a Credaz (minuta mantida fora do repositório).
 2. Credaz: confirmar a base legal e o link de privacidade no formulário do anúncio.
 3. Credaz: definir prazo de retenção dos leads no RD Station.
 4. Credaz: avaliar o teste de legítimo interesse para o envio de conversões.
@@ -67,4 +67,4 @@ fim do contrato. Retenção no RD Station: definida pela Credaz.
 | Papel | Nome | Data |
 |---|---|---|
 | Encarregado da Credaz | [•] | [•] |
-| Encarregado da Agência | Bruno Abreu | [•] |
+| Encarregado da Agência | Filipe Jones | [•] |

@@ -17,7 +17,7 @@ export default function Privacidade() {
       <section>
         <h2>1. Quem é o responsável</h2>
         <p>
-          A orla é operada pela Agência 24/7, representada por Bruno Abreu, que também é o encarregado pelo tratamento
+          A orla é operada pela Agência 24/7, representada por Filipe Jones, que também é o encarregado pelo tratamento
           de dados pessoais. Para qualquer assunto de privacidade, escreva para{' '}
           <a href="mailto:contato@agencia24por7.com">contato@agencia24por7.com</a>. Esta política será atualizada com
           a razão social e o CNPJ assim que a empresa estiver constituída.
