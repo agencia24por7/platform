@@ -38,6 +38,8 @@ const toStored = (row: Row): StoredDiscovery => ({
   clientId: row.client_id,
 });
 
+export type ContaLiberada = StoredDiscovery & { readonly clientIdAnterior: string };
+
 export type DiscoveredAccountRepository = {
   replace(
     organizationId: string,
@@ -54,6 +56,7 @@ export type DiscoveredAccountRepository = {
   listByClient(organizationId: string, clientId: string): Promise<readonly StoredDiscovery[]>;
   unlinkFromClient(organizationId: string, id: string): Promise<StoredDiscovery | null>;
   reassignClient(organizationId: string, id: string, clientId: string): Promise<StoredDiscovery | null>;
+  liberarDaConexao(organizationId: string, connectionId: string): Promise<readonly ContaLiberada[]>;
 };
 
 export function createDiscoveredAccountRepository(): DiscoveredAccountRepository {
@@ -91,9 +94,10 @@ export function createDiscoveredAccountRepository(): DiscoveredAccountRepository
     async listPending(organizationId) {
       return withTenant(organizationId, async (tx) => {
         const rows = (await tx`
-          SELECT * FROM integrations.connection_accounts
-          WHERE state = 'discovered'
-          ORDER BY inactive, name`) as unknown as Row[];
+          SELECT ca.* FROM integrations.connection_accounts ca
+          JOIN integrations.connections c ON c.id = ca.connection_id
+          WHERE ca.state = 'discovered' AND c.status <> 'revoked'
+          ORDER BY ca.inactive, ca.name`) as unknown as Row[];
         return rows.map(toStored);
       });
     },
@@ -101,8 +105,10 @@ export function createDiscoveredAccountRepository(): DiscoveredAccountRepository
     async listAll(organizationId) {
       return withTenant(organizationId, async (tx) => {
         const rows = (await tx`
-          SELECT * FROM integrations.connection_accounts
-          ORDER BY manager_external_id NULLS LAST, inactive, name`) as unknown as Row[];
+          SELECT ca.* FROM integrations.connection_accounts ca
+          JOIN integrations.connections c ON c.id = ca.connection_id
+          WHERE c.status <> 'revoked'
+          ORDER BY ca.manager_external_id NULLS LAST, ca.inactive, ca.name`) as unknown as Row[];
         return rows.map(toStored);
       });
     },
@@ -110,9 +116,10 @@ export function createDiscoveredAccountRepository(): DiscoveredAccountRepository
     async listByConnection(organizationId, connectionId) {
       return withTenant(organizationId, async (tx) => {
         const rows = (await tx`
-          SELECT * FROM integrations.connection_accounts
-          WHERE connection_id = ${connectionId}
-          ORDER BY inactive, state, name`) as unknown as Row[];
+          SELECT ca.* FROM integrations.connection_accounts ca
+          JOIN integrations.connections c ON c.id = ca.connection_id
+          WHERE ca.connection_id = ${connectionId} AND c.status <> 'revoked'
+          ORDER BY ca.inactive, ca.state, ca.name`) as unknown as Row[];
         return rows.map(toStored);
       });
     },
@@ -177,6 +184,23 @@ export function createDiscoveredAccountRepository(): DiscoveredAccountRepository
           WHERE id = ${id} AND state = 'linked'
           RETURNING *`) as unknown as Row[];
         return rows[0] ? toStored(rows[0]) : null;
+      });
+    },
+
+    async liberarDaConexao(organizationId, connectionId) {
+      return withTenant(organizationId, async (tx) => {
+        const rows = (await tx`
+          WITH alvo AS (
+            SELECT id, client_id FROM integrations.connection_accounts
+            WHERE connection_id = ${connectionId} AND state = 'linked' AND client_id IS NOT NULL
+            FOR UPDATE
+          )
+          UPDATE integrations.connection_accounts ca
+          SET state = 'discovered', client_id = NULL
+          FROM alvo
+          WHERE ca.id = alvo.id
+          RETURNING ca.*, alvo.client_id AS client_id_anterior`) as unknown as (Row & { client_id_anterior: string })[];
+        return rows.map((row) => ({ ...toStored(row), clientIdAnterior: row.client_id_anterior }));
       });
     },
   };

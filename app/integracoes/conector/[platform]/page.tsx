@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { Shell } from '@/../app/_components/Shell';
 import { Marca } from '@/../app/_components/Marca';
 import { Feedback } from '@/../app/_components/Feedback';
+import { BotaoDeEnvio } from '@/../app/_components/BotaoDeEnvio';
 import { modules } from '@/composition';
 import {
   PARA_QUE_SERVE,
@@ -205,13 +206,13 @@ export default async function ConectorPage({
                           <form action={removerConexao}>
                             <input type="hidden" name="connectionId" value={conexao.id} />
                             <input type="hidden" name="voltarPara" value={voltarPara} />
-                            <button
+                            <BotaoDeEnvio
                               className="btn btn--compacto"
-                              type="submit"
-                              title="Apaga a credencial do cofre e para a coleta. O histórico de métricas fica."
+                              pendente="Removendo…"
+                              title="Apaga a credencial do cofre, para a coleta e solta as contas dos clientes. O histórico de métricas fica."
                             >
                               Remover
-                            </button>
+                            </BotaoDeEnvio>
                           </form>
                         </td>
                       ) : null}
@@ -284,9 +285,9 @@ export default async function ConectorPage({
                   </span>
                 </label>
               )}
-              <button className="btn btn--primary" type="submit">
+              <BotaoDeEnvio className="btn btn--primary" pendente="Testando e guardando…">
                 Testar e guardar no cofre
-              </button>
+              </BotaoDeEnvio>
             </form>
           </section>
         ) : (
