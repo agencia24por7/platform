@@ -7,11 +7,13 @@ export type Sql = postgres.Sql<Record<string, never>>;
 declare global {
   var __triaSql: Sql | undefined;
   var __triaSqlWorker: Sql | undefined;
+  var __triaChamadaDoWorker: AsyncLocalStorage<true> | undefined;
 }
 
 type Conexao = { readonly url: string; readonly max: number; readonly nome: string };
 
-const chamadaDoWorker = new AsyncLocalStorage<true>();
+globalThis.__triaChamadaDoWorker ??= new AsyncLocalStorage<true>();
+const chamadaDoWorker = globalThis.__triaChamadaDoWorker;
 
 function create(conexao: Conexao): Sql {
   const config = env();
