@@ -8,6 +8,7 @@ import type { AdAccount, NewAdAccount } from '@/modules/connections/domain/adAcc
 import { isValidExternalId, normalizeExternalId, recusaParaDesvincularConta } from '@/modules/connections/domain/adAccount';
 import type { Connection, NewConnection, Platform } from '@/modules/connections/domain/connection';
 import {
+  MENSAGEM_DE_CONEXAO_ALTERADA,
   ROTULO_DA_PLATAFORMA,
   grantTypesFor,
   missingScopes,
@@ -20,7 +21,7 @@ import {
   usaChaveDeApi,
   validarChave,
 } from '@/modules/connections/domain/chaveDeApi';
-import type { CredentialVault } from '@/modules/connections/application/credentialVault';
+import { descartarCredencial, type CredentialVault } from '@/modules/connections/application/credentialVault';
 import type { CredentialTester } from '@/modules/connections/application/credentialTester';
 import type { AdAccountRepository } from '@/modules/connections/infrastructure/adAccountRepository';
 import type { ConnectionRepository } from '@/modules/connections/infrastructure/connectionRepository';
@@ -30,6 +31,10 @@ import { avisarMudancaDePosse, semAvisoDePosse, type AvisoDePosse } from '@/modu
 import { liberarContasDaConexao } from '@/modules/connections/application/liberacaoDeContas';
 import { executarComCompensacao } from '@/shared/result/compensacao';
 import { randomBytes } from 'node:crypto';
+
+function violouUnicidade(erro: unknown): boolean {
+  return typeof erro === 'object' && erro !== null && (erro as { code?: unknown }).code === '23505';
+}
 
 export type LinkAccountInput = Omit<NewAdAccount, 'organizationId'> & {
   readonly organizationId: string;
@@ -176,13 +181,27 @@ export function createConnectionService(
         authorizedVia: 'staff' as const,
       };
 
-      const connection = await executarComCompensacao(
-        () => (existente ? connections.renew({ ...proposta, id: existente.id }) : connections.insert(proposta)),
-        descartarChaveNova,
-      );
+      let connection: Connection | null;
+      try {
+        connection = await executarComCompensacao(
+          () =>
+            existente
+              ? connections.renew({ ...proposta, id: existente.id }, existente.credentialRef)
+              : connections.insert(proposta),
+          descartarChaveNova,
+        );
+      } catch (erro) {
+        if (!violouUnicidade(erro)) throw erro;
+        return err(failure('conflict', MENSAGEM_DE_CONEXAO_ALTERADA));
+      }
+
+      if (!connection) {
+        await descartarChaveNova();
+        return err(failure('conflict', MENSAGEM_DE_CONEXAO_ALTERADA));
+      }
 
       if (existente && existente.credentialRef !== credentialRef) {
-        await vault.discard(existente.credentialRef);
+        await descartarCredencial(vault, existente.credentialRef);
       }
 
       await contasDescobertas.replace(input.organizationId, connection.id, [
@@ -216,15 +235,19 @@ export function createConnectionService(
         return err(failure('not_found', 'Conexão não encontrada.'));
       }
 
-      const descarte = await vault.discard(conexao.credentialRef);
+      const descarte = await descartarCredencial(vault, conexao.credentialRef);
       if (descarte === 'falhou' || descarte === 'sem_permissao') {
         return err(
           failure('conflict', 'Não deu para apagar a credencial no cofre. Nada foi alterado; tente de novo.'),
         );
       }
 
-      const revogada = await connections.revogar(input.organizationId, conexao.id);
-      if (!revogada) return err(failure('not_found', 'Conexão não encontrada.'));
+      const revogada = await connections.revogar(input.organizationId, conexao.id, conexao.credentialRef);
+      if (!revogada) {
+        const atual = await connections.findById(input.organizationId, conexao.id);
+        if (!atual || atual.status === 'revoked') return err(failure('not_found', 'Conexão não encontrada.'));
+        return err(failure('conflict', MENSAGEM_DE_CONEXAO_ALTERADA));
+      }
 
       const liberadas = await liberarContasDaConexao(
         contasDescobertas,
@@ -234,8 +257,18 @@ export function createConnectionService(
         ator,
       );
 
+      const workflowsNaoRemovidos: string[] = [];
       for (const workflowId of [revogada.coletorRef, revogada.executorRef]) {
-        if (workflowId) await workflows.remover(workflowId);
+        if (!workflowId) continue;
+        const removido = await workflows.remover(workflowId).catch(() => false);
+        if (!removido) {
+          workflowsNaoRemovidos.push(workflowId);
+          logger.warn('conexao.remover.workflow_orfao', {
+            connectionId: conexao.id,
+            platform: conexao.platform,
+            workflowId,
+          });
+        }
       }
 
       await audit.record({
@@ -247,7 +280,12 @@ export function createConnectionService(
         targetId: conexao.id,
         requestId: ator.requestId,
         sourceIp: ator.sourceIp,
-        metadata: { platform: conexao.platform, contasLiberadas: liberadas.length },
+        metadata: {
+          platform: conexao.platform,
+          contasLiberadas: liberadas.length,
+          coletorRemovido: workflowsNaoRemovidos.length === 0,
+          ...(workflowsNaoRemovidos.length > 0 ? { workflowsOrfaos: workflowsNaoRemovidos } : {}),
+        },
       });
 
       if (liberadas.length > 0) avisarMudancaDePosse(aviso, 'connection_account.unlink');
@@ -270,8 +308,9 @@ export function createConnectionService(
       }
 
       const connection = existente
-        ? await connections.renew({ ...input, id: existente.id })
+        ? await connections.renew({ ...input, id: existente.id }, existente.credentialRef)
         : await connections.insert(input);
+      if (!connection) return err(failure('conflict', MENSAGEM_DE_CONEXAO_ALTERADA));
 
       await audit.record({
         organizationId: connection.organizationId,

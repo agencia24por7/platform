@@ -25,7 +25,13 @@ const ator = { userId: 'user-1', requestId: 'req-1', sourceIp: null };
 const TODAS = Object.values(Plataformas) as Platform[];
 const CHAVE = 'chave-de-api-com-mais-de-vinte-caracteres';
 
-type Opcoes = { descarte?: DiscardOutcome; cofre?: boolean; testeOk?: boolean; falhaNoInsert?: boolean };
+type Opcoes = {
+  descarte?: DiscardOutcome;
+  cofre?: boolean;
+  testeOk?: boolean;
+  falhaNoInsert?: boolean;
+  removerWorkflow?: boolean;
+};
 
 function montar(opcoes: Opcoes = {}) {
   const conexoes = new Map<string, Connection>();
@@ -43,6 +49,13 @@ function montar(opcoes: Opcoes = {}) {
     ['cli-outro', { id: 'cli-outro', name: 'Outro' }],
   ]);
 
+  let corridaPendente: ((conexoes: Map<string, Connection>) => void) | undefined;
+  const dispararCorrida = (): void => {
+    const acao = corridaPendente;
+    corridaPendente = undefined;
+    acao?.(conexoes);
+  };
+
   const repositorio = {
     async insert(input: NewConnection) {
       if (opcoes.falhaNoInsert) throw new Error('banco indisponível');
@@ -58,13 +71,18 @@ function montar(opcoes: Opcoes = {}) {
       return conexao;
     },
     async findById(_organizationId: string, id: string) {
-      return conexoes.get(id) ?? null;
+      const lida = conexoes.get(id) ?? null;
+      dispararCorrida();
+      return lida;
     },
     async findByExternalId(_organizationId: string, platform: string, externalId: string) {
-      return [...conexoes.values()].find((c) => c.platform === platform && c.externalId === externalId) ?? null;
+      const lida = [...conexoes.values()].find((c) => c.platform === platform && c.externalId === externalId) ?? null;
+      dispararCorrida();
+      return lida;
     },
-    async renew(input: NewConnection & { id: string }) {
+    async renew(input: NewConnection & { id: string }, esperada: string) {
       const atual = conexoes.get(input.id)!;
+      if (atual.credentialRef !== esperada) return null;
       const renovada: Connection = { ...atual, ...input, status: input.status ?? 'active' };
       conexoes.set(renovada.id, renovada);
       return renovada;
@@ -72,9 +90,9 @@ function montar(opcoes: Opcoes = {}) {
     async list() {
       return [...conexoes.values()];
     },
-    async revogar(_organizationId: string, id: string) {
+    async revogar(_organizationId: string, id: string, esperada: string) {
       const atual = conexoes.get(id);
-      if (!atual || atual.status === 'revoked') return null;
+      if (!atual || atual.status === 'revoked' || atual.credentialRef !== esperada) return null;
       conexoes.set(id, { ...atual, status: 'revoked', credentialRef: 'descartada', accountEmail: null });
       const anteriores = refs.get(id)!;
       refs.set(id, { coletor: null, executor: null });
@@ -175,14 +193,18 @@ function montar(opcoes: Opcoes = {}) {
       },
       async remover(ref: string) {
         coletores.removidos.push(ref);
-        return true;
+        return opcoes.removerWorkflow ?? true;
       },
     },
     contasDescobertas as never,
     { posseMudou: (motivo: string) => void avisos.push(motivo) },
   );
 
-  return { servico, conexoes, refs, eventos, descartados, coletores, substituicoesDeContas, contasDaConexao, avisos, adAccounts };
+  const armarCorrida = (acao: (conexoes: Map<string, Connection>) => void): void => {
+    corridaPendente = acao;
+  };
+
+  return { armarCorrida, servico, conexoes, refs, eventos, descartados, coletores, substituicoesDeContas, contasDaConexao, avisos, adAccounts };
 }
 
 const guardar = (c: ReturnType<typeof montar>, platform: Platform, papel: MemberRole = 'owner', chave = CHAVE) =>
@@ -523,5 +545,82 @@ describe('conta de anúncio (google e meta): vincular, mover e desvincular', () 
     assert.ok(!mover.ok && mover.error.code === 'forbidden');
     assert.ok(!soltar.ok && soltar.error.code === 'forbidden');
     assert.equal(c.eventos.length, 0);
+  });
+});
+
+describe('conexão degradada, concorrência e coletor órfão (ADR 0024)', () => {
+  const pedido = (id: string) => ({ organizationId: ORGANIZACAO, papelDeQuemAge: 'owner' as const, connectionId: id });
+
+  for (const referencia of ['pendente:cofre-indisponivel', 'descartada']) {
+    it(`remove conexão com referência "${referencia}" sem consultar o cofre, mesmo com o cofre falhando`, async () => {
+      const c = montar({ descarte: 'falhou' });
+      const id = semearConexao(c, 'ga4');
+      c.conexoes.set(id, { ...c.conexoes.get(id)!, credentialRef: referencia, status: 'degraded' });
+
+      const resultado = await c.servico.removerConexao(pedido(id), ator);
+
+      assert.ok(resultado.ok);
+      assert.equal(c.conexoes.get(id)!.status, 'revoked');
+      assert.deepEqual(c.descartados, []);
+    });
+  }
+
+  const trocarRefPorOutraRequisicao = (conexoes: Map<string, Connection>): void => {
+    const atual = [...conexoes.values()][0]!;
+    conexoes.set(atual.id, { ...atual, credentialRef: 'n8n:credential:vencedora999' });
+  };
+
+  it('renovação concorrente da chave: descarta a credencial nova, mantém a vencedora e não cria coletor', async () => {
+    const c = montar();
+    const primeira = await guardar(c, 'apify');
+    assert.ok(primeira.ok);
+    const coletoresAntes = c.coletores.criados.length;
+    c.armarCorrida(trocarRefPorOutraRequisicao);
+
+    const segunda = await guardar(c, 'apify', 'owner', `${CHAVE}-nova`);
+
+    assert.ok(!segunda.ok);
+    assert.equal(segunda.error.code, 'conflict');
+    assert.equal(c.conexoes.get(primeira.value.id)!.credentialRef, 'n8n:credential:vencedora999');
+    assert.equal(c.descartados.length, 1);
+    assert.notEqual(c.descartados[0], primeira.value.credentialRef);
+    assert.notEqual(c.descartados[0], 'n8n:credential:vencedora999');
+    assert.equal(c.coletores.criados.length, coletoresAntes);
+    assert.equal(c.eventos.length, 1);
+  });
+
+  it('remoção concorrente com renovação: não revoga, não apaga a credencial vencedora e pede nova tentativa', async () => {
+    const c = montar();
+    const id = semearConexao(c, 'ga4');
+    c.armarCorrida(trocarRefPorOutraRequisicao);
+
+    const resultado = await c.servico.removerConexao(pedido(id), ator);
+
+    assert.ok(!resultado.ok);
+    assert.equal(resultado.error.code, 'conflict');
+    assert.equal(c.conexoes.get(id)!.status, 'active');
+    assert.equal(c.conexoes.get(id)!.credentialRef, 'n8n:credential:vencedora999');
+    assert.ok(!c.descartados.includes('n8n:credential:vencedora999'));
+    assert.equal(c.eventos.length, 0);
+    assert.equal(c.coletores.removidos.length, 0);
+  });
+
+  it('falha ao remover o coletor não derruba a remoção e fica registrada na auditoria', async () => {
+    const c = montar({ removerWorkflow: false });
+    const id = semearConexao(c, 'ga4');
+
+    const resultado = await c.servico.removerConexao(pedido(id), ator);
+
+    assert.ok(resultado.ok);
+    const removida = c.eventos.find((e) => e.action === 'connection.removed')!;
+    assert.equal(removida.metadata?.coletorRemovido, false);
+    assert.deepEqual(removida.metadata?.workflowsOrfaos, ['wf-coletor-ga4', 'wf-executor-ga4']);
+  });
+
+  it('remoção bem-sucedida registra coletorRemovido verdadeiro', async () => {
+    const c = montar();
+    const id = semearConexao(c, 'ga4');
+    await c.servico.removerConexao(pedido(id), ator);
+    assert.equal(c.eventos.find((e) => e.action === 'connection.removed')!.metadata?.coletorRemovido, true);
   });
 });

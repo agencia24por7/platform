@@ -68,8 +68,9 @@ function montarCenario(opcoes: { cofre?: boolean; falhaNoInsert?: boolean; semId
     async findByExternalId(_organizationId, platform, externalId) {
       return [...conexoes.values()].find((c) => c.platform === platform && c.externalId === externalId) ?? null;
     },
-    async renew(input) {
+    async renew(input, esperada) {
       const atual = conexoes.get(input.id)!;
+      if (atual.credentialRef !== esperada) return null;
       const renovada: Connection = { ...atual, ...input, status: input.status ?? 'active' };
       conexoes.set(renovada.id, renovada);
       return renovada;

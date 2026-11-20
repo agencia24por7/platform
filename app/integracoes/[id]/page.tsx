@@ -11,6 +11,7 @@ import {
 } from '@/modules/connections/domain/connection';
 import { Feedback } from '@/../app/_components/Feedback';
 import { MOTIVO_DO_CONVITE, decidirConvite } from '@/modules/connections/domain/convite';
+import { destinoComAviso } from '@/modules/connections/domain/destinoComAviso';
 import { text } from '@/shared/http/actions';
 import { atorAtual } from '@/shared/http/ator';
 import { requireContext } from '@/shared/http/currentOrganization';
@@ -41,7 +42,7 @@ async function convidarConta(formData: FormData): Promise<void> {
   const ator = await atorAtual();
   const connectionId = text(formData, 'connectionId');
   const voltar = (aviso: string): never =>
-    redirect(`/integracoes/${connectionId}?aviso=${encodeURIComponent(aviso)}`);
+    redirect(destinoComAviso(`/integracoes/${connectionId}`, aviso));
 
   if (!canAdminister(contexto.role)) {
     voltar('Só quem administra a organização pode convidar contas para a MCC.');
@@ -90,7 +91,7 @@ async function convidarConta(formData: FormData): Promise<void> {
     metadata: { administradora, conta: decisao.alvo },
   });
 
-  redirect(`/integracoes/${connectionId}?aviso=${encodeURIComponent('Convite enviado para a fila.')}`);
+  redirect(destinoComAviso(`/integracoes/${connectionId}`, 'Convite enviado para a fila.'));
 }
 
 export default async function DetalheAutorizacao({
