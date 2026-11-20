@@ -1,3 +1,5 @@
 [
-  { "tabela": "fato_meta_eventos_dataset", "chave": "dataset_id", "plataforma": "pixel", "data": "data_dia" }
+  { "tabela": "fato_meta_eventos_dataset", "chave": "dataset_id", "plataforma": "pixel", "data": "data_dia", "grao": ["organization_id", "dataset_id", "data_dia", "evento", "origem"], "entidades": [{ "coluna": "dataset_id", "dimensao": "dim_meta_dataset_scd2", "chaveDim": "dataset_id" }] },
+  { "tabela": "dim_meta_dataset_scd2", "chave": "dataset_id", "plataforma": "pixel", "todoPeriodo": true, "grao": ["organization_id", "dataset_id"] },
+  { "tabela": "fato_meta_eventos_dataset_recortes", "chave": "dataset_id", "plataforma": "pixel", "data": "data_dia", "grao": ["organization_id", "dataset_id", "data_dia", "recorte", "valor"] }
 ]

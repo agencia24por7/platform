@@ -1,4 +1,6 @@
 import { agora, type TabelasDaPlataforma } from '@/modules/coleta/infrastructure/tabelas/tipos';
+import { configuracoesDosRecortes } from '@/modules/coleta/infrastructure/tabelas/recortes';
+import { RECORTES_GA4 } from '@/modules/coleta/domain/recortesGa4';
 
 export const TABELAS_GA4: TabelasDaPlataforma = {
   padrao: {
@@ -26,4 +28,5 @@ export const TABELAS_GA4: TabelasDaPlataforma = {
       inserido_em: agora(),
     }),
   },
+  ...configuracoesDosRecortes(RECORTES_GA4),
 };

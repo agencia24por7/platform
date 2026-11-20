@@ -1,3 +1,7 @@
 [
-  { "tabela": "fato_search_console_diario", "chave": "site", "plataforma": "searchconsole", "data": "data_dia" }
+  { "tabela": "fato_search_console_diario", "chave": "site", "plataforma": "searchconsole", "data": "data_dia", "grao": ["organization_id", "site", "device", "data_dia"] },
+  { "tabela": "fato_search_console_consulta_pagina_diario", "chave": "site", "plataforma": "searchconsole", "data": "data_dia", "grao": ["organization_id", "site", "data_dia", "consulta", "pagina"] },
+  { "tabela": "fato_search_console_pagina_diario", "chave": "site", "plataforma": "searchconsole", "data": "data_dia", "grao": ["organization_id", "site", "data_dia", "pagina"] },
+  { "tabela": "fato_search_console_pais_dispositivo_diario", "chave": "site", "plataforma": "searchconsole", "data": "data_dia", "grao": ["organization_id", "site", "data_dia", "pais", "dispositivo"] },
+  { "tabela": "fato_search_console_aparencia_diario", "chave": "site", "plataforma": "searchconsole", "data": "data_dia", "grao": ["organization_id", "site", "data_dia", "aparencia"] }
 ]

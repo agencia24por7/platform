@@ -4,8 +4,9 @@ Documento canônico de **todas** as tabelas, views e convenções do BigQuery.
 Toda mudança no BigQuery (tabela, coluna, view, partição, chave, manifesto)
 atualiza este arquivo no mesmo PR. Decisões de fundo: ADR
 [0003](../../docs/adr/0003-backfill-e-gravacao-no-bigquery.md),
-[0013](../../docs/adr/0013-dimensoes-scd2.md) e
-[0015](../../docs/adr/0015-modelagem-escalavel-do-bq.md).
+[0013](../../docs/adr/0013-dimensoes-scd2.md),
+[0015](../../docs/adr/0015-modelagem-escalavel-do-bq.md) e
+[0021](../../docs/adr/0021-gravacao-em-lotes-coleta-parcial-e-integridade.md).
 
 ## Sumário
 
@@ -22,6 +23,9 @@ atualiza este arquivo no mesmo PR. Decisões de fundo: ADR
 - [Meta Pixel e Lead Ads](#meta-pixel-e-lead-ads)
 - [Google Tag Manager](#google-tag-manager)
 - [Transversais](#transversais)
+- [Views (`vw_*`)](#views-vw_)
+- [Gravação, coleta parcial e backfill](#gravação-coleta-parcial-e-backfill)
+- [Qualidade e integridade](#qualidade-e-integridade)
 
 ## Convenções
 
@@ -104,14 +108,17 @@ gravação inteira (`tabela_desconhecida:<nome>`).
 3. **Coletor** (`n8n/workflows/coletores/<plataforma>.json`): marque as linhas
    com `_tabela`.
 4. **Manifesto** em `scripts/bq/manifesto/<plataforma>.json` (exclusão de
-   cliente, `scripts/titular.mjs`).
+   cliente, `scripts/titular.mjs`), com `grao` igual à `chave` da
+   configuração e, se o fato aponta para uma dimensão de entidade,
+   `entidades` (`registro.test.ts` confere).
 5. **Esta página**: seção da plataforma, com granularidade.
 6. **ADR** quando houver decisão de modelagem (granularidade, semântica).
 
 ### Manifesto de exclusão
 
 Cada entrada: `{ "tabela", "chave", "plataforma", "colunaPlataforma"?, e
-exatamente um de "data" | "momento" | "todoPeriodo": true }`.
+exatamente um de "data" | "momento" | "todoPeriodo": true, "grao",
+"entidades"? }`.
 
 - `chave`: coluna do fato com o `external_id` da fonte.
 - `plataforma`: valor de `dim_fonte_scd2.platform`.
@@ -123,6 +130,12 @@ exatamente um de "data" | "momento" | "todoPeriodo": true }`.
 - `todoPeriodo: true`: para dimensões de entidade sem data de fato. Apaga
   todas as linhas da fonte se ela foi do cliente e **nunca** de outro cliente;
   fonte que mudou de dono fica (ver ADR 0015).
+- `grao`: colunas do grão da tabela (a `chave` do MERGE no registro de
+  tabelas; na dimensão SCD2, a chave da entidade). Usado pelo
+  `bq:verificar`; o `titular.mjs` ignora.
+- `entidades` (opcional): `[{ "coluna", "dimensao", "chaveDim" }]` liga o id
+  de entidade do fato à dimensão SCD2 dela (`coluna` e `chaveDim` podem ser
+  listas). O `bq:verificar` conta ids do fato sem versão na dimensão.
 
 ## Numeração dos arquivos de DDL
 
@@ -155,6 +168,133 @@ Configuração: `tabelas/meta.ts`. Manifesto: `manifesto/meta.json`. DDL: `20_me
 - Partição `data_dia`; cluster `organization_id, ad_account_id`.
 - Staging `stg_ads_diario`; view `vw_ads_diario` (dono por `f.platform`).
 - DDL: `01_fatos.sql`, `02_staging.sql`, `05_dimensoes_scd2.sql`.
+- Origem (Meta): agregada na coleta a partir dos anúncios (soma de gasto,
+  impressões, cliques e compras por campanha e dia), sem chamada própria à API.
+
+Configuração das novas tabelas: `tabelas/meta.ts` (uma entrada por `_tabela`;
+esquema em `domain/esquemasMeta.ts`). DDL: `20_meta_ads.sql`. ADR
+[0016](../../docs/adr/0016-meta-ads-modelagem.md). Todas as tabelas abaixo são
+do `ad_account_id` (o `externalId`), com dono pela `dim_fonte_scd2`
+(`platform = 'meta'`) nas views `vw_*`: `cliente_na_epoca_*` e
+`cliente_atual_*`. Nas dimensões a "época" é o início da versão (`valido_de`).
+
+Origem na API (Marketing API v23.0): relatórios assíncronos
+`POST /{act}/insights` + `GET /{report_run_id}/insights` (insights) e `GET
+/{act}/campaigns|adsets|ads` (dimensões), paginados. Janelas de 28 dias do
+backfill. Valores monetários com a moeda da conta em `moeda`.
+
+### `fato_meta_entrega_diaria`
+
+- Granularidade: uma linha por `organization_id`, `ad_account_id`, `ad_id`,
+  `data_dia`.
+- Colunas: `campaign_id`, `adset_id`, `investimento`, `impressoes`, `alcance`,
+  `frequencia`, `cliques`, `cliques_link`, `cliques_unicos`,
+  `cliques_link_unicos`, `cliques_saida`, `engajamento_post`,
+  `video_reproducoes`, `video_30s`, `video_p25`, `video_p50`, `video_p75`,
+  `video_p95`, `video_p100`, `video_thruplay`, `video_tempo_medio` (segundos),
+  `ranking_qualidade`, `ranking_engajamento`, `ranking_conversao`, `moeda`,
+  `versao_api`, `execucao_id`, `inserido_em`.
+- Partição `data_dia`; cluster `organization_id, ad_account_id, campaign_id`.
+- Origem: insights `level=ad`, `time_increment=1`. `alcance` e `frequencia` não
+  são aditivos entre dias nem entre anúncios.
+- Staging `stg_meta_entrega_diaria`; view `vw_meta_entrega_diaria`.
+
+### `fato_meta_acoes_diarias`
+
+- Granularidade: uma linha por `organization_id`, `ad_account_id`, `ad_id`,
+  `data_dia`, `tipo_acao`, `origem_metrica` (formato longo).
+- Colunas: `campaign_id`, `adset_id`, `quantidade`, `valor`, `custo_por_acao`,
+  `janela_atribuicao` (`unificada`: a janela de cada conjunto, ver
+  `dim_meta_conjunto_scd2`), `moeda`, `versao_api`, `execucao_id`,
+  `inserido_em`.
+- `tipo_acao`: `lead`, `purchase`, `landing_page_view`,
+  `onsite_conversion.*`, `offsite_conversion.fb_pixel_*`, conversões
+  personalizadas etc. `origem_metrica`: `acoes` (`actions`, `action_values`,
+  `cost_per_action_type`) ou `conversoes` (`conversions`, `conversion_values`,
+  `cost_per_conversion`). Uma ação conta nas duas origens: não somar origens.
+- Partição `data_dia`; cluster `organization_id, ad_account_id, campaign_id,
+  tipo_acao`.
+- Staging `stg_meta_acoes_diarias`; view `vw_meta_acoes_diarias`.
+
+### `fato_meta_recorte_idade_genero`
+
+- Granularidade: uma linha por `organization_id`, `ad_account_id`, `adset_id`,
+  `data_dia`, `idade`, `genero` (breakdown `age,gender`, nível conjunto).
+- Colunas: `campaign_id`, `investimento`, `impressoes`, `alcance`, `cliques`,
+  `cliques_link`, `leads`, `compras`, `receita_compras`, `conversas_iniciadas`,
+  `visualizacoes_pagina`, `moeda`, `versao_api`, `execucao_id`, `inserido_em`.
+  Mesmas métricas dos três recortes; `leads` = ação `lead`, `compras` =
+  `purchase` (ou `offsite_conversion.fb_pixel_purchase`), `conversas_iniciadas`
+  = `onsite_conversion.messaging_conversation_started_7d`.
+- Partição `data_dia`; cluster `organization_id, ad_account_id, campaign_id`.
+- Staging `stg_meta_recorte_idade_genero`; view `vw_meta_recorte_idade_genero`.
+
+### `fato_meta_recorte_posicionamento`
+
+- Granularidade: uma linha por `organization_id`, `ad_account_id`, `adset_id`,
+  `data_dia`, `plataforma_publicacao`, `posicao_plataforma` (breakdown
+  `publisher_platform,platform_position`, nível conjunto).
+- Colunas: as do recorte de idade e gênero, com os dois campos de recorte.
+- Partição `data_dia`; cluster `organization_id, ad_account_id, campaign_id`.
+- Staging `stg_meta_recorte_posicionamento`; view
+  `vw_meta_recorte_posicionamento`.
+
+### `fato_meta_recorte_regiao`
+
+- Granularidade: uma linha por `organization_id`, `ad_account_id`, `adset_id`,
+  `data_dia`, `regiao` (breakdown `region`, nível conjunto).
+- Colunas: as do recorte de idade e gênero, com `regiao`.
+- Partição `data_dia`; cluster `organization_id, ad_account_id, campaign_id`.
+- Staging `stg_meta_recorte_regiao`; view `vw_meta_recorte_regiao`.
+
+### `dim_meta_campanha_scd2`
+
+- Granularidade: uma versão por `organization_id`, `ad_account_id`,
+  `campaign_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos: `nome`, `objetivo`, `status`, `status_efetivo`, `tipo_compra`,
+  `estrategia_lance`, `orcamento_diario`, `orcamento_vitalicio`,
+  `limite_gasto`, `categorias_especiais`, `inicio`, `fim`, `criada_em`.
+  Mais as colunas SCD2 de controle (ADR 0013).
+- Origem: `GET /{act}/campaigns` (`objective`, `effective_status`,
+  `buying_type`, `bid_strategy`, `daily_budget`, `lifetime_budget`,
+  `spend_cap`, `special_ad_categories`, `start_time`, `stop_time`,
+  `created_time`). Orçamentos divididos por 100; zero vira nulo.
+- Cluster `organization_id, ad_account_id, campaign_id`. Staging
+  `stg_meta_dim_campanha`; view `vw_meta_campanha`.
+
+### `dim_meta_conjunto_scd2`
+
+- Granularidade: uma versão por `organization_id`, `ad_account_id`, `adset_id`
+  e intervalo.
+- Atributos: `campaign_id`, `nome`, `status`, `status_efetivo`,
+  `objetivo_otimizacao`, `evento_cobranca`, `estrategia_lance`, `valor_lance`,
+  `orcamento_diario`, `orcamento_vitalicio`, `tipo_destino`,
+  `evento_conversao`, `janela_atribuicao` (`CLICK_THROUGH:7,VIEW_THROUGH:1`),
+  `inicio`, `fim`, `criado_em`.
+- Origem: `GET /{act}/adsets` (`optimization_goal`, `billing_event`,
+  `bid_amount`, `destination_type`, `attribution_spec`,
+  `promoted_object.custom_event_type`, ...).
+- Cluster `organization_id, ad_account_id, adset_id`. Staging
+  `stg_meta_dim_conjunto`; view `vw_meta_conjunto`.
+
+### `dim_meta_anuncio_scd2`
+
+- Granularidade: uma versão por `organization_id`, `ad_account_id`, `ad_id` e
+  intervalo.
+- Atributos: `campaign_id`, `adset_id`, `nome`, `status`, `status_efetivo`,
+  `creative_id`, `criado_em`.
+- Origem: `GET /{act}/ads` (`creative{id}`, `effective_status`, ...).
+- Cluster `organization_id, ad_account_id, ad_id`. Staging
+  `stg_meta_dim_anuncio`; view `vw_meta_anuncio`.
+
+### Coleta e cotas
+
+O coletor cria quatro relatórios assíncronos (anúncio, idade × gênero,
+posicionamento, região), consulta a cada 20 s (até 30 vezes) e baixa páginas de
+500 linhas. Chamadas por fonte e janela: 4 criações, até 120 consultas, 3 listas
+paginadas (200 por página) e os downloads. Limite de uso da Meta
+(códigos 4, 17, 32, 613, 80000-80014) vira `api_recusou`; autorização
+(401/403/190) vira `reauth_pending`.
 
 <!-- Meta Ads: novas tabelas acima desta linha -->
 
@@ -165,6 +305,67 @@ Configuração: `tabelas/google.ts`. Manifesto: `manifesto/google.json`. DDL: `2
 ### `fato_ads_diario` (compartilhada com Meta Ads)
 
 Mesma tabela da seção Meta Ads, com `platform = 'google'`.
+
+Modelagem e cota: ADR [0017](../../docs/adr/0017-google-ads-modelagem.md). Origem: Google Ads API
+`v26`, GAQL `googleAds:searchStream`, uma consulta por tabela. Todas as colunas
+de DDL são geradas da especificação em `tabelas/googleEspecificacao.ts` e
+conferidas por `googleEspecificacao.test.ts`. Valor monetário = `cost_micros` ÷
+1.000.000, na `moeda` da linha. Toda tabela tem `organization_id` e
+`ad_account_id` (`externalId`), `execucao_id`, `inserido_em`; fatos têm
+`PARTITION BY data_dia` e `CLUSTER BY organization_id, ad_account_id,
+external_campaign_id`; staging `stg_google_*` (7 dias) com as mesmas colunas.
+Cada fato tem a view `vw_google_*_diario` (nome do fato com `vw_` no lugar de
+`fato_`), com dedupe pela chave e `cliente_na_epoca_*`/`cliente_atual_*` via
+`dim_fonte_scd2` (`platform = 'google'`). Dimensões têm a view
+`vw_dim_google_*` (todas as versões + `cliente_atual_*`).
+
+Colunas de métrica (fatos, exceto onde dito): `investimento`
+(`metrics.cost_micros`), `impressoes`, `cliques`, `conversoes`, `receita`
+(`conversions_value`), `todas_conversoes` (`all_conversions`),
+`todas_conversoes_receita` (`all_conversions_value`), `interacoes`,
+`visualizacoes_video` (`video_views`).
+
+### Fatos (DDL: `21_google_ads.sql`)
+
+| Tabela | Grão (= chave do MERGE) | Origem (`FROM`) e colunas próprias |
+|---|---|---|
+| `fato_google_campanha_diario` | `organization_id, ad_account_id, external_campaign_id, data_dia` | `campaign`; mais `parcela_impressoes_pesquisa`, `perdida_orcamento`, `perdida_ranking`, `parcela_topo`, `parcela_topo_absoluto` (`search_*_impression_share`; nulas fora de Pesquisa) |
+| `fato_google_anuncio_diario` | `..., external_campaign_id, ad_group_id, ad_id, data_dia` | `ad_group_ad` |
+| `fato_google_palavra_chave_diario` | `..., external_campaign_id, ad_group_id, criterion_id, data_dia` | `keyword_view` |
+| `fato_google_termo_pesquisa_diario` | `..., external_campaign_id, ad_group_id, termo, data_dia` | `search_term_view`; `status_termo`; termo truncado em 500 |
+| `fato_google_conversao_diario` | `..., external_campaign_id, conversion_action_id, data_dia` | `campaign` + `segments.conversion_action`; só as 4 métricas de conversão; `acao_nome`, `acao_categoria` |
+| `fato_google_dispositivo_diario` | `..., external_campaign_id, dispositivo, data_dia` | `campaign` + `segments.device` |
+| `fato_google_rede_diario` | `..., external_campaign_id, rede, data_dia` | `campaign` + `segments.ad_network_type` |
+| `fato_google_geo_diario` | `..., external_campaign_id, pais_criterio_id, tipo_localizacao, data_dia` | `geographic_view` (país; `location_type`) |
+| `fato_google_idade_diario` | `..., external_campaign_id, ad_group_id, faixa_etaria, data_dia` | `age_range_view` |
+| `fato_google_genero_diario` | `..., external_campaign_id, ad_group_id, genero, data_dia` | `gender_view` |
+| `fato_google_grupo_ativos_diario` | `..., external_campaign_id, asset_group_id, data_dia` | `asset_group` (Performance Max); sem `visualizacoes_video` |
+
+Fatos de entidade (anúncio, palavra-chave, termo, recortes, grupo de ativos)
+só trazem linhas com `metrics.impressions > 0`; campanha traz todas.
+
+### Dimensões SCD2
+
+Chave = `organization_id, ad_account_id` + id da entidade; manifesto
+`todoPeriodo`. Buscadas só na janela mais recente (ADR 0017). Cluster pela
+chave; sem partição.
+
+| Tabela | Chave da entidade | Atributos (hash da versão) |
+|---|---|---|
+| `dim_google_campanha_scd2` | `external_campaign_id` | `nome`, `status`, `canal` (`advertising_channel_type`), `subcanal`, `estrategia_lance` (`bidding_strategy_type`), `orcamento` (`campaign_budget.amount_micros`), `orcamento_compartilhado` |
+| `dim_google_grupo_anuncios_scd2` | `ad_group_id` | `external_campaign_id`, `nome`, `status`, `tipo` |
+| `dim_google_anuncio_scd2` | `ad_id` | `ad_group_id`, `external_campaign_id`, `nome`, `tipo`, `status`, `aprovacao` (`policy_summary.approval_status`) |
+| `dim_google_palavra_chave_scd2` | `ad_group_id, criterion_id` | `external_campaign_id`, `texto`, `correspondencia`, `status`, `negativa`, `nota_qualidade` |
+| `dim_google_grupo_ativos_scd2` | `asset_group_id` | `external_campaign_id`, `nome`, `status` |
+
+Staging das dimensões: `stg_google_campanha`, `stg_google_grupo_anuncios`,
+`stg_google_anuncio`, `stg_google_palavra_chave`, `stg_google_grupo_ativos`.
+
+### Cota e volume (nível Básico, 15.000 operações/dia)
+
+Por conta: 11 consultas por janela de 28 dias (+5 de entidade na janela mais
+recente). Backfill de 37 meses ≈ 456 operações por conta; incremental ≈ 16.
+Teto recomendado: 20 contas/dia de backfill. Detalhe na ADR 0017.
 
 <!-- Google Ads: novas tabelas acima desta linha -->
 
@@ -181,6 +382,31 @@ Configuração: `tabelas/ga4.ts`. Manifesto: `manifesto/ga4.json`. DDL: `22_ga4*
 - Partição `data_dia`; cluster `organization_id, property_id`.
 - Staging `stg_ga4_diario`; view `vw_ga4_diario`.
 
+Decisões: ADR [0018](../../docs/adr/0018-ga4-searchconsole-modelagem.md). DDL:
+`22_ga4.sql`. Todas as tabelas abaixo seguem o mesmo molde: fato diário
+`PARTITION BY data_dia`, `CLUSTER BY organization_id, property_id, <1ª
+dimensão>`; staging `stg_<mesmo sufixo>`; view `vw_<mesmo sufixo>` (dedupe +
+`cliente_na_epoca_*`/`cliente_atual_*` via `dim_fonte_scd2`, `platform =
+'ga4'`). Dimensão sem valor grava `(not set)`; `(other)` é a cauda que o GA4
+agrupa quando a cardinalidade estoura. Origem: `POST
+analyticsdata.googleapis.com/v1beta/properties/{id}:runReport`, um pedido por
+recorte (`date` + dimensões), `limit` 100000 paginado por `offset`. Valor em
+parênteses é o campo da API; `_tabela` entre crases.
+
+| `_tabela` | Tabela | Grão (além de `organization_id`, `property_id`, `data_dia`) | Dimensões da API | Métricas (API → coluna) |
+|---|---|---|---|---|
+| `aquisicao` | `fato_ga4_aquisicao_diario` | `fonte`, `midia`, `campanha`, `canal_padrao` | sessionSource, sessionMedium, sessionCampaignName, sessionDefaultChannelGroup | sessions → `sessoes`, engagedSessions → `sessoes_engajadas`, totalUsers → `usuarios`, newUsers → `novos_usuarios`, keyEvents → `eventos_chave`, totalRevenue → `receita`, userEngagementDuration → `duracao_engajamento_seg` |
+| `pagina` | `fato_ga4_pagina_diario` | `pagina` | pagePath (sem query string) | screenPageViews → `visualizacoes`, activeUsers → `usuarios_ativos`, sessions → `sessoes`, eventCount → `eventos`, keyEvents → `eventos_chave`, userEngagementDuration → `duracao_engajamento_seg` |
+| `pagina_entrada` | `fato_ga4_pagina_entrada_diario` | `pagina_entrada` | landingPage | sessões, sessões engajadas, usuários, novos usuários, `eventos_chave`, `receita` (como em `aquisicao`) |
+| `evento` | `fato_ga4_evento_diario` | `evento` | eventName | eventCount → `contagem`, totalUsers → `usuarios`, eventValue → `valor`, keyEvents → `eventos_chave` (evento marcado como principal) |
+| `dispositivo` | `fato_ga4_dispositivo_diario` | `categoria_dispositivo`, `sistema_operacional`, `navegador`, `plataforma` | deviceCategory, operatingSystem, browser, platform | mesmas de `pagina_entrada` |
+| `geo` | `fato_ga4_geo_diario` | `pais`, `regiao`, `cidade` | country, region, city | mesmas de `pagina_entrada` |
+| `item` | `fato_ga4_item_diario` | `item` | itemName (só agregado; vazio sem e-commerce) | itemsViewed → `itens_visualizados`, itemsAddedToCart → `itens_no_carrinho`, itemsPurchased → `itens_comprados`, itemRevenue → `receita_item` |
+
+Cada tabela de recorte tem também `execucao_id` e `inserido_em`. Os recortes
+não somam entre si (escopos de sessão, evento e item diferem); compare totais
+só dentro do recorte. `fato_ga4_diario` (acima) continua como total por canal.
+
 <!-- GA4: novas tabelas acima desta linha -->
 
 ## Search Console
@@ -196,6 +422,30 @@ Configuração: `tabelas/searchconsole.ts`. Manifesto: `manifesto/searchconsole.
 - Partição `data_dia`; cluster `organization_id, site`.
 - Staging `stg_search_console_diario`; view `vw_search_console_diario`.
 
+Decisões: ADR [0018](../../docs/adr/0018-ga4-searchconsole-modelagem.md). DDL:
+`23_searchconsole.sql`. Mesmo molde das tabelas de recorte do GA4: partição
+`data_dia`, `CLUSTER BY organization_id, site, <1ª dimensão>`, staging
+`stg_<sufixo>`, view `vw_<sufixo>` com `platform = 'searchconsole'`. Origem:
+`POST webmasters/v3/sites/{site}/searchAnalytics/query` (`date` + dimensões),
+`rowLimit` 25000 paginado por `startRow`, `dataState: final`, tipo de busca
+`web`. Colunas de métrica em todas: `cliques`, `impressoes`, `ctr` (fração),
+`posicao_media` (média da API, 1 = topo; para reagregar, pondere por
+`impressoes`).
+
+| `_tabela` | Tabela | Grão (além de `organization_id`, `site`, `data_dia`) | Dimensões da API |
+|---|---|---|---|
+| `consulta_pagina` | `fato_search_console_consulta_pagina_diario` | `consulta`, `pagina` | query, page |
+| `pagina` | `fato_search_console_pagina_diario` | `pagina` | page |
+| `pais_dispositivo` | `fato_search_console_pais_dispositivo_diario` | `pais` (ISO 3166-1 alfa-3, minúsculo), `dispositivo` | country, device |
+| `aparencia` | `fato_search_console_aparencia_diario` | `aparencia` | searchAppearance (ex.: AMP, rich results; recorte opcional: 400 não falha a coleta) |
+
+Consultas são termos agregados; a API omite as anonimizadas (raras), então
+`consulta_pagina` soma menos que `pagina`, e `pagina` (agregação por página)
+não bate exatamente com `fato_search_console_diario` (por propriedade). A
+API devolve só as linhas de maior tráfego por dia; não há garantia de
+completude da cauda. `fato_search_console_diario` (acima) continua como
+total por dispositivo.
+
 <!-- Search Console: novas tabelas acima desta linha -->
 
 ## YouTube
@@ -210,6 +460,78 @@ Configuração: `tabelas/youtube.ts`. Manifesto: `manifesto/youtube.json`. DDL: 
 - Partição `data_dia`; cluster `organization_id, channel_id`.
 - Staging `stg_youtube_diario`; view `vw_youtube_diario`.
 
+Origem: YouTube Analytics API v2 (`reports.query`, escopo `yt-analytics.readonly`)
+e YouTube Data API v3 (`videos.list`, `playlists.list`, escopo `youtube.readonly`,
+1 unidade de cota por chamada; nunca `search.list`, que custa 100). Decisões: ADR
+[0019](../../docs/adr/0019-youtube-gbp-modelagem.md). Cada tabela abaixo tem
+`_tabela` própria no coletor (entre parênteses). Todas as `vw_*` de fato dão o
+dono `cliente_na_epoca_*` e `cliente_atual_*`; as `vw_dim_*` dão só
+`cliente_atual_*`.
+
+### `dim_youtube_video_scd2` (`dim_video`)
+
+- Granularidade: uma versão por `organization_id`, `channel_id`, `video_id` e
+  intervalo `[valido_de, valido_ate)`.
+- Atributos (hash da versão): `titulo`, `duracao_segundos`, `publicado_em`,
+  `privacidade`, `categoria_id`.
+- Cluster `organization_id, channel_id, video_id`.
+- Origem: `videos.list` (`snippet.title`, `snippet.publishedAt`,
+  `snippet.categoryId`, `contentDetails.duration` ISO 8601 convertida em
+  segundos, `status.privacyStatus`), só dos vídeos mais vistos da janela (até 25).
+- Staging `stg_youtube_video`; view `vw_dim_youtube_video_scd2`.
+
+### `dim_youtube_playlist_scd2` (`dim_playlist`)
+
+- Granularidade: uma versão por `organization_id`, `channel_id`, `playlist_id`
+  e intervalo.
+- Atributos: `titulo`, `privacidade`, `qtd_videos`.
+- Cluster `organization_id, channel_id, playlist_id`.
+- Origem: `playlists.list` (primeira página, 50 playlists).
+- Staging `stg_youtube_playlist`; view `vw_dim_youtube_playlist_scd2`.
+
+### `fato_youtube_video_diario` (`video_diario`)
+
+- Granularidade: uma linha por `organization_id`, `channel_id`, `video_id`,
+  `data_dia`.
+- Colunas: `views`, `minutos_assistidos`, `duracao_media_visualizacao_s`,
+  `curtidas`, `comentarios`, `compartilhamentos`, `inscritos_ganhos`,
+  `inscritos_perdidos`, `execucao_id`, `inserido_em`.
+- Partição `data_dia`; cluster `organization_id, channel_id, video_id`.
+- Origem: `reports.query` com `filters=video==<id>`, `dimensions=day`, um
+  pedido por vídeo (os 25 mais vistos da janela, descobertos por
+  `dimensions=video&sort=-views&maxResults=25`).
+- Staging `stg_youtube_video_diario`; view `vw_youtube_video_diario`.
+
+### Recortes do canal por dia
+
+Mesmas colunas de dado: `views`, `minutos_assistidos`; mesmo particionamento
+(`data_dia`), cluster `organization_id, channel_id, <recorte>`.
+
+| Tabela (`_tabela`) | Granularidade (além de `organization_id`, `channel_id`, `data_dia`) | Origem (`dimensions`) |
+|---|---|---|
+| `fato_youtube_origem_trafego_diario` (`origem_trafego`) | `origem_trafego` | `day,insightTrafficSourceType` |
+| `fato_youtube_dispositivo_diario` (`dispositivo`) | `dispositivo` | `day,deviceType` |
+| `fato_youtube_local_reproducao_diario` (`local_reproducao`) | `local_reproducao` | `day,insightPlaybackLocationType` |
+| `fato_youtube_pais_diario` (`pais`) | `pais` (ISO 3166-1 alfa-2) | `country`, um pedido por dia |
+
+Staging `stg_youtube_<recorte>_diario`; view `vw_youtube_<recorte>_diario`.
+
+### `fato_youtube_audiencia_diario` (`audiencia`)
+
+- Granularidade: uma linha por `organization_id`, `channel_id`, `data_dia`,
+  `faixa_etaria`, `genero`.
+- Colunas: `percentual_espectadores` (`viewerPercentage`, soma 100 no dia),
+  `execucao_id`, `inserido_em`.
+- Partição `data_dia`; cluster `organization_id, channel_id`.
+- Origem: `ageGroup,gender` com `viewerPercentage`, um pedido por dia. Dia
+  com poucos espectadores volta sem linhas (limiar de privacidade da API).
+- Staging `stg_youtube_audiencia_diario`; view `vw_youtube_audiencia_diario`.
+
+Limites do coletor: país e audiência só são consultáveis sem `day` na API, por
+isso um pedido por dia, no máximo os 31 dias mais recentes da janela. Falha
+nos recortes e nos metadados é ignorada (só `fato_youtube_diario` derruba a
+execução).
+
 <!-- YouTube: novas tabelas acima desta linha -->
 
 ## Google Business Profile
@@ -223,6 +545,42 @@ Configuração: `tabelas/gbp.ts`. Manifesto: `manifesto/gbp.json`. DDL: `25_gbp*
 - Colunas: `valor`, `execucao_id`, `inserido_em`.
 - Partição `data_dia`; cluster `organization_id, location_id`.
 - Staging `stg_gbp_diario`; view `vw_gbp_diario`.
+
+`fato_gbp_diario` agora pede 10 métricas diárias da Business Profile
+Performance API (`fetchMultiDailyMetricsTimeSeries`): as quatro
+`BUSINESS_IMPRESSIONS_*`, `BUSINESS_DIRECTION_REQUESTS`, `CALL_CLICKS`,
+`WEBSITE_CLICKS`, `MESSAGING_CLICKS`, `BUSINESS_BOOKINGS` e
+`BUSINESS_FOOD_MENU_CLICKS` (as duas métricas depreciadas ficam de fora).
+Decisões: ADR [0019](../../docs/adr/0019-youtube-gbp-modelagem.md).
+
+### `dim_gbp_local_scd2` (`dim_local`)
+
+- Granularidade: uma versão por `organization_id`, `location_id` e intervalo
+  `[valido_de, valido_ate)`.
+- Atributos (hash da versão): `nome`, `categoria_primaria`, `endereco`,
+  `cidade`, `estado`, `cep`, `pais`, `status`, `site`. São dados do
+  estabelecimento, não de pessoas.
+- Cluster `organization_id, location_id`.
+- Origem: Business Information API v1, `locations.get` com `readMask`
+  `name,title,categories,storefrontAddress,openInfo,websiteUri`
+  (`title`, `categories.primaryCategory.displayName`,
+  `storefrontAddress.*`, `openInfo.status`, `websiteUri`).
+- Staging `stg_gbp_local`; view `vw_dim_gbp_local_scd2`.
+
+### `fato_gbp_palavras_chave_mensal` (`palavras_chave`)
+
+- Granularidade: uma linha por `organization_id`, `location_id`, `mes` (dia 1
+  do mês), `termo`.
+- Colunas: `valor` (usuários únicos que buscaram o termo; nulo quando a API só
+  informa o limiar), `limiar` (a API informa "abaixo de N"), `execucao_id`,
+  `inserido_em`. Exatamente um dos dois vem preenchido.
+- Partição `mes`; cluster `organization_id, location_id`.
+- Origem: `searchkeywords/impressions/monthly`, um pedido por mês da janela
+  (até 3), `pageSize=100`, só a primeira página.
+- Staging `stg_gbp_palavras_chave_mensal`; view `vw_gbp_palavras_chave_mensal`
+  (dono pelo mês: `cliente_na_epoca_*` usa o dia 1 do mês).
+
+Avaliações (contagem e nota média): ficaram de fora, ver ADR 0019.
 
 <!-- Google Business Profile: novas tabelas acima desta linha -->
 
@@ -241,12 +599,81 @@ Configuração: `tabelas/rdstation.ts`. Manifesto: `manifesto/rdstation.json`. D
 - Partição `data_snapshot`; cluster `organization_id, conta_id`.
 - Staging `stg_rd_negociacoes`; view `vw_rd_negociacoes`.
 
+### Dimensões do RD Station e fatos de negociação (ADR 0020)
+
+`fato_rd_negociacoes` ganhou `responsavel_id` (id opaco do usuário), `fonte_id` e `campanha_id`
+(DDL: `26_rdstation.sql`, com `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`). Todas as dimensões abaixo têm chave
+`organization_id`, `conta_id` e o id da entidade.
+
+### `dim_rd_funil_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conta_id`, `funil_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`.
+- Cluster pela chave; staging `stg_dim_rd_funil`; view `vw_dim_rd_funil` (`cliente_atual_*`).
+- Origem: `GET /deal_pipelines`.
+
+### `dim_rd_etapa_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conta_id`, `etapa_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `funil_id`, `nome`, `ordem`.
+- Cluster pela chave; staging `stg_dim_rd_etapa`; view `vw_dim_rd_etapa` (`cliente_atual_*`).
+- Origem: `deal_stages` embutidos em `GET /deal_pipelines`.
+
+### `dim_rd_fonte_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conta_id`, `fonte_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`.
+- Cluster pela chave; staging `stg_dim_rd_fonte`; view `vw_dim_rd_fonte` (`cliente_atual_*`).
+- Origem: `GET /deal_sources`.
+
+### `dim_rd_campanha_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conta_id`, `campanha_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`.
+- Cluster pela chave; staging `stg_dim_rd_campanha`; view `vw_dim_rd_campanha` (`cliente_atual_*`).
+- Origem: `GET /campaigns`.
+
+### `dim_rd_produto_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conta_id`, `produto_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`, `preco`, `ativo`.
+- Cluster pela chave; staging `stg_dim_rd_produto`; view `vw_dim_rd_produto` (`cliente_atual_*`).
+- Origem: `GET /products` (`base_price`, `visible`).
+
+### `dim_rd_usuario_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conta_id`, `usuario_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `ativo`.
+- Cluster pela chave; staging `stg_dim_rd_usuario`; view `vw_dim_rd_usuario` (`cliente_atual_*`).
+- Origem: `GET /users`, só `id` e `active`. Sem nome nem e-mail (LGPD).
+
+### `fato_rd_negociacao_produtos`
+
+- Granularidade: uma linha por `organization_id`, `conta_id`, `deal_id`, `deal_produto_id`, `data_snapshot`.
+- Colunas: `produto_id`, `quantidade`, `preco`, `desconto`, `total`, `execucao_id`, `inserido_em`.
+- Partição `data_snapshot` (cluster `organization_id, conta_id, deal_id`); staging `stg_rd_negociacao_produtos`; view `vw_rd_negociacao_produtos` (`cliente_na_epoca_*` e `cliente_atual_*`).
+- Origem: `deal_products` de cada negociação em `GET /deals`.
+
+### `fato_rd_negociacao_etapas`
+
+- Granularidade: uma linha por `organization_id`, `conta_id`, `deal_id`, `etapa_id`, `entrou_em`.
+- Colunas: `data_dia` (dia de São Paulo da entrada), `execucao_id`, `inserido_em`.
+- Partição `data_dia` (cluster `organization_id, conta_id, deal_id`); staging `stg_rd_negociacao_etapas`; view `vw_rd_negociacao_etapas` (`cliente_na_epoca_*` e `cliente_atual_*`).
+- Origem: `deal_stage_histories` de cada negociação em `GET /deals` (formato a confirmar, ADR 0020). Evento de mudança de etapa: dá o tempo em cada etapa e a conversão entre etapas.
+
+### `fato_rd_tarefas_diarias`
+
+- Granularidade: uma linha por `organization_id`, `conta_id`, `data_dia`, `tipo`, `status`.
+- Colunas: `quantidade`, `execucao_id`, `inserido_em`.
+- Partição `data_dia`; staging `stg_rd_tarefas_diarias`; view `vw_rd_tarefas_diarias` (`cliente_na_epoca_*` e `cliente_atual_*`).
+- Origem: `GET /tasks` com `date_start`/`date_end` (30 dias para cada lado), contado no n8n; `status` é `concluida` ou `pendente`. Assunto, notas, negociação e responsáveis não saem.
+
 <!-- RD Station: novas tabelas acima desta linha -->
 
 ## Meta Pixel e Lead Ads
 
 Configuração: `tabelas/pixel.ts` e `tabelas/leadads.ts`. Manifesto:
-`manifesto/pixel.json` e `manifesto/leadads.json`. DDL: `27_*.sql`. ADR 0014.
+`manifesto/pixel.json` e `manifesto/leadads.json`. DDL: `27_*.sql` e `27b_*.sql`. ADRs 0014 e 0020.
 
 ### `fato_meta_eventos_dataset` (pixel)
 
@@ -267,6 +694,45 @@ Configuração: `tabelas/pixel.ts` e `tabelas/leadads.ts`. Manifesto:
 - Staging `stg_meta_formularios`; view `vw_meta_formularios`.
 - DDL: `06_meta_dataset_formularios.sql`.
 
+### `dim_meta_dataset_scd2` e `fato_meta_eventos_dataset_recortes` (ADR 0020)
+
+### `dim_meta_dataset_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `dataset_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`, `indisponivel`, `correspondencia_automatica`, `cookie_primeira_parte`, `uso_de_dados`.
+- Cluster pela chave; staging `stg_dim_meta_dataset`; view `vw_dim_meta_dataset` (`cliente_atual_*`).
+- Origem: `GET /{dataset}?fields=id,name,is_unavailable,enable_automatic_matching,first_party_cookie_status,data_use_setting`.
+
+### `fato_meta_eventos_dataset_recortes`
+
+- Granularidade: uma linha por `organization_id`, `dataset_id`, `data_dia`, `recorte`, `valor`.
+- Colunas: `quantidade`, `execucao_id`, `inserido_em`.
+- Partição `data_dia` (cluster `organization_id, dataset_id, recorte`); staging `stg_meta_eventos_dataset_recortes`; view `vw_meta_eventos_dataset_recortes` (`cliente_na_epoca_*` e `cliente_atual_*`).
+- Origem: `GET /{dataset}/stats?aggregation=<recorte>`, uma chamada por recorte. Recortes (`recorte` → agregação): `dispositivo` → `device_type`, `sistema_operacional` → `device_os`, `navegador_do_visitante` → `browser_type`, `host` → `host` (só o nome do servidor), `chave_de_correspondencia` → `match_keys` (qualidade: quantos eventos trazem cada chave, só o nome da chave), `resultado_do_processamento` → `event_processing_results`. Recortes não se combinam entre si nem com o evento. `url` não é coletada (parâmetros podem trazer dado pessoal).
+
+### Dimensões e leads diários do Lead Ads (ADR 0020)
+
+### `dim_meta_pagina_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `page_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`, `categoria`.
+- Cluster pela chave; staging `stg_dim_meta_pagina`; view `vw_dim_meta_pagina` (`cliente_atual_*`).
+- Origem: `GET /{page}?fields=name,category`.
+
+### `dim_meta_formulario_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `page_id`, `form_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`, `status`, `idioma`, `perguntas_total`, `tipos_de_pergunta`.
+- Cluster pela chave; staging `stg_dim_meta_formulario`; view `vw_dim_meta_formulario` (`cliente_atual_*`).
+- Origem: `GET /{page}/leadgen_forms?fields=...,locale,questions{type}`. `tipos_de_pergunta` é a lista ordenada de tipos (`EMAIL`, `CUSTOM`...); texto e chave das perguntas não saem.
+
+### `fato_meta_leads_diario`
+
+- Granularidade: uma linha por `organization_id`, `page_id`, `form_id`, `data_dia`, `anuncio_id`, `campanha_id`.
+- Colunas: `leads`, `execucao_id`, `inserido_em`.
+- Partição `data_dia` (cluster `organization_id, page_id, form_id`); staging `stg_meta_leads_diario`; view `vw_meta_leads_diario` (`cliente_na_epoca_*` e `cliente_atual_*`).
+- Origem: `GET /{form}/leads?fields=ad_id,campaign_id,form_id,created_time` com filtro `time_created` (30 dias), contado no n8n. Sem `field_data`; lead sem anúncio ou campanha usa `sem_anuncio` e `sem_campanha`. DDL: `27b_meta_leadads.sql`.
+
 <!-- Meta Pixel e Lead Ads: novas tabelas acima desta linha -->
 
 ## Google Tag Manager
@@ -276,6 +742,52 @@ Configuração: `tabelas/gtm.ts`. Manifesto: `manifesto/gtm.json`. DDL: `28_gtm*
 GTM não é série temporal: hoje só alimenta `gov_snapshot_fontes` (seção
 Transversais) com `platform = 'gtm'`, via `tipo: 'snapshot'` (append, sem
 staging).
+
+### Dimensões do contêiner (ADR 0020)
+
+Todas com chave `organization_id` e `conteiner_id` (o ID público `GTM-XXXX`). DDL: `28_gtm.sql`.
+
+### `dim_gtm_conteiner_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conteiner_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`, `conta_gtm_id`, `conteiner_gtm_id`, `contexto_de_uso`, `dominios`.
+- Cluster pela chave; staging `stg_dim_gtm_conteiner`; view `vw_dim_gtm_conteiner` (`cliente_atual_*`).
+- Origem: `GET /accounts/{a}/containers`.
+
+### `dim_gtm_workspace_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conteiner_id`, `workspace_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`.
+- Cluster pela chave; staging `stg_dim_gtm_workspace`; view `vw_dim_gtm_workspace` (`cliente_atual_*`).
+- Origem: `GET /{container}/workspaces`.
+
+### `dim_gtm_versao_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conteiner_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `versao_id`, `nome`, `total_tags`, `total_acionadores`, `total_variaveis`.
+- Cluster pela chave; staging `stg_dim_gtm_versao`; view `vw_dim_gtm_versao` (`cliente_atual_*`).
+- Origem: `GET /{container}/versions:live`. Cada publicação abre uma versão; permite datar quando uma tag mudou.
+
+### `dim_gtm_tag_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conteiner_id`, `tag_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`, `tipo`, `acionadores_disparo`, `acionadores_bloqueio`, `pausada`.
+- Cluster pela chave; staging `stg_dim_gtm_tag`; view `vw_dim_gtm_tag` (`cliente_atual_*`).
+- Origem: `tag[]` de `versions:live`. Sem parâmetros da tag.
+
+### `dim_gtm_acionador_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conteiner_id`, `acionador_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`, `tipo`.
+- Cluster pela chave; staging `stg_dim_gtm_acionador`; view `vw_dim_gtm_acionador` (`cliente_atual_*`).
+- Origem: `trigger[]` de `versions:live`.
+
+### `dim_gtm_variavel_scd2` (dimensão SCD2)
+
+- Granularidade: uma versão por `organization_id`, `conteiner_id`, `variavel_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos (viram `hash_versao`): `nome`, `tipo`.
+- Cluster pela chave; staging `stg_dim_gtm_variavel`; view `vw_dim_gtm_variavel` (`cliente_atual_*`).
+- Origem: `variable[]` de `versions:live`. Sem valores (podem ser IDs e códigos). Entidade removida do contêiner não fecha a versão (ADR 0015).
 
 <!-- Google Tag Manager: novas tabelas acima desta linha -->
 
@@ -325,3 +837,133 @@ staging).
   Escrita: `registrarQc` em `bigQueryGravador.ts`.
 
 <!-- Transversais: novas tabelas acima desta linha -->
+
+## Views (`vw_*`)
+
+Cada view lê uma única tabela-base, deduplica pelo grão quando a base é fato (`QUALIFY ROW_NUMBER()` pela chave do MERGE) e acrescenta o dono pela `dim_fonte_scd2` (cliente na época e cliente atual). Uma linha da view corresponde a uma linha da base: o `bq:verificar` confere essa contagem.
+
+| View | Base | DDL |
+|---|---|---|
+| `vw_ads_diario` | `fato_ads_diario` | `05_dimensoes_scd2.sql` |
+| `vw_ga4_diario` | `fato_ga4_diario` | `05_dimensoes_scd2.sql` |
+| `vw_search_console_diario` | `fato_search_console_diario` | `05_dimensoes_scd2.sql` |
+| `vw_youtube_diario` | `fato_youtube_diario` | `05_dimensoes_scd2.sql` |
+| `vw_gbp_diario` | `fato_gbp_diario` | `05_dimensoes_scd2.sql` |
+| `vw_rd_negociacoes` | `fato_rd_negociacoes` | `05_dimensoes_scd2.sql` |
+| `vw_meta_eventos_dataset` | `fato_meta_eventos_dataset` | `06_meta_dataset_formularios.sql` |
+| `vw_meta_formularios` | `fato_meta_formularios` | `06_meta_dataset_formularios.sql` |
+| `vw_meta_entrega_diaria` | `fato_meta_entrega_diaria` | `20_meta_ads.sql` |
+| `vw_meta_acoes_diarias` | `fato_meta_acoes_diarias` | `20_meta_ads.sql` |
+| `vw_meta_recorte_idade_genero` | `fato_meta_recorte_idade_genero` | `20_meta_ads.sql` |
+| `vw_meta_recorte_posicionamento` | `fato_meta_recorte_posicionamento` | `20_meta_ads.sql` |
+| `vw_meta_recorte_regiao` | `fato_meta_recorte_regiao` | `20_meta_ads.sql` |
+| `vw_meta_campanha` | `dim_meta_campanha_scd2` | `20_meta_ads.sql` |
+| `vw_meta_conjunto` | `dim_meta_conjunto_scd2` | `20_meta_ads.sql` |
+| `vw_meta_anuncio` | `dim_meta_anuncio_scd2` | `20_meta_ads.sql` |
+| `vw_google_campanha_diario` | `fato_google_campanha_diario` | `21_google_ads.sql` |
+| `vw_google_anuncio_diario` | `fato_google_anuncio_diario` | `21_google_ads.sql` |
+| `vw_google_palavra_chave_diario` | `fato_google_palavra_chave_diario` | `21_google_ads.sql` |
+| `vw_google_termo_pesquisa_diario` | `fato_google_termo_pesquisa_diario` | `21_google_ads.sql` |
+| `vw_google_conversao_diario` | `fato_google_conversao_diario` | `21_google_ads.sql` |
+| `vw_google_dispositivo_diario` | `fato_google_dispositivo_diario` | `21_google_ads.sql` |
+| `vw_google_rede_diario` | `fato_google_rede_diario` | `21_google_ads.sql` |
+| `vw_google_geo_diario` | `fato_google_geo_diario` | `21_google_ads.sql` |
+| `vw_google_idade_diario` | `fato_google_idade_diario` | `21_google_ads.sql` |
+| `vw_google_genero_diario` | `fato_google_genero_diario` | `21_google_ads.sql` |
+| `vw_google_grupo_ativos_diario` | `fato_google_grupo_ativos_diario` | `21_google_ads.sql` |
+| `vw_dim_google_campanha` | `dim_google_campanha_scd2` | `21_google_ads.sql` |
+| `vw_dim_google_grupo_anuncios` | `dim_google_grupo_anuncios_scd2` | `21_google_ads.sql` |
+| `vw_dim_google_anuncio` | `dim_google_anuncio_scd2` | `21_google_ads.sql` |
+| `vw_dim_google_palavra_chave` | `dim_google_palavra_chave_scd2` | `21_google_ads.sql` |
+| `vw_dim_google_grupo_ativos` | `dim_google_grupo_ativos_scd2` | `21_google_ads.sql` |
+| `vw_ga4_aquisicao_diario` | `fato_ga4_aquisicao_diario` | `22_ga4.sql` |
+| `vw_ga4_pagina_diario` | `fato_ga4_pagina_diario` | `22_ga4.sql` |
+| `vw_ga4_pagina_entrada_diario` | `fato_ga4_pagina_entrada_diario` | `22_ga4.sql` |
+| `vw_ga4_evento_diario` | `fato_ga4_evento_diario` | `22_ga4.sql` |
+| `vw_ga4_dispositivo_diario` | `fato_ga4_dispositivo_diario` | `22_ga4.sql` |
+| `vw_ga4_geo_diario` | `fato_ga4_geo_diario` | `22_ga4.sql` |
+| `vw_ga4_item_diario` | `fato_ga4_item_diario` | `22_ga4.sql` |
+| `vw_search_console_consulta_pagina_diario` | `fato_search_console_consulta_pagina_diario` | `23_searchconsole.sql` |
+| `vw_search_console_pagina_diario` | `fato_search_console_pagina_diario` | `23_searchconsole.sql` |
+| `vw_search_console_pais_dispositivo_diario` | `fato_search_console_pais_dispositivo_diario` | `23_searchconsole.sql` |
+| `vw_search_console_aparencia_diario` | `fato_search_console_aparencia_diario` | `23_searchconsole.sql` |
+| `vw_dim_youtube_video_scd2` | `dim_youtube_video_scd2` | `24_youtube.sql` |
+| `vw_dim_youtube_playlist_scd2` | `dim_youtube_playlist_scd2` | `24_youtube.sql` |
+| `vw_youtube_video_diario` | `fato_youtube_video_diario` | `24_youtube.sql` |
+| `vw_youtube_origem_trafego_diario` | `fato_youtube_origem_trafego_diario` | `24_youtube.sql` |
+| `vw_youtube_dispositivo_diario` | `fato_youtube_dispositivo_diario` | `24_youtube.sql` |
+| `vw_youtube_local_reproducao_diario` | `fato_youtube_local_reproducao_diario` | `24_youtube.sql` |
+| `vw_youtube_pais_diario` | `fato_youtube_pais_diario` | `24_youtube.sql` |
+| `vw_youtube_audiencia_diario` | `fato_youtube_audiencia_diario` | `24_youtube.sql` |
+| `vw_dim_gbp_local_scd2` | `dim_gbp_local_scd2` | `25_gbp.sql` |
+| `vw_gbp_palavras_chave_mensal` | `fato_gbp_palavras_chave_mensal` | `25_gbp.sql` |
+| `vw_dim_rd_funil` | `dim_rd_funil_scd2` | `26_rdstation.sql` |
+| `vw_dim_rd_etapa` | `dim_rd_etapa_scd2` | `26_rdstation.sql` |
+| `vw_dim_rd_fonte` | `dim_rd_fonte_scd2` | `26_rdstation.sql` |
+| `vw_dim_rd_campanha` | `dim_rd_campanha_scd2` | `26_rdstation.sql` |
+| `vw_dim_rd_produto` | `dim_rd_produto_scd2` | `26_rdstation.sql` |
+| `vw_dim_rd_usuario` | `dim_rd_usuario_scd2` | `26_rdstation.sql` |
+| `vw_rd_negociacao_produtos` | `fato_rd_negociacao_produtos` | `26_rdstation.sql` |
+| `vw_rd_negociacao_etapas` | `fato_rd_negociacao_etapas` | `26_rdstation.sql` |
+| `vw_rd_tarefas_diarias` | `fato_rd_tarefas_diarias` | `26_rdstation.sql` |
+| `vw_dim_meta_dataset` | `dim_meta_dataset_scd2` | `27_meta_pixel_leads.sql` |
+| `vw_meta_eventos_dataset_recortes` | `fato_meta_eventos_dataset_recortes` | `27_meta_pixel_leads.sql` |
+| `vw_dim_meta_pagina` | `dim_meta_pagina_scd2` | `27b_meta_leadads.sql` |
+| `vw_dim_meta_formulario` | `dim_meta_formulario_scd2` | `27b_meta_leadads.sql` |
+| `vw_meta_leads_diario` | `fato_meta_leads_diario` | `27b_meta_leadads.sql` |
+| `vw_dim_gtm_conteiner` | `dim_gtm_conteiner_scd2` | `28_gtm.sql` |
+| `vw_dim_gtm_workspace` | `dim_gtm_workspace_scd2` | `28_gtm.sql` |
+| `vw_dim_gtm_versao` | `dim_gtm_versao_scd2` | `28_gtm.sql` |
+| `vw_dim_gtm_tag` | `dim_gtm_tag_scd2` | `28_gtm.sql` |
+| `vw_dim_gtm_acionador` | `dim_gtm_acionador_scd2` | `28_gtm.sql` |
+| `vw_dim_gtm_variavel` | `dim_gtm_variavel_scd2` | `28_gtm.sql` |
+
+## Gravação, coleta parcial e backfill
+
+Decisões: ADR [0021](../../docs/adr/0021-gravacao-em-lotes-coleta-parcial-e-integridade.md).
+
+- **Lotes.** O n8n manda as linhas de uma execução em lotes de até 10.000
+  linhas / 8 MB por `POST /api/v0/coleta/gravar` (nó "Dividir em lotes", em
+  série). O gravador insere no staging em lotes de até 5.000 linhas / 8 MB e
+  faz um MERGE por tabela por chamada, só das linhas daquela chamada
+  (`execucao_id` + `inserido_em` da chamada). "Conferir gravação" soma
+  `linhasGravadas` + `linhasDescartadas` de todos os lotes.
+- **Coleta parcial.** Recorte opcional perdido vira falha
+  `coleta_incompleta` com `detalhe = "<tabela>: <motivo>"`; a execução fecha
+  como `partial` e as linhas coletadas são gravadas. Qualquer outra causa
+  (exceto `sem_dados_no_periodo`) fecha como `failed`.
+- **Backfill.** Histórico por plataforma (`HISTORICO_MESES` em
+  `coleta-backfill.json`): 37 meses para Google, Meta, GA4 e YouTube; 16 para
+  Search Console; 18 para GBP; 28 dias para Pixel; snapshot para GTM, RD e
+  Lead Ads. Não há histórico por tabela: a janela vale para todas as tabelas
+  do coletor. Teto de 20 contas Google por disparo
+  (`MAX_FONTES_POR_PLATAFORMA`; ≈ 456 operações por conta no nível Básico).
+  Para as demais, dispare de novo com `"fontes": ["<fonteId>", ...]`.
+
+## Qualidade e integridade
+
+`npm run bq:verificar` (`scripts/bq/verificar-integridade.mjs`) confere o
+dataset em produção. Só lê (SELECT e dry run, pelo `bq` CLI autenticado no
+gcloud) e sai com código 1 se houver falha grave.
+
+```bash
+npm run bq:verificar
+npm run bq:verificar -- --projeto tria-platform --dataset tria_dw --desde 2026-10-01
+npm run bq:verificar -- --estrito        # avisos também falham
+npm run bq:verificar -- --imprimir-sql   # só mostra as consultas
+```
+
+| Verificação | Grave? |
+|---|---|
+| Tabelas do manifesto, `dim_fonte_scd2`, `dim_cliente_scd2`, `gov_*` e `qc_execucoes` existem | sim |
+| Toda tabela/view do dataset (fora `stg_*`) está neste README, e todo nome de tabela citado aqui existe | sim |
+| Fato sem duplicata no `grao` do manifesto | sim |
+| SCD2 (`dim_*_scd2`): uma versão atual por chave, sem sobreposição nem lacuna entre versões, `valido_de < valido_ate`, `atual` ⇔ `valido_ate = 9999-12-31` | sim |
+| View `vw_*` executa (dry run) e tem as mesmas linhas que a base (deduplicada pelo grão) | sim |
+| `fato_ads_diario` (campanha × dia) = soma de `fato_meta_entrega_diaria` (Meta) e = `fato_google_campanha_diario` (Google), desde `--desde` (padrão 35 dias), tolerância 0,5% | sim |
+| Linha de fato sem versão de `dim_fonte_scd2` que cubra a data | aviso |
+| Id de entidade do fato sem versão na dimensão (`entidades`) | aviso |
+
+Quando rodar: depois de aplicar DDL, de um backfill ou de mudar um coletor.
+Os testes unitários cobrem a parte estática: `registro.test.ts` confere
+`grao` x chave do registro, manifesto x DDL e DDL x este README.

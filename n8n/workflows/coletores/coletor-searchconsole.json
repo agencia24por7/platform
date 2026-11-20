@@ -43,12 +43,12 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const { fonte, janela, modo } = $json;\nconst versaoApi = 'v3';\n\nreturn [{\n  json: {\n    inicio: Date.now(),\n    versaoApi,\n    fonte,\n    url: `https://www.googleapis.com/webmasters/${versaoApi}/sites/${encodeURIComponent(fonte.externalId)}/searchAnalytics/query`,\n    corpo: {\n      startDate: janela.start,\n      endDate: janela.end,\n      dimensions: ['date', 'device'],\n      rowLimit: modo === 'amostra' ? 500 : 25000,\n      dataState: 'all',\n    },\n  },\n}];\n"
+        "jsCode": "const { fonte, janela, modo } = $json;\nconst versaoApi = 'v3';\nconst limite = modo === 'amostra' ? 500 : 25000;\nconst URL_DA_CONSULTA = `https://www.googleapis.com/webmasters/${versaoApi}/sites/${encodeURIComponent(fonte.externalId)}/searchAnalytics/query`;\n\nconst METRICAS_ANTIGAS = ['clicks', 'impressions', 'ctr', 'position'];\nconst METRICAS = ['cliques', 'impressoes', 'ctr', 'posicao_media'];\n\nconst RECORTES = {\n  padrao: { opcional: false, dimensoes: [['date', 'metricDate'], ['device', 'device']], metricas: METRICAS_ANTIGAS },\n  consulta_pagina: { opcional: false, dimensoes: [['date', 'metricDate'], ['query', 'consulta'], ['page', 'pagina']], metricas: METRICAS },\n  pagina: { opcional: false, dimensoes: [['date', 'metricDate'], ['page', 'pagina']], metricas: METRICAS },\n  pais_dispositivo: { opcional: false, dimensoes: [['date', 'metricDate'], ['country', 'pais'], ['device', 'dispositivo']], metricas: METRICAS },\n  aparencia: { opcional: true, dimensoes: [['date', 'metricDate'], ['searchAppearance', 'aparencia']], metricas: METRICAS },\n};\n\nconst consultas = Object.fromEntries(Object.entries(RECORTES).map(([tabela, recorte]) => [tabela, {\n  tabela,\n  ...recorte,\n  corpo: {\n    startDate: janela.start,\n    endDate: janela.end,\n    dimensions: recorte.dimensoes.map(([nome]) => nome),\n    rowLimit: limite,\n    startRow: 0,\n    dataState: 'final',\n  },\n}]));\n\nreturn [{ json: { inicio: Date.now(), versaoApi, fonte, url: URL_DA_CONSULTA, consultas } }];\n"
       }
     },
     {
-      "id": "chamar",
-      "name": "Chamar API",
+      "id": "chamar_padrao",
+      "name": "Chamar padrao",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -57,7 +57,7 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "={{ $json.url }}",
+        "url": "={{ $('Montar requisição').first().json.url }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleOAuth2Api",
         "options": {
@@ -67,11 +67,30 @@
               "neverError": true,
               "responseFormat": "json"
             }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "body",
+                    "name": "startRow",
+                    "value": "={{ ($request.body.startRow ?? 0) + $request.body.rowLimit }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.statusCode !== 200 || $request.body.rowLimit <= 500 || ($response.body.rows ?? []).length < $request.body.rowLimit }}",
+              "limitPagesFetched": true,
+              "maxRequests": 80,
+              "requestInterval": 300
+            }
           }
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json.corpo) }}"
+        "jsonBody": "={{ JSON.stringify($('Montar requisição').first().json.consultas['padrao'].corpo) }}"
       },
       "credentials": {
         "googleOAuth2Api": {
@@ -83,8 +102,8 @@
       "alwaysOutputData": true
     },
     {
-      "id": "normalizar",
-      "name": "Normalizar",
+      "id": "fechar_padrao",
+      "name": "Fechar padrao",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -93,7 +112,297 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const contexto = $('Montar requisição').first().json;\nconst respostas = $input.all().map((item) => item.json);\nconst requests = respostas.length;\nconst bytes = respostas.reduce((total, resposta) => total + JSON.stringify(resposta.body ?? {}).length, 0);\n\nfunction devolver(linhas, falhas) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - contexto.inicio },\n      falhas,\n      requests,\n      versaoApi: contexto.versaoApi,\n    },\n  }];\n}\n\nconst falhaDeRede = respostas.find((resposta) => resposta.error);\nif (falhaDeRede) {\n  const detalhe = falhaDeRede.error?.message ?? String(falhaDeRede.error);\n  return devolver([], [{ causa: 'api_recusou', detalhe: `falha de rede: ${detalhe}`.slice(0, 500) }]);\n}\n\nconst recusada = respostas.find((resposta) => !(resposta.statusCode >= 200 && resposta.statusCode < 300));\nif (recusada) {\n  const erro = Array.isArray(recusada.body) ? recusada.body[0]?.error : recusada.body?.error;\n  const detalhe = String(erro?.message || `HTTP ${recusada.statusCode}`).slice(0, 500);\n  const configuracaoDoProjeto = recusada.statusCode === 429 || /SERVICE_DISABLED|accessNotConfigured|has not been used in project|RESOURCE_EXHAUSTED|RATE_LIMIT/.test(JSON.stringify(erro ?? {}));\n  const semAcesso = !configuracaoDoProjeto && (recusada.statusCode === 401 || recusada.statusCode === 403 || erro?.code === 190);\n  return devolver([], [{ causa: semAcesso ? 'reauth_pending' : 'api_recusou', detalhe }]);\n}\n\nconst corpos = respostas.map((resposta) => resposta.body);\nconst fonte = contexto.fonte;\n\nconst linhas = corpos.flatMap((corpo) => corpo?.rows ?? []).map((linha) => ({\n  metricDate: linha.keys?.[0] ?? null,\n  device: linha.keys?.[1] ?? null,\n  clicks: Number(linha.clicks ?? 0),\n  impressions: Number(linha.impressions ?? 0),\n  ctr: Number(linha.ctr ?? 0),\n  position: Number(linha.position ?? 0),\n}));\n\nif (linhas.length === 0) return devolver([], [{ causa: 'sem_dados_no_periodo', detalhe: null }]);\nreturn devolver(linhas.map((linha) => ({ ...linha, versaoApi: contexto.versaoApi })), []);\n"
+        "jsCode": "return [{ json: { respostas: $input.all().map((item) => item.json).filter((json) => Object.keys(json).length > 0) } }];\n"
+      }
+    },
+    {
+      "id": "chamar_consulta_pagina",
+      "name": "Chamar consulta_pagina",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Montar requisição').first().json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "body",
+                    "name": "startRow",
+                    "value": "={{ ($request.body.startRow ?? 0) + $request.body.rowLimit }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.statusCode !== 200 || $request.body.rowLimit <= 500 || ($response.body.rows ?? []).length < $request.body.rowLimit }}",
+              "limitPagesFetched": true,
+              "maxRequests": 80,
+              "requestInterval": 300
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Montar requisição').first().json.consultas['consulta_pagina'].corpo) }}"
+      },
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "fechar_consulta_pagina",
+      "name": "Fechar consulta_pagina",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{ json: { respostas: $input.all().map((item) => item.json).filter((json) => Object.keys(json).length > 0) } }];\n"
+      }
+    },
+    {
+      "id": "chamar_pagina",
+      "name": "Chamar pagina",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Montar requisição').first().json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "body",
+                    "name": "startRow",
+                    "value": "={{ ($request.body.startRow ?? 0) + $request.body.rowLimit }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.statusCode !== 200 || $request.body.rowLimit <= 500 || ($response.body.rows ?? []).length < $request.body.rowLimit }}",
+              "limitPagesFetched": true,
+              "maxRequests": 80,
+              "requestInterval": 300
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Montar requisição').first().json.consultas['pagina'].corpo) }}"
+      },
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "fechar_pagina",
+      "name": "Fechar pagina",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{ json: { respostas: $input.all().map((item) => item.json).filter((json) => Object.keys(json).length > 0) } }];\n"
+      }
+    },
+    {
+      "id": "chamar_pais_dispositivo",
+      "name": "Chamar pais_dispositivo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Montar requisição').first().json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "body",
+                    "name": "startRow",
+                    "value": "={{ ($request.body.startRow ?? 0) + $request.body.rowLimit }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.statusCode !== 200 || $request.body.rowLimit <= 500 || ($response.body.rows ?? []).length < $request.body.rowLimit }}",
+              "limitPagesFetched": true,
+              "maxRequests": 80,
+              "requestInterval": 300
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Montar requisição').first().json.consultas['pais_dispositivo'].corpo) }}"
+      },
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "fechar_pais_dispositivo",
+      "name": "Fechar pais_dispositivo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{ json: { respostas: $input.all().map((item) => item.json).filter((json) => Object.keys(json).length > 0) } }];\n"
+      }
+    },
+    {
+      "id": "chamar_aparencia",
+      "name": "Chamar aparencia",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Montar requisição').first().json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "body",
+                    "name": "startRow",
+                    "value": "={{ ($request.body.startRow ?? 0) + $request.body.rowLimit }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.statusCode !== 200 || $request.body.rowLimit <= 500 || ($response.body.rows ?? []).length < $request.body.rowLimit }}",
+              "limitPagesFetched": true,
+              "maxRequests": 80,
+              "requestInterval": 300
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Montar requisição').first().json.consultas['aparencia'].corpo) }}"
+      },
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "a-definir-pelo-provisioner"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "fechar_aparencia",
+      "name": "Fechar aparencia",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{ json: { respostas: $input.all().map((item) => item.json).filter((json) => Object.keys(json).length > 0) } }];\n"
+      }
+    },
+    {
+      "id": "normalizar",
+      "name": "Normalizar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const contexto = $('Montar requisição').first().json;\nconst TABELAS = [\"padrao\",\"consulta_pagina\",\"pagina\",\"pais_dispositivo\",\"aparencia\"];\nconst coletadas = TABELAS.map((tabela) => ({\n  consulta: contexto.consultas[tabela],\n  respostas: $(`Fechar ${tabela}`).first().json.respostas,\n}));\nconst respostas = coletadas.flatMap((item) => item.respostas);\nconst requests = respostas.length;\nconst bytes = respostas.reduce((total, resposta) => total + JSON.stringify(resposta.body ?? {}).length, 0);\n\nfunction devolver(linhas, falhas) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - contexto.inicio },\n      falhas,\n      requests,\n      versaoApi: contexto.versaoApi,\n    },\n  }];\n}\n\nconst falhaDeRede = respostas.find((resposta) => resposta.error);\nif (falhaDeRede) {\n  const detalhe = falhaDeRede.error?.message ?? String(falhaDeRede.error);\n  return devolver([], [{ causa: 'api_recusou', detalhe: `falha de rede: ${detalhe}`.slice(0, 500) }]);\n}\n\nconst aceita = (consulta, resposta) => resposta.statusCode >= 200 && resposta.statusCode < 300 || (consulta.opcional && resposta.statusCode === 400);\nconst recusada = coletadas.flatMap((item) => item.respostas.map((resposta) => ({ consulta: item.consulta, resposta }))).find((par) => !aceita(par.consulta, par.resposta))?.resposta;\nif (recusada) {\n  const erro = Array.isArray(recusada.body) ? recusada.body[0]?.error : recusada.body?.error;\n  const detalhe = String(erro?.message || `HTTP ${recusada.statusCode}`).slice(0, 500);\n  const configuracaoDoProjeto = recusada.statusCode === 429 || /SERVICE_DISABLED|accessNotConfigured|has not been used in project|RESOURCE_EXHAUSTED|RATE_LIMIT/.test(JSON.stringify(erro ?? {}));\n  const semAcesso = !configuracaoDoProjeto && (recusada.statusCode === 401 || recusada.statusCode === 403 || erro?.code === 190);\n  return devolver([], [{ causa: semAcesso ? 'reauth_pending' : 'api_recusou', detalhe }]);\n}\n\nconst motivoDaRecusa = (resposta) => {\n  if (resposta?.error) return `falha de rede: ${resposta.error?.message ?? String(resposta.error)}`;\n  const erro = Array.isArray(resposta?.body) ? resposta.body[0]?.error : resposta?.body?.error;\n  return String(erro?.message || `HTTP ${resposta?.statusCode}`);\n};\n\nfunction coletaIncompleta(recusas) {\n  const porTabela = new Map();\n  for (const { tabela, resposta } of recusas) {\n    const atual = porTabela.get(tabela) ?? { total: 0, motivo: motivoDaRecusa(resposta) };\n    porTabela.set(tabela, { ...atual, total: atual.total + 1 });\n  }\n  return [...porTabela].map(([tabela, { total, motivo }]) => ({\n    causa: 'coleta_incompleta',\n    detalhe: `${tabela}: ${total > 1 ? `${total} pedidos recusados, ` : ''}${motivo}`.slice(0, 500),\n  }));\n}\n\nconst incompletas = coletaIncompleta(coletadas.flatMap(({ consulta, respostas: paginas }) => paginas\n  .filter((resposta) => !(resposta.statusCode >= 200 && resposta.statusCode < 300))\n  .map((resposta) => ({ tabela: consulta.tabela, resposta }))));\n\nconst linhas = coletadas.flatMap(({ consulta, respostas: paginas }) => paginas\n  .filter((resposta) => resposta.statusCode >= 200 && resposta.statusCode < 300)\n  .flatMap((resposta) => resposta.body?.rows ?? [])\n  .map((linha) => {\n    const saida = consulta.tabela === 'padrao' ? {} : { _tabela: consulta.tabela };\n    consulta.dimensoes.forEach(([, campo], indice) => {\n      saida[campo] = linha.keys?.[indice] ?? null;\n    });\n    saida[consulta.metricas[0]] = Number(linha.clicks ?? 0);\n    saida[consulta.metricas[1]] = Number(linha.impressions ?? 0);\n    saida[consulta.metricas[2]] = Number(linha.ctr ?? 0);\n    saida[consulta.metricas[3]] = Number(linha.position ?? 0);\n    return saida;\n  }));\n\nif (linhas.length === 0) return devolver([], incompletas.length > 0 ? incompletas : [{ causa: 'sem_dados_no_periodo', detalhe: null }]);\nreturn devolver(linhas.map((linha) => ({ ...linha, versaoApi: contexto.versaoApi })), incompletas);\n"
       }
     }
   ],
@@ -113,14 +422,113 @@
       "main": [
         [
           {
-            "node": "Chamar API",
+            "node": "Chamar padrao",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Chamar API": {
+    "Chamar padrao": {
+      "main": [
+        [
+          {
+            "node": "Fechar padrao",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fechar padrao": {
+      "main": [
+        [
+          {
+            "node": "Chamar consulta_pagina",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chamar consulta_pagina": {
+      "main": [
+        [
+          {
+            "node": "Fechar consulta_pagina",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fechar consulta_pagina": {
+      "main": [
+        [
+          {
+            "node": "Chamar pagina",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chamar pagina": {
+      "main": [
+        [
+          {
+            "node": "Fechar pagina",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fechar pagina": {
+      "main": [
+        [
+          {
+            "node": "Chamar pais_dispositivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chamar pais_dispositivo": {
+      "main": [
+        [
+          {
+            "node": "Fechar pais_dispositivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fechar pais_dispositivo": {
+      "main": [
+        [
+          {
+            "node": "Chamar aparencia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chamar aparencia": {
+      "main": [
+        [
+          {
+            "node": "Fechar aparencia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fechar aparencia": {
       "main": [
         [
           {

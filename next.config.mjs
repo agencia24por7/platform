@@ -12,6 +12,9 @@ export default {
   reactStrictMode: true,
   poweredByHeader: false,
   serverExternalPackages: ['postgres'],
+  experimental: {
+    proxyClientMaxBodySize: '16mb',
+  },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },

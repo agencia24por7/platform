@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import {
   agruparPorTabela,
   colunasDoStagingScd2,
+  dividirEmLotes,
   sqlHashDosAtributos,
   sqlInsercaoPorUnnest,
   sqlMergeFato,
@@ -59,7 +60,7 @@ describe('SQL de fato', () => {
   it('MERGE deduplica pela chave e atualiza só o que não é chave', () => {
     const sql = normalizar(sqlMergeFato('`p.d.fato`', '`p.d.stg`', { chave: ['organization_id', 'k'], colunas: ['organization_id', 'k', 'v', 'inserido_em'] }));
     assert.match(sql, /MERGE `p\.d\.fato` AS alvo/);
-    assert.match(sql, /WHERE execucao_id = @execucaoId QUALIFY ROW_NUMBER\(\) OVER \(PARTITION BY organization_id, k ORDER BY inserido_em DESC\) = 1/);
+    assert.match(sql, /WHERE execucao_id = @execucaoId AND inserido_em = @inseridoEm QUALIFY ROW_NUMBER\(\) OVER \(PARTITION BY organization_id, k ORDER BY inserido_em DESC\) = 1/);
     assert.match(sql, /ON alvo\.organization_id = origem\.organization_id AND alvo\.k = origem\.k/);
     assert.match(sql, /UPDATE SET v = origem\.v, inserido_em = origem\.inserido_em WHEN NOT MATCHED/);
     assert.doesNotMatch(sql, /SET organization_id/);
@@ -107,7 +108,29 @@ describe('SQL de dimensão SCD2', () => {
 
   it('origem deduplica a staging da execução pela chave', () => {
     const sql = normalizar(sqlScd2('`dim`', '`stg`', cfg));
-    const origens = sql.match(/FROM `stg` WHERE execucao_id = @execucaoId QUALIFY ROW_NUMBER\(\) OVER \(PARTITION BY organization_id, campanha_id ORDER BY inserido_em DESC\) = 1/g);
+    const origens = sql.match(/FROM `stg` WHERE execucao_id = @execucaoId AND inserido_em = @inseridoEm QUALIFY ROW_NUMBER\(\) OVER \(PARTITION BY organization_id, campanha_id ORDER BY inserido_em DESC\) = 1/g);
     assert.equal(origens?.length, 2);
+  });
+});
+
+describe('lotes da inserção', () => {
+  it('corta por número de linhas', () => {
+    const lotes = dividirEmLotes([1, 2, 3, 4, 5], { linhas: 2, bytes: 1_000 });
+    assert.deepEqual(lotes, [[1, 2], [3, 4], [5]]);
+  });
+
+  it('corta por bytes serializados e nunca deixa lote vazio', () => {
+    const linhas = [{ v: 'a'.repeat(40) }, { v: 'b'.repeat(40) }, { v: 'c'.repeat(200) }, { v: 'd' }];
+    const lotes = dividirEmLotes(linhas, { linhas: 100, bytes: 100 });
+    assert.deepEqual(lotes.map((lote) => lote.length), [2, 1, 1]);
+  });
+
+  it('lista vazia não gera lote', () => {
+    assert.deepEqual(dividirEmLotes([], { linhas: 10, bytes: 10 }), []);
+  });
+
+  it('padrão respeita 5.000 linhas por INSERT', () => {
+    const lotes = dividirEmLotes(Array.from({ length: 12_001 }, (_, indice) => ({ indice })));
+    assert.deepEqual(lotes.map((lote) => lote.length), [5_000, 5_000, 2_001]);
   });
 });

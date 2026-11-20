@@ -5,6 +5,34 @@ export const COLUNA_DA_TABELA = '_tabela';
 export const VALIDO_ATE_ABERTO = "TIMESTAMP '9999-12-31 00:00:00+00'";
 export const VALIDO_DE_PRIMEIRA_VERSAO = "TIMESTAMP '1970-01-01 00:00:00+00'";
 
+export const LIMITES_DA_INSERCAO = { linhas: 5_000, bytes: 8_000_000 } as const;
+
+export type LimitesDaInsercao = { readonly linhas: number; readonly bytes: number };
+
+export function dividirEmLotes<T>(
+  linhas: readonly T[],
+  limites: LimitesDaInsercao = LIMITES_DA_INSERCAO,
+  tamanhoDe: (linha: T) => number = (linha) => Buffer.byteLength(JSON.stringify(linha)),
+): readonly (readonly T[])[] {
+  const lotes: T[][] = [];
+  let atual: T[] = [];
+  let bytes = 0;
+  for (const linha of linhas) {
+    const tamanho = tamanhoDe(linha);
+    if (atual.length > 0 && (atual.length >= limites.linhas || bytes + tamanho > limites.bytes)) {
+      lotes.push(atual);
+      atual = [];
+      bytes = 0;
+    }
+    atual.push(linha);
+    bytes += tamanho;
+  }
+  if (atual.length > 0) lotes.push(atual);
+  return lotes;
+}
+
+const FILTRO_DO_LOTE = 'execucao_id = @execucaoId AND inserido_em = @inseridoEm';
+
 export type Agrupamento =
   | { readonly ok: true; readonly grupos: ReadonlyMap<string, readonly LinhaBruta[]> }
   | { readonly ok: false; readonly motivo: string };
@@ -44,7 +72,7 @@ export function sqlMergeFato(fato: string, staging: string, cfg: Pick<Configurac
   return `
       MERGE ${fato} AS alvo
       USING (
-        SELECT * FROM ${staging} WHERE execucao_id = @execucaoId
+        SELECT * FROM ${staging} WHERE ${FILTRO_DO_LOTE}
         QUALIFY ROW_NUMBER() OVER (PARTITION BY ${cfg.chave.join(', ')} ORDER BY inserido_em DESC) = 1
       ) AS origem
       ON ${onClause}
@@ -78,7 +106,7 @@ export function sqlScd2(dimensao: string, staging: string, cfg: Pick<Configuraca
   const origem = `
         SELECT ${colunas.join(', ')}, ${sqlHashDosAtributos(cfg.atributos)} AS hash_versao
         FROM ${staging}
-        WHERE execucao_id = @execucaoId
+        WHERE ${FILTRO_DO_LOTE}
         QUALIFY ROW_NUMBER() OVER (PARTITION BY ${cfg.chave.join(', ')} ORDER BY inserido_em DESC) = 1`;
 
   return `
