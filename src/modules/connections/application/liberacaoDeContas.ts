@@ -41,6 +41,7 @@ export async function liberarContasDaConexao(
         externalId: conta.externalId,
         connectionId: conta.connectionId,
         de: nomes.get(conta.clientIdAnterior),
+        deId: conta.clientIdAnterior,
         motivo: MOTIVO_DA_LIBERACAO,
       },
     });

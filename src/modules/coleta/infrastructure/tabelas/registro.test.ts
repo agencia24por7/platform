@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { TabelasDaPlataforma } from './tipos.ts';
+import { colunaDeDataDaChave } from '../sqlDaGravacao.ts';
 
 type Resolver = (especificador: string, contexto: { parentURL?: string }, proximo: (especificador: string, contexto: unknown) => unknown) => unknown;
 type ComGanchos = { registerHooks: (ganchos: { resolve: Resolver }) => void };
@@ -94,6 +95,28 @@ describe('registro de tabelas x manifesto', () => {
         for (const coluna of lista(entidade.chaveDim)) assert.ok(graoDaDim.includes(coluna), `${entidade.dimensao} sem ${coluna}`);
       }
     }
+  });
+
+  it('todo fato tem organization_id e exatamente uma coluna de data na chave (filtro constante do MERGE)', () => {
+    for (const cfg of configuracoes) {
+      if (cfg.tipo !== 'fato') continue;
+      assert.ok(cfg.chave.includes('organization_id'), cfg.fato);
+      assert.ok(colunaDeDataDaChave(cfg), cfg.fato);
+    }
+  });
+
+  it('dimensão nula da chave vira (not set), senão o MERGE nunca casa e o reprocesso duplica', () => {
+    const ctx = { organizationId: 'o', clientId: 'c', externalId: 'f', currency: 'BRL', execucaoId: 'e' };
+    assert.equal(TABELAS_POR_PLATAFORMA.ga4!.padrao!.mapear({ metricDate: '2026-11-01' }, ctx).canal, '(not set)');
+    assert.equal(TABELAS_POR_PLATAFORMA.searchconsole!.padrao!.mapear({ metricDate: '2026-11-01', device: null }, ctx).device, '(not set)');
+  });
+
+  it('snapshot do GTM grava a execução, que entra na chave do MERGE idempotente', () => {
+    const ctx = { organizationId: 'o', clientId: 'c', externalId: 'f', currency: 'BRL', execucaoId: 'e' };
+    const snapshot = TABELAS_POR_PLATAFORMA.gtm!.padrao!;
+    assert.equal(snapshot.tipo, 'snapshot');
+    assert.equal(snapshot.mapear({}, ctx).execucao_id, 'e');
+    assert.ok(snapshot.tipo === 'snapshot' && snapshot.chave.every((coluna) => coluna in snapshot.tipos));
   });
 
   it('fatos gravam execucao_id e inserido_em (o MERGE filtra o lote por eles)', () => {

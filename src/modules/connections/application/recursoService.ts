@@ -89,7 +89,9 @@ export function createRecursoService(
 
       await auditar(input.organizationId, ator, movido, 'connection_account.reassigned', {
         de: origem?.name ?? recurso!.clientId,
+        deId: recurso!.clientId,
         para: destino!.name,
+        paraId: destino!.id,
         historico: 'scd2',
       });
       avisarMudancaDePosse(aviso, 'connection_account.reassigned');
@@ -105,7 +107,10 @@ export function createRecursoService(
       const solto = await recursos.unlinkFromClient(input.organizationId, recurso!.id);
       if (!solto) return err(failure('conflict', 'O recurso mudou enquanto você desvinculava. Recarregue a página.'));
 
-      await auditar(input.organizationId, ator, solto, 'connection_account.unlink', { de: origem?.name ?? recurso!.clientId });
+      await auditar(input.organizationId, ator, solto, 'connection_account.unlink', {
+        de: origem?.name ?? recurso!.clientId,
+        deId: recurso!.clientId,
+      });
       avisarMudancaDePosse(aviso, 'connection_account.unlink');
       return ok(solto);
     },
