@@ -121,7 +121,9 @@ gravação inteira (`tabela_desconhecida:<nome>`).
    destino, staging e, se tiver chave de fonte, a view `vw_*` no molde de
    `06_meta_dataset_formularios.sql`. Sempre `CREATE TABLE IF NOT EXISTS` /
    `CREATE OR REPLACE VIEW` com `{{DATASET}}`. `node scripts/bq-ddl.mjs`
-   aplica todos os `*.sql` desta pasta em ordem de nome.
+   aplica todos os `*.sql` desta pasta em ordem de nome, sempre com alvo
+   explícito (ADR 0028): `--projeto <p> --dataset <d>` ou `--prod --confirmar`;
+   `--dry-run` só valida (`bq query --dry_run`); `--help` não toca em nada.
 2. **Configuração** em `src/modules/coleta/infrastructure/tabelas/<plataforma>.ts`:
    uma entrada nova no `Record<string, ConfiguracaoTabela>` da plataforma (o
    nome da chave é o valor de `_tabela`). Não mexa no gravador nem em
@@ -1045,15 +1047,16 @@ deduplicavam pela chave, mas tratavam cada `NULL` como linha distinta.
 
 ## Qualidade e integridade
 
-`npm run bq:verificar` (`scripts/bq/verificar-integridade.mjs`) confere o
-dataset em produção. Só lê (SELECT e dry run, pelo `bq` CLI autenticado no
-gcloud) e sai com código 1 se houver falha grave.
+`npm run bq:verificar` (`scripts/bq/verificar-integridade.mjs`) confere um
+dataset. Só lê (SELECT e dry run, pelo `bq` CLI autenticado no gcloud) e sai
+com código 1 se houver falha grave. Não há alvo padrão (ADR 0028): passe
+`--prod` ou `--projeto` e `--dataset`; opção desconhecida sai 2 sem consultar.
 
 ```bash
-npm run bq:verificar
+npm run bq:verificar -- --prod
 npm run bq:verificar -- --projeto tria-platform --dataset tria_dw --desde 2026-10-01
-npm run bq:verificar -- --estrito        # avisos também falham
-npm run bq:verificar -- --imprimir-sql   # só mostra as consultas
+npm run bq:verificar -- --prod --estrito        # avisos também falham
+npm run bq:verificar -- --prod --imprimir-sql   # só mostra as consultas
 ```
 
 | Verificação | Grave? |

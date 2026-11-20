@@ -11,3 +11,5 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 ## BigQuery
 
 `scripts/bq/README.md` é o catálogo canônico das tabelas do BigQuery. Toda mudança no BigQuery (DDL em `scripts/bq/*.sql`, configuração em `src/modules/coleta/infrastructure/tabelas/`, manifesto em `scripts/bq/manifesto/`) atualiza esse README no mesmo PR, dentro da seção da plataforma. Fundamentos: ADR 0015.
+
+Scripts que tocam produção não têm alvo padrão (ADR 0028): `node scripts/bq-ddl.mjs` e `npm run bq:verificar` exigem `--projeto` e `--dataset` ou `--prod`; `bq-ddl` em produção exige `--confirmar` e tem `--dry-run`. Antes de rodar qualquer script novo, rode `--help` (sai sem efeito) e leia o alvo impresso. Migração nova em `db/migrations` roda numa transação junto com a linha do livro-razão; o que não roda em transação vai num arquivo `NNNN_nome.sem_transacao.sql` idempotente. Função `SECURITY DEFINER` que atravessa inquilinos recebe `GRANT EXECUTE` para `orla_worker`, nunca para `orla_app`.

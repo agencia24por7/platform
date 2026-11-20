@@ -25,9 +25,9 @@ O protótipo navegável de telas fica em [`prototipo/`](prototipo/); a visão de
 
 ```bash
 npm install
-npm run bootstrap        # gera .env com segredos aleatórios
+npm run bootstrap        # gera .env com segredos aleatórios (DATABASE_URL = orla_app, web; DATABASE_URL_WORKER = orla_worker, /api/v0; ADR 0028)
 npm run infra:up         # postgres + n8n
-npm run db:migrate
+npm run db:migrate       # infra/compose/migrar.sh: uma transação por arquivo, livro-razão em public.schema_migrations
 node scripts/n8n-credential.mjs                                   # token do worker como credencial cifrada
 docker exec tria-n8n n8n import:workflow --input=/workflows/coleta-metricas.json
 npm run n8n:sincronizar  # confere os workflows da instância contra o repositório (docs/adr/0009)

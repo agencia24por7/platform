@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { env } from '@/shared/config/env';
+import { comoWorker } from '@/shared/db/client';
 import { logger } from '@/shared/logging/logger';
 import { failure, type Failure } from '@/shared/result/failure';
 import type { Result } from '@/shared/result/result';
@@ -102,7 +103,7 @@ function handle<I, O>(
     const context: WorkerContext = { requestId, callerFingerprint: caller, sourceIp };
 
     try {
-      const result = await handler(parsed.data, context);
+      const result = await comoWorker(() => handler(parsed.data, context));
       if (!result.ok) return problem(result.error, requestId);
       return success(result.value, requestId, successStatus);
     } catch (error) {

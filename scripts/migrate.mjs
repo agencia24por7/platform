@@ -1,9 +1,5 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
-import { join } from 'node:path';
-
-const DIR = 'db/migrations';
-const CONTAINER = 'orla-postgres';
+import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 
 const env = Object.fromEntries(
   readFileSync('.env', 'utf8').split('\n').filter((l) => l.includes('=')).map((l) => {
@@ -12,22 +8,15 @@ const env = Object.fromEntries(
   }),
 );
 
-const files = readdirSync(DIR).filter((name) => name.endsWith('.sql')).sort();
+const resultado = spawnSync('sh', ['infra/compose/migrar.sh'], {
+  stdio: 'inherit',
+  env: {
+    ...process.env,
+    PG_CONTAINER: 'orla-postgres',
+    PG_USER: env.POSTGRES_SUPERUSER,
+    PG_DB: env.POSTGRES_DB,
+    MIGRACOES_DIR: 'db/migrations',
+  },
+});
 
-for (const file of files) {
-  process.stdout.write(`aplicando ${file} ... `);
-  try {
-    execFileSync(
-      'docker',
-      ['exec', '-i', CONTAINER, 'psql', '-U', env.POSTGRES_SUPERUSER, '-d', env.POSTGRES_DB, '-v', 'ON_ERROR_STOP=1', '-q'],
-      { input: readFileSync(join(DIR, file)), stdio: ['pipe', 'ignore', 'pipe'] },
-    );
-    console.log('ok');
-  } catch (error) {
-    console.log('falhou');
-    process.stderr.write(String(error.stderr ?? error.message));
-    process.exit(1);
-  }
-}
-
-console.log(`${files.length} migração(ões) aplicada(s).`);
+process.exit(resultado.status ?? 1);

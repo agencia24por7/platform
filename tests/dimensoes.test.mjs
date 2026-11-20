@@ -19,15 +19,31 @@ const comoApp = (sql) =>
     { encoding: 'utf8' },
   ).trim();
 
+function senhaDoWorker() {
+  return readFileSync('.env', 'utf8')
+    .split('\n')
+    .find((linha) => linha.startsWith('WORKER_DB_PASSWORD='))
+    .slice('WORKER_DB_PASSWORD='.length);
+}
+
+const comoWorker = (sql) =>
+  execFileSync(
+    'docker',
+    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoWorker()}`, 'orla-postgres',
+     'psql', '-U', 'orla_worker', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
+    { encoding: 'utf8' },
+  ).trim();
+
 describe('dimensões SCD2', { concurrency: false }, () => {
-  it('o papel do app lê o estado das dimensões atravessando tenants', () => {
+  it('só o papel do worker lê o estado das dimensões atravessando tenants (ADR 0028)', () => {
     for (const funcao of ['dimensao_fontes', 'dimensao_clientes', 'dimensao_mudancas_de_posse']) {
-      assert.match(comoApp(`SELECT count(*) FROM automation.${funcao}()`), /^\d+$/);
+      assert.match(comoWorker(`SELECT count(*) FROM automation.${funcao}()`), /^\d+$/);
+      assert.throws(() => comoApp(`SELECT count(*) FROM automation.${funcao}()`), /permission denied/);
     }
   });
 
   it('conta de anúncio desvinculada sai sem cliente na dimensão', () => {
-    const comCliente = comoApp(
+    const comCliente = comoWorker(
       `SELECT count(*) FROM automation.dimensao_fontes() WHERE origem = 'ad_account' AND status = 'unlinked' AND client_id IS NOT NULL`,
     );
     assert.equal(comCliente, '0');
