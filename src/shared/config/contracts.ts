@@ -128,6 +128,32 @@ export const fecharColetaBody = z.object({
   }).nullable().default(null),
 });
 
+const identificadorDoBrain = z.string().regex(/^[a-z][a-z0-9_:-]{0,47}$/, 'identificador inválido');
+
+export const brainCatalogoQuery = z.object({
+  tipo: identificadorDoBrain.optional(),
+  tag: identificadorDoBrain.optional(),
+  provedor: identificadorDoBrain.optional(),
+  plataforma: identificadorDoBrain.optional(),
+  sensibilidade: z.enum(['publico', 'negocio', 'pessoal_possivel', 'restrito']).optional(),
+  q: z.string().trim().min(2).max(80).optional(),
+  limite: z.coerce.number().int().min(1).max(200).default(50),
+  cursor: z.string().max(400).optional(),
+}).strict();
+
+export const brainSemParametrosQuery = z.object({}).strict();
+
+export const brainClienteParams = z.object({ clienteId: uuid });
+
+export const brainEntradaParams = z.object({ clienteId: uuid, urn: z.string().min(10).max(300) });
+
+export const brainPublicarPendentesBody = z.object({
+  limite: z.coerce.number().int().min(1).max(500).default(50),
+}).strict();
+
+export const brainMedirCoberturaBody = z.object({
+  limite: z.coerce.number().int().min(1).max(200).default(25),
+}).strict();
 export const publicarBrainsPendentesBody = z
   .object({ limite: z.number().int().min(1).max(200).default(20) })
   .strict();
