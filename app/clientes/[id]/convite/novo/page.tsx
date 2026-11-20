@@ -29,7 +29,7 @@ export default async function NovoConviteDeIntegracao({
   if (!cliente.ok) notFound();
 
   if (!canAdminister(ctx.role)) {
-    redirect(`/clientes/${id}?erro=${encodeURIComponent('Só quem administra a organização pode criar convite de integração.')}`);
+    redirect(`/clientes/${id}/acessos?erro=${encodeURIComponent('Só quem administra a organização pode criar convite de integração.')}`);
   }
 
   return (
@@ -62,7 +62,7 @@ export default async function NovoConviteDeIntegracao({
         </div>
 
         <div className="page__actions">
-          <Link className="btn btn--pill" href={`/clientes/${cliente.value.id}`}>
+          <Link className="btn btn--pill" href={`/clientes/${cliente.value.id}/acessos`}>
             Cancelar
           </Link>
           <button className="btn btn--primary btn--pill" type="submit">

@@ -156,7 +156,7 @@ describe('recurso descoberto: vincular, mover e desvincular, em toda plataforma 
           clienteA,
         );
 
-        const origem = `/clientes/${clienteA}`;
+        const origem = `/clientes/${clienteA}/dados`;
         const mover = await acaoComCampo(origem, 'destinoId');
         aprovado(await submitAction(origem, mover, { clientId: clienteA, recursoId: recurso, destinoId: clienteB }));
         assert.equal(estadoDoRecurso(recurso), `linked|${clienteB}`);

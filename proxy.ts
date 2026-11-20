@@ -19,6 +19,8 @@ const ROTAS_ABERTAS = [
   '/api/webhooks',
   '/convite',
   '/api/convite',
+  '/contexto',
+  '/api/contexto',
   '/api/oauth',
   '/sobre',
   '/privacidade',
