@@ -215,6 +215,7 @@ describe('camada de coleta', { concurrency: false }, () => {
 
   it('gravar em coleta running de cliente ativo passa pelo contexto e chega ao BigQuery (503 sem BigQuery aqui)', async () => {
     const aberta = await abrirNova('coleta-grava');
+    assert.match(aberta.id ?? '', /^[a-f0-9-]{36}$/, `abrir falhou: ${JSON.stringify(aberta)}`);
     const response = await post('/api/v0/coleta/gravar', {
       coletaId: aberta.id,
       linhas: [{ externalCampaignId: 'c1', metricDate: '2026-11-01', spend: 10 }],
@@ -275,7 +276,9 @@ describe('camada de coleta', { concurrency: false }, () => {
   });
 
   it('gravar recusa com 404 cliente excluído, mesmo com a coleta aberta', async () => {
+    query(`update integrations.connections set status = 'active' where id = '${connectionId}'`);
     const aberta = await abrirNova('coleta-excluido');
+    assert.match(aberta.id ?? '', /^[a-f0-9-]{36}$/, `abrir falhou: ${JSON.stringify(aberta)}`);
     query(`select core.excluir_cliente('${clientId}', 'teste')`);
     const response = await post('/api/v0/coleta/gravar', {
       coletaId: aberta.id,
