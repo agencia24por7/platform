@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import type { ComponentType, ReactNode } from 'react';
+import { Suspense, type ComponentType, type ReactNode } from 'react';
+import { ErroDeAutorizacao } from '@/../app/_components/ErroDeAutorizacao';
 import { IconeAuditoria, IconeClientes, IconeColetas, IconeConexoes } from '@/../app/_components/Icones';
 import { ThemeToggle } from '@/../app/_components/ThemeToggle';
 import type { Organization } from '@/modules/organizations/domain/organization';
@@ -131,6 +132,9 @@ export async function Shell({ title, organization, active, children }: Props) {
         <div className="page" id="conteudo">
           {children}
         </div>
+        <Suspense fallback={null}>
+          <ErroDeAutorizacao />
+        </Suspense>
       </main>
     </div>
   );

@@ -191,3 +191,25 @@ describe('conta do RD Station guardada por chave ganha cliente dono', { concurre
     signOut();
   });
 });
+
+describe('erro na autorização volta para as conexões com o modal', { concurrency: false }, () => {
+  it('state que não bate leva às conexões, e não ao onboarding, com o motivo no modal', async () => {
+    const resposta = await fetch(`${BASE}/api/oauth/meta/callback?state=meta.forjado&code=qualquer`, { redirect: 'manual' });
+    const destino = new URL(resposta.headers.get('location') ?? '', BASE);
+
+    assert.equal(destino.pathname, '/integracoes');
+    assert.equal(destino.searchParams.get('erroConexao'), 'estado_invalido');
+    assert.equal(destino.searchParams.get('plataforma'), 'meta');
+
+    const pessoa = ensureUser('modal@tria.local');
+    const org = umaLinha(dono(
+      `INSERT INTO core.organizations (name, slug, type) VALUES ('Modal', 'modal-${Date.now()}', 'agency') RETURNING id`,
+    ));
+    makeOwner(pessoa, org);
+    signIn(pessoa);
+    const tela = await (await browse(`${destino.pathname}${destino.search}`)).text();
+    assert.match(tela, /A conexão não foi concluída/);
+    assert.match(tela, /outra aba/);
+    signOut();
+  });
+});
