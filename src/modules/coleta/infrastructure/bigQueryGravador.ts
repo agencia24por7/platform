@@ -7,6 +7,7 @@ import { linhaParaBigQuery, paraParametroBigQuery } from '@/modules/coleta/infra
 import {
   agruparPorTabela,
   colunasDoStagingScd2,
+  dividirEmLotes,
   sqlInsercaoPorUnnest,
   sqlMergeFato,
   sqlScd2,
@@ -27,7 +28,7 @@ import {
 export type { ContextoGravacao } from '@/modules/coleta/infrastructure/tabelas/tipos';
 
 export type ResultadoGravacao =
-  | { readonly ok: true; readonly linhasGravadas: number }
+  | { readonly ok: true; readonly linhasGravadas: number; readonly linhasDescartadas: number }
   | { readonly ok: false; readonly motivo: string };
 
 export type BigQueryGravador = {
@@ -60,26 +61,33 @@ export function createBigQueryGravador(): BigQueryGravador {
   }
 
   async function inserirLinhas(destino: string, colunas: readonly string[], tipos: TiposDasColunas, linhas: readonly Record<string, unknown>[]): Promise<void> {
-    await executar({
-      query: sqlInsercaoPorUnnest(tabela(destino), colunas),
-      params: { linhas: linhas.map((linha) => linhaParaBigQuery(linha, tipos)) },
-      types: { linhas: [tipos] },
-    });
+    const query = sqlInsercaoPorUnnest(tabela(destino), colunas);
+    for (const lote of dividirEmLotes(linhas.map((linha) => linhaParaBigQuery(linha, tipos)))) {
+      await executar({ query, params: { linhas: lote }, types: { linhas: [tipos] } });
+    }
   }
 
+  const doLote = (ctx: ContextoGravacao, inseridoEm: string) => ({
+    params: { execucaoId: ctx.execucaoId, inseridoEm: paraParametroBigQuery(inseridoEm, 'TIMESTAMP') },
+    types: { inseridoEm: 'TIMESTAMP' },
+  });
+
   async function gravarFato(cfg: ConfiguracaoFato, mapeadas: readonly Record<string, unknown>[], ctx: ContextoGravacao): Promise<void> {
-    await inserirLinhas(cfg.staging, cfg.colunas, cfg.tipos, mapeadas);
-    await executar({ query: sqlMergeFato(tabela(cfg.fato), tabela(cfg.staging), cfg), params: { execucaoId: ctx.execucaoId } });
+    const inseridoEm = agora();
+    const comControle = mapeadas.map((linha) => ({ ...linha, execucao_id: ctx.execucaoId, inserido_em: inseridoEm }));
+    await inserirLinhas(cfg.staging, cfg.colunas, cfg.tipos, comControle);
+    await executar({ query: sqlMergeFato(tabela(cfg.fato), tabela(cfg.staging), cfg), ...doLote(ctx, inseridoEm) });
   }
 
   async function gravarScd2(cfg: ConfiguracaoScd2, mapeadas: readonly Record<string, unknown>[], ctx: ContextoGravacao): Promise<void> {
     const inseridoEm = agora();
     const comControle = mapeadas.map((linha) => ({ ...linha, execucao_id: ctx.execucaoId, inserido_em: inseridoEm }));
     await inserirLinhas(cfg.staging, colunasDoStagingScd2(cfg), tiposDoStagingScd2(cfg), comControle);
+    const lote = doLote(ctx, inseridoEm);
     await executar({
       query: sqlScd2(tabela(cfg.dimensao), tabela(cfg.staging), cfg),
-      params: { execucaoId: ctx.execucaoId, agora: paraParametroBigQuery(agora(), 'TIMESTAMP') },
-      types: { agora: 'TIMESTAMP' },
+      params: { ...lote.params, agora: paraParametroBigQuery(agora(), 'TIMESTAMP') },
+      types: { ...lote.types, agora: 'TIMESTAMP' },
     });
   }
 
@@ -114,9 +122,12 @@ export function createBigQueryGravador(): BigQueryGravador {
       }
 
       let linhasGravadas = 0;
+      let linhasDescartadas = 0;
       for (const [nome, grupo] of agrupamento.grupos) {
         try {
-          linhasGravadas += await gravarTabela(tabelas[nome]!, grupo, ctx);
+          const gravadas = await gravarTabela(tabelas[nome]!, grupo, ctx);
+          linhasGravadas += gravadas;
+          linhasDescartadas += grupo.length - gravadas;
         } catch (error) {
           logger.error('coleta.bigquery.gravar.erro', {
             platform,
@@ -126,7 +137,7 @@ export function createBigQueryGravador(): BigQueryGravador {
           return { ok: false, motivo: 'falha_ao_gravar' };
         }
       }
-      return { ok: true, linhasGravadas };
+      return { ok: true, linhasGravadas, linhasDescartadas };
     },
 
     async registrarQc(execucao) {

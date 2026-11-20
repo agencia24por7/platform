@@ -9,6 +9,8 @@ import { fingerprint, newRequestId, secureCompare } from '@/shared/security/toke
 import { problem, success } from '@/shared/http/problem';
 
 const MAX_BODY_BYTES = 1_000_000;
+
+export type WorkerRouteOptions = { readonly maxBodyBytes?: number };
 const RATE_LIMIT = 120;
 const RATE_WINDOW_MS = 60_000;
 
@@ -32,11 +34,12 @@ function clientIp(request: NextRequest): string | null {
   return forwarded ? (forwarded.split(',')[0]?.trim() ?? null) : null;
 }
 
-export function workerRoute<I, O>(schema: z.ZodType<I>, handler: Handler<I, O>, successStatus = 200) {
+export function workerRoute<I, O>(schema: z.ZodType<I>, handler: Handler<I, O>, successStatus = 200, options: WorkerRouteOptions = {}) {
+  const maxBodyBytes = options.maxBodyBytes ?? MAX_BODY_BYTES;
   return (request: NextRequest): Promise<NextResponse> =>
     handle(request, schema, handler, successStatus, async () => {
       const raw = await request.text();
-      if (raw.length > MAX_BODY_BYTES) throw new PayloadTooLarge();
+      if (Buffer.byteLength(raw) > maxBodyBytes) throw new PayloadTooLarge();
       if (raw.length === 0) return {};
       try {
         return JSON.parse(raw) as unknown;

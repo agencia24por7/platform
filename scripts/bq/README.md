@@ -4,8 +4,9 @@ Documento canônico de **todas** as tabelas, views e convenções do BigQuery.
 Toda mudança no BigQuery (tabela, coluna, view, partição, chave, manifesto)
 atualiza este arquivo no mesmo PR. Decisões de fundo: ADR
 [0003](../../docs/adr/0003-backfill-e-gravacao-no-bigquery.md),
-[0013](../../docs/adr/0013-dimensoes-scd2.md) e
-[0015](../../docs/adr/0015-modelagem-escalavel-do-bq.md).
+[0013](../../docs/adr/0013-dimensoes-scd2.md),
+[0015](../../docs/adr/0015-modelagem-escalavel-do-bq.md) e
+[0021](../../docs/adr/0021-gravacao-em-lotes-coleta-parcial-e-integridade.md).
 
 ## Sumário
 
@@ -22,6 +23,9 @@ atualiza este arquivo no mesmo PR. Decisões de fundo: ADR
 - [Meta Pixel e Lead Ads](#meta-pixel-e-lead-ads)
 - [Google Tag Manager](#google-tag-manager)
 - [Transversais](#transversais)
+- [Views (`vw_*`)](#views-vw_)
+- [Gravação, coleta parcial e backfill](#gravação-coleta-parcial-e-backfill)
+- [Qualidade e integridade](#qualidade-e-integridade)
 
 ## Convenções
 
@@ -104,14 +108,17 @@ gravação inteira (`tabela_desconhecida:<nome>`).
 3. **Coletor** (`n8n/workflows/coletores/<plataforma>.json`): marque as linhas
    com `_tabela`.
 4. **Manifesto** em `scripts/bq/manifesto/<plataforma>.json` (exclusão de
-   cliente, `scripts/titular.mjs`).
+   cliente, `scripts/titular.mjs`), com `grao` igual à `chave` da
+   configuração e, se o fato aponta para uma dimensão de entidade,
+   `entidades` (`registro.test.ts` confere).
 5. **Esta página**: seção da plataforma, com granularidade.
 6. **ADR** quando houver decisão de modelagem (granularidade, semântica).
 
 ### Manifesto de exclusão
 
 Cada entrada: `{ "tabela", "chave", "plataforma", "colunaPlataforma"?, e
-exatamente um de "data" | "momento" | "todoPeriodo": true }`.
+exatamente um de "data" | "momento" | "todoPeriodo": true, "grao",
+"entidades"? }`.
 
 - `chave`: coluna do fato com o `external_id` da fonte.
 - `plataforma`: valor de `dim_fonte_scd2.platform`.
@@ -123,6 +130,12 @@ exatamente um de "data" | "momento" | "todoPeriodo": true }`.
 - `todoPeriodo: true`: para dimensões de entidade sem data de fato. Apaga
   todas as linhas da fonte se ela foi do cliente e **nunca** de outro cliente;
   fonte que mudou de dono fica (ver ADR 0015).
+- `grao`: colunas do grão da tabela (a `chave` do MERGE no registro de
+  tabelas; na dimensão SCD2, a chave da entidade). Usado pelo
+  `bq:verificar`; o `titular.mjs` ignora.
+- `entidades` (opcional): `[{ "coluna", "dimensao", "chaveDim" }]` liga o id
+  de entidade do fato à dimensão SCD2 dela (`coluna` e `chaveDim` podem ser
+  listas). O `bq:verificar` conta ids do fato sem versão na dimensão.
 
 ## Numeração dos arquivos de DDL
 
@@ -824,3 +837,133 @@ Todas com chave `organization_id` e `conteiner_id` (o ID público `GTM-XXXX`). D
   Escrita: `registrarQc` em `bigQueryGravador.ts`.
 
 <!-- Transversais: novas tabelas acima desta linha -->
+
+## Views (`vw_*`)
+
+Cada view lê uma única tabela-base, deduplica pelo grão quando a base é fato (`QUALIFY ROW_NUMBER()` pela chave do MERGE) e acrescenta o dono pela `dim_fonte_scd2` (cliente na época e cliente atual). Uma linha da view corresponde a uma linha da base: o `bq:verificar` confere essa contagem.
+
+| View | Base | DDL |
+|---|---|---|
+| `vw_ads_diario` | `fato_ads_diario` | `05_dimensoes_scd2.sql` |
+| `vw_ga4_diario` | `fato_ga4_diario` | `05_dimensoes_scd2.sql` |
+| `vw_search_console_diario` | `fato_search_console_diario` | `05_dimensoes_scd2.sql` |
+| `vw_youtube_diario` | `fato_youtube_diario` | `05_dimensoes_scd2.sql` |
+| `vw_gbp_diario` | `fato_gbp_diario` | `05_dimensoes_scd2.sql` |
+| `vw_rd_negociacoes` | `fato_rd_negociacoes` | `05_dimensoes_scd2.sql` |
+| `vw_meta_eventos_dataset` | `fato_meta_eventos_dataset` | `06_meta_dataset_formularios.sql` |
+| `vw_meta_formularios` | `fato_meta_formularios` | `06_meta_dataset_formularios.sql` |
+| `vw_meta_entrega_diaria` | `fato_meta_entrega_diaria` | `20_meta_ads.sql` |
+| `vw_meta_acoes_diarias` | `fato_meta_acoes_diarias` | `20_meta_ads.sql` |
+| `vw_meta_recorte_idade_genero` | `fato_meta_recorte_idade_genero` | `20_meta_ads.sql` |
+| `vw_meta_recorte_posicionamento` | `fato_meta_recorte_posicionamento` | `20_meta_ads.sql` |
+| `vw_meta_recorte_regiao` | `fato_meta_recorte_regiao` | `20_meta_ads.sql` |
+| `vw_meta_campanha` | `dim_meta_campanha_scd2` | `20_meta_ads.sql` |
+| `vw_meta_conjunto` | `dim_meta_conjunto_scd2` | `20_meta_ads.sql` |
+| `vw_meta_anuncio` | `dim_meta_anuncio_scd2` | `20_meta_ads.sql` |
+| `vw_google_campanha_diario` | `fato_google_campanha_diario` | `21_google_ads.sql` |
+| `vw_google_anuncio_diario` | `fato_google_anuncio_diario` | `21_google_ads.sql` |
+| `vw_google_palavra_chave_diario` | `fato_google_palavra_chave_diario` | `21_google_ads.sql` |
+| `vw_google_termo_pesquisa_diario` | `fato_google_termo_pesquisa_diario` | `21_google_ads.sql` |
+| `vw_google_conversao_diario` | `fato_google_conversao_diario` | `21_google_ads.sql` |
+| `vw_google_dispositivo_diario` | `fato_google_dispositivo_diario` | `21_google_ads.sql` |
+| `vw_google_rede_diario` | `fato_google_rede_diario` | `21_google_ads.sql` |
+| `vw_google_geo_diario` | `fato_google_geo_diario` | `21_google_ads.sql` |
+| `vw_google_idade_diario` | `fato_google_idade_diario` | `21_google_ads.sql` |
+| `vw_google_genero_diario` | `fato_google_genero_diario` | `21_google_ads.sql` |
+| `vw_google_grupo_ativos_diario` | `fato_google_grupo_ativos_diario` | `21_google_ads.sql` |
+| `vw_dim_google_campanha` | `dim_google_campanha_scd2` | `21_google_ads.sql` |
+| `vw_dim_google_grupo_anuncios` | `dim_google_grupo_anuncios_scd2` | `21_google_ads.sql` |
+| `vw_dim_google_anuncio` | `dim_google_anuncio_scd2` | `21_google_ads.sql` |
+| `vw_dim_google_palavra_chave` | `dim_google_palavra_chave_scd2` | `21_google_ads.sql` |
+| `vw_dim_google_grupo_ativos` | `dim_google_grupo_ativos_scd2` | `21_google_ads.sql` |
+| `vw_ga4_aquisicao_diario` | `fato_ga4_aquisicao_diario` | `22_ga4.sql` |
+| `vw_ga4_pagina_diario` | `fato_ga4_pagina_diario` | `22_ga4.sql` |
+| `vw_ga4_pagina_entrada_diario` | `fato_ga4_pagina_entrada_diario` | `22_ga4.sql` |
+| `vw_ga4_evento_diario` | `fato_ga4_evento_diario` | `22_ga4.sql` |
+| `vw_ga4_dispositivo_diario` | `fato_ga4_dispositivo_diario` | `22_ga4.sql` |
+| `vw_ga4_geo_diario` | `fato_ga4_geo_diario` | `22_ga4.sql` |
+| `vw_ga4_item_diario` | `fato_ga4_item_diario` | `22_ga4.sql` |
+| `vw_search_console_consulta_pagina_diario` | `fato_search_console_consulta_pagina_diario` | `23_searchconsole.sql` |
+| `vw_search_console_pagina_diario` | `fato_search_console_pagina_diario` | `23_searchconsole.sql` |
+| `vw_search_console_pais_dispositivo_diario` | `fato_search_console_pais_dispositivo_diario` | `23_searchconsole.sql` |
+| `vw_search_console_aparencia_diario` | `fato_search_console_aparencia_diario` | `23_searchconsole.sql` |
+| `vw_dim_youtube_video_scd2` | `dim_youtube_video_scd2` | `24_youtube.sql` |
+| `vw_dim_youtube_playlist_scd2` | `dim_youtube_playlist_scd2` | `24_youtube.sql` |
+| `vw_youtube_video_diario` | `fato_youtube_video_diario` | `24_youtube.sql` |
+| `vw_youtube_origem_trafego_diario` | `fato_youtube_origem_trafego_diario` | `24_youtube.sql` |
+| `vw_youtube_dispositivo_diario` | `fato_youtube_dispositivo_diario` | `24_youtube.sql` |
+| `vw_youtube_local_reproducao_diario` | `fato_youtube_local_reproducao_diario` | `24_youtube.sql` |
+| `vw_youtube_pais_diario` | `fato_youtube_pais_diario` | `24_youtube.sql` |
+| `vw_youtube_audiencia_diario` | `fato_youtube_audiencia_diario` | `24_youtube.sql` |
+| `vw_dim_gbp_local_scd2` | `dim_gbp_local_scd2` | `25_gbp.sql` |
+| `vw_gbp_palavras_chave_mensal` | `fato_gbp_palavras_chave_mensal` | `25_gbp.sql` |
+| `vw_dim_rd_funil` | `dim_rd_funil_scd2` | `26_rdstation.sql` |
+| `vw_dim_rd_etapa` | `dim_rd_etapa_scd2` | `26_rdstation.sql` |
+| `vw_dim_rd_fonte` | `dim_rd_fonte_scd2` | `26_rdstation.sql` |
+| `vw_dim_rd_campanha` | `dim_rd_campanha_scd2` | `26_rdstation.sql` |
+| `vw_dim_rd_produto` | `dim_rd_produto_scd2` | `26_rdstation.sql` |
+| `vw_dim_rd_usuario` | `dim_rd_usuario_scd2` | `26_rdstation.sql` |
+| `vw_rd_negociacao_produtos` | `fato_rd_negociacao_produtos` | `26_rdstation.sql` |
+| `vw_rd_negociacao_etapas` | `fato_rd_negociacao_etapas` | `26_rdstation.sql` |
+| `vw_rd_tarefas_diarias` | `fato_rd_tarefas_diarias` | `26_rdstation.sql` |
+| `vw_dim_meta_dataset` | `dim_meta_dataset_scd2` | `27_meta_pixel_leads.sql` |
+| `vw_meta_eventos_dataset_recortes` | `fato_meta_eventos_dataset_recortes` | `27_meta_pixel_leads.sql` |
+| `vw_dim_meta_pagina` | `dim_meta_pagina_scd2` | `27b_meta_leadads.sql` |
+| `vw_dim_meta_formulario` | `dim_meta_formulario_scd2` | `27b_meta_leadads.sql` |
+| `vw_meta_leads_diario` | `fato_meta_leads_diario` | `27b_meta_leadads.sql` |
+| `vw_dim_gtm_conteiner` | `dim_gtm_conteiner_scd2` | `28_gtm.sql` |
+| `vw_dim_gtm_workspace` | `dim_gtm_workspace_scd2` | `28_gtm.sql` |
+| `vw_dim_gtm_versao` | `dim_gtm_versao_scd2` | `28_gtm.sql` |
+| `vw_dim_gtm_tag` | `dim_gtm_tag_scd2` | `28_gtm.sql` |
+| `vw_dim_gtm_acionador` | `dim_gtm_acionador_scd2` | `28_gtm.sql` |
+| `vw_dim_gtm_variavel` | `dim_gtm_variavel_scd2` | `28_gtm.sql` |
+
+## Gravação, coleta parcial e backfill
+
+Decisões: ADR [0021](../../docs/adr/0021-gravacao-em-lotes-coleta-parcial-e-integridade.md).
+
+- **Lotes.** O n8n manda as linhas de uma execução em lotes de até 10.000
+  linhas / 8 MB por `POST /api/v0/coleta/gravar` (nó "Dividir em lotes", em
+  série). O gravador insere no staging em lotes de até 5.000 linhas / 8 MB e
+  faz um MERGE por tabela por chamada, só das linhas daquela chamada
+  (`execucao_id` + `inserido_em` da chamada). "Conferir gravação" soma
+  `linhasGravadas` + `linhasDescartadas` de todos os lotes.
+- **Coleta parcial.** Recorte opcional perdido vira falha
+  `coleta_incompleta` com `detalhe = "<tabela>: <motivo>"`; a execução fecha
+  como `partial` e as linhas coletadas são gravadas. Qualquer outra causa
+  (exceto `sem_dados_no_periodo`) fecha como `failed`.
+- **Backfill.** Histórico por plataforma (`HISTORICO_MESES` em
+  `coleta-backfill.json`): 37 meses para Google, Meta, GA4 e YouTube; 16 para
+  Search Console; 18 para GBP; 28 dias para Pixel; snapshot para GTM, RD e
+  Lead Ads. Não há histórico por tabela: a janela vale para todas as tabelas
+  do coletor. Teto de 20 contas Google por disparo
+  (`MAX_FONTES_POR_PLATAFORMA`; ≈ 456 operações por conta no nível Básico).
+  Para as demais, dispare de novo com `"fontes": ["<fonteId>", ...]`.
+
+## Qualidade e integridade
+
+`npm run bq:verificar` (`scripts/bq/verificar-integridade.mjs`) confere o
+dataset em produção. Só lê (SELECT e dry run, pelo `bq` CLI autenticado no
+gcloud) e sai com código 1 se houver falha grave.
+
+```bash
+npm run bq:verificar
+npm run bq:verificar -- --projeto tria-platform --dataset tria_dw --desde 2026-10-01
+npm run bq:verificar -- --estrito        # avisos também falham
+npm run bq:verificar -- --imprimir-sql   # só mostra as consultas
+```
+
+| Verificação | Grave? |
+|---|---|
+| Tabelas do manifesto, `dim_fonte_scd2`, `dim_cliente_scd2`, `gov_*` e `qc_execucoes` existem | sim |
+| Toda tabela/view do dataset (fora `stg_*`) está neste README, e todo nome de tabela citado aqui existe | sim |
+| Fato sem duplicata no `grao` do manifesto | sim |
+| SCD2 (`dim_*_scd2`): uma versão atual por chave, sem sobreposição nem lacuna entre versões, `valido_de < valido_ate`, `atual` ⇔ `valido_ate = 9999-12-31` | sim |
+| View `vw_*` executa (dry run) e tem as mesmas linhas que a base (deduplicada pelo grão) | sim |
+| `fato_ads_diario` (campanha × dia) = soma de `fato_meta_entrega_diaria` (Meta) e = `fato_google_campanha_diario` (Google), desde `--desde` (padrão 35 dias), tolerância 0,5% | sim |
+| Linha de fato sem versão de `dim_fonte_scd2` que cubra a data | aviso |
+| Id de entidade do fato sem versão na dimensão (`entidades`) | aviso |
+
+Quando rodar: depois de aplicar DDL, de um backfill ou de mudar um coletor.
+Os testes unitários cobrem a parte estática: `registro.test.ts` confere
+`grao` x chave do registro, manifesto x DDL e DDL x este README.

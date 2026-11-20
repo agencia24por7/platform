@@ -1,5 +1,5 @@
 [
-  { "tabela": "fato_gbp_diario", "chave": "location_id", "plataforma": "gbp", "data": "data_dia" },
-  { "tabela": "fato_gbp_palavras_chave_mensal", "chave": "location_id", "plataforma": "gbp", "data": "mes" },
-  { "tabela": "dim_gbp_local_scd2", "chave": "location_id", "plataforma": "gbp", "todoPeriodo": true }
+  { "tabela": "fato_gbp_diario", "chave": "location_id", "plataforma": "gbp", "data": "data_dia", "grao": ["organization_id", "location_id", "data_dia", "metrica"], "entidades": [{ "coluna": "location_id", "dimensao": "dim_gbp_local_scd2", "chaveDim": "location_id" }] },
+  { "tabela": "fato_gbp_palavras_chave_mensal", "chave": "location_id", "plataforma": "gbp", "data": "mes", "grao": ["organization_id", "location_id", "mes", "termo"], "entidades": [{ "coluna": "location_id", "dimensao": "dim_gbp_local_scd2", "chaveDim": "location_id" }] },
+  { "tabela": "dim_gbp_local_scd2", "chave": "location_id", "plataforma": "gbp", "todoPeriodo": true, "grao": ["organization_id", "location_id"] }
 ]

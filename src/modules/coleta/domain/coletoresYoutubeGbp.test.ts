@@ -95,7 +95,7 @@ describe('coletor YouTube', () => {
     assert.equal(resultado.requests, respostas1.length + respostas2.length);
   });
 
-  it('falha do canal por dia vira reauth_pending e recorte recusado é ignorado', () => {
+  it('falha do canal por dia vira reauth_pending e recorte recusado vira coleta_incompleta', () => {
     const comNegado = respostas1.map((resposta, indice) => (etapa1[indice]!.json.rotulo === 'canal_dia' ? recusada(403) : resposta));
     const etapa2 = [{ json: { rotulo: 'playlists' } }];
     const resultado = saida(executar(modelo, 'Normalizar', [recusada(403)], { 'Montar requisição': etapa1, 'Chamar API (analytics)': comNegado, 'Planejar etapa 2': etapa2 }));
@@ -103,7 +103,9 @@ describe('coletor YouTube', () => {
 
     const semRecorte = respostas1.map((resposta, indice) => (etapa1[indice]!.json.rotulo === 'pais' ? recusada(400) : resposta));
     const parcial = saida(executar(modelo, 'Normalizar', [ok({ items: [] })], { 'Montar requisição': etapa1, 'Chamar API (analytics)': semRecorte, 'Planejar etapa 2': etapa2 }));
-    assert.deepEqual(parcial.falhas, []);
+    assert.equal(parcial.falhas.length, 1);
+    assert.equal(parcial.falhas[0]!.causa, 'coleta_incompleta');
+    assert.match(String((parcial.falhas[0] as { detalhe?: string }).detalhe), /^pais: \d+ pedidos recusados, /);
     assert.ok(!tabelas(parcial.linhas).includes('pais'));
   });
 });
@@ -142,13 +144,14 @@ describe('coletor GBP', () => {
     assert.equal(local.endereco, 'Rua A, 1');
   });
 
-  it('API de informações desligada não derruba a série diária', () => {
+  it('API de informações desligada não derruba a série diária e marca coleta_incompleta', () => {
     const respostas = pedidos.map((item): Item => {
       if (item.json.rotulo === 'diario') return ok({ multiDailyMetricTimeSeries: [{ dailyMetricTimeSeries: [{ dailyMetric: 'CALL_CLICKS', timeSeries: { datedValues: [{ date: { year: 2026, month: 11, day: 20 }, value: '4' }] } }] }] });
       return recusada(403);
     });
     const resultado = saida(executar(modelo, 'Normalizar', respostas, { 'Montar requisição': pedidos }));
-    assert.deepEqual(resultado.falhas, []);
+    assert.deepEqual(resultado.falhas.map((falha) => falha.causa), ['coleta_incompleta', 'coleta_incompleta']);
+    assert.deepEqual(resultado.falhas.map((falha) => String((falha as { detalhe?: string }).detalhe).split(':')[0]), ['palavras_chave', 'dim_local']);
     assert.equal(resultado.linhas.length, 1);
   });
 

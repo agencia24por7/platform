@@ -76,7 +76,7 @@ describe('coletor GA4', () => {
     }
   });
 
-  it('normaliza cada resposta pelo cabeçalho e tolera recorte opcional recusado', () => {
+  it('normaliza cada resposta pelo cabeçalho e marca recorte opcional recusado como coleta_incompleta', () => {
     const normalizar = compilar(codigo(modelo, 'Normalizar'), '$', '$input');
     const respostaDe = (tabela: string, valores: string[], metricas: string[]) => {
       const { recorte } = montados.find((item) => item.json.recorte.tabela === tabela)!.json;
@@ -99,7 +99,9 @@ describe('coletor GA4', () => {
       itemRecusado,
     ];
     const saida = normalizar((nome: string) => ({ all: () => montados, first: () => montados[0] }), { all: () => entradas })[0]!.json;
-    assert.deepEqual(saida.falhas, []);
+    assert.equal(saida.falhas.length, 1);
+    assert.equal(saida.falhas[0].causa, 'coleta_incompleta');
+    assert.match(saida.falhas[0].detalhe, /^item: Field itemName/);
     assert.equal(saida.linhas.length, 2);
     assert.equal(saida.linhas[0].canal, 'Organic Search');
     assert.equal(saida.linhas[0]._tabela, undefined);
@@ -135,7 +137,7 @@ describe('coletor Search Console', () => {
     }
   });
 
-  it('normaliza as páginas de cada consulta e ignora recusa do recorte opcional', () => {
+  it('normaliza as páginas de cada consulta e marca recusa do recorte opcional como coleta_incompleta', () => {
     const normalizar = compilar(codigo(modelo, 'Normalizar'), '$');
     const pagina = (keys: string[]) => ({ statusCode: 200, body: { rows: [{ keys, clicks: 2, impressions: 10, ctr: 0.2, position: 3.5 }] } });
     const respostasPorTabela: Record<string, Record<string, unknown>[]> = {
@@ -151,7 +153,7 @@ describe('coletor Search Console', () => {
       return { first: () => ({ json: { respostas: respostasPorTabela[tabela] } }) };
     };
     const saida = normalizar(referencia)[0]!.json;
-    assert.deepEqual(saida.falhas, []);
+    assert.deepEqual(saida.falhas, [{ causa: 'coleta_incompleta', detalhe: 'aparencia: invalid' }]);
     assert.equal(saida.linhas.length, 4);
     assert.equal(saida.linhas[0].device, 'MOBILE');
     assert.equal(saida.linhas[0].clicks, 2);

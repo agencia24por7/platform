@@ -1,10 +1,10 @@
 [
-  { "tabela": "fato_ga4_diario", "chave": "property_id", "plataforma": "ga4", "data": "data_dia" },
-  { "tabela": "fato_ga4_aquisicao_diario", "chave": "property_id", "plataforma": "ga4", "data": "data_dia" },
-  { "tabela": "fato_ga4_pagina_diario", "chave": "property_id", "plataforma": "ga4", "data": "data_dia" },
-  { "tabela": "fato_ga4_pagina_entrada_diario", "chave": "property_id", "plataforma": "ga4", "data": "data_dia" },
-  { "tabela": "fato_ga4_evento_diario", "chave": "property_id", "plataforma": "ga4", "data": "data_dia" },
-  { "tabela": "fato_ga4_dispositivo_diario", "chave": "property_id", "plataforma": "ga4", "data": "data_dia" },
-  { "tabela": "fato_ga4_geo_diario", "chave": "property_id", "plataforma": "ga4", "data": "data_dia" },
-  { "tabela": "fato_ga4_item_diario", "chave": "property_id", "plataforma": "ga4", "data": "data_dia" }
+  { "tabela": "fato_ga4_diario", "chave": "property_id", "plataforma": "ga4", "data": "data_dia", "grao": ["organization_id", "property_id", "canal", "data_dia"] },
+  { "tabela": "fato_ga4_aquisicao_diario", "chave": "property_id", "plataforma": "ga4", "data": "data_dia", "grao": ["organization_id", "property_id", "data_dia", "fonte", "midia", "campanha", "canal_padrao"] },
+  { "tabela": "fato_ga4_pagina_diario", "chave": "property_id", "plataforma": "ga4", "data": "data_dia", "grao": ["organization_id", "property_id", "data_dia", "pagina"] },
+  { "tabela": "fato_ga4_pagina_entrada_diario", "chave": "property_id", "plataforma": "ga4", "data": "data_dia", "grao": ["organization_id", "property_id", "data_dia", "pagina_entrada"] },
+  { "tabela": "fato_ga4_evento_diario", "chave": "property_id", "plataforma": "ga4", "data": "data_dia", "grao": ["organization_id", "property_id", "data_dia", "evento"] },
+  { "tabela": "fato_ga4_dispositivo_diario", "chave": "property_id", "plataforma": "ga4", "data": "data_dia", "grao": ["organization_id", "property_id", "data_dia", "categoria_dispositivo", "sistema_operacional", "navegador", "plataforma"] },
+  { "tabela": "fato_ga4_geo_diario", "chave": "property_id", "plataforma": "ga4", "data": "data_dia", "grao": ["organization_id", "property_id", "data_dia", "pais", "regiao", "cidade"] },
+  { "tabela": "fato_ga4_item_diario", "chave": "property_id", "plataforma": "ga4", "data": "data_dia", "grao": ["organization_id", "property_id", "data_dia", "item"] }
 ]
