@@ -23,6 +23,7 @@ const ROTAS_ABERTAS = [
   '/sobre',
   '/privacidade',
   '/termos',
+  '/exclusao-de-dados',
 ];
 
 function seguirComNonce(request: NextRequest): NextResponse {
