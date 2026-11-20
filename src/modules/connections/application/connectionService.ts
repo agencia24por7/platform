@@ -25,6 +25,8 @@ import type { CredentialTester } from '@/modules/connections/application/credent
 import type { AdAccountRepository } from '@/modules/connections/infrastructure/adAccountRepository';
 import type { ConnectionRepository } from '@/modules/connections/infrastructure/connectionRepository';
 import type { DiscoveredAccountRepository } from '@/modules/connections/infrastructure/discoveredAccountRepository';
+import { logger } from '@/shared/logging/logger';
+import { avisarMudancaDePosse, semAvisoDePosse, type AvisoDePosse } from '@/modules/connections/application/avisoDePosse';
 import { randomBytes } from 'node:crypto';
 
 export type LinkAccountInput = Omit<NewAdAccount, 'organizationId'> & {
@@ -73,7 +75,8 @@ export type ClientOwnership = {
   findById(organizationId: string, id: string): Promise<{ readonly id: string; readonly name: string } | null>;
 };
 
-export type RemovedorDeWorkflow = {
+export type ProvisionadorDeColetor = {
+  provisionar(input: { readonly platform: Platform; readonly credentialRef: string; readonly label: string }): Promise<string | null>;
   remover(workflowId: string): Promise<boolean>;
 };
 
@@ -84,9 +87,31 @@ export function createConnectionService(
   clients: ClientOwnership,
   vault: CredentialVault,
   tester: CredentialTester,
-  workflows: RemovedorDeWorkflow,
+  workflows: ProvisionadorDeColetor,
   contasDescobertas: Pick<DiscoveredAccountRepository, 'replace'>,
+  aviso: AvisoDePosse = semAvisoDePosse,
 ): ConnectionService {
+  async function provisionarColetor(organizationId: string, connection: Connection): Promise<string | null> {
+    try {
+      const coletorRef = await workflows.provisionar({
+        platform: connection.platform,
+        credentialRef: connection.credentialRef,
+        label: connection.label,
+      });
+      if (!coletorRef) return null;
+      const anterior = await connections.trocarColetorRef(organizationId, connection.id, coletorRef);
+      if (anterior && anterior !== coletorRef) await workflows.remover(anterior);
+      return coletorRef;
+    } catch (error) {
+      logger.warn('coletor.provisionar.ignorado', {
+        platform: connection.platform,
+        connectionId: connection.id,
+        error: error instanceof Error ? error.message : 'desconhecido',
+      });
+      return null;
+    }
+  }
+
   return {
     async guardarChave(input, ator) {
       if (!usaChaveDeApi(input.platform)) {
@@ -154,6 +179,8 @@ export function createConnectionService(
         contaDaChave({ platform: input.platform, externalId: connection.externalId, label: connection.label }),
       ]);
 
+      const coletorRef = await provisionarColetor(input.organizationId, connection);
+
       await audit.record({
         organizationId: input.organizationId,
         actorType: 'user',
@@ -163,7 +190,7 @@ export function createConnectionService(
         targetId: connection.id,
         requestId: ator.requestId,
         sourceIp: ator.sourceIp,
-        metadata: { platform: input.platform, apelido, rotacionou: Boolean(existente) },
+        metadata: { platform: input.platform, apelido, rotacionou: Boolean(existente), coletorProvisionado: Boolean(coletorRef) },
       });
 
       return ok(connection);
@@ -310,6 +337,7 @@ export function createConnectionService(
         },
       });
 
+      avisarMudancaDePosse(aviso, reativada ? 'ad_account.relinked' : 'ad_account.link');
       return ok(account);
     },
 
@@ -344,10 +372,11 @@ export function createConnectionService(
           externalId: movida.externalId,
           de: origem?.name ?? conta.clientId,
           para: destino.name,
-          historicoSegue: true,
+          historico: 'scd2',
         },
       });
 
+      avisarMudancaDePosse(aviso, 'ad_account.reassigned');
       return ok(movida);
     },
 
@@ -373,10 +402,11 @@ export function createConnectionService(
           platform: solta.platform,
           externalId: solta.externalId,
           de: cliente?.name ?? conta!.clientId,
-          historicoPreservado: true,
+          historico: 'scd2',
         },
       });
 
+      avisarMudancaDePosse(aviso, 'ad_account.unlinked');
       return ok(solta);
     },
 

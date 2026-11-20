@@ -17,7 +17,13 @@ export type CorpoDeWorkflow = {
   readonly settings: Record<string, unknown>;
 };
 
-export type WorkflowImplantado = CorpoDeWorkflow & { readonly id: string; readonly active: boolean };
+export type WorkflowImplantado = CorpoDeWorkflow & {
+  readonly id: string;
+  readonly active: boolean;
+  readonly tags?: readonly { readonly id: string; readonly name: string }[];
+};
+
+export const TAG_DA_PLATAFORMA = 'platform';
 
 export type ClienteN8n = {
   criar(corpo: CorpoDeWorkflow, contexto: Record<string, string>): Promise<string | null>;
@@ -25,10 +31,12 @@ export type ClienteN8n = {
   listar(): Promise<WorkflowImplantado[]>;
   atualizar(workflowId: string, corpo: CorpoDeWorkflow): Promise<boolean>;
   publicar(workflowId: string): Promise<boolean>;
+  marcarDaPlataforma(workflowId: string): Promise<boolean>;
 };
 
 const TENTATIVAS_DE_REMOCAO = 10;
 const TAMANHO_DA_PAGINA = 100;
+const LIMITE_DE_TAGS = 250;
 
 export function criarClienteN8n(configuracao: ConfiguracaoN8n, logger: Registrador): ClienteN8n {
   const esperarMs = configuracao.esperarMs ?? 2_000;
@@ -42,7 +50,38 @@ export function criarClienteN8n(configuracao: ConfiguracaoN8n, logger: Registrad
       signal: AbortSignal.timeout(15_000),
     });
 
+  let tagDaPlataforma: string | null = null;
+
+  const idDaTagDaPlataforma = async (): Promise<string | null> => {
+    if (tagDaPlataforma) return tagDaPlataforma;
+    const lista = await chamar('GET', `tags?limit=${LIMITE_DE_TAGS}`);
+    if (lista.ok) {
+      const { data } = (await lista.json()) as { data: { id: string; name: string }[] };
+      tagDaPlataforma = data.find((tag) => tag.name === TAG_DA_PLATAFORMA)?.id ?? null;
+    }
+    if (!tagDaPlataforma) {
+      const criada = await chamar('POST', 'tags', { name: TAG_DA_PLATAFORMA });
+      if (criada.ok) tagDaPlataforma = ((await criada.json()) as { id: string }).id;
+    }
+    return tagDaPlataforma;
+  };
+
+  const marcarDaPlataforma = async (workflowId: string): Promise<boolean> => {
+    try {
+      const tagId = await idDaTagDaPlataforma();
+      if (!tagId) return false;
+      const resposta = await chamar('PUT', `workflows/${workflowId}/tags`, [{ id: tagId }]);
+      if (!resposta.ok) logger.warn('n8n.workflow.tag.falhou', { workflowId, status: resposta.status });
+      return resposta.ok;
+    } catch (error) {
+      logger.warn('n8n.workflow.tag.erro', { workflowId, error: error instanceof Error ? error.message : 'desconhecido' });
+      return false;
+    }
+  };
+
   return {
+    marcarDaPlataforma,
+
     async criar(corpo, contexto) {
       try {
         const resposta = await chamar('POST', 'workflows', corpo);
@@ -53,6 +92,8 @@ export function criarClienteN8n(configuracao: ConfiguracaoN8n, logger: Registrad
 
         const criado = (await resposta.json()) as { id?: string };
         if (!criado.id) return null;
+
+        await marcarDaPlataforma(criado.id);
 
         const publicacao = await chamar('POST', `workflows/${criado.id}/activate`);
         if (!publicacao.ok) {

@@ -8,7 +8,7 @@ import type { Platform } from '@/modules/connections/domain/connection';
 export const CREDENTIAL_TYPE: Record<Platform, string> = {
   google: 'googleOAuth2Api',
   meta: 'facebookGraphApi',
-  rdstation: 'httpHeaderAuth',
+  rdstation: 'httpQueryAuth',
   apify: 'httpHeaderAuth',
   ga4: 'googleOAuth2Api',
   zapi: 'httpHeaderAuth',
@@ -34,6 +34,10 @@ function corpoDaCredencial(secret: VaultSecret) {
 
   if (CREDENTIAL_TYPE[secret.platform] === 'facebookGraphApi') {
     return { accessToken: secret.accessToken };
+  }
+
+  if (CREDENTIAL_TYPE[secret.platform] === 'httpQueryAuth') {
+    return { name: 'token', value: secret.accessToken };
   }
 
   return { name: 'Authorization', value: `Bearer ${secret.accessToken}` };

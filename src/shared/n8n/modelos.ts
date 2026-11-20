@@ -8,6 +8,7 @@ export const MODELO_DE_COLETOR: Readonly<Record<string, string>> = {
   youtube: 'n8n/workflows/coletores/coletor-youtube.json',
   gbp: 'n8n/workflows/coletores/coletor-gbp.json',
   gtm: 'n8n/workflows/coletores/coletor-gtm.json',
+  rdstation: 'n8n/workflows/coletores/coletor-rdstation.json',
 };
 
 export const MODELO_DE_EXECUTOR: Readonly<Record<string, string>> = {
@@ -18,3 +19,7 @@ export const MODELO_DE_EXECUTOR: Readonly<Record<string, string>> = {
 export const PASTAS_DE_MODELO = ['n8n/workflows/coletores/', 'n8n/workflows/executores/'];
 
 export const ehModelo = (caminho: string) => PASTAS_DE_MODELO.some((pasta) => caminho.startsWith(pasta));
+
+export const PASTAS_FORA_DA_PLATAFORMA = ['n8n/workflows/clientes/', 'n8n/workflows/agencia/'];
+
+export const ehDaPlataforma = (caminho: string) => !PASTAS_FORA_DA_PLATAFORMA.some((pasta) => caminho.startsWith(pasta));

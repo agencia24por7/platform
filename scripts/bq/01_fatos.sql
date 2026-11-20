@@ -80,3 +80,29 @@ CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_gbp_diario` (
 )
 PARTITION BY data_dia
 CLUSTER BY organization_id, client_id;
+
+CREATE TABLE IF NOT EXISTS `{{DATASET}}.fato_rd_negociacoes` (
+  organization_id  STRING NOT NULL,
+  client_id        STRING NOT NULL,
+  deal_id          STRING NOT NULL,
+  data_snapshot    DATE NOT NULL,
+  pipeline_id      STRING,
+  pipeline_nome    STRING,
+  etapa_id         STRING,
+  etapa_nome       STRING,
+  etapa_ordem      INT64,
+  situacao         STRING NOT NULL,
+  valor_total      NUMERIC,
+  valor_mensal     NUMERIC,
+  valor_unico      NUMERIC,
+  moeda            STRING,
+  criada_em        TIMESTAMP,
+  atualizada_em    TIMESTAMP,
+  fechada_em       TIMESTAMP,
+  fonte_nome       STRING,
+  campanha_nome    STRING,
+  execucao_id      STRING,
+  inserido_em      TIMESTAMP NOT NULL
+)
+PARTITION BY data_snapshot
+CLUSTER BY organization_id, client_id, pipeline_id;

@@ -1,8 +1,8 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { criarClienteN8n } from '../src/shared/n8n/clienteN8n.ts';
-import { MODELO_DE_COLETOR, MODELO_DE_EXECUTOR, PASTA_DOS_WORKFLOWS, ehModelo } from '../src/shared/n8n/modelos.ts';
-import { mesclar, versaoDoModelo, versaoImplantada } from '../src/shared/n8n/sincronizacao.ts';
+import { TAG_DA_PLATAFORMA, criarClienteN8n } from '../src/shared/n8n/clienteN8n.ts';
+import { MODELO_DE_COLETOR, MODELO_DE_EXECUTOR, PASTA_DOS_WORKFLOWS, ehDaPlataforma, ehModelo } from '../src/shared/n8n/modelos.ts';
+import { localizarImplantado, mesclar, versaoDoModelo, versaoImplantada } from '../src/shared/n8n/sincronizacao.ts';
 
 const argumentos = process.argv.slice(2);
 const aplicar = argumentos.includes('--aplicar');
@@ -23,7 +23,7 @@ const lerJson = (caminho) => JSON.parse(readFileSync(caminho, 'utf8'));
 function arquivosDaPlataforma(pasta) {
   return readdirSync(pasta, { withFileTypes: true }).flatMap((entrada) => {
     const caminho = join(pasta, entrada.name);
-    if (entrada.isDirectory()) return arquivosDaPlataforma(caminho);
+    if (entrada.isDirectory()) return ehDaPlataforma(`${caminho}/`) ? arquivosDaPlataforma(caminho) : [];
     return entrada.name.endsWith('.json') && !ehModelo(caminho) ? [caminho] : [];
   });
 }
@@ -37,9 +37,15 @@ function alvosDasConexoes() {
   ]).filter(Boolean);
 }
 
+const temTagDaPlataforma = (implantado) => (implantado.tags ?? []).some((tag) => tag.name === TAG_DA_PLATAFORMA);
+
 async function sincronizar(arquivo, implantado) {
   const modelo = lerJson(arquivo);
-  if (versaoImplantada(implantado) === versaoDoModelo(modelo)) return { acao: 'igual' };
+  if (versaoImplantada(implantado) === versaoDoModelo(modelo)) {
+    if (temTagDaPlataforma(implantado)) return { acao: 'igual' };
+    if (!aplicar) return { acao: 'marcaria', detalhe: `sem a tag ${TAG_DA_PLATAFORMA}` };
+    return (await n8n.marcarDaPlataforma(implantado.id)) ? { acao: 'marcado' } : { acao: 'falhou', detalhe: 'tag não aplicada' };
+  }
 
   const { corpo, pendencias } = mesclar(modelo, implantado, implantado.name, arquivo);
   if (pendencias.length > 0) return { acao: 'bloqueado', detalhe: pendencias.join('; ') };
@@ -48,23 +54,26 @@ async function sincronizar(arquivo, implantado) {
   if (!(await n8n.atualizar(implantado.id, corpo))) return { acao: 'falhou', detalhe: 'atualização recusada' };
   const deveFicarPublicado = implantado.active || ehModelo(arquivo);
   if (deveFicarPublicado && !(await n8n.publicar(implantado.id))) return { acao: 'falhou', detalhe: 'atualizado, mas não publicado' };
+  if (!temTagDaPlataforma(implantado) && !(await n8n.marcarDaPlataforma(implantado.id))) {
+    return { acao: 'falhou', detalhe: 'atualizado, mas sem a tag' };
+  }
   return { acao: 'atualizado' };
 }
 
 async function main() {
   const implantados = await n8n.listar();
-  const porNome = new Map(implantados.map((w) => [w.name, w]));
   const porId = new Map(implantados.map((w) => [w.id, w]));
   const resultados = [];
 
   for (const arquivo of arquivosDaPlataforma(PASTA_DOS_WORKFLOWS)) {
     const nome = lerJson(arquivo).name;
-    const implantado = porNome.get(nome);
-    if (!implantado) {
+    const achado = localizarImplantado(arquivo, nome, implantados);
+    if (!achado) {
       resultados.push({ arquivo, alvo: nome, acao: 'não implantado', detalhe: 'a primeira implantação é manual (ver docs/adr/0009)' });
       continue;
     }
-    resultados.push({ arquivo, alvo: nome, ...(await sincronizar(arquivo, implantado)) });
+    const alvo = `${achado.workflow.name} (${achado.workflow.id})${achado.por === 'nome' ? ' [adotado pelo nome]' : ''}`;
+    resultados.push({ arquivo, alvo, ...(await sincronizar(arquivo, achado.workflow)) });
   }
 
   for (const { arquivo, id } of alvosDasConexoes()) {
