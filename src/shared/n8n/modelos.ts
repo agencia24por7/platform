@@ -18,13 +18,27 @@ export const MODELO_DE_EXECUTOR: Readonly<Record<string, string>> = {
   meta: 'n8n/workflows/executores/executor-meta-partner.json',
 };
 
+export const PASTA_DE_REVOGACAO = 'n8n/workflows/plataforma/revogacao/';
+
+export const MODELO_DE_REVOGACAO: Readonly<Record<string, string>> = {
+  google: `${PASTA_DE_REVOGACAO}revogar-google.json`,
+  meta: `${PASTA_DE_REVOGACAO}revogar-meta.json`,
+};
+
+export const WORKFLOW_DE_REVOGACAO = 'n8n/workflows/plataforma/revogar-acesso.json';
+export const WEBHOOK_DE_REVOGACAO = 'orla-revogar-acesso';
+export const WEBHOOK_DO_PORTADOR_DO_GOOGLE = 'orla-revogar-google-portador';
+export const WORKFLOW_DE_CONFORMIDADE_DO_YOUTUBE = 'n8n/workflows/plataforma/youtube-conformidade-diaria.json';
+
 export const WORKFLOWS_DA_PLATAFORMA = [
   'n8n/workflows/plataforma/retencao-diaria.json',
   'n8n/workflows/plataforma/dimensoes-diarias.json',
   'n8n/workflows/plataforma/contexto-brain-diario.json',
+  WORKFLOW_DE_REVOGACAO,
+  WORKFLOW_DE_CONFORMIDADE_DO_YOUTUBE,
 ] as const;
 
-export const PASTAS_DE_MODELO = ['n8n/workflows/coletores/', 'n8n/workflows/executores/'];
+export const PASTAS_DE_MODELO = ['n8n/workflows/coletores/', 'n8n/workflows/executores/', PASTA_DE_REVOGACAO];
 
 export const ehModelo = (caminho: string) => PASTAS_DE_MODELO.some((pasta) => caminho.startsWith(pasta));
 

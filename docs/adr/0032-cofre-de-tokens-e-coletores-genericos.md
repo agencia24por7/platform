@@ -257,6 +257,8 @@ rollback é limpo (backup + imagem). Dados do BigQuery não são afetados em nen
 - `src/modules/connections/application/connectionService.ts`: `guardarChave` ⇒ `guardar(…, 'api_key', …)`;
   `removerConexao` ⇒ `revogarEApagar` + status `revoked` na mesma transação; testar credencial com o segredo
   em claro antes de guardar (como hoje).
+- `src/modules/privacidade/` (revogação no provedor, migração 0080): o `ExecutorDeRevogacao` do ambiente
+  passa a usar `CofreDeTokens.revogarEApagar` em vez do caminho pelo n8n, para haver um só lugar que revoga.
 - `src/modules/connections/infrastructure/connectionRepository.ts`: `renew`/`revogar` trocam a trava otimista
   por `credential_ref` pela `versao` do cofre; parar de ler `credential_ref`.
 - Remover: `n8nCredentialVault.ts`, `credentialVault.ts` (porta), `executorProvisioner.ts`,

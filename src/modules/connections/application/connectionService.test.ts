@@ -31,6 +31,8 @@ type Opcoes = {
   testeOk?: boolean;
   falhaNoInsert?: boolean;
   removerWorkflow?: boolean;
+  revogacao?: { revogadoNoProvedor: true | false | 'nao_suportado'; motivo: string };
+  expurgo?: { enfileirados: number; concluidos: number };
 };
 
 function montar(opcoes: Opcoes = {}) {
@@ -42,6 +44,7 @@ function montar(opcoes: Opcoes = {}) {
   const substituicoesDeContas: { connectionId: string; quantidade: number }[] = [];
   const contasDaConexao = new Map<string, StoredDiscovery[]>();
   const avisos: string[] = [];
+  const ordem: string[] = [];
   let sequencia = 0;
 
   const clientes = new Map([
@@ -179,6 +182,7 @@ function montar(opcoes: Opcoes = {}) {
         return `n8n:credential:cred${descartados.length + conexoes.size + sequencia}xyz`;
       },
       async discard(ref: string) {
+        ordem.push('descartar');
         const resultado = opcoes.descarte ?? 'descartada';
         if (resultado === 'descartada') descartados.push(ref);
         return resultado;
@@ -198,13 +202,23 @@ function montar(opcoes: Opcoes = {}) {
     },
     contasDescobertas as never,
     { posseMudou: (motivo: string) => void avisos.push(motivo) },
+    {
+      async revogarNoProvedor(conexao: { id: string }) {
+        ordem.push(`revogar:${conexao.id}`);
+        return (opcoes.revogacao ?? { revogadoNoProvedor: 'nao_suportado', motivo: 'plataforma_sem_revogacao' }) as never;
+      },
+      async expurgarDadosDaConexao(input: { connectionId: string; platform: string }) {
+        ordem.push(`expurgar:${input.platform}:${conexoes.get(input.connectionId)?.status}`);
+        return opcoes.expurgo ?? { enfileirados: 0, concluidos: 0 };
+      },
+    },
   );
 
   const armarCorrida = (acao: (conexoes: Map<string, Connection>) => void): void => {
     corridaPendente = acao;
   };
 
-  return { armarCorrida, servico, conexoes, refs, eventos, descartados, coletores, substituicoesDeContas, contasDaConexao, avisos, adAccounts };
+  return { armarCorrida, servico, conexoes, refs, eventos, descartados, coletores, substituicoesDeContas, contasDaConexao, avisos, adAccounts, ordem };
 }
 
 const guardar = (c: ReturnType<typeof montar>, platform: Platform, papel: MemberRole = 'owner', chave = CHAVE) =>
@@ -373,6 +387,61 @@ describe('remover conexão (desconectar), por plataforma', () => {
       }
     });
   }
+
+  it('revoga no provedor antes de apagar do cofre e expurga depois de revogar, registrando o resultado na trilha', async () => {
+    const c = montar({ revogacao: { revogadoNoProvedor: true, motivo: 'revogado' }, expurgo: { enfileirados: 1, concluidos: 1 } });
+    const id = semearConexao(c, 'youtube');
+
+    const resultado = await c.servico.removerConexao({ organizationId: ORGANIZACAO, papelDeQuemAge: 'owner', connectionId: id }, ator);
+
+    assert.ok(resultado.ok);
+    assert.deepEqual(c.ordem, [`revogar:${id}`, 'descartar', 'expurgar:youtube:revoked']);
+    assert.equal(resultado.value.revogadoNoProvedor, true);
+    assert.equal(resultado.value.avisoDeRevogacao, null);
+    const removida = c.eventos.find((e) => e.action === 'connection.removed')!;
+    assert.equal(removida.metadata?.revogadoNoProvedor, true);
+    assert.equal(removida.metadata?.motivoDaRevogacao, 'revogado');
+    assert.deepEqual(removida.metadata?.expurgoDeFontes, { enfileirados: 1, concluidos: 1 });
+  });
+
+  it('revogação que falhou não impede remover, mas devolve o aviso com o caminho de revogar no provedor', async () => {
+    const google = montar({ revogacao: { revogadoNoProvedor: false, motivo: 'falhou' } });
+    const idGoogle = semearConexao(google, 'ga4');
+    const noGoogle = await google.servico.removerConexao({ organizationId: ORGANIZACAO, papelDeQuemAge: 'owner', connectionId: idGoogle }, ator);
+    assert.ok(noGoogle.ok);
+    assert.equal(google.conexoes.get(idGoogle)!.status, 'revoked');
+    assert.equal(noGoogle.value.revogadoNoProvedor, false);
+    assert.match(noGoogle.value.avisoDeRevogacao!, /myaccount\.google\.com\/permissions/);
+    assert.equal(google.eventos.find((e) => e.action === 'connection.removed')!.metadata?.revogadoNoProvedor, false);
+
+    const meta = montar({ revogacao: { revogadoNoProvedor: false, motivo: 'acesso_compartilhado' } });
+    const idMeta = semearConexao(meta, 'meta');
+    const naMeta = await meta.servico.removerConexao({ organizationId: ORGANIZACAO, papelDeQuemAge: 'owner', connectionId: idMeta }, ator);
+    assert.ok(naMeta.ok);
+    assert.match(naMeta.value.avisoDeRevogacao!, /facebook\.com\/settings\?tab=business_tools/);
+    assert.match(naMeta.value.avisoDeRevogacao!, /outra conexão ativa/);
+  });
+
+  it('plataforma sem revogação (chave de API) registra nao_suportado e não mostra aviso', async () => {
+    const c = montar();
+    const id = semearConexao(c, 'rdstation');
+    const resultado = await c.servico.removerConexao({ organizationId: ORGANIZACAO, papelDeQuemAge: 'owner', connectionId: id }, ator);
+    assert.ok(resultado.ok);
+    assert.equal(resultado.value.revogadoNoProvedor, 'nao_suportado');
+    assert.equal(resultado.value.avisoDeRevogacao, null);
+    assert.equal(c.eventos.find((e) => e.action === 'connection.removed')!.metadata?.revogadoNoProvedor, 'nao_suportado');
+  });
+
+  it('cofre que falha depois de revogar no provedor não altera a conexão, diz que o acesso já caiu e deixa rastro', async () => {
+    const c = montar({ descarte: 'falhou', revogacao: { revogadoNoProvedor: true, motivo: 'revogado' } });
+    const id = semearConexao(c, 'meta');
+    const resultado = await c.servico.removerConexao({ organizationId: ORGANIZACAO, papelDeQuemAge: 'owner', connectionId: id }, ator);
+    assert.ok(!resultado.ok);
+    assert.match(resultado.error.message, /já foi revogado no provedor/);
+    assert.equal(c.conexoes.get(id)!.status, 'active');
+    assert.deepEqual(c.ordem, [`revogar:${id}`, 'descartar']);
+    assert.deepEqual(c.eventos.map((e) => e.action), ['connection.provider_revoked']);
+  });
 
   it('sem workflows provisionados não tenta remover nada', async () => {
     const c = montar();

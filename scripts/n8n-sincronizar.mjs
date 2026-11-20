@@ -2,11 +2,22 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { TAG_DA_PLATAFORMA, criarClienteN8n } from '../src/shared/n8n/clienteN8n.ts';
 import { MODELO_DE_COLETOR, MODELO_DE_EXECUTOR, PASTA_DOS_WORKFLOWS, ehDaPlataforma, ehModelo } from '../src/shared/n8n/modelos.ts';
-import { ARQUIVO_DOS_ALERTAS, avaliarAlvo, localizarImplantado, mesclar, resolverFluxoDeErro, versaoDoModelo, versaoImplantada } from '../src/shared/n8n/sincronizacao.ts';
+import {
+  ARQUIVO_DOS_ALERTAS,
+  avaliarAlvo,
+  credenciaisPorNome,
+  localizarImplantado,
+  mesclar,
+  modeloComCredenciaisPorNome,
+  resolverFluxoDeErro,
+  versaoDoModelo,
+  versaoImplantada,
+} from '../src/shared/n8n/sincronizacao.ts';
 
 const argumentos = process.argv.slice(2);
 const aplicar = argumentos.includes('--aplicar');
 const adotar = argumentos.includes('--adotar');
+const criarAusentes = argumentos.includes('--criar');
 const indiceDasConexoes = argumentos.indexOf('--conexoes');
 const arquivoDeConexoes = indiceDasConexoes >= 0 ? argumentos[indiceDasConexoes + 1] : null;
 
@@ -65,6 +76,17 @@ async function sincronizar(arquivo, implantado, implantados) {
   return { acao: 'atualizado' };
 }
 
+async function criar(arquivo, implantados) {
+  const { modelo, aviso } = resolverFluxoDeErro(lerJson(arquivo), implantados);
+  if (aviso) console.warn(`aviso: ${modelo.name}: ${aviso}`);
+  const ligado = modeloComCredenciaisPorNome(modelo, credenciaisPorNome(implantados));
+  const { corpo, pendencias } = mesclar(ligado, null, modelo.name, arquivo);
+  if (pendencias.length > 0) return { acao: 'bloqueado', detalhe: `${pendencias.join('; ')} (crie a credencial no n8n ou implante à mão)` };
+  if (!aplicar) return { acao: 'criaria' };
+  const id = await n8n.criar(corpo, { arquivo });
+  return id ? { acao: 'criado', detalhe: id } : { acao: 'falhou', detalhe: 'criação recusada' };
+}
+
 async function main() {
   let implantados = await n8n.listar();
   const resultados = [];
@@ -74,7 +96,11 @@ async function main() {
     const nome = lerJson(arquivo).name;
     const achado = localizarImplantado(arquivo, nome, implantados);
     if (!achado) {
-      resultados.push({ arquivo, alvo: nome, acao: 'não implantado', detalhe: 'a primeira implantação é manual (ver docs/adr/0009)' });
+      resultados.push(
+        criarAusentes
+          ? { arquivo, alvo: nome, ...(await criar(arquivo, implantados)) }
+          : { arquivo, alvo: nome, acao: 'não implantado', detalhe: 'use --criar (credenciais ligadas pelo nome) ou implante à mão (docs/adr/0009)' },
+      );
       continue;
     }
     const alvo = `${achado.workflow.name} (${achado.workflow.id})${achado.por === 'nome' ? ' [adotado pelo nome]' : ''}`;

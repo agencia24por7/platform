@@ -32,6 +32,7 @@ export type ConfiguracaoScd2 = Mapeamento & {
   readonly chave: readonly string[];
   readonly atributos: readonly string[];
   readonly tipos: TiposDasColunas;
+  readonly renovaCarregadoEm?: true;
 };
 
 export type ConfiguracaoSnapshot = Mapeamento & {

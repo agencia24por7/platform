@@ -4,7 +4,9 @@ import {
   FIM_DOS_TEMPOS,
   INICIO_DOS_TEMPOS,
   STATUS_DE_CLIENTE_EXCLUIDO,
+  STATUS_DE_DONO_DESCONHECIDO,
   chaveDaFonte,
+  donoDesconhecido,
   hashDaFonte,
   hashDoCliente,
   planejarClientes,
@@ -157,17 +159,57 @@ describe('reconstruirPosse', () => {
     );
   });
 
-  it('para no evento cujo dono anterior é desconhecido e estende o período seguinte ao início', () => {
+  it('período com dono anterior desconhecido fica sem cliente (desconhecido), sem empurrar o histórico para o próximo dono', () => {
     const segmentos = reconstruirPosse(
       fonte({ clientId: 'cli-c' }),
       [mudanca('2026-09-01T00:00:00.000Z', null), mudanca('2026-10-01T00:00:00.000Z', { clientId: 'cli-b', status: 'linked' })],
       agora,
     );
     assert.deepEqual(
+      segmentos.map((s) => [s.validoDe.toISOString(), s.atributos.clientId, s.atributos.status]),
+      [
+        [INICIO_DOS_TEMPOS.toISOString(), null, STATUS_DE_DONO_DESCONHECIDO],
+        ['2026-09-01T00:00:00.000Z', 'cli-b', 'linked'],
+        ['2026-10-01T00:00:00.000Z', 'cli-c', 'linked'],
+      ],
+    );
+    assert.equal(donoDesconhecido(segmentos[0]!.atributos), true);
+    assert.equal(donoDesconhecido(segmentos[1]!.atributos), false);
+  });
+
+  it('dono desconhecido no meio do histórico fica entre os dois donos conhecidos', () => {
+    const segmentos = reconstruirPosse(
+      fonte({ clientId: 'cli-c' }),
+      [
+        mudanca('2026-08-01T00:00:00.000Z', { clientId: 'cli-a', status: 'linked' }),
+        mudanca('2026-10-01T00:00:00.000Z', null),
+      ],
+      agora,
+    );
+    assert.deepEqual(
       segmentos.map((s) => [s.validoDe.toISOString(), s.atributos.clientId]),
       [
-        [INICIO_DOS_TEMPOS.toISOString(), 'cli-b'],
+        [INICIO_DOS_TEMPOS.toISOString(), 'cli-a'],
+        ['2026-08-01T00:00:00.000Z', null],
         ['2026-10-01T00:00:00.000Z', 'cli-c'],
+      ],
+    );
+  });
+
+  it('o período inicial sem cliente por escolha é absorvido, mas o desconhecido não', () => {
+    const segmentos = reconstruirPosse(
+      fonte({ clientId: 'cli-c' }),
+      [
+        mudanca('2026-08-01T00:00:00.000Z', { clientId: null, status: 'discovered' }),
+        mudanca('2026-10-01T00:00:00.000Z', null),
+      ],
+      agora,
+    );
+    assert.deepEqual(
+      segmentos.map((s) => [s.validoDe.toISOString(), s.atributos.clientId, s.atributos.status]),
+      [
+        [INICIO_DOS_TEMPOS.toISOString(), null, STATUS_DE_DONO_DESCONHECIDO],
+        ['2026-10-01T00:00:00.000Z', 'cli-c', 'linked'],
       ],
     );
   });
