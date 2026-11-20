@@ -31,6 +31,7 @@ const schema = z.object({
   META_APP_SECRET: opcional(z.string().min(10)),
   META_LOGIN_CONFIG_ID: opcional(z.string().min(5)),
   WHATSAPP_LOGIN_CONFIG_ID: opcional(z.string().min(5)),
+  LEADADS_LOGIN_CONFIG_ID: opcional(z.string().min(5)),
   WHATSAPP_WEBHOOK_VERIFY_TOKEN: opcional(z.string().min(20)),
   RDSTATION_CLIENT_ID: opcional(z.string().min(5)),
   RDSTATION_CLIENT_SECRET: opcional(z.string().min(10)),
