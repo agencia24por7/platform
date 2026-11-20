@@ -106,6 +106,18 @@ variable "backup_logico_retencao_dias" {
   default     = 30
 }
 
+variable "contexto_versoes_antigas_dias" {
+  description = "Por quantos dias as versões não atuais dos arquivos do contexto do cliente ficam no bucket (ADR 0027)."
+  type        = number
+  default     = 90
+}
+
+variable "contexto_versoes_mantidas" {
+  description = "Teto de versões não atuais por arquivo do contexto do cliente; as mais antigas além disso são apagadas."
+  type        = number
+  default     = 5
+}
+
 variable "backup_retention_days" {
   description = "Por quantos dias os snapshots diários do disco de dados são mantidos."
   type        = number

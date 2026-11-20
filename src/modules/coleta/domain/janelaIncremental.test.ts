@@ -1,6 +1,18 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { HISTORICO_VAZIO, JANELA_MAXIMA_DIAS, diasEntre, marcaDagua, planejarColetaIncremental, type HistoricoDeColeta } from './janelaIncremental.ts';
+import {
+  HISTORICO_VAZIO,
+  JANELA_MAXIMA_DIAS,
+  calcularPausa,
+  diasEntre,
+  esperaAposFalhasHoras,
+  marcaDagua,
+  ordemDeColeta,
+  planejarColetaIncremental,
+  podeRodar,
+  proximaMeiaNoiteEm,
+  type HistoricoDeColeta,
+} from './janelaIncremental.ts';
 
 const AGORA = new Date('2026-11-20T15:00:00Z');
 const ONTEM_NA_ROTINA = new Date('2026-11-19T15:00:00Z');
@@ -84,10 +96,62 @@ describe('planejarColetaIncremental', () => {
     assert.equal(plano.janela.end, '2026-11-19');
   });
 
-  it('cota diária esgotada pausa a fonte até virar o dia no Pacífico', () => {
-    const pausada = planejarColetaIncremental('google', historico({ ultimoLimiteDiarioEm: new Date('2026-11-20T10:00:00Z') }), AGORA);
-    assert.equal(pausada.pausadaPorCota, true);
-    const liberada = planejarColetaIncremental('google', historico({ ultimoLimiteDiarioEm: new Date('2026-11-20T07:00:00Z') }), AGORA);
-    assert.equal(liberada.pausadaPorCota, false);
+  it('pausa estruturada: por fonte e por plataforma, só enquanto pausa_ate está no futuro', () => {
+    assert.equal(planejarColetaIncremental('google', historico({ pausaAte: new Date('2026-11-21T08:00:00Z') }), AGORA).pausadaPorCota, true);
+    assert.equal(planejarColetaIncremental('google', historico({ pausaDaPlataformaAte: new Date('2026-11-21T08:00:00Z') }), AGORA).pausadaPorCota, true);
+    assert.equal(planejarColetaIncremental('google', historico({ pausaAte: new Date('2026-11-20T08:00:00Z') }), AGORA).pausadaPorCota, false);
+  });
+
+  it('fonte com coleta running há menos de 3 h fica ocupada; mais velha não', () => {
+    const recente = planejarColetaIncremental('meta', historico({ emExecucaoDesde: new Date('2026-11-20T13:00:00Z') }), AGORA);
+    assert.equal(recente.ocupada, true);
+    assert.equal(podeRodar(recente), false);
+    assert.equal(planejarColetaIncremental('meta', historico({ emExecucaoDesde: new Date('2026-11-20T11:00:00Z') }), AGORA).ocupada, false);
+  });
+
+  it('falhas seguidas espaçam a fonte: 1 falha não espera, 2 esperam 6 h, depois dobra até 24 h', () => {
+    assert.equal(esperaAposFalhasHoras(1), 0);
+    assert.equal(esperaAposFalhasHoras(2), 6);
+    assert.equal(esperaAposFalhasHoras(3), 12);
+    assert.equal(esperaAposFalhasHoras(9), 24);
+    const tentou = new Date('2026-11-20T13:00:00Z');
+    assert.equal(planejarColetaIncremental('meta', historico({ falhasConsecutivas: 3, ultimaTentativaEm: tentou }), AGORA).emEspera, true);
+    assert.equal(planejarColetaIncremental('meta', historico({ falhasConsecutivas: 1, ultimaTentativaEm: tentou }), AGORA).emEspera, false);
+  });
+
+  it('marca vinda de parcial aceita é sinalizada', () => {
+    assert.equal(planejarColetaIncremental('google', historico({ ultimaJanelaSucesso: '2026-11-10', ultimaJanelaParcialRepetida: '2026-11-18' }), AGORA).marcaPorParcial, true);
+    assert.equal(planejarColetaIncremental('google', historico({ ultimaJanelaSucesso: '2026-11-18', ultimaJanelaParcialRepetida: '2026-11-10' }), AGORA).marcaPorParcial, false);
+  });
+});
+
+describe('calcularPausa', () => {
+  it('cota diária vai até a meia-noite do Pacífico e, no Google Ads, vale para a plataforma inteira', () => {
+    const pausa = calcularPausa('google', { motivo: 'cota_diaria', minutos: null }, AGORA)!;
+    assert.equal(pausa.ate.toISOString(), '2026-11-21T08:00:00.000Z');
+    assert.equal(pausa.escopo, 'plataforma');
+    assert.equal(calcularPausa('ga4', { motivo: 'cota_diaria', minutos: null }, AGORA)!.escopo, 'fonte');
+  });
+
+  it('no horário de verão do Pacífico a meia-noite é 07:00 UTC', () => {
+    assert.equal(proximaMeiaNoiteEm(new Date('2026-07-10T15:00:00Z'), 'America/Los_Angeles').toISOString(), '2026-07-11T07:00:00.000Z');
+  });
+
+  it('limite temporário usa os minutos pedidos, com teto, e zero minutos não pausa', () => {
+    assert.equal(calcularPausa('meta', { motivo: 'limite_temporario', minutos: 30 }, AGORA)!.ate.toISOString(), '2026-11-20T15:30:00.000Z');
+    assert.equal(calcularPausa('meta', { motivo: 'limite_temporario', minutos: null }, AGORA), null);
+    assert.equal(calcularPausa('meta', null, AGORA), null);
+  });
+});
+
+describe('ordemDeColeta', () => {
+  it('mais atrasada primeiro; empate vai para quem tentou há mais tempo', () => {
+    const plano = (diasAtrasada: number) => ({ ...planejarColetaIncremental('google', HISTORICO_VAZIO, AGORA), diasAtrasada });
+    const itens = [
+      { nome: 'a', plano: plano(1), ultimaTentativaEm: new Date('2026-11-20T10:00:00Z') },
+      { nome: 'b', plano: plano(5), ultimaTentativaEm: null },
+      { nome: 'c', plano: plano(1), ultimaTentativaEm: new Date('2026-11-19T10:00:00Z') },
+    ];
+    assert.deepEqual([...itens].sort(ordemDeColeta).map((item) => item.nome), ['b', 'c', 'a']);
   });
 });

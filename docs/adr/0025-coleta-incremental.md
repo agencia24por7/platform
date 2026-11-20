@@ -14,8 +14,11 @@ rodadas do dia repetiam a mesma janela e as mesmas consultas de entidades.
 
 A auditoria da documentação oficial (20/11/2026) achou também:
 
-- A Graph/Marketing API serve `v26.0` para quem pede `v23.0`, `v24.0` ou
-  `v25.0` (conferido com chamada real); `v27.0` já existe.
+- A Graph/Marketing API serve `v27.0` quando pedida (conferido com chamada
+  real em 20/11/2026, com o mesmo comportamento para `level=ad`,
+  `time_increment=1` e atribuição unificada). A `v26.0` foi a versão
+  anterior e também é aceita; versões antigas (`v23.0` a `v25.0`) são
+  servidas como a mais nova suportada.
 - Nenhum coletor lia os cabeçalhos de uso nem tratava 429 como "tente mais
   tarde": todo limite virava falha fatal `api_recusou`.
 - GTM tem limite de 0,25 QPS por projeto (25 por 100 s, 10 mil por dia).
@@ -102,10 +105,11 @@ idempotente.
   `RESOURCE_EXHAUSTED`, `rateLimitExceeded`, `quotaExceeded` e similares. API
   desligada no projeto (`SERVICE_DISABLED`, `accessNotConfigured`) continua
   `api_recusou`. Quando o sinal é de **cota diária** (`dailyLimitExceeded`,
-  `quotaExceeded`, "per day", "Number of operations" do Ads Basic), o detalhe
-  começa com `cota_diaria:`, e o `fontes` pausa a fonte até virar o dia em
-  `America/Los_Angeles`, quando as cotas do Google renovam. Assim nada é
-  retentado no mesmo dia: chamadas recusadas também consomem operações.
+  `quotaExceeded`, "per day", "Number of operations" do Ads Basic), a falha leva
+  `pausa: cota_diaria`. O fechamento grava a pausa em colunas (veja a revisão
+  abaixo) até a meia-noite de `America/Los_Angeles`, quando as cotas do Google
+  renovam. Assim nada é retentado no mesmo dia: chamadas recusadas também
+  consomem operações.
 - **GA4**: `returnPropertyQuota: true`. A paginação para quando
   `tokensPerProjectPerHour` passa de 80%, e o recorte fica `coleta_incompleta`
   (não avança). O uso vai como aviso.
@@ -134,15 +138,15 @@ no JSON do resumo, sem coluna nova.
 
 ### Correções da auditoria
 
-- **Versão da Meta fixada em `v26.0`**: `metaGraphVersion.ts` no TypeScript
-  (OAuth, descoberta) e uma constante `VERSAO_DA_API_META` no primeiro nó Code
-  de cada coletor e do executor do parceiro. As URLs dos nós HTTP dos
-  formulários leem `versaoApi` desse nó. **Plano para `v27.0`**: trocar as duas
-  constantes, rodar uma coleta manual de cada coletor Meta, conferir que o
-  aviso `versao_da_api` some e que `qc_execucoes` não mostra campo removido.
-  Fazer isso antes de a Meta descontinuar a `v26.0`. Os fluxos de cliente
-  `clientes/credaz/*` ainda pedem `v23.0` (servida como `v26.0`) e ficam para o
-  dono desses fluxos.
+- **Versão da Meta fixada em `v27.0`** (a `v26.0` foi a anterior):
+  `metaGraphVersion.ts` no TypeScript (OAuth, descoberta) e uma constante
+  `VERSAO_DA_API_META` no primeiro nó Code de cada coletor e do executor do
+  parceiro. As URLs dos nós HTTP dos formulários leem `versaoApi` desse nó. O
+  coletor continua gravando o cabeçalho `facebook-api-version` servido e avisa
+  `versao_da_api` quando difere do pedido. Depois do deploy, rodar uma coleta
+  manual de cada coletor Meta e conferir que o aviso não aparece e que
+  `qc_execucoes` não mostra campo removido. Os fluxos de cliente
+  `clientes/credaz/*` ainda pedem `v23.0` e ficam para o dono desses fluxos.
 - **Alcance**: nos recortes com início há mais de 13 meses o coletor não pede
   `reach`. `alcance` sai nulo quando a API não devolve o campo, inclusive no
   nível de anúncio. As colunas `alcance` de `20_meta_ads.sql` já aceitam NULL, e
@@ -220,6 +224,172 @@ rodada).
   existir: ou a coleta é completa, ou fica marcada.
 - Três parciais seguidas na mesma janela avançam a marca. O dia faltante fica
   em `qc_execucoes` e se recupera com backfill pontual (`janelas` explícitas).
-- Rollout: migração 0050, deploy do app, depois sincronizar no n8n o
-  orquestrador, o backfill e os coletores. O app aceita `amostra` e
-  `incremental` durante a troca.
+- Rollout: veja a ordem na revisão abaixo.
+
+## Revisão de 2026-11-20 (migração 0051)
+
+Uma revisão independente do resultado combinado (#107 a #110) achou os pontos
+abaixo. Todos foram corrigidos no mesmo PR.
+
+1. **Métrica opcional nula não apaga a real.** `tabelas/youtube.ts`
+   convertia receita nula em 0, e o `MERGE` sobrescrevia a receita já gravada.
+   Agora o mapper mantém o nulo, e a configuração do fato ganhou
+   `preservarSeNulo`. Nessas colunas o `MERGE` faz
+   `SET col = COALESCE(origem.col, alvo.col)`. O critério vale para
+   `receita_estimada` (YouTube) e para `alcance`/`frequencia` (Meta, que a API
+   omite nos recortes com mais de 13 meses).
+2. **Marca d'água só com coleta confiável.** `historico_de_coleta` passa a
+   contar só os modos `incremental` e `completa`. Uma coleta `amostra` antiga
+   (teto de 500 linhas) nunca avança a marca. A função também só olha os
+   últimos **400 dias** (índice `coletas_fonte_janela_idx`). Uma fonte parada
+   há mais tempo volta como nova: 7 dias, e o backfill cobre o resto.
+3. **Coleta presa e concorrência.**
+   - `automation.expirar_coletas_running(interval)` fecha como `failed`, com
+     `error_code = abandonada`, toda coleta `running` com mais de **8 h**. Ela
+     roda no início de `/coleta/fontes`. O limite é maior que o timeout do
+     orquestrador (5 h), então só pega execução que morreu.
+   - `fontes` pula a fonte com coleta `running` iniciada há menos de **3 h**.
+     Essa é a duração máxima razoável de uma fonte: o relatório assíncrono da
+     Meta leva até 30 × 20 s mais os downloads.
+   - O índice único parcial `coletas_uma_running_por_fonte` (`WHERE status =
+     'running'`) impede duas coletas abertas da mesma fonte. O `abrir`
+     devolve **409** com `errors.motivo = fonte_ocupada`, e o orquestrador e o
+     backfill pulam a fonte sem erro. A lógica `#2`/`#3` do #109 continua:
+     coleta fechada reabre com nova chave e coleta running devolve a mesma.
+   - No n8n:
+     - `executionTimeout`: orquestrador 5 h, janela do backfill 1 h,
+       backfill 24 h, com `EXECUTIONS_TIMEOUT_MAX=86400` no compose.
+     - `retryOnFail` (3 tentativas, 5 s) em `Gravar métricas`,
+       `Fechar execução` e `Fechar execução (sem coletor)`. Com
+       `neverError`, a retentativa só dispara em falha de rede, por exemplo
+       durante o deploy do app. `gravar` é idempotente por
+       `execucao_id`/`inserido_em`, e `fechar` repetido devolve 409, que o
+       fluxo ignora.
+     - Os nós Code `Calcular qualidade`, `Dividir em lotes` e
+       `Conferir gravação` têm saída de erro para `Falha interna`, que fecha
+       a coleta como `failed` (`falha_orquestrador`).
+4. **Ordem e corte.** `fontes_de_coleta` passa a ordenar por `fonte_id`, com
+   teto de 2000 em vez de 200. O filtro de plataforma vem antes do `LIMIT`. O
+   serviço ordena pela mais atrasada e, no empate, por quem tentou há mais
+   tempo. Uma fonte com falhas incrementais seguidas espera: 1 falha não
+   espera, 2 falhas esperam 6 h, e a espera dobra até 24 h. Uma fonte que
+   sempre falha deixa de ocupar o topo 4 vezes por dia.
+5. **Parcial aceita.** Quando a marca vem de 3 parciais repetidas, o `fontes`
+   devolve `marcaPorParcial = true`, e a coleta seguinte grava o aviso
+   `parcial_aceita` em `qc_execucoes`. Custo: uma consulta opcional que
+   sempre falha faz a mesma janela rodar 3 vezes (até 3 × as chamadas daquela
+   janela) antes de a marca avançar.
+6. **Dia de São Paulo.** `janelaAteOntem` (modos `completa`/`amostra`) e o
+   `Gerar janelas` do backfill usam a data de `America/Sao_Paulo`. Antes, entre
+   21 h e 24 h BRT, a janela incluía o dia corrente, ainda incompleto.
+7. **Execuções não persistidas** também em `plataforma/retencao-diaria` e
+   `plataforma/dimensoes-diarias` (`saveData*: none`), com teste.
+   `agencia/alertas-de-falha` continua como estava.
+8. **Testes**:
+   - unitários: planejador (ocupada, espera, pausa, ordem), serviço (fontes
+     incrementais, 409 `fonte_ocupada`, pausa no fechamento), mapper do
+     YouTube, SQL do `MERGE` com `COALESCE`, coletores e estrutura dos fluxos;
+   - integração (`tests/coleta.test.mjs`): segunda `running` recusada,
+     expiração, `historico_de_coleta` (modo e parciais), pausa por
+     plataforma;
+   - todo nó Code de todo workflow compila (`new Function`).
+9. **Pausa estruturada.** Colunas `pausa_ate`, `pausa_motivo`
+   (`cota_diaria` | `limite_temporario`) e `pausa_escopo` (`fonte` |
+   `plataforma`) em `automation.coletas`. O coletor marca a falha com
+   `pausa`, o orquestrador repassa no `fechar`, e o servidor calcula:
+   - cota diária: até a meia-noite do Pacífico;
+   - limite temporário: os minutos de `estimated_time_to_regain_access`, com
+     teto de 6 h.
+   Google Ads e YouTube têm cota por developer token/projeto, compartilhada
+   entre as fontes. Por isso a pausa por cota diária deles vale para **toda a
+   plataforma**. O casamento com o texto de `error_message` deixou de existir.
+10. **`abrir` recusado não vira `sem_credencial`.** O orquestrador distingue:
+    - `fonte_ocupada`: pula;
+    - `abrir_recusado`: registra o erro do app, sem tentar fechar uma coleta
+      que não existe;
+    - `sem_credencial`: coleta aberta sem coletor, fechada como `failed`.
+11. **GA4 sem query string.** `pagePath` e `landingPage` podem carregar dado
+    pessoal (e-mail, token) na query. O coletor corta em `?`/`#` e soma as
+    linhas que só diferiam por isso, como o Search Console já fazia.
+    Contagens de usuários somadas assim são um teto (o mesmo usuário pode
+    aparecer em duas variantes da URL). Sessões, visualizações e eventos são
+    aditivos.
+
+### Ordem de rollout
+
+1. Aplicar `scripts/bq/03_governanca.sql` no BigQuery **antes** do deploy.
+2. Desativar o orquestrador no n8n e fazer o deploy fora de 00/06/12/18 h BRT.
+   As migrações 0044, 0045, 0050 e 0051 rodam pelo `migrar.sh` antes de o app
+   subir. A 0051 fecha `running` velhas ou duplicadas antes de criar o índice
+   único. O app novo aceita o orquestrador antigo (`modo=amostra`).
+3. `npm run n8n:sincronizar -- --conexoes <arquivo.json>`, que sincroniza os coletores
+   clonados por conexão, o orquestrador, o backfill e os fluxos de
+   `plataforma/`. Só depois reativar o orquestrador, já com `modo=incremental`.
+4. Atualizar as permissões do Login for Business no painel da Meta, depois de
+   testar uma Página.
+
+## Adendo de 20/11/2026: cobertura das plataformas
+
+Conferido de forma empírica, só leitura, na mesma data.
+
+- **Search Console, outros tipos de busca**: só `type=web` tem volume. A API
+  devolve uma linha por data com zero impressões para `video`, `news`,
+  `discover` e `googleNews`, então contar linhas engana. A tabela
+  `fato_search_console_tipo_diario` (`image`, `video`, `news`, `discover`,
+  `googleNews`; chave `organization_id`, `site`, `tipo`, `data_dia`) recebe uma
+  consulta por tipo (`dimensions: ['date']`, `type`) e o coletor descarta as
+  linhas com zero impressões antes de emitir: ausência de linha significa zero.
+  Cada tipo devolve no máximo uma linha por dia da janela, bem abaixo de 25 mil;
+  uma resposta que bata em `rowLimit` vira `coleta_incompleta`. A janela é a
+  mesma das demais consultas do Search Console (atraso de 3 dias, reprocesso
+  da janela incremental). `searchAppearance` só aceita ser consultado sozinho,
+  sem `date`; por isso `aparencia` continua sendo pedida um dia por vez.
+- **Cabeçalhos de uso da Meta**: o coletor lê `x-business-use-case-usage` e
+  `x-fb-ads-insights-throttle`. `x-fb-ads-insights-reach-throttle` não vem
+  (nem pedindo `reach`) e nenhum coletor depende dele. Quando o uso traz
+  `ads_api_access_tier: development_access`, o coletor registra o aviso de
+  qualidade `nivel_de_acesso`. Esse nível tem limites de uso baixos; o
+  Standard Access exige App Review da Meta, com verificação de empresa
+  (business verification). Informativo: não falha a coleta.
+- **403 `PERMISSION_DENIED` em um recurso**: nova causa `sem_acesso`, fatal só
+  para aquela fonte (as demais seguem). Vale para GBP (local), Google Ads
+  (conta), GA4 (propriedade), Search Console (site), YouTube (canal) e GTM
+  (contêiner). Exemplo, o segundo local do GBP, que devolve 403 em tudo:
+  `Sem permissão no local <id> — a conta autorizada não gerencia este local`.
+  Continuam `reauth_pending`: 401, `invalid_grant` e 403 por escopo insuficiente
+  (`ACCESS_TOKEN_SCOPE_INSUFFICIENT`), que são problema do token. Developer
+  token recusado e API desligada no projeto continuam `api_recusou`. A causa
+  entra em `CausaFaltante`, em `faltanteBody` e em `qc_execucoes`; o
+  orquestrador a trata como fatal por fonte, sem marcar falha de autenticação.
+- **RD Station**: o CRM v1 não devolve cabeçalhos de limite (a documentação diz
+  120 requisições por minuto; o espaçamento de 600 ms, cerca de 100 por
+  minuto, fica). Um 429, ou `RATE_LIMIT_EXCEEDED`, espera 60 s e repete a
+  coleta inteira uma vez (nós `Verificar limite`, `Repetir?` e `Esperar
+  limite`); se persistir, fecha como `failed` com `limite_de_uso` e pausa
+  temporária de 5 min. Como a v1 não manda `Retry-After`, a espera é fixa.
+  Truncamento por `has_more` continua virando `coleta_incompleta`.
+- **Google Ads e GA4**: `search_term_view` só traz termos que passam o limite de
+  privacidade do Google, e campanhas Performance Max ficam fora dessa visão; a
+  soma dos termos pode ser menor que o investimento da campanha. O GA4 também
+  agrega linhas sob limiar de privacidade (`subjectToThresholding`, aviso
+  `limiar_de_privacidade`). Não é falha de coleta e não há como "completar".
+- **Alertas de falha da plataforma**: os fluxos da plataforma (`n8n/workflows`
+  e `plataforma/`) apontavam `errorWorkflow` para o fluxo de alertas da
+  agência. Agora apontam para `plataforma/alertas-de-falha.json`, que recebe o
+  gatilho de erro e faz `POST /api/v0/manutencao/alerta` (token de worker). O
+  app limpa a mensagem (token, e-mail, CPF, telefone), corta em 500
+  caracteres, grava em `automation.alertas` (migração 0090, tabela de
+  plataforma com RLS forçado e política só para o papel do app), deduplica por
+  workflow + mensagem na janela de 1 h (a repetição só incrementa
+  `ocorrencias`), limita a 60 alertas novos por hora e registra a auditoria
+  `plataforma.alerta`. A variável opcional `ALERT_WEBHOOK_URL` (HTTPS) recebe
+  `{ "text": ... }` a cada alerta novo; sem ela, nada sai do app e nenhuma
+  credencial nova existe no n8n. A tela Coletas mostra, para quem administra,
+  quantos alertas abertos existem (últimos 7 dias) e um botão para resolvê-los.
+  Nos modelos, `settings.errorWorkflow` é `origem:<arquivo>`; a sincronização
+  troca pelo id do workflow implantado cuja nota de origem aponta para esse
+  arquivo (nunca pelo nome) e processa o fluxo de alertas primeiro. Se ele ainda
+  não estiver implantado, o `errorWorkflow` sai e a sincronização avisa. O fluxo
+  de alertas não tem `errorWorkflow`, para não gerar laço. Coletores e
+  executores não definem fluxo de erro: a falha deles sobe para o fluxo que os
+  chamou.

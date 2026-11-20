@@ -72,6 +72,11 @@ describe('SQL de fato', () => {
     assert.doesNotMatch(sql, /SET organization_id/);
   });
 
+  it('MERGE preserva o valor do alvo quando a métrica opcional chega nula', () => {
+    const sql = normalizar(sqlMergeFato('`f`', '`s`', { chave: ['k'], colunas: ['k', 'v', 'receita'], preservarSeNulo: ['receita'] }));
+    assert.match(sql, /UPDATE SET v = origem\.v, receita = COALESCE\(origem\.receita, alvo\.receita\) WHEN NOT MATCHED/);
+  });
+
   it('MERGE sem coluna fora da chave não gera UPDATE vazio', () => {
     const sql = normalizar(sqlMergeFato('`f`', '`s`', { chave: ['k'], colunas: ['k'] }));
     assert.doesNotMatch(sql, /WHEN MATCHED/);

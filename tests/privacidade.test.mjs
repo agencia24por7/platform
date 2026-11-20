@@ -25,6 +25,21 @@ const comoApp = (sql) =>
     { encoding: 'utf8' },
   ).trim();
 
+function senhaDoWorker() {
+  return readFileSync('.env', 'utf8')
+    .split('\n')
+    .find((linha) => linha.startsWith('WORKER_DB_PASSWORD='))
+    .slice('WORKER_DB_PASSWORD='.length);
+}
+
+const comoWorker = (sql) =>
+  execFileSync(
+    'docker',
+    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoWorker()}`, 'orla-postgres',
+     'psql', '-U', 'orla_worker', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
+    { encoding: 'utf8' },
+  ).trim();
+
 const naSessao = (organizationId, clientIds, sql) =>
   comoApp(`SET app.organization_id = '${organizationId}'; SET app.client_ids = '${clientIds}'; ${sql}`);
 
@@ -110,7 +125,7 @@ describe('privacidade: revogação, expurgo do YouTube e pedidos da Meta (ADR 00
     assert.match(erro ?? '', /não é da organização do contexto/);
 
     const id = umaLinha(dono(`SELECT id FROM privacidade.expurgos_de_fonte WHERE external_id = 'UCso${marca}'`));
-    assert.ok(comoApp(`SELECT external_id FROM privacidade.expurgos_de_fonte_vencidos(500)`).includes(`UCso${marca}`));
+    assert.ok(comoWorker(`SELECT external_id FROM privacidade.expurgos_de_fonte_vencidos(500)`).includes(`UCso${marca}`));
     comoApp(`SELECT privacidade.registrar_resultado_do_expurgo('${id}', 'quota')`);
     assert.equal(umaLinha(dono(`SELECT tentativas || '|' || ultimo_erro || '|' || (concluido_em IS NULL) FROM privacidade.expurgos_de_fonte WHERE id = '${id}'`)), '1|quota|true');
     comoApp(`SELECT privacidade.registrar_resultado_do_expurgo('${id}', NULL)`);
@@ -125,19 +140,22 @@ describe('privacidade: revogação, expurgo do YouTube e pedidos da Meta (ADR 00
     const velho = canal(org, parada, `UCvelho${marca}`);
     dono(`UPDATE integrations.connection_accounts SET discovered_at = now() - interval '31 days' WHERE id = '${velho}'`);
 
-    const resumo = JSON.parse(comoApp('SELECT privacidade.preparar_conformidade_youtube()'));
+    assert.match(falhaDe(() => comoApp('SELECT privacidade.preparar_conformidade_youtube()')) ?? '', /permission denied/,
+      'a web não roda o job que atravessa inquilinos (ADR 0028)');
+    assert.match(falhaDe(() => comoApp('SELECT * FROM privacidade.expurgos_de_fonte_vencidos(1)')) ?? '', /permission denied/);
+    const resumo = JSON.parse(comoWorker('SELECT privacidade.preparar_conformidade_youtube()'));
     assert.ok(resumo.nomesTrocadosPeloId >= 1);
     assert.equal(umaLinha(dono(`SELECT name FROM integrations.connection_accounts WHERE id = '${velho}'`)), `UCvelho${marca}`);
     assert.equal(umaLinha(dono(
       `SELECT motivo || '|' || (apos > now() + interval '6 days') FROM privacidade.expurgos_de_fonte
        WHERE external_id = 'UCvelho${marca}' AND concluido_em IS NULL AND cancelado_em IS NULL`)), 'sem_autorizacao_ativa|true');
-    assert.ok(!comoApp('SELECT external_id FROM privacidade.expurgos_de_fonte_vencidos(500)').includes(`UCvelho${marca}`));
+    assert.ok(!comoWorker('SELECT external_id FROM privacidade.expurgos_de_fonte_vencidos(500)').includes(`UCvelho${marca}`));
 
-    comoApp('SELECT privacidade.preparar_conformidade_youtube()');
+    comoWorker('SELECT privacidade.preparar_conformidade_youtube()');
     assert.equal(umaLinha(dono(`SELECT count(*) FROM privacidade.expurgos_de_fonte WHERE external_id = 'UCvelho${marca}'`)), '1');
 
     dono(`UPDATE integrations.connections SET status = 'active' WHERE id = '${parada}'`);
-    comoApp('SELECT privacidade.preparar_conformidade_youtube()');
+    comoWorker('SELECT privacidade.preparar_conformidade_youtube()');
     assert.equal(umaLinha(dono(
       `SELECT cancelado_em IS NOT NULL FROM privacidade.expurgos_de_fonte WHERE external_id = 'UCvelho${marca}'`)), 't');
   });

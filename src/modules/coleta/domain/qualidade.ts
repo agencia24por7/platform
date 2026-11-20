@@ -7,6 +7,7 @@ export const CausaFaltante = {
   ForaDoV1: 'fora_do_v1',
   FalhaColetor: 'falha_coletor',
   LimiteDeUso: 'limite_de_uso',
+  SemAcesso: 'sem_acesso',
 } as const;
 export type CausaFaltante = (typeof CausaFaltante)[keyof typeof CausaFaltante];
 
@@ -25,7 +26,7 @@ export type AchadoDeParidade = {
 
 export type AvisoDeQualidade = {
   readonly fonte: string;
-  readonly tipo: 'versao_da_api' | 'uso_de_cota' | 'limiar_de_privacidade' | 'linhas_agrupadas' | 'alcance_omitido' | 'receita_indisponivel';
+  readonly tipo: 'versao_da_api' | 'uso_de_cota' | 'limiar_de_privacidade' | 'linhas_agrupadas' | 'alcance_omitido' | 'receita_indisponivel' | 'parcial_aceita' | 'nivel_de_acesso';
   readonly detalhe: string | null;
 };
 

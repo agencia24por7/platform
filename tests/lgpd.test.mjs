@@ -24,6 +24,21 @@ const comoApp = (sql) =>
     { encoding: 'utf8' },
   ).trim();
 
+function senhaDoWorker() {
+  return readFileSync('.env', 'utf8')
+    .split('\n')
+    .find((linha) => linha.startsWith('WORKER_DB_PASSWORD='))
+    .slice('WORKER_DB_PASSWORD='.length);
+}
+
+const comoWorker = (sql) =>
+  execFileSync(
+    'docker',
+    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoWorker()}`, 'orla-postgres',
+     'psql', '-U', 'orla_worker', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
+    { encoding: 'utf8' },
+  ).trim();
+
 const umaLinha = (saida) => saida.split('\n')[0].trim();
 const marca = Date.now();
 
@@ -67,7 +82,8 @@ describe('retenção e direitos do titular', { concurrency: false }, () => {
        VALUES ('zapi', 'velho-${marca}', '{"telefone":"5581999999999"}', now() - interval '100 days') RETURNING id`,
     ));
 
-    const resumo = JSON.parse(comoApp('SELECT core.aplicar_retencao()'));
+    assert.throws(() => comoApp('SELECT core.aplicar_retencao()'), /permission denied/);
+    const resumo = JSON.parse(comoWorker('SELECT core.aplicar_retencao()'));
     assert.ok(resumo.ipsApagados >= 1 && resumo.usuariosApagados >= 1 && resumo.whatsappApagados >= 1);
 
     assert.equal(umaLinha(dono(`SELECT coalesce(host(source_ip), '-') FROM audit.audit_log WHERE id = '${ipVelho}'`)), '-');

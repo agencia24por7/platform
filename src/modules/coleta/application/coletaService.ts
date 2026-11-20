@@ -2,16 +2,17 @@ import { failure, type Failure } from '@/shared/result/failure';
 import { err, ok, type Result } from '@/shared/result/result';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import type { AbrirColetaInput, Coleta, FecharColetaInput, FonteElegivel } from '@/modules/coleta/domain/coleta';
-import { chaveDaFonte, isJanelaSana } from '@/modules/coleta/domain/coleta';
+import { FONTE_OCUPADA, chaveDaFonte, isJanelaSana } from '@/modules/coleta/domain/coleta';
 import { recusaDaGravacao } from '@/modules/coleta/domain/gravacaoPermitida';
-import { HISTORICO_VAZIO, planejarColetaIncremental } from '@/modules/coleta/domain/janelaIncremental';
+import { HISTORICO_VAZIO, calcularPausa, ordemDeColeta, planejarColetaIncremental, podeRodar } from '@/modules/coleta/domain/janelaIncremental';
 import { resolverAbertura } from '@/modules/coleta/domain/tentativaDeColeta';
 import { ModoColeta, fonteDe, janelaAteOntem, janelaDias, plataformasColetaveis } from '@/modules/coleta/domain/mapaDeFontes';
 import type { ColetaRepository } from '@/modules/coleta/infrastructure/coletaRepository';
 import type { BigQueryGravador } from '@/modules/coleta/infrastructure/bigQueryGravador';
 
 const MAX_WINDOW_DAYS = 28;
-const TETO_DE_FONTES_DA_ROTINA = 200;
+const TETO_DE_FONTES_DA_ROTINA = 2000;
+export const HORAS_ATE_EXPIRAR_RUNNING = 8;
 
 export type WorkerIdentity = { readonly requestId: string; readonly callerFingerprint: string; readonly sourceIp: string | null };
 
@@ -30,18 +31,28 @@ export type ColetaService = {
 export function createColetaService(coletas: ColetaRepository, audit: AuditRecorder, bigQuery: BigQueryGravador): ColetaService {
   async function fontesPorJanelaFixa(limit: number, modo: ModoColeta): Promise<FonteElegivel[]> {
     const brutas = await coletas.fontes(limit, plataformasColetaveis());
-    return brutas.map((fonte) => ({ ...fonte, janelaSugerida: janelaAteOntem(fonte.platform, modo), marcaDagua: null, comDimensoes: true }));
+    return brutas.map((fonte) => ({ ...fonte, janelaSugerida: janelaAteOntem(fonte.platform, modo), marcaDagua: null, comDimensoes: true, marcaPorParcial: false }));
   }
 
   async function fontesIncrementais(limit: number): Promise<FonteElegivel[]> {
+    await coletas.expirarColetasRunning(HORAS_ATE_EXPIRAR_RUNNING);
     const [brutas, historicos] = await Promise.all([coletas.fontes(TETO_DE_FONTES_DA_ROTINA, plataformasColetaveis()), coletas.historicos()]);
     const agora = new Date();
     return brutas
-      .map((fonte) => ({ fonte, plano: planejarColetaIncremental(fonte.platform, historicos.get(chaveDaFonte(fonte.fonteTipo, fonte.fonteId)) ?? HISTORICO_VAZIO, agora) }))
-      .filter(({ plano }) => !plano.emDia && !plano.pausadaPorCota)
-      .sort((a, b) => b.plano.diasAtrasada - a.plano.diasAtrasada)
+      .map((fonte) => {
+        const historico = historicos.get(chaveDaFonte(fonte.fonteTipo, fonte.fonteId)) ?? HISTORICO_VAZIO;
+        return { fonte, plano: planejarColetaIncremental(fonte.platform, historico, agora), ultimaTentativaEm: historico.ultimaTentativaEm ?? null };
+      })
+      .filter(({ plano }) => podeRodar(plano))
+      .sort(ordemDeColeta)
       .slice(0, limit)
-      .map(({ fonte, plano }) => ({ ...fonte, janelaSugerida: plano.janela, marcaDagua: plano.marcaDagua, comDimensoes: plano.comDimensoes }));
+      .map(({ fonte, plano }) => ({
+        ...fonte,
+        janelaSugerida: plano.janela,
+        marcaDagua: plano.marcaDagua,
+        comDimensoes: plano.comDimensoes,
+        marcaPorParcial: plano.marcaPorParcial,
+      }));
   }
 
   return {
@@ -91,6 +102,9 @@ export function createColetaService(coletas: ColetaRepository, audit: AuditRecor
       }
 
       const coleta = await coletas.abrir({ ...input, idempotencyKey: chave }, resolved.organizationId, resolved.clientId, resolved.platform);
+      if (coleta === FONTE_OCUPADA) {
+        return err(failure('conflict', 'Já existe uma coleta em execução para esta fonte.', { motivo: FONTE_OCUPADA }));
+      }
 
       await audit.record({
         organizationId: resolved.organizationId,
@@ -163,6 +177,9 @@ export function createColetaService(coletas: ColetaRepository, audit: AuditRecor
         const fonteConcluida = closed.fonteTipo === 'ad_account' ? closed.adAccountId : closed.connectionAccountId;
         if (fonteConcluida) await coletas.marcarColetaConcluida(closed.fonteTipo, fonteConcluida, closed.finishedAt ?? new Date());
       }
+
+      const pausa = closed.status === 'failed' && closed.errorCode === 'limite_de_uso' ? calcularPausa(closed.platform, input.pausa ?? null) : null;
+      if (pausa) await coletas.registrarPausa(closed.id, pausa.ate, pausa.motivo, pausa.escopo);
 
       if (input.errorCode === 'reauth_pending') {
         const fonteId = closed.fonteTipo === 'ad_account' ? closed.adAccountId : closed.connectionAccountId;

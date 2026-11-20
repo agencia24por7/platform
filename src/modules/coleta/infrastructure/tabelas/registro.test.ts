@@ -177,3 +177,27 @@ describe('views vw_* x exclusão lógica de cliente (ADR 0022)', () => {
     }
   });
 });
+
+describe('métricas opcionais preservadas quando a origem vem nula', () => {
+  const ctx = { organizationId: 'o', clientId: 'c', externalId: 'UC1', currency: 'BRL', execucaoId: 'e' };
+
+  it('YouTube: receita nula continua nula no mapper e é preservada no MERGE', () => {
+    const cfg = TABELAS_POR_PLATAFORMA.youtube!.padrao!;
+    assert.equal(cfg.tipo, 'fato');
+    if (cfg.tipo !== 'fato') return;
+    assert.equal(cfg.mapear({ metricDate: '2026-11-01', views: 1, estimatedRevenue: null }, ctx).receita_estimada, null);
+    assert.equal(cfg.mapear({ metricDate: '2026-11-01', views: 1 }, ctx).receita_estimada, null);
+    assert.equal(cfg.mapear({ metricDate: '2026-11-01', views: 1, estimatedRevenue: 2.5 }, ctx).receita_estimada, 2.5);
+    assert.deepEqual(cfg.preservarSeNulo, ['receita_estimada']);
+  });
+
+  it('Meta: alcance e frequência ficam em preservarSeNulo onde existem', () => {
+    const entrega = configuracoes.find((cfg) => cfg.tipo === 'fato' && cfg.fato === 'fato_meta_entrega_diaria');
+    assert.ok(entrega && entrega.tipo === 'fato');
+    assert.deepEqual([...(entrega.preservarSeNulo ?? [])].sort(), ['alcance', 'frequencia']);
+    for (const cfg of configuracoes) {
+      if (cfg.tipo !== 'fato') continue;
+      for (const coluna of cfg.preservarSeNulo ?? []) assert.ok(cfg.colunas.includes(coluna), `${cfg.fato}: ${coluna}`);
+    }
+  });
+});

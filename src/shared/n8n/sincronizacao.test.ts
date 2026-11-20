@@ -235,8 +235,8 @@ describe('workflows de privacidade da plataforma (ADR 0029)', () => {
       assert.equal(settings['saveDataSuccessExecution'], 'none', caminho);
       assert.equal(settings['saveDataErrorExecution'], 'none', caminho);
       assert.equal(settings['saveManualExecutions'], false, caminho);
-      assert.equal(settings['errorWorkflow'], undefined, caminho);
     }
+    for (const caminho of Object.values(MODELO_DE_REVOGACAO)) assert.equal(ler(caminho).settings['errorWorkflow'], undefined, caminho);
   });
 
   it('o job diário do YouTube chama a rota de manutenção com o token do worker', () => {

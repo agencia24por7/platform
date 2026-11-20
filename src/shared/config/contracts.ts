@@ -67,7 +67,7 @@ export const abrirColetaBody = z.object({
 
 export const faltanteBody = z.object({
   fonte: z.string().min(1).max(120),
-  causa: z.enum(['sem_credencial', 'reauth_pending', 'api_recusou', 'sem_dados_no_periodo', 'coleta_incompleta', 'fora_do_v1', 'falha_coletor', 'limite_de_uso']),
+  causa: z.enum(['sem_credencial', 'reauth_pending', 'api_recusou', 'sem_dados_no_periodo', 'coleta_incompleta', 'fora_do_v1', 'falha_coletor', 'limite_de_uso', 'sem_acesso']),
   detalhe: z.string().max(500).nullable().default(null),
 });
 
@@ -80,7 +80,7 @@ export const achadoDeParidadeBody = z.object({
 
 export const avisoDeQualidadeBody = z.object({
   fonte: z.string().min(1).max(120),
-  tipo: z.enum(['versao_da_api', 'uso_de_cota', 'limiar_de_privacidade', 'linhas_agrupadas', 'alcance_omitido', 'receita_indisponivel']),
+  tipo: z.enum(['versao_da_api', 'uso_de_cota', 'limiar_de_privacidade', 'linhas_agrupadas', 'alcance_omitido', 'receita_indisponivel', 'parcial_aceita', 'nivel_de_acesso']),
   detalhe: z.string().max(500).nullable().default(null),
 });
 
@@ -96,6 +96,13 @@ export const qualidadeResumoBody = z.object({
     requests: z.coerce.number().int().min(0),
     duracaoMs: z.coerce.number().int().min(0),
   }),
+});
+
+export const alertaDeFalhaBody = z.object({
+  workflowId: z.string().max(64).nullable().default(null),
+  workflowNome: z.string().min(1).max(500),
+  no: z.string().max(500).nullable().default(null),
+  mensagem: z.string().max(5000).default(''),
 });
 
 export const GRAVAR_COLETA_MAX_LINHAS = 10_000;
@@ -115,4 +122,23 @@ export const fecharColetaBody = z.object({
   qualidadeResumo: qualidadeResumoBody.nullable().default(null),
   errorCode: z.string().max(80).nullable().default(null),
   errorMessage: z.string().max(1000).nullable().default(null),
+  pausa: z.object({
+    motivo: z.enum(['cota_diaria', 'limite_temporario']),
+    minutos: z.coerce.number().int().min(0).max(1440).nullable().default(null),
+  }).nullable().default(null),
 });
+
+export const publicarBrainsPendentesBody = z
+  .object({ limite: z.number().int().min(1).max(200).default(20) })
+  .strict();
+
+export const reconstruirBrainBody = z
+  .object({
+    organizationId: uuid.optional(),
+    clientId: uuid.optional(),
+    todos: z.literal(true).optional(),
+  })
+  .strict()
+  .refine((corpo) => (corpo.todos ? !corpo.organizationId && !corpo.clientId : Boolean(corpo.organizationId)), {
+    message: 'informe organizationId (e opcionalmente clientId) ou todos: true',
+  });

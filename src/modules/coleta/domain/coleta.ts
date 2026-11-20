@@ -28,9 +28,12 @@ export type FonteElegivel = {
   readonly janelaSugerida: Janela;
   readonly marcaDagua: string | null;
   readonly comDimensoes: boolean;
+  readonly marcaPorParcial: boolean;
 };
 
-export type FonteBruta = Omit<FonteElegivel, 'janelaSugerida' | 'marcaDagua' | 'comDimensoes'>;
+export type FonteBruta = Omit<FonteElegivel, 'janelaSugerida' | 'marcaDagua' | 'comDimensoes' | 'marcaPorParcial'>;
+
+export const FONTE_OCUPADA = 'fonte_ocupada' as const;
 
 export const chaveDaFonte = (fonteTipo: FonteTipo, fonteId: string): string => `${fonteTipo}:${fonteId}`;
 
@@ -78,6 +81,7 @@ export type FecharColetaInput = {
   readonly qualidadeResumo: RelatorioDeExecucao | null;
   readonly errorCode: string | null;
   readonly errorMessage: string | null;
+  readonly pausa?: { readonly motivo: 'cota_diaria' | 'limite_temporario'; readonly minutos: number | null } | null;
 };
 
 export function isJanelaSana(window: Janela, maxDays: number): boolean {

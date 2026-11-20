@@ -30,7 +30,7 @@
       "onError": "continueRegularOutput",
       "parameters": {
         "method": "DELETE",
-        "url": "https://graph.facebook.com/v26.0/me/permissions",
+        "url": "https://graph.facebook.com/v27.0/me/permissions",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "facebookGraphApi",
         "options": {

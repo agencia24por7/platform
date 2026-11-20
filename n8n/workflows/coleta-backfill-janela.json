@@ -6,7 +6,9 @@
     "saveDataSuccessExecution": "none",
     "timezone": "America/Sao_Paulo",
     "callerPolicy": "workflowsFromSameOwner",
-    "saveManualExecutions": false
+    "saveManualExecutions": false,
+    "executionTimeout": 3600,
+    "errorWorkflow": "origem:n8n/workflows/plataforma/alertas-de-falha.json"
   },
   "nodes": [
     {
@@ -142,8 +144,9 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const fonte = $('Entrada').item.json.fonte;\nconst coleta = $('Abrir execução').item.json;\nconst resultado = $json ?? {};\nconst removerSegredos = (texto) => String(texto)\n  .replace(/(access_token|refresh_token|client_secret|developer_token|api_key|key|token)=[^&\\s\"']+/gi, '$1=[removido]')\n  .replace(/Bearer\\s+[A-Za-z0-9._~+\\/-]+=*/g, 'Bearer [removido]');\nconst mensagemDoErro = (erro) => removerSegredos(typeof erro === 'string' ? erro : erro?.message ?? JSON.stringify(erro)).slice(0, 500);\nconst respostaInvalida = Boolean(resultado.error)\n  || !Array.isArray(resultado.linhas)\n  || !resultado.volumetria\n  || typeof resultado.volumetria !== 'object';\nconst linhas = respostaInvalida ? [] : resultado.linhas;\nconst falhas = respostaInvalida\n  ? [{ causa: 'falha_coletor', detalhe: resultado.error ? mensagemDoErro(resultado.error) : 'o coletor devolveu uma resposta sem linhas ou volumetria' }]\n  : Array.isArray(resultado.falhas) ? resultado.falhas.filter((falha) => falha && falha.causa) : [];\nconst TIPOS_DE_AVISO = new Set(['versao_da_api', 'uso_de_cota', 'limiar_de_privacidade', 'linhas_agrupadas', 'alcance_omitido', 'receita_indisponivel']);\nconst avisos = respostaInvalida || !Array.isArray(resultado.avisos)\n  ? []\n  : resultado.avisos.filter((aviso) => aviso && TIPOS_DE_AVISO.has(aviso.tipo)).slice(0, 50).map((aviso) => ({\n    fonte: String(fonte.nome || fonte.externalId).slice(0, 120),\n    tipo: aviso.tipo,\n    detalhe: aviso.detalhe == null ? null : removerSegredos(aviso.detalhe).slice(0, 500),\n  }));\nconst NAO_FATAIS = new Set(['sem_dados_no_periodo', 'coleta_incompleta']);\nconst fatal = falhas.find((falha) => !NAO_FATAIS.has(falha.causa)) ?? null;\nconst incompletas = falhas.filter((falha) => falha.causa === 'coleta_incompleta');\nconst status = fatal ? 'failed' : incompletas.length > 0 ? 'partial' : 'success';\nconst detalhes = (lista) => removerSegredos(lista.map((falha) => falha.detalhe ?? falha.causa).join(' | ')).slice(0, 1000);\n\nconst qualidadeResumo = {\n  fontesEsperadas: 1,\n  fontesColetadas: fatal ? 0 : 1,\n  faltantes: falhas.slice(0, 500).map((falha) => ({\n    fonte: fonte.nome || fonte.externalId,\n    causa: String(falha.causa).slice(0, 80),\n    detalhe: falha.detalhe == null ? null : removerSegredos(falha.detalhe).slice(0, 500),\n  })),\n  paridade: [],\n  avisos,\n  volumetria: respostaInvalida ? { linhas: 0, bytes: 0, requests: 0, duracaoMs: 0 } : resultado.volumetria,\n};\n\nreturn {\n  json: {\n    coletaId: coleta.id,\n    status,\n    errorCode: fatal ? fatal.causa : incompletas.length > 0 ? 'coleta_incompleta' : null,\n    errorMessage: fatal ? removerSegredos(fatal.detalhe ?? fatal.causa).slice(0, 1000) : incompletas.length > 0 ? detalhes(incompletas) : null,\n    requestCount: respostaInvalida ? 0 : resultado.requests ?? 0,\n    linhas,\n    qualidadeResumo,\n  },\n};"
-      }
+        "jsCode": "const fonte = $('Entrada').item.json.fonte;\nconst coleta = $('Abrir execução').item.json;\nconst resultado = $json ?? {};\nconst removerSegredos = (texto) => String(texto)\n  .replace(/(access_token|refresh_token|client_secret|developer_token|api_key|key|token)=[^&\\s\"']+/gi, '$1=[removido]')\n  .replace(/Bearer\\s+[A-Za-z0-9._~+\\/-]+=*/g, 'Bearer [removido]');\nconst mensagemDoErro = (erro) => removerSegredos(typeof erro === 'string' ? erro : erro?.message ?? JSON.stringify(erro)).slice(0, 500);\nconst respostaInvalida = Boolean(resultado.error)\n  || !Array.isArray(resultado.linhas)\n  || !resultado.volumetria\n  || typeof resultado.volumetria !== 'object';\nconst linhas = respostaInvalida ? [] : resultado.linhas;\nconst falhas = respostaInvalida\n  ? [{ causa: 'falha_coletor', detalhe: resultado.error ? mensagemDoErro(resultado.error) : 'o coletor devolveu uma resposta sem linhas ou volumetria' }]\n  : Array.isArray(resultado.falhas) ? resultado.falhas.filter((falha) => falha && falha.causa) : [];\nconst TIPOS_DE_AVISO = new Set(['versao_da_api', 'uso_de_cota', 'limiar_de_privacidade', 'linhas_agrupadas', 'alcance_omitido', 'receita_indisponivel', 'nivel_de_acesso']);\nconst avisos = respostaInvalida || !Array.isArray(resultado.avisos)\n  ? []\n  : resultado.avisos.filter((aviso) => aviso && TIPOS_DE_AVISO.has(aviso.tipo)).slice(0, 50).map((aviso) => ({\n    fonte: String(fonte.nome || fonte.externalId).slice(0, 120),\n    tipo: aviso.tipo,\n    detalhe: aviso.detalhe == null ? null : removerSegredos(aviso.detalhe).slice(0, 500),\n  }));\nconst NAO_FATAIS = new Set(['sem_dados_no_periodo', 'coleta_incompleta']);\nconst fatal = falhas.find((falha) => !NAO_FATAIS.has(falha.causa)) ?? null;\nconst incompletas = falhas.filter((falha) => falha.causa === 'coleta_incompleta');\nconst status = fatal ? 'failed' : incompletas.length > 0 ? 'partial' : 'success';\nconst detalhes = (lista) => removerSegredos(lista.map((falha) => falha.detalhe ?? falha.causa).join(' | ')).slice(0, 1000);\n\nconst pausaPedida = fatal && fatal.causa === 'limite_de_uso' && ['cota_diaria', 'limite_temporario'].includes(fatal.pausa)\n  ? { motivo: fatal.pausa, minutos: Number.isFinite(Number(fatal.minutos)) && fatal.minutos !== null ? Math.round(Number(fatal.minutos)) : null }\n  : null;\nif (fonte.marcaPorParcial) {\n  avisos.push({ fonte: String(fonte.nome || fonte.externalId).slice(0, 120), tipo: 'parcial_aceita', detalhe: `a marca d'água ${fonte.marcaDagua} veio de uma janela parcial repetida 3 vezes` });\n}\n\nconst qualidadeResumo = {\n  fontesEsperadas: 1,\n  fontesColetadas: fatal ? 0 : 1,\n  faltantes: falhas.slice(0, 500).map((falha) => ({\n    fonte: fonte.nome || fonte.externalId,\n    causa: String(falha.causa).slice(0, 80),\n    detalhe: falha.detalhe == null ? null : removerSegredos(falha.detalhe).slice(0, 500),\n  })),\n  paridade: [],\n  avisos,\n  volumetria: respostaInvalida ? { linhas: 0, bytes: 0, requests: 0, duracaoMs: 0 } : resultado.volumetria,\n};\n\nreturn {\n  json: {\n    coletaId: coleta.id,\n    status,\n    errorCode: fatal ? fatal.causa : incompletas.length > 0 ? 'coleta_incompleta' : null,\n    errorMessage: fatal ? removerSegredos(fatal.detalhe ?? fatal.causa).slice(0, 1000) : incompletas.length > 0 ? detalhes(incompletas) : null,\n    requestCount: respostaInvalida ? 0 : resultado.requests ?? 0,\n    linhas,\n    qualidadeResumo,\n    pausa: pausaPedida,\n  },\n};"
+      },
+      "onError": "continueErrorOutput"
     },
     {
       "id": "dividir-lotes",
@@ -157,7 +160,8 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "jsCode": "const { coletaId, linhas } = $input.first().json;\nconst MAX_LINHAS = 10000;\nconst MAX_BYTES = 8000000;\nconst lotes = [];\nlet atual = [];\nlet bytes = 0;\nfor (const linha of linhas) {\n  const tamanho = JSON.stringify(linha).length;\n  if (atual.length > 0 && (atual.length >= MAX_LINHAS || bytes + tamanho > MAX_BYTES)) {\n    lotes.push(atual);\n    atual = [];\n    bytes = 0;\n  }\n  atual.push(linha);\n  bytes += tamanho;\n}\nif (atual.length > 0 || lotes.length === 0) lotes.push(atual);\nreturn lotes.map((lote, indice) => ({ json: { coletaId, lote: indice + 1, lotes: lotes.length, linhas: lote }, pairedItem: 0 }));"
-      }
+      },
+      "onError": "continueErrorOutput"
     },
     {
       "id": "gravar",
@@ -196,7 +200,10 @@
           "name": "a-definir-pelo-provisioner"
         }
       },
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     },
     {
       "id": "fechar-ok",
@@ -212,7 +219,7 @@
         "url": "=http://app:3000/api/v0/coleta/fechar",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ coletaId: $json.coletaId, status: $json.status, requestCount: $json.requestCount, rowsReceived: $json.rowsReceived, rowsWritten: $json.rowsWritten, qualidadeResumo: $json.qualidadeResumo, errorCode: $json.errorCode, errorMessage: $json.errorMessage }) }}",
+        "jsonBody": "={{ JSON.stringify({ coletaId: $json.coletaId, status: $json.status, requestCount: $json.requestCount, rowsReceived: $json.rowsReceived, rowsWritten: $json.rowsWritten, qualidadeResumo: $json.qualidadeResumo, errorCode: $json.errorCode, errorMessage: $json.errorMessage, pausa: $json.pausa ?? null }) }}",
         "options": {
           "response": {
             "response": {
@@ -229,7 +236,10 @@
           "name": "a-definir-pelo-provisioner"
         }
       },
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     },
     {
       "id": "calcular-sem-coletor",
@@ -242,7 +252,7 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const fonte = $('Entrada').item.json.fonte;\nconst coleta = $json;\nconst temColeta = Boolean(coleta?.id);\n\nconst qualidadeResumo = {\n  fontesEsperadas: 1,\n  fontesColetadas: 0,\n  faltantes: [{ fonte: fonte.nome || fonte.externalId, causa: 'sem_credencial', detalhe: 'Conexão sem coletor provisionado no n8n.' }],\n  paridade: [],\n  volumetria: { linhas: 0, bytes: 0, requests: 0, duracaoMs: 0 },\n};\n\nreturn {\n  json: {\n    coletaId: temColeta ? coleta.id : null,\n    temColeta,\n    status: 'failed',\n    errorCode: 'sem_credencial',\n    errorMessage: 'Conexão sem coletor provisionado no n8n.',\n    qualidadeResumo,\n  },\n};"
+        "jsCode": "const fonte = $('Entrada').item.json.fonte;\nconst coleta = $json;\nconst temColeta = Boolean(coleta?.id);\nconst detalheDaRecusa = String(coleta?.title ?? coleta?.detail ?? coleta?.error?.message ?? 'sem resposta do app').slice(0, 400);\nconst causa = temColeta ? 'sem_credencial' : 'abrir_recusado';\nconst detalhe = temColeta ? 'Conexão sem coletor provisionado no n8n.' : `abrir recusou a coleta: ${detalheDaRecusa}`;\n\nconst qualidadeResumo = {\n  fontesEsperadas: 1,\n  fontesColetadas: 0,\n  faltantes: [{ fonte: fonte.nome || fonte.externalId, causa: 'sem_credencial', detalhe }],\n  paridade: [],\n  volumetria: { linhas: 0, bytes: 0, requests: 0, duracaoMs: 0 },\n};\n\nreturn {\n  json: {\n    coletaId: temColeta ? coleta.id : null,\n    temColeta,\n    status: 'failed',\n    errorCode: causa,\n    errorMessage: detalhe,\n    qualidadeResumo: temColeta ? qualidadeResumo : null,\n  },\n};"
       }
     },
     {
@@ -276,7 +286,10 @@
           "name": "a-definir-pelo-provisioner"
         }
       },
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     },
     {
       "id": "conferir-gravacao",
@@ -289,8 +302,9 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const qualidade = $('Calcular qualidade').first().json;\nconst respostas = $input.all().map((item) => item.json ?? {});\nconst esperadas = qualidade.linhas.length;\nconst gravadas = respostas.reduce((total, resposta) => total + Number(resposta.linhasGravadas ?? 0), 0);\nconst descartadas = respostas.reduce((total, resposta) => total + Number(resposta.linhasDescartadas ?? 0), 0);\nconst recusada = respostas.find((resposta) => resposta.linhasGravadas === undefined);\nconst chaveInvalida = {};\nfor (const resposta of respostas) {\n  for (const [tabela, quantidade] of Object.entries(resposta.descartesDeChave ?? {})) {\n    chaveInvalida[tabela] = (chaveInvalida[tabela] ?? 0) + Number(quantidade ?? 0);\n  }\n}\nconst faltantesDeChave = Object.entries(chaveInvalida)\n  .filter(([, quantidade]) => quantidade > 0)\n  .map(([tabela, quantidade]) => ({ fonte: tabela.slice(0, 120), causa: 'coleta_incompleta', detalhe: `${quantidade} linha(s) com chave inválida descartada(s)` }));\nconst gravou = qualidade.status === 'success' || qualidade.status === 'partial';\nconst falhouGravacao = gravou && esperadas > 0 && (Boolean(recusada) || gravadas + descartadas !== esperadas);\nconst removerSegredos = (texto) => String(texto)\n  .replace(/(access_token|refresh_token|client_secret|developer_token|api_key|key|token)=[^&\\s\"']+/gi, '$1=[removido]')\n  .replace(/Bearer\\s+[A-Za-z0-9._~+\\/-]+=*/g, 'Bearer [removido]');\nconst detalheDaRecusa = (resposta) => resposta.detail ?? resposta.title\n  ?? (resposta.error ? removerSegredos(typeof resposta.error === 'string' ? resposta.error : resposta.error?.message ?? JSON.stringify(resposta.error)) : 'sem detalhe');\nconst motivo = recusada\n  ? `lote recusado: ${detalheDaRecusa(recusada)}`\n  : `gravadas ${gravadas} + descartadas ${descartadas} de ${esperadas} em ${respostas.length} lote(s)`;\nconst rebaixada = !falhouGravacao && qualidade.status === 'success' && faltantesDeChave.length > 0;\nconst qualidadeResumo = qualidade.qualidadeResumo && faltantesDeChave.length > 0\n  ? { ...qualidade.qualidadeResumo, faltantes: [...qualidade.qualidadeResumo.faltantes, ...faltantesDeChave].slice(0, 500) }\n  : qualidade.qualidadeResumo;\n\nreturn [{\n  json: {\n    coletaId: qualidade.coletaId,\n    status: falhouGravacao ? 'failed' : rebaixada ? 'partial' : qualidade.status,\n    requestCount: qualidade.requestCount,\n    rowsReceived: esperadas,\n    rowsWritten: gravadas,\n    qualidadeResumo,\n    errorCode: falhouGravacao ? 'gravacao_bq' : rebaixada ? 'coleta_incompleta' : qualidade.errorCode,\n    errorMessage: falhouGravacao\n      ? String(motivo).slice(0, 1000)\n      : rebaixada\n        ? faltantesDeChave.map((faltante) => `${faltante.fonte}: ${faltante.detalhe}`).join('; ').slice(0, 1000)\n        : qualidade.errorMessage,\n  },\n  pairedItem: 0,\n}];"
-      }
+        "jsCode": "const qualidade = $('Calcular qualidade').first().json;\nconst respostas = $input.all().map((item) => item.json ?? {});\nconst esperadas = qualidade.linhas.length;\nconst gravadas = respostas.reduce((total, resposta) => total + Number(resposta.linhasGravadas ?? 0), 0);\nconst descartadas = respostas.reduce((total, resposta) => total + Number(resposta.linhasDescartadas ?? 0), 0);\nconst recusada = respostas.find((resposta) => resposta.linhasGravadas === undefined);\nconst chaveInvalida = {};\nfor (const resposta of respostas) {\n  for (const [tabela, quantidade] of Object.entries(resposta.descartesDeChave ?? {})) {\n    chaveInvalida[tabela] = (chaveInvalida[tabela] ?? 0) + Number(quantidade ?? 0);\n  }\n}\nconst faltantesDeChave = Object.entries(chaveInvalida)\n  .filter(([, quantidade]) => quantidade > 0)\n  .map(([tabela, quantidade]) => ({ fonte: tabela.slice(0, 120), causa: 'coleta_incompleta', detalhe: `${quantidade} linha(s) com chave inválida descartada(s)` }));\nconst gravou = qualidade.status === 'success' || qualidade.status === 'partial';\nconst falhouGravacao = gravou && esperadas > 0 && (Boolean(recusada) || gravadas + descartadas !== esperadas);\nconst removerSegredos = (texto) => String(texto)\n  .replace(/(access_token|refresh_token|client_secret|developer_token|api_key|key|token)=[^&\\s\"']+/gi, '$1=[removido]')\n  .replace(/Bearer\\s+[A-Za-z0-9._~+\\/-]+=*/g, 'Bearer [removido]');\nconst detalheDaRecusa = (resposta) => resposta.detail ?? resposta.title\n  ?? (resposta.error ? removerSegredos(typeof resposta.error === 'string' ? resposta.error : resposta.error?.message ?? JSON.stringify(resposta.error)) : 'sem detalhe');\nconst motivo = recusada\n  ? `lote recusado: ${detalheDaRecusa(recusada)}`\n  : `gravadas ${gravadas} + descartadas ${descartadas} de ${esperadas} em ${respostas.length} lote(s)`;\nconst rebaixada = !falhouGravacao && qualidade.status === 'success' && faltantesDeChave.length > 0;\nconst qualidadeResumo = qualidade.qualidadeResumo && faltantesDeChave.length > 0\n  ? { ...qualidade.qualidadeResumo, faltantes: [...qualidade.qualidadeResumo.faltantes, ...faltantesDeChave].slice(0, 500) }\n  : qualidade.qualidadeResumo;\n\nreturn [{\n  json: {\n    coletaId: qualidade.coletaId,\n    status: falhouGravacao ? 'failed' : rebaixada ? 'partial' : qualidade.status,\n    requestCount: qualidade.requestCount,\n    rowsReceived: esperadas,\n    rowsWritten: gravadas,\n    qualidadeResumo,\n    errorCode: falhouGravacao ? 'gravacao_bq' : rebaixada ? 'coleta_incompleta' : qualidade.errorCode,\n    errorMessage: falhouGravacao\n      ? String(motivo).slice(0, 1000)\n      : rebaixada\n        ? faltantesDeChave.map((faltante) => `${faltante.fonte}: ${faltante.detalhe}`).join('; ').slice(0, 1000)\n        : qualidade.errorMessage,\n    pausa: falhouGravacao ? null : qualidade.pausa ?? null,\n  },\n  pairedItem: 0,\n}];"
+      },
+      "onError": "continueErrorOutput"
     },
     {
       "id": "resumo",
@@ -305,6 +319,90 @@
         "mode": "runOnceForEachItem",
         "jsCode": "const entrada = $('Entrada').item.json;\nconst coleta = $json ?? {};\nconst ok = coleta.status === 'success' || coleta.status === 'partial';\nreturn {\n  json: {\n    fonteId: entrada.fonte.fonteId,\n    platform: entrada.fonte.platform,\n    nome: entrada.fonte.nome,\n    janela: entrada.janela,\n    tentativa: entrada.tentativa,\n    ok,\n    coletaId: coleta.id ?? null,\n    status: coleta.status ?? 'erro_api',\n    rowsReceived: coleta.rowsReceived ?? 0,\n    rowsWritten: coleta.rowsWritten ?? 0,\n    errorCode: coleta.errorCode ?? (ok ? null : coleta.title ?? 'erro_api'),\n    errorMessage: coleta.errorMessage ?? (ok ? null : coleta.detail ?? null),\n  },\n};"
       }
+    },
+    {
+      "id": "fonte-ocupada",
+      "name": "Fonte ocupada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        130,
+        20
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "fonte-ocupada-sim",
+              "leftValue": "={{ $json.errors?.motivo === 'fonte_ocupada' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "tem-coleta-aberta",
+      "name": "Tem coleta aberta?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        580,
+        440
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "tem-coleta-aberta-sim",
+              "leftValue": "={{ $json.temColeta === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "falha-interna",
+      "name": "Falha interna",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        600
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "jsCode": "const coleta = $('Abrir execução').first().json ?? {};\nconst erro = $input.first()?.json?.error;\nconst mensagem = String(typeof erro === 'string' ? erro : erro?.message ?? 'falha num nó Code do fluxo de coleta')\n  .replace(/(access_token|refresh_token|client_secret|developer_token|api_key|key|token)=[^&\\s\"']+/gi, '$1=[removido]')\n  .replace(/Bearer\\s+[A-Za-z0-9._~+\\/-]+=*/g, 'Bearer [removido]')\n  .slice(0, 1000);\nreturn [{\n  json: {\n    coletaId: coleta.id ?? null,\n    status: 'failed',\n    requestCount: 0,\n    rowsReceived: 0,\n    rowsWritten: 0,\n    qualidadeResumo: null,\n    errorCode: 'falha_orquestrador',\n    errorMessage: mensagem,\n    pausa: null,\n  },\n}];\n"
+      }
     }
   ],
   "connections": {
@@ -312,7 +410,7 @@
       "main": [
         [
           {
-            "node": "Tem coletor?",
+            "node": "Fonte ocupada?",
             "type": "main",
             "index": 0
           }
@@ -356,6 +454,13 @@
             "type": "main",
             "index": 0
           }
+        ],
+        [
+          {
+            "node": "Falha interna",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
@@ -385,7 +490,7 @@
       "main": [
         [
           {
-            "node": "Fechar execução (sem coletor)",
+            "node": "Tem coleta aberta?",
             "type": "main",
             "index": 0
           }
@@ -411,6 +516,13 @@
             "type": "main",
             "index": 0
           }
+        ],
+        [
+          {
+            "node": "Falha interna",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
@@ -430,6 +542,60 @@
         [
           {
             "node": "Gravar métricas",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Falha interna",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fonte ocupada?": {
+      "main": [
+        [
+          {
+            "node": "Resumo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tem coletor?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem coleta aberta?": {
+      "main": [
+        [
+          {
+            "node": "Fechar execução (sem coletor)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resumo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Falha interna": {
+      "main": [
+        [
+          {
+            "node": "Fechar execução",
             "type": "main",
             "index": 0
           }

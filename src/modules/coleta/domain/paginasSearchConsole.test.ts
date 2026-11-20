@@ -9,7 +9,7 @@ type Saida = { linhas: Record<string, unknown>[]; falhas: { causa: string; detal
 const modelo = JSON.parse(readFileSync('n8n/workflows/coletores/coletor-searchconsole.json', 'utf8')) as Modelo;
 const codigo = (nome: string) => String(modelo.nodes.find((no) => no.name === nome)!.parameters.jsCode);
 
-const TABELAS = ['padrao', 'consulta_pagina', 'pagina', 'pais_dispositivo', 'aparencia'];
+const TABELAS = ['padrao', 'consulta_pagina', 'pagina', 'pais_dispositivo', 'aparencia', 'tipo'];
 const ok = (rows: unknown[]) => ({ statusCode: 200, body: { rows } });
 
 function rodar(porTabela: Record<string, unknown[]>, modo = 'completo'): Saida {
@@ -72,5 +72,40 @@ describe('coletor do Search Console: páginas sem dado pessoal na URL', () => {
     const cheia = ok(Array.from({ length: 25_000 }, (_, indice) => linhaDePagina(`https://exemplo.com.br/p${indice}`, 1, 2, 1)));
     const saida = rodar({ pagina: Array.from({ length: 80 }, () => cheia) });
     assert.ok(saida.falhas.some((falha) => falha.causa === 'coleta_incompleta' && /pagina/.test(falha.detalhe ?? '')));
+  });
+});
+
+describe('coletor do Search Console: tipos de busca além de web', () => {
+  const linhaDoTipo = (dia: string, impressoes: number, cliques = 0) => ({ keys: [dia], clicks: cliques, impressions: impressoes, ctr: 0, position: impressoes > 0 ? 4 : 0 });
+  const respostaDoTipo = (tipo: string, rows: unknown[]) => ({ statusCode: 200, tipo, body: { rows } });
+
+  it('descarta linhas com zero impressões e identifica o tipo na linha', () => {
+    const saida = rodar({
+      tipo: [respostaDoTipo('image', [linhaDoTipo('2026-11-01', 5, 1), linhaDoTipo('2026-11-02', 0)]), respostaDoTipo('video', [linhaDoTipo('2026-11-01', 0)])],
+    });
+    const linhas = saida.linhas.filter((linha) => linha._tabela === 'tipo');
+    assert.equal(linhas.length, 1);
+    assert.equal(linhas[0]!.tipo, 'image');
+    assert.equal(linhas[0]!.metricDate, '2026-11-01');
+    assert.equal(linhas[0]!.impressoes, 5);
+  });
+
+  it('só zeros nos tipos não vira falha nem linhas', () => {
+    const saida = rodar({ pagina: [ok([linhaDePagina('https://exemplo.com.br/a', 1, 2, 1)])], tipo: [respostaDoTipo('news', [linhaDoTipo('2026-11-01', 0)])] });
+    assert.equal(saida.linhas.filter((linha) => linha._tabela === 'tipo').length, 0);
+    assert.equal(saida.falhas.length, 0);
+  });
+
+  it('resposta cheia no limite de linhas marca coleta incompleta', () => {
+    const cheia = respostaDoTipo('discover', Array.from({ length: 25_000 }, () => linhaDoTipo('2026-11-01', 3)));
+    const saida = rodar({ tipo: [cheia] });
+    assert.ok(saida.falhas.some((falha) => falha.causa === 'coleta_incompleta' && /tipo/.test(falha.detalhe ?? '')));
+  });
+
+  it('o corpo de cada tipo usa dimensions [date] e a lista de tipos', () => {
+    const montar = new Function('$json', codigo('Montar requisição')) as (entrada: unknown) => { json: { consultas: Record<string, { corpo: Record<string, unknown>; tipos?: string[] }> } }[];
+    const { consultas } = montar({ fonte: { externalId: 'sc-domain:x' }, janela: { start: '2026-11-01', end: '2026-11-02' }, modo: 'completo' })[0]!.json;
+    assert.deepEqual(consultas.tipo!.corpo.dimensions, ['date']);
+    assert.deepEqual(consultas.tipo!.tipos, ['image', 'video', 'news', 'discover', 'googleNews']);
   });
 });

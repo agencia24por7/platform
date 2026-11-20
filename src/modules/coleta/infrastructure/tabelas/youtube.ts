@@ -135,6 +135,7 @@ export const TABELAS_YOUTUBE: TabelasDaPlataforma = {
       minutos_assistidos: 'NUMERIC', inscritos_ganhos: 'INT64', inscritos_perdidos: 'INT64', receita_estimada: 'NUMERIC',
       execucao_id: 'STRING', inserido_em: 'TIMESTAMP',
     },
+    preservarSeNulo: ['receita_estimada'],
     mapear: (linha, ctx) => ({
       organization_id: ctx.organizationId,
       channel_id: ctx.externalId,
@@ -143,7 +144,7 @@ export const TABELAS_YOUTUBE: TabelasDaPlataforma = {
       minutos_assistidos: Number(linha.minutesWatched ?? 0),
       inscritos_ganhos: Number(linha.subscribersGained ?? 0),
       inscritos_perdidos: Number(linha.subscribersLost ?? 0),
-      receita_estimada: Number(linha.estimatedRevenue ?? 0),
+      receita_estimada: linha.estimatedRevenue === null || linha.estimatedRevenue === undefined ? null : Number(linha.estimatedRevenue),
       execucao_id: ctx.execucaoId,
       inserido_em: agora(),
     }),

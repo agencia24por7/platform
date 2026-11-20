@@ -39,8 +39,8 @@ a credencial dela.
 - **Workflow da plataforma.** `n8n/workflows/plataforma/revogar-acesso.json`, com a tag `platform`. O webhook
   `orla-revogar-acesso` é autenticado com o token do worker (`headerAuth`, credencial "ORLA · worker token"),
   como o backfill. Ele valida o `workflowId`, executa o temporário pelo id (Execute Workflow) e responde
-  `{revogado, status}`. Não salva execução (`saveData* = none`, sem `errorWorkflow`).
-- **Meta.** O modelo faz `DELETE https://graph.facebook.com/v26.0/me/permissions` com a credencial
+  `{revogado, status}`. Não salva execução (`saveData* = none`); o fluxo de erro é o de alertas da plataforma, que recebe só a mensagem de erro.
+- **Meta.** O modelo faz `DELETE https://graph.facebook.com/<META_GRAPH_VERSION>/me/permissions` (hoje v27.0; teste confere) com a credencial
   `facebookGraphApi`. O token vai na query `access_token`, como define a credencial
   (`FacebookGraphApi.credentials.ts`, `authenticate.qs`). Sucesso é `200` com `success: true`.
 - **Google: o token precisa ir no corpo.** O endpoint `https://oauth2.googleapis.com/revoke` só lê o token no
@@ -97,6 +97,8 @@ a credencial dela.
      com `valido_de` de mais de 30 dias.
 
   A auditoria registra `privacidade.youtube_conformidade` só com contagens.
+  `preparar_conformidade_youtube` e `expurgos_de_fonte_vencidos` atravessam inquilinos e só o `orla_worker` as
+  executa (ADR 0028); `enfileirar_expurgo_da_conexao` confere a organização do contexto e fica com a web.
 - **Expurgo da fonte** `planoDoExpurgoDaFonte` (`scripts/bq/expurgo.mjs`, compartilhado com
   `titular.mjs expurgar-fonte`) recebe `organization_id`, plataforma e `external_id`. Ele apaga todas as
   tabelas do manifesto daquela plataforma e as stagings delas, com a chave exata, sem `LIKE` e com literais

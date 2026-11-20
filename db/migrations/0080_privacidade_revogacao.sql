@@ -7,6 +7,11 @@ BEGIN
     (SELECT rolname FROM pg_roles WHERE rolname IN ('orla_app', 'tria_app') ORDER BY rolname = 'orla_app' DESC LIMIT 1),
     true
   );
+  PERFORM set_config(
+    'privacidade.papel_worker',
+    coalesce((SELECT rolname FROM pg_roles WHERE rolname = 'orla_worker'), current_setting('privacidade.papel_app')),
+    true
+  );
 END $$;
 
 CREATE SCHEMA IF NOT EXISTS privacidade;
@@ -421,8 +426,8 @@ REVOKE ALL ON FUNCTION privacidade.registrar_resultado_do_expurgo(uuid, text) FR
 
 DO $$ BEGIN
   EXECUTE format('GRANT EXECUTE ON FUNCTION privacidade.enfileirar_expurgo_da_conexao(uuid) TO %I', current_setting('privacidade.papel_app'));
-  EXECUTE format('GRANT EXECUTE ON FUNCTION privacidade.preparar_conformidade_youtube() TO %I', current_setting('privacidade.papel_app'));
-  EXECUTE format('GRANT EXECUTE ON FUNCTION privacidade.expurgos_de_fonte_vencidos(integer) TO %I', current_setting('privacidade.papel_app'));
+  EXECUTE format('GRANT EXECUTE ON FUNCTION privacidade.preparar_conformidade_youtube() TO %I', current_setting('privacidade.papel_worker'));
+  EXECUTE format('GRANT EXECUTE ON FUNCTION privacidade.expurgos_de_fonte_vencidos(integer) TO %I', current_setting('privacidade.papel_worker'));
   EXECUTE format('GRANT EXECUTE ON FUNCTION privacidade.registrar_resultado_do_expurgo(uuid, text) TO %I', current_setting('privacidade.papel_app'));
 END $$;
 

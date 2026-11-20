@@ -6,6 +6,11 @@ import { createExecutorProvisioner } from '@/modules/connections/infrastructure/
 import { createBigQueryGravador } from '@/modules/coleta/infrastructure/bigQueryGravador';
 import { createClientService } from '@/modules/clients/application/clientService';
 import { createClientRepository } from '@/modules/clients/infrastructure/clientRepository';
+import { createContextoService } from '@/modules/clients/application/contextoService';
+import { adaptarArmazenamento } from '@/modules/clients/infrastructure/armazenamentoAdaptado';
+import { criarArmazenamentoDeContexto } from '@/shared/storage/criarArmazenamentoDeContexto';
+import { env } from '@/shared/config/env';
+import { createContextoRepository } from '@/modules/clients/infrastructure/contextoRepository';
 import { createAuthorizationService } from '@/modules/connections/application/authorizationService';
 import { createConnectionService } from '@/modules/connections/application/connectionService';
 import { createAdAccountRepository } from '@/modules/connections/infrastructure/adAccountRepository';
@@ -28,6 +33,9 @@ import { createOrganizationService } from '@/modules/organizations/application/o
 import { createOrganizationRepository } from '@/modules/organizations/infrastructure/organizationRepository';
 import { createRetencaoService } from '@/modules/privacidade/application/retencaoService';
 import { createRetencaoRepository } from '@/modules/privacidade/infrastructure/retencaoRepository';
+import { createAlertaService } from '@/modules/alertas/application/alertaService';
+import { createAlertaRepository } from '@/modules/alertas/infrastructure/alertaRepository';
+import { createLimiteDeAlertasNovos, createNotificadorPorWebhook } from '@/modules/alertas/infrastructure/alertaNotificador';
 import { createDimensoesService } from '@/modules/coleta/application/dimensoesService';
 import { createDimensoesRepository } from '@/modules/coleta/infrastructure/dimensoesRepository';
 import { createDimensoesBigQuery } from '@/modules/coleta/infrastructure/dimensoesBigQuery';
@@ -41,7 +49,6 @@ import {
 } from '@/modules/privacidade/infrastructure/privacidadeRepository';
 import { createExpurgoNoBigQuery } from '@/modules/privacidade/infrastructure/expurgoNoBigQuery';
 import { executorDeRevogacaoDoAmbiente } from '@/modules/privacidade/infrastructure/executorDeRevogacaoDoAmbiente';
-import { env } from '@/shared/config/env';
 
 function build() {
   const audit = createAuditRepository();
@@ -67,6 +74,11 @@ function build() {
     organizations,
     identity: createIdentityService(createUserRepository(), audit),
     clients: createClientService(clientRepository, audit),
+    contexto: createContextoService({
+      repositorio: createContextoRepository(),
+      audit,
+      armazenamento: adaptarArmazenamento(criarArmazenamentoDeContexto(env())),
+    }),
     team: createTeamService(createTeamRepository(), audit),
     connections: createConnectionService(
       connectionRepository,
@@ -101,6 +113,7 @@ function build() {
     ),
     coleta: createColetaService(createColetaRepository(), audit, createBigQueryGravador()),
     retencao: createRetencaoService(createRetencaoRepository(), audit),
+    alertas: createAlertaService(createAlertaRepository(), audit, createNotificadorPorWebhook(), createLimiteDeAlertasNovos()),
     dimensoes,
     expurgoDeFontes,
     pedidosDeExclusao: createPedidosDeExclusaoService(createPedidosDeExclusaoRepository(), {

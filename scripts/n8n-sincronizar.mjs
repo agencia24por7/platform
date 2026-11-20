@@ -3,11 +3,13 @@ import { join } from 'node:path';
 import { TAG_DA_PLATAFORMA, criarClienteN8n } from '../src/shared/n8n/clienteN8n.ts';
 import { MODELO_DE_COLETOR, MODELO_DE_EXECUTOR, PASTA_DOS_WORKFLOWS, ehDaPlataforma, ehModelo } from '../src/shared/n8n/modelos.ts';
 import {
+  ARQUIVO_DOS_ALERTAS,
   avaliarAlvo,
   credenciaisPorNome,
   localizarImplantado,
   mesclar,
   modeloComCredenciaisPorNome,
+  resolverFluxoDeErro,
   versaoDoModelo,
   versaoImplantada,
 } from '../src/shared/n8n/sincronizacao.ts';
@@ -49,11 +51,12 @@ function alvosDasConexoes() {
 
 const temTagDaPlataforma = (implantado) => (implantado.tags ?? []).some((tag) => tag.name === TAG_DA_PLATAFORMA);
 
-async function sincronizar(arquivo, implantado) {
+async function sincronizar(arquivo, implantado, implantados) {
   const avaliacao = avaliarAlvo(implantado, { adotar, tagDaPlataforma: TAG_DA_PLATAFORMA });
   if (!avaliacao.permitido) return { acao: 'bloqueado', detalhe: avaliacao.motivo };
 
-  const modelo = lerJson(arquivo);
+  const { modelo, aviso } = resolverFluxoDeErro(lerJson(arquivo), implantados);
+  if (aviso) console.warn(`aviso: ${implantado.name}: ${aviso}`);
   if (versaoImplantada(implantado) === versaoDoModelo(modelo)) {
     if (temTagDaPlataforma(implantado)) return { acao: 'igual' };
     if (!aplicar) return { acao: 'marcaria', detalhe: `sem a tag ${TAG_DA_PLATAFORMA}` };
@@ -73,9 +76,11 @@ async function sincronizar(arquivo, implantado) {
   return { acao: 'atualizado' };
 }
 
-async function criar(arquivo, conhecidas) {
-  const modelo = lerJson(arquivo);
-  const { corpo, pendencias } = mesclar(modeloComCredenciaisPorNome(modelo, conhecidas), null, modelo.name, arquivo);
+async function criar(arquivo, implantados) {
+  const { modelo, aviso } = resolverFluxoDeErro(lerJson(arquivo), implantados);
+  if (aviso) console.warn(`aviso: ${modelo.name}: ${aviso}`);
+  const ligado = modeloComCredenciaisPorNome(modelo, credenciaisPorNome(implantados));
+  const { corpo, pendencias } = mesclar(ligado, null, modelo.name, arquivo);
   if (pendencias.length > 0) return { acao: 'bloqueado', detalhe: `${pendencias.join('; ')} (crie a credencial no n8n ou implante à mão)` };
   if (!aplicar) return { acao: 'criaria' };
   const id = await n8n.criar(corpo, { arquivo });
@@ -83,33 +88,34 @@ async function criar(arquivo, conhecidas) {
 }
 
 async function main() {
-  const implantados = await n8n.listar();
-  const porId = new Map(implantados.map((w) => [w.id, w]));
-  const conhecidas = credenciaisPorNome(implantados);
+  let implantados = await n8n.listar();
   const resultados = [];
 
-  for (const arquivo of arquivosDaPlataforma(PASTA_DOS_WORKFLOWS)) {
+  const arquivos = arquivosDaPlataforma(PASTA_DOS_WORKFLOWS).sort((a, b) => Number(b === ARQUIVO_DOS_ALERTAS) - Number(a === ARQUIVO_DOS_ALERTAS));
+  for (const arquivo of arquivos) {
     const nome = lerJson(arquivo).name;
     const achado = localizarImplantado(arquivo, nome, implantados);
     if (!achado) {
       resultados.push(
         criarAusentes
-          ? { arquivo, alvo: nome, ...(await criar(arquivo, conhecidas)) }
+          ? { arquivo, alvo: nome, ...(await criar(arquivo, implantados)) }
           : { arquivo, alvo: nome, acao: 'não implantado', detalhe: 'use --criar (credenciais ligadas pelo nome) ou implante à mão (docs/adr/0009)' },
       );
       continue;
     }
     const alvo = `${achado.workflow.name} (${achado.workflow.id})${achado.por === 'nome' ? ' [adotado pelo nome]' : ''}`;
-    resultados.push({ arquivo, alvo, ...(await sincronizar(arquivo, achado.workflow)) });
+    resultados.push({ arquivo, alvo, ...(await sincronizar(arquivo, achado.workflow, implantados)) });
+    if (arquivo === ARQUIVO_DOS_ALERTAS) implantados = await n8n.listar();
   }
 
+  const porId = new Map(implantados.map((w) => [w.id, w]));
   for (const { arquivo, id } of alvosDasConexoes()) {
     const implantado = porId.get(id);
     if (!implantado) {
       resultados.push({ arquivo, alvo: id, acao: 'ausente', detalhe: 'a conexão aponta para um workflow que não existe' });
       continue;
     }
-    resultados.push({ arquivo, alvo: `${implantado.name} (${id})`, ...(await sincronizar(arquivo, implantado)) });
+    resultados.push({ arquivo, alvo: `${implantado.name} (${id})`, ...(await sincronizar(arquivo, implantado, implantados)) });
   }
 
   for (const r of resultados) console.log(`${r.acao.padEnd(15)} ${r.alvo}${r.detalhe ? ` — ${r.detalhe}` : ''}`);
