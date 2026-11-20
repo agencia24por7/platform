@@ -1,7 +1,7 @@
 # Registro das operações de tratamento (LGPD, art. 37)
 
 - Controlador dos dados da equipe e operador dos dados dos clientes: Agência 24/7
-- Encarregado: Bruno Abreu, contato@agencia24por7.com
+- Encarregado: Filipe Jones, contato@agencia24por7.com
 - Última revisão: 2026-11-20
 
 A política pública está em `/privacidade` (`app/privacidade/page.tsx`). Toda mudança aqui

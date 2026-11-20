@@ -18,7 +18,7 @@ export default function Termos() {
         <h2>1. O serviço</h2>
         <p>
           A orla conecta contas de anúncios e de análise, coleta métricas e monta relatórios para a Agência 24/7 e
-          seus clientes. Ela é oferecida pela Agência 24/7, representada por Bruno Abreu (
+          seus clientes. Ela é oferecida pela Agência 24/7, representada por Filipe Jones (
           <a href="mailto:contato@agencia24por7.com">contato@agencia24por7.com</a>).
         </p>
       </section>

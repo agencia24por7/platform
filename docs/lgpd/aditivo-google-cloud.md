@@ -12,7 +12,7 @@ de LGPD** e pelas **cláusulas-padrão aprovadas pela ANPD**.
    https://support.google.com/cloud/answer/6329727
 3. Em **Data Processing Terms / Cloud Data Processing Addendum**, clique em **Review and Accept**, leia e
    clique em **I Accept**.
-4. Na mesma seção, preencha os contatos de privacidade: encarregado (Bruno Abreu, contato@agencia24por7.com).
+4. Na mesma seção, preencha os contatos de privacidade: encarregado (Filipe Jones, contato@agencia24por7.com).
 5. Anote aqui a data do aceite: [•].
 
 ## Referências
