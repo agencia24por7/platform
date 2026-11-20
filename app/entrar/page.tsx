@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ThemeToggle } from '@/../app/_components/ThemeToggle';
 import { env } from '@/shared/config/env';
@@ -126,7 +127,10 @@ export default async function Entrar({ searchParams }: Props) {
             </p>
           )}
 
-          <p className="portao__nota">Ao continuar, você aceita os Termos e a Privacidade.</p>
+          <p className="portao__nota">
+            Ao continuar, você aceita os <Link href="/termos">Termos</Link> e a{' '}
+            <Link href="/privacidade">Privacidade</Link>.
+          </p>
         </div>
       </main>
     </div>
