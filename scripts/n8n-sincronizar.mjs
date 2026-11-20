@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { TAG_DA_PLATAFORMA, criarClienteN8n } from '../src/shared/n8n/clienteN8n.ts';
 import { MODELO_DE_COLETOR, MODELO_DE_EXECUTOR, PASTA_DOS_WORKFLOWS, ehDaPlataforma, ehModelo } from '../src/shared/n8n/modelos.ts';
-import { mesclar, versaoDoModelo, versaoImplantada } from '../src/shared/n8n/sincronizacao.ts';
+import { localizarImplantado, mesclar, versaoDoModelo, versaoImplantada } from '../src/shared/n8n/sincronizacao.ts';
 
 const argumentos = process.argv.slice(2);
 const aplicar = argumentos.includes('--aplicar');
@@ -62,18 +62,18 @@ async function sincronizar(arquivo, implantado) {
 
 async function main() {
   const implantados = await n8n.listar();
-  const porNome = new Map(implantados.map((w) => [w.name, w]));
   const porId = new Map(implantados.map((w) => [w.id, w]));
   const resultados = [];
 
   for (const arquivo of arquivosDaPlataforma(PASTA_DOS_WORKFLOWS)) {
     const nome = lerJson(arquivo).name;
-    const implantado = porNome.get(nome);
-    if (!implantado) {
+    const achado = localizarImplantado(arquivo, nome, implantados);
+    if (!achado) {
       resultados.push({ arquivo, alvo: nome, acao: 'não implantado', detalhe: 'a primeira implantação é manual (ver docs/adr/0009)' });
       continue;
     }
-    resultados.push({ arquivo, alvo: nome, ...(await sincronizar(arquivo, implantado)) });
+    const alvo = `${achado.workflow.name} (${achado.workflow.id})${achado.por === 'nome' ? ' [adotado pelo nome]' : ''}`;
+    resultados.push({ arquivo, alvo, ...(await sincronizar(arquivo, achado.workflow)) });
   }
 
   for (const { arquivo, id } of alvosDasConexoes()) {
