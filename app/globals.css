@@ -451,3 +451,19 @@ table { border-collapse: collapse; width: 100%; }
 .caminho__topo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 14px 16px; background: var(--bg-sunken); font-size: var(--fs-sm); }
 .caminho__contagem { margin-left: auto; color: var(--fg-subtle); font-size: var(--fs-xs); }
+
+.documento { min-height: 100svh; display: flex; flex-direction: column; background: var(--bg); color: var(--fg); }
+.documento__topo { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px max(16px, calc((100% - 760px) / 2)); border-bottom: 1px solid var(--border); }
+.documento__marca { display: inline-flex; align-items: center; gap: 10px; font-family: var(--font-wordmark); font-size: 20px; font-weight: 600; letter-spacing: -.02em; color: var(--fg); text-decoration: none; }
+.documento__corpo { width: 100%; max-width: 760px; margin: 0 auto; padding: 40px 16px 56px; display: flex; flex-direction: column; gap: 28px; line-height: var(--lh-loose); font-size: var(--fs-md); }
+.documento__titulo { font-family: var(--font-heading); font-size: var(--fs-2xl); letter-spacing: var(--track-tight); line-height: var(--lh-tight); }
+.documento__resumo { color: var(--fg-muted); margin-top: -16px; }
+.documento__data { font-size: var(--fs-sm); color: var(--fg-subtle); margin-top: -20px; }
+.documento section { display: flex; flex-direction: column; gap: 10px; }
+.documento h2 { font-family: var(--font-heading); font-size: var(--fs-lg); line-height: var(--lh-tight); }
+.documento h3 { font-size: var(--fs-md); font-weight: 600; margin-top: 6px; }
+.documento ul { padding-left: 20px; display: flex; flex-direction: column; gap: 6px; list-style: disc; }
+.documento code { font-family: var(--font-mono); font-size: .88em; overflow-wrap: anywhere; }
+.documento__corpo a, .documento__rodape a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.documento__rodape { margin-top: auto; padding: 24px 16px; border-top: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: var(--fs-sm); color: var(--fg-muted); text-align: center; }
+.documento__rodape nav { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; }

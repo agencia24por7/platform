@@ -20,6 +20,9 @@ const ROTAS_ABERTAS = [
   '/convite',
   '/api/convite',
   '/api/oauth',
+  '/sobre',
+  '/privacidade',
+  '/termos',
 ];
 
 function seguirComNonce(request: NextRequest): NextResponse {
