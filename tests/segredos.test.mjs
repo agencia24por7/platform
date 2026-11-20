@@ -31,7 +31,9 @@ describe('o segredo não mora aqui', { concurrency: false }, () => {
       FROM information_schema.columns
       WHERE table_schema IN ('core','integrations','metrics','automation','audit')
         AND (column_name ~* '(access_?token|refresh_?token|client_?secret|api_?key|password|senha|chave)')
-        AND column_name <> 'credential_ref'`);
+        AND column_name <> 'credential_ref'
+        AND NOT (table_schema = 'integrations' AND table_name = 'connection_tokens'
+                 AND column_name LIKE '%\\_ciphertext' AND data_type = 'bytea')`);
 
     assert.equal(suspeitas, '', `coluna com cara de segredo: ${suspeitas}`);
   });

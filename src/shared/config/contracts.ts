@@ -142,3 +142,12 @@ export const reconstruirBrainBody = z
   .refine((corpo) => (corpo.todos ? !corpo.organizationId && !corpo.clientId : Boolean(corpo.organizationId)), {
     message: 'informe organizationId (e opcionalmente clientId) ou todos: true',
   });
+
+export const tokenDeAcessoBody = z.union([
+  z.object({ coletaId: uuid }).strict(),
+  z.object({ tarefaId: uuid }).strict(),
+]);
+
+export const renovacaoProativaBody = z.object({
+  limite: z.coerce.number().int().min(1).max(200).default(50),
+}).strict();

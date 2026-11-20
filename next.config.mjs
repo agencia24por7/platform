@@ -11,7 +11,7 @@ export default {
   output: 'standalone',
   reactStrictMode: true,
   poweredByHeader: false,
-  serverExternalPackages: ['postgres'],
+  serverExternalPackages: ['postgres', '@google-cloud/kms'],
   experimental: {
     proxyClientMaxBodySize: '16mb',
   },

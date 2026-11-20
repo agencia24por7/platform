@@ -39,6 +39,7 @@ import { createLimiteDeAlertasNovos, createNotificadorPorWebhook } from '@/modul
 import { createDimensoesService } from '@/modules/coleta/application/dimensoesService';
 import { createDimensoesRepository } from '@/modules/coleta/infrastructure/dimensoesRepository';
 import { createDimensoesBigQuery } from '@/modules/coleta/infrastructure/dimensoesBigQuery';
+import { criarModuloDeTokens } from '@/modules/tokens/infrastructure/criarModuloDeTokens';
 import { createRevogadorNoProvedor } from '@/modules/privacidade/application/revogacaoNoProvedor';
 import { createExpurgoDeFontesService } from '@/modules/privacidade/application/expurgoDeFontes';
 import { createPedidosDeExclusaoService } from '@/modules/privacidade/application/pedidosDeExclusao';
@@ -115,6 +116,7 @@ function build() {
     retencao: createRetencaoService(createRetencaoRepository(), audit),
     alertas: createAlertaService(createAlertaRepository(), audit, createNotificadorPorWebhook(), createLimiteDeAlertasNovos()),
     dimensoes,
+    tokens: criarModuloDeTokens(audit),
     expurgoDeFontes,
     pedidosDeExclusao: createPedidosDeExclusaoService(createPedidosDeExclusaoRepository(), {
       segredoDoApp: config.META_APP_SECRET,
