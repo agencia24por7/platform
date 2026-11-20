@@ -244,18 +244,19 @@ describe('dataDoSnapshot', () => {
 });
 
 describe('linhaDoFatoRd', () => {
-  it('preenche exatamente as colunas do fato, com a chave (cliente, negociação, dia)', () => {
+  it('preenche exatamente as colunas do fato, com a chave (conta, negociação, dia) e sem client_id', () => {
     const negociacao = negociacaoDaLinha({ dealId: 'd1', pipelineId: 'f1', stageName: 'Aprovado', win: false })!;
     const linha = linhaDoFatoRd(negociacao, {
       organizationId: 'org',
-      clientId: 'cli',
+      contaId: 'principal',
       dataSnapshot: '2026-11-20',
       moeda: 'BRL',
       execucaoId: 'exec',
       inseridoEm: '2026-11-20T12:00:00.000Z',
     });
     assert.deepEqual(Object.keys(linha).sort(), [...COLUNAS_DO_FATO_RD].sort());
-    assert.equal(linha.client_id, 'cli');
+    assert.equal(linha.conta_id, 'principal');
+    assert.ok(!('client_id' in linha), 'o dono vem da dimensão, não do fato');
     assert.equal(linha.deal_id, 'd1');
     assert.equal(linha.data_snapshot, '2026-11-20');
     assert.equal(linha.situacao, Situacao.Perdida);

@@ -128,7 +128,7 @@ export function dataDoSnapshot(agora: Date, fuso: string = FUSO_DO_SNAPSHOT): st
 
 export type ContextoDoFatoRd = {
   readonly organizationId: string;
-  readonly clientId: string;
+  readonly contaId: string;
   readonly dataSnapshot: string;
   readonly moeda: string;
   readonly execucaoId: string;
@@ -136,7 +136,7 @@ export type ContextoDoFatoRd = {
 };
 
 export const COLUNAS_DO_FATO_RD = [
-  'organization_id', 'client_id', 'deal_id', 'data_snapshot', 'pipeline_id', 'pipeline_nome', 'etapa_id',
+  'organization_id', 'conta_id', 'deal_id', 'data_snapshot', 'pipeline_id', 'pipeline_nome', 'etapa_id',
   'etapa_nome', 'etapa_ordem', 'situacao', 'valor_total', 'valor_mensal', 'valor_unico', 'moeda', 'criada_em',
   'atualizada_em', 'fechada_em', 'fonte_nome', 'campanha_nome', 'execucao_id', 'inserido_em',
 ] as const;
@@ -144,7 +144,7 @@ export const COLUNAS_DO_FATO_RD = [
 export function linhaDoFatoRd(negociacao: NegociacaoRd, ctx: ContextoDoFatoRd): Record<(typeof COLUNAS_DO_FATO_RD)[number], unknown> {
   return {
     organization_id: ctx.organizationId,
-    client_id: ctx.clientId,
+    conta_id: ctx.contaId,
     deal_id: negociacao.dealId,
     data_snapshot: ctx.dataSnapshot,
     pipeline_id: negociacao.pipelineId,

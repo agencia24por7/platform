@@ -1,6 +1,5 @@
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.stg_ads_diario` (
   organization_id       STRING NOT NULL,
-  client_id             STRING NOT NULL,
   platform              STRING NOT NULL,
   ad_account_id         STRING NOT NULL,
   external_campaign_id  STRING NOT NULL,
@@ -22,7 +21,6 @@ OPTIONS (partition_expiration_days = 7);
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.stg_ga4_diario` (
   organization_id   STRING NOT NULL,
-  client_id         STRING NOT NULL,
   property_id       STRING NOT NULL,
   canal             STRING,
   data_dia          DATE NOT NULL,
@@ -40,7 +38,6 @@ OPTIONS (partition_expiration_days = 7);
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.stg_search_console_diario` (
   organization_id  STRING NOT NULL,
-  client_id        STRING NOT NULL,
   site             STRING NOT NULL,
   device           STRING,
   data_dia         DATE NOT NULL,
@@ -57,7 +54,6 @@ OPTIONS (partition_expiration_days = 7);
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.stg_youtube_diario` (
   organization_id     STRING NOT NULL,
-  client_id           STRING NOT NULL,
   channel_id          STRING NOT NULL,
   data_dia            DATE NOT NULL,
   views               INT64,
@@ -74,7 +70,6 @@ OPTIONS (partition_expiration_days = 7);
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.stg_gbp_diario` (
   organization_id  STRING NOT NULL,
-  client_id        STRING NOT NULL,
   location_id      STRING NOT NULL,
   data_dia         DATE NOT NULL,
   metrica          STRING NOT NULL,
@@ -88,7 +83,7 @@ OPTIONS (partition_expiration_days = 7);
 
 CREATE TABLE IF NOT EXISTS `{{DATASET}}.stg_rd_negociacoes` (
   organization_id  STRING NOT NULL,
-  client_id        STRING NOT NULL,
+  conta_id         STRING NOT NULL,
   deal_id          STRING NOT NULL,
   data_snapshot    DATE NOT NULL,
   pipeline_id      STRING,
