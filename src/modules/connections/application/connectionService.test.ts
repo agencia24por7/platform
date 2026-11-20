@@ -326,7 +326,7 @@ describe('guardar chave de API: conectar e reconectar', () => {
       const [evento] = c.eventos;
       assert.equal(evento!.action, 'connection.key_stored');
       assert.equal(evento!.metadata?.rotacionou, false);
-      assert.equal(evento!.metadata?.segredoNoCofre, 'api_key');
+      assert.equal(evento!.metadata?.tipoNoCofre, 'api_key');
       assert.ok(!JSON.stringify(evento).includes(CHAVE));
     });
 
@@ -409,7 +409,7 @@ describe('remover conexão (desconectar), por plataforma', () => {
       assert.equal(removida[0]!.targetId, id);
       assert.equal(removida[0]!.metadata?.platform, plataforma);
       assert.equal(removida[0]!.metadata?.contasLiberadas, 2);
-      assert.equal(removida[0]!.metadata?.tokenApagado, true);
+      assert.equal(removida[0]!.metadata?.cofreApagado, true);
       assert.equal(removida[0]!.metadata?.revogadoNoProvedor, temRevogacaoNoProvedor(plataforma) ? true : 'nao_suportado');
       assert.deepEqual(c.avisos, ['connection_account.unlink']);
     });

@@ -270,7 +270,7 @@ for (const plataforma of COM_COFRE) {
       assert.equal(autorizacoes[0]!.targetId, conexao!.id);
       assert.equal(autorizacoes[0]!.organizationId, ORGANIZACAO);
       assert.equal(autorizacoes[0]!.metadata?.platform, plataforma);
-      assert.equal(autorizacoes[0]!.metadata?.segredoNoCofre, ehGoogle(plataforma) ? 'oauth_refresh' : 'oauth_long_lived');
+      assert.equal(autorizacoes[0]!.metadata?.tipoNoCofre, ehGoogle(plataforma) ? 'oauth_refresh' : 'oauth_long_lived');
       assert.equal(autorizacoes[0]!.metadata?.renovouConexao, false);
     });
 

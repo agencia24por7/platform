@@ -11,13 +11,14 @@ export type AmbienteDaCostura = {
   readonly TRIA_APP_BASE_URL?: string | undefined;
 };
 
-const HOSTS_LOCAIS = new Set(['localhost', '127.0.0.1', '::1', '[::1]', 'app']);
+const LOOPBACK_IPV4 = /^127(\.\d{1,3}){3}$/;
 
 function enderecoLocal(base: string | undefined): boolean {
   if (!base) return true;
   try {
     const url = new URL(base);
-    return url.protocol === 'http:' && HOSTS_LOCAIS.has(url.hostname);
+    if (url.protocol !== 'http:') return false;
+    return !url.hostname.includes('.') || LOOPBACK_IPV4.test(url.hostname);
   } catch {
     return false;
   }

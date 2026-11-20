@@ -239,7 +239,7 @@ describe('desconectar: remover a conexão libera tudo que dependia dela, em toda
           metadadoDaAuditoria('connection.removed', conexao, 'revogadoNoProvedor'),
           REVOGA_NO_PROVEDOR.includes(plataforma) ? 'true' : 'nao_suportado',
         );
-        assert.equal(metadadoDaAuditoria('connection.removed', conexao, 'tokenApagado'), 'true');
+        assert.equal(metadadoDaAuditoria('connection.removed', conexao, 'cofreApagado'), 'true');
 
         if (recurso) {
           assert.equal(estadoDoRecurso(recurso), 'discovered|-');

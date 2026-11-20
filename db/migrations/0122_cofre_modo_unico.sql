@@ -186,6 +186,11 @@ ALTER TABLE integrations.connections DROP COLUMN IF EXISTS credential_ref;
 ALTER TABLE integrations.connections DROP COLUMN IF EXISTS coletor_ref;
 ALTER TABLE integrations.connections DROP COLUMN IF EXISTS executor_ref;
 
+ALTER TABLE integrations.corte_para_cofre_refs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE integrations.corte_para_cofre_refs FORCE ROW LEVEL SECURITY;
+
+REVOKE ALL ON FUNCTION integrations.conexao_ativa_exige_token() FROM PUBLIC;
+
 DO $$
 DECLARE
   papel_app text := (SELECT rolname FROM pg_roles WHERE rolname IN ('orla_app', 'tria_app') ORDER BY rolname = 'orla_app' DESC LIMIT 1);

@@ -245,7 +245,7 @@ demanda e externo ao bundle (`serverExternalPackages`).
 - **Remover.** `removerConexao` → política (`createPoliticaDeRevogacao`) → `CofreDeTokens.revogarEApagar` com
   `apagar = connectionRepository.revogar(versaoLida)` (apaga o token e marca `revoked` numa transação).
   Revogação no provedor é melhor esforço e acontece antes; o apagamento acontece sempre que a conexão não mudou
-  no meio. Auditoria `revogadoNoProvedor`, `motivoDaRevogacao`, `tokenApagado`; aviso ao admin com o caminho
+  no meio. Auditoria `revogadoNoProvedor`, `motivoDaRevogacao`, `cofreApagado` (nomes sem "token"/"segredo", que o `redact` da auditoria mascara); aviso ao admin com o caminho
   manual quando não revogou; expurgo do YouTube depois.
 - **Descoberta.** Continua usando o access token recém-concedido, em memória, no próprio fluxo de autorização;
   nenhuma outra descoberta usa token guardado (se surgir, deve usar `obterAcesso`).

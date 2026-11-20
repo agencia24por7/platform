@@ -342,7 +342,7 @@ export function createAuthorizationService(
           discoveryFailure: discovery.lastFailure(),
           varredura: discovery.lastSweep(),
           renovouConexao: Boolean(already),
-          segredoNoCofre: segredo.value.tipo,
+          tipoNoCofre: segredo.value.tipo,
           organizationCreated,
           refreshTokenReceived: granted.refreshToken !== null,
           ...(input.autorizadoPor.via === 'invite'

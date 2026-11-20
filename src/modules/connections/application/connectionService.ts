@@ -188,7 +188,7 @@ export function createConnectionService(
         targetId: connection.id,
         requestId: ator.requestId,
         sourceIp: ator.sourceIp,
-        metadata: { platform: input.platform, apelido, rotacionou: Boolean(existente), segredoNoCofre: 'api_key' },
+        metadata: { platform: input.platform, apelido, rotacionou: Boolean(existente), tipoNoCofre: 'api_key' },
       });
 
       return ok(connection);
@@ -228,7 +228,7 @@ export function createConnectionService(
             targetId: conexao.id,
             requestId: ator.requestId,
             sourceIp: ator.sourceIp,
-            metadata: { platform: conexao.platform, revogadoNoProvedor: true, tokenNoCofre: true },
+            metadata: { platform: conexao.platform, revogadoNoProvedor: true, aindaNoCofre: true },
           });
         }
         const atual = await connections.findById(input.organizationId, conexao.id);
@@ -260,7 +260,7 @@ export function createConnectionService(
         metadata: {
           platform: conexao.platform,
           contasLiberadas: liberadas.length,
-          tokenApagado: true,
+          cofreApagado: true,
           revogadoNoProvedor: revogacao.revogadoNoProvedor,
           motivoDaRevogacao: revogacao.motivo,
           ...(expurgo.enfileirados > 0 ? { expurgoDeFontes: expurgo } : {}),
