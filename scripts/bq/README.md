@@ -155,6 +155,133 @@ Configuração: `tabelas/meta.ts`. Manifesto: `manifesto/meta.json`. DDL: `20_me
 - Partição `data_dia`; cluster `organization_id, ad_account_id`.
 - Staging `stg_ads_diario`; view `vw_ads_diario` (dono por `f.platform`).
 - DDL: `01_fatos.sql`, `02_staging.sql`, `05_dimensoes_scd2.sql`.
+- Origem (Meta): agregada na coleta a partir dos anúncios (soma de gasto,
+  impressões, cliques e compras por campanha e dia), sem chamada própria à API.
+
+Configuração das novas tabelas: `tabelas/meta.ts` (uma entrada por `_tabela`;
+esquema em `domain/esquemasMeta.ts`). DDL: `20_meta_ads.sql`. ADR
+[0016](../../docs/adr/0016-meta-ads-modelagem.md). Todas as tabelas abaixo são
+do `ad_account_id` (o `externalId`), com dono pela `dim_fonte_scd2`
+(`platform = 'meta'`) nas views `vw_*`: `cliente_na_epoca_*` e
+`cliente_atual_*`. Nas dimensões a "época" é o início da versão (`valido_de`).
+
+Origem na API (Marketing API v23.0): relatórios assíncronos
+`POST /{act}/insights` + `GET /{report_run_id}/insights` (insights) e `GET
+/{act}/campaigns|adsets|ads` (dimensões), paginados. Janelas de 28 dias do
+backfill. Valores monetários com a moeda da conta em `moeda`.
+
+### `fato_meta_entrega_diaria`
+
+- Granularidade: uma linha por `organization_id`, `ad_account_id`, `ad_id`,
+  `data_dia`.
+- Colunas: `campaign_id`, `adset_id`, `investimento`, `impressoes`, `alcance`,
+  `frequencia`, `cliques`, `cliques_link`, `cliques_unicos`,
+  `cliques_link_unicos`, `cliques_saida`, `engajamento_post`,
+  `video_reproducoes`, `video_30s`, `video_p25`, `video_p50`, `video_p75`,
+  `video_p95`, `video_p100`, `video_thruplay`, `video_tempo_medio` (segundos),
+  `ranking_qualidade`, `ranking_engajamento`, `ranking_conversao`, `moeda`,
+  `versao_api`, `execucao_id`, `inserido_em`.
+- Partição `data_dia`; cluster `organization_id, ad_account_id, campaign_id`.
+- Origem: insights `level=ad`, `time_increment=1`. `alcance` e `frequencia` não
+  são aditivos entre dias nem entre anúncios.
+- Staging `stg_meta_entrega_diaria`; view `vw_meta_entrega_diaria`.
+
+### `fato_meta_acoes_diarias`
+
+- Granularidade: uma linha por `organization_id`, `ad_account_id`, `ad_id`,
+  `data_dia`, `tipo_acao`, `origem_metrica` (formato longo).
+- Colunas: `campaign_id`, `adset_id`, `quantidade`, `valor`, `custo_por_acao`,
+  `janela_atribuicao` (`unificada`: a janela de cada conjunto, ver
+  `dim_meta_conjunto_scd2`), `moeda`, `versao_api`, `execucao_id`,
+  `inserido_em`.
+- `tipo_acao`: `lead`, `purchase`, `landing_page_view`,
+  `onsite_conversion.*`, `offsite_conversion.fb_pixel_*`, conversões
+  personalizadas etc. `origem_metrica`: `acoes` (`actions`, `action_values`,
+  `cost_per_action_type`) ou `conversoes` (`conversions`, `conversion_values`,
+  `cost_per_conversion`). Uma ação conta nas duas origens: não somar origens.
+- Partição `data_dia`; cluster `organization_id, ad_account_id, campaign_id,
+  tipo_acao`.
+- Staging `stg_meta_acoes_diarias`; view `vw_meta_acoes_diarias`.
+
+### `fato_meta_recorte_idade_genero`
+
+- Granularidade: uma linha por `organization_id`, `ad_account_id`, `adset_id`,
+  `data_dia`, `idade`, `genero` (breakdown `age,gender`, nível conjunto).
+- Colunas: `campaign_id`, `investimento`, `impressoes`, `alcance`, `cliques`,
+  `cliques_link`, `leads`, `compras`, `receita_compras`, `conversas_iniciadas`,
+  `visualizacoes_pagina`, `moeda`, `versao_api`, `execucao_id`, `inserido_em`.
+  Mesmas métricas dos três recortes; `leads` = ação `lead`, `compras` =
+  `purchase` (ou `offsite_conversion.fb_pixel_purchase`), `conversas_iniciadas`
+  = `onsite_conversion.messaging_conversation_started_7d`.
+- Partição `data_dia`; cluster `organization_id, ad_account_id, campaign_id`.
+- Staging `stg_meta_recorte_idade_genero`; view `vw_meta_recorte_idade_genero`.
+
+### `fato_meta_recorte_posicionamento`
+
+- Granularidade: uma linha por `organization_id`, `ad_account_id`, `adset_id`,
+  `data_dia`, `plataforma_publicacao`, `posicao_plataforma` (breakdown
+  `publisher_platform,platform_position`, nível conjunto).
+- Colunas: as do recorte de idade e gênero, com os dois campos de recorte.
+- Partição `data_dia`; cluster `organization_id, ad_account_id, campaign_id`.
+- Staging `stg_meta_recorte_posicionamento`; view
+  `vw_meta_recorte_posicionamento`.
+
+### `fato_meta_recorte_regiao`
+
+- Granularidade: uma linha por `organization_id`, `ad_account_id`, `adset_id`,
+  `data_dia`, `regiao` (breakdown `region`, nível conjunto).
+- Colunas: as do recorte de idade e gênero, com `regiao`.
+- Partição `data_dia`; cluster `organization_id, ad_account_id, campaign_id`.
+- Staging `stg_meta_recorte_regiao`; view `vw_meta_recorte_regiao`.
+
+### `dim_meta_campanha_scd2`
+
+- Granularidade: uma versão por `organization_id`, `ad_account_id`,
+  `campaign_id` e intervalo `[valido_de, valido_ate)`.
+- Atributos: `nome`, `objetivo`, `status`, `status_efetivo`, `tipo_compra`,
+  `estrategia_lance`, `orcamento_diario`, `orcamento_vitalicio`,
+  `limite_gasto`, `categorias_especiais`, `inicio`, `fim`, `criada_em`.
+  Mais as colunas SCD2 de controle (ADR 0013).
+- Origem: `GET /{act}/campaigns` (`objective`, `effective_status`,
+  `buying_type`, `bid_strategy`, `daily_budget`, `lifetime_budget`,
+  `spend_cap`, `special_ad_categories`, `start_time`, `stop_time`,
+  `created_time`). Orçamentos divididos por 100; zero vira nulo.
+- Cluster `organization_id, ad_account_id, campaign_id`. Staging
+  `stg_meta_dim_campanha`; view `vw_meta_campanha`.
+
+### `dim_meta_conjunto_scd2`
+
+- Granularidade: uma versão por `organization_id`, `ad_account_id`, `adset_id`
+  e intervalo.
+- Atributos: `campaign_id`, `nome`, `status`, `status_efetivo`,
+  `objetivo_otimizacao`, `evento_cobranca`, `estrategia_lance`, `valor_lance`,
+  `orcamento_diario`, `orcamento_vitalicio`, `tipo_destino`,
+  `evento_conversao`, `janela_atribuicao` (`CLICK_THROUGH:7,VIEW_THROUGH:1`),
+  `inicio`, `fim`, `criado_em`.
+- Origem: `GET /{act}/adsets` (`optimization_goal`, `billing_event`,
+  `bid_amount`, `destination_type`, `attribution_spec`,
+  `promoted_object.custom_event_type`, ...).
+- Cluster `organization_id, ad_account_id, adset_id`. Staging
+  `stg_meta_dim_conjunto`; view `vw_meta_conjunto`.
+
+### `dim_meta_anuncio_scd2`
+
+- Granularidade: uma versão por `organization_id`, `ad_account_id`, `ad_id` e
+  intervalo.
+- Atributos: `campaign_id`, `adset_id`, `nome`, `status`, `status_efetivo`,
+  `creative_id`, `criado_em`.
+- Origem: `GET /{act}/ads` (`creative{id}`, `effective_status`, ...).
+- Cluster `organization_id, ad_account_id, ad_id`. Staging
+  `stg_meta_dim_anuncio`; view `vw_meta_anuncio`.
+
+### Coleta e cotas
+
+O coletor cria quatro relatórios assíncronos (anúncio, idade × gênero,
+posicionamento, região), consulta a cada 20 s (até 30 vezes) e baixa páginas de
+500 linhas. Chamadas por fonte e janela: 4 criações, até 120 consultas, 3 listas
+paginadas (200 por página) e os downloads. Limite de uso da Meta
+(códigos 4, 17, 32, 613, 80000-80014) vira `api_recusou`; autorização
+(401/403/190) vira `reauth_pending`.
 
 <!-- Meta Ads: novas tabelas acima desta linha -->
 
