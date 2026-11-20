@@ -93,11 +93,12 @@ const FATOS_POR_FONTE = [
   { tabela: 'fato_rd_negociacoes', chave: 'conta_id', plataforma: "'rdstation'", data: 'data_snapshot' },
   { tabela: 'fato_meta_eventos_dataset', chave: 'dataset_id', plataforma: "'pixel'", data: 'data_dia' },
   { tabela: 'fato_meta_formularios', chave: 'page_id', plataforma: "'leadads'", data: 'data_snapshot' },
+  { tabela: 'gov_snapshot_fontes', chave: 'fonte_id', plataforma: 'f.platform', momento: 'f.visto_em' },
 ];
 
 function excluirFatosDoCliente(clientId) {
   for (const fato of FATOS_POR_FONTE) {
-    const momento = `TIMESTAMP(f.${fato.data}, 'America/Sao_Paulo')`;
+    const momento = fato.momento ?? `TIMESTAMP(f.${fato.data}, 'America/Sao_Paulo')`;
     execFileSync('bq', [
       '--project_id', PROJETO, 'query', '--use_legacy_sql=false', `--parameter=id:STRING:${clientId}`,
       `DELETE FROM \`${PROJETO}.${DATASET}.${fato.tabela}\` f WHERE EXISTS (
