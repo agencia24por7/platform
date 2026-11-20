@@ -1,3 +1,11 @@
 [
-  { "tabela": "fato_ads_diario", "chave": "ad_account_id", "plataforma": "meta", "colunaPlataforma": "platform", "data": "data_dia" }
+  { "tabela": "fato_ads_diario", "chave": "ad_account_id", "plataforma": "meta", "colunaPlataforma": "platform", "data": "data_dia" },
+  { "tabela": "fato_meta_entrega_diaria", "chave": "ad_account_id", "plataforma": "meta", "data": "data_dia" },
+  { "tabela": "fato_meta_acoes_diarias", "chave": "ad_account_id", "plataforma": "meta", "data": "data_dia" },
+  { "tabela": "fato_meta_recorte_idade_genero", "chave": "ad_account_id", "plataforma": "meta", "data": "data_dia" },
+  { "tabela": "fato_meta_recorte_posicionamento", "chave": "ad_account_id", "plataforma": "meta", "data": "data_dia" },
+  { "tabela": "fato_meta_recorte_regiao", "chave": "ad_account_id", "plataforma": "meta", "data": "data_dia" },
+  { "tabela": "dim_meta_campanha_scd2", "chave": "ad_account_id", "plataforma": "meta", "todoPeriodo": true },
+  { "tabela": "dim_meta_conjunto_scd2", "chave": "ad_account_id", "plataforma": "meta", "todoPeriodo": true },
+  { "tabela": "dim_meta_anuncio_scd2", "chave": "ad_account_id", "plataforma": "meta", "todoPeriodo": true }
 ]
