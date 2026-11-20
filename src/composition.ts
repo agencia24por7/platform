@@ -36,6 +36,7 @@ import { createRetencaoRepository } from '@/modules/privacidade/infrastructure/r
 import { createDimensoesService } from '@/modules/coleta/application/dimensoesService';
 import { createDimensoesRepository } from '@/modules/coleta/infrastructure/dimensoesRepository';
 import { createDimensoesBigQuery } from '@/modules/coleta/infrastructure/dimensoesBigQuery';
+import { criarModuloDeTokens } from '@/modules/tokens/infrastructure/criarModuloDeTokens';
 
 function build() {
   const audit = createAuditRepository();
@@ -94,6 +95,7 @@ function build() {
     coleta: createColetaService(createColetaRepository(), audit, createBigQueryGravador()),
     retencao: createRetencaoService(createRetencaoRepository(), audit),
     dimensoes,
+    tokens: criarModuloDeTokens(audit),
   };
 }
 
