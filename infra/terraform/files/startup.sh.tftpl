@@ -62,6 +62,7 @@ umask 077
 } > .env
 if [ -n "$IMAGEM_ATUAL" ]; then echo "$IMAGEM_ATUAL" >> .env; fi
 chmod 600 .env
+if [ -f "$STACK/completar-env.sh" ]; then sh "$STACK/completar-env.sh" "$STACK/.env"; fi
 
 readonly DISCO_DADOS=/dev/disk/by-id/google-dados
 readonly DADOS=/srv/dados

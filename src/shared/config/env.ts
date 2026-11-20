@@ -19,11 +19,13 @@ function opcional<T extends z.ZodTypeAny>(tipo: T) {
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL: z.string().url().startsWith('postgres'),
+  DATABASE_URL_WORKER: opcional(z.string().url().startsWith('postgres')),
   TRIA_WORKER_TOKEN: strongSecret,
   TRIA_SESSION_SECRET: strongSecret,
   TRIA_APP_BASE_URL: z.string().url(),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   DATABASE_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(50).default(10),
+  DATABASE_WORKER_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(20).default(5),
   DATABASE_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60_000).default(10_000),
   GOOGLE_OAUTH_CLIENT_ID: opcional(z.string().min(10)),
   GOOGLE_OAUTH_CLIENT_SECRET: opcional(z.string().min(10)),
@@ -43,12 +45,29 @@ const schema = z.object({
   BQ_PROJECT_ID: opcional(z.string().min(3)),
   BQ_DATASET: z.string().min(3).default('tria_dw'),
   BQ_MAXIMO_BYTES_FATURADOS: z.coerce.number().int().min(10_000_000).default(10_000_000_000),
+}).superRefine((valores, contexto) => {
+  if (valores.NODE_ENV !== 'production') return;
+  if (!valores.DATABASE_URL_WORKER) {
+    contexto.addIssue({ code: 'custom', path: ['DATABASE_URL_WORKER'], message: 'obrigatória em produção (papel orla_worker, ADR 0028)' });
+    return;
+  }
+  if (usuarioDaUrl(valores.DATABASE_URL_WORKER) === usuarioDaUrl(valores.DATABASE_URL)) {
+    contexto.addIssue({ code: 'custom', path: ['DATABASE_URL_WORKER'], message: 'precisa usar um papel diferente do DATABASE_URL (ADR 0028)' });
+  }
 });
 
 export type Env = z.infer<typeof schema>;
 
-function loadEnv(): Env {
-  const parsed = schema.safeParse(process.env);
+function usuarioDaUrl(url: string): string {
+  return decodeURIComponent(new URL(url).username);
+}
+
+export function urlDoBancoDoWorker(config: Pick<Env, 'DATABASE_URL' | 'DATABASE_URL_WORKER'>): string {
+  return config.DATABASE_URL_WORKER ?? config.DATABASE_URL;
+}
+
+export function lerAmbiente(fonte: Record<string, string | undefined>): Env {
+  const parsed = schema.safeParse(fonte);
 
   if (!parsed.success) {
     const problems = parsed.error.issues
@@ -63,6 +82,6 @@ function loadEnv(): Env {
 let cached: Env | undefined;
 
 export function env(): Env {
-  cached ??= loadEnv();
+  cached ??= lerAmbiente(process.env);
   return cached;
 }

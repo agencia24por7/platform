@@ -15,8 +15,22 @@
 	}
 }
 
+(corpo_publico) {
+	@upload_de_contexto path /api/contexto/*
+	@corpo_padrao not path /api/contexto/*
+
+	request_body @upload_de_contexto {
+		max_size 30MB
+	}
+
+	request_body @corpo_padrao {
+		max_size 1MB
+	}
+}
+
 {$APP_HOST} {
 	import seguranca
+	import corpo_publico
 	encode zstd gzip
 
 	reverse_proxy app:3000 {
