@@ -5,18 +5,10 @@ import { Wizard } from '@/../app/_components/Wizard';
 import { modules } from '@/composition';
 import { env } from '@/shared/config/env';
 import { isConfigured } from '@/modules/connections/domain/oauth';
+import { mensagemDoErroDeAutorizacao } from '@/modules/connections/domain/erroDeAutorizacao';
 
 export const dynamic = 'force-dynamic';
 
-const ERROS: Record<string, string> = {
-  app_indisponivel: 'O aplicativo da plataforma não está habilitado neste ambiente.',
-  autorizacao_recusada: 'A autorização foi recusada: ou faltaram permissões mínimas de leitura, ou o fluxo não indicou a qual organização pertence. Recomece a partir desta tela.',
-  falha_autorizacao: 'Não foi possível concluir a autorização. Nada foi gravado.',
-  estado_invalido: 'A autorização não pôde ser validada e foi descartada. Tente de novo.',
-  autorizacao_negada: 'Você cancelou no consentimento da plataforma. Nada foi conectado.',
-  sem_codigo: 'A plataforma não devolveu o código de autorização.',
-  plataforma_desconhecida: 'Plataforma não reconhecida.',
-};
 
 export default async function StartPage({
   searchParams,
@@ -24,6 +16,7 @@ export default async function StartPage({
   searchParams: Promise<{
     passo?: string;
     erro?: string;
+    erroConexao?: string;
     indisponivel?: string;
     autorizado?: string;
     descobertas?: string;
@@ -72,7 +65,9 @@ export default async function StartPage({
         </div>
       ) : null}
 
-      {params.erro && ERROS[params.erro] ? <div className="alert alert--error">{ERROS[params.erro]}</div> : null}
+      {params.erroConexao ?? params.erro ? (
+        <div className="alert alert--error">{mensagemDoErroDeAutorizacao(params.erroConexao ?? params.erro ?? '')}</div>
+      ) : null}
 
       {unavailable ? (
         <div className="alert alert--error">
