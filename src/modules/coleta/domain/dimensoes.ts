@@ -85,6 +85,11 @@ export const chaveDoCliente = (cliente: Pick<EstadoDoCliente, 'organizationId' |
 
 export const hashDaFonte = (fonte: EstadoDaFonte): string => sha256(JSON.stringify([fonte.clientId, fonte.status, fonte.nome]));
 
+export const STATUS_DE_CLIENTE_EXCLUIDO = 'excluido';
+
+export const statusDoClienteNaDimensao = (status: string, excluidoEm: Date | null): string =>
+  excluidoEm === null ? status : STATUS_DE_CLIENTE_EXCLUIDO;
+
 export const hashDoCliente = (cliente: EstadoDoCliente): string =>
   sha256(JSON.stringify([cliente.nome, cliente.status, cliente.parentClientId, cliente.businessModel]));
 

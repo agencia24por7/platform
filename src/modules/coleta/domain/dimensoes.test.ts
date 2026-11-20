@@ -3,12 +3,14 @@ import { describe, it } from 'node:test';
 import {
   FIM_DOS_TEMPOS,
   INICIO_DOS_TEMPOS,
+  STATUS_DE_CLIENTE_EXCLUIDO,
   chaveDaFonte,
   hashDaFonte,
   hashDoCliente,
   planejarClientes,
   planejarFontes,
   reconstruirPosse,
+  statusDoClienteNaDimensao,
   type EstadoDaFonte,
   type EstadoDoCliente,
   type MudancaDePosse,
@@ -204,7 +206,7 @@ describe('planejarClientes', () => {
     ...sobrescrever,
   });
 
-  it('renomear cliente abre versão nova; cliente excluído é encerrado', () => {
+  it('renomear cliente abre versão nova; cliente expurgado do Postgres é encerrado', () => {
     const plano = planejarClientes(
       [cliente({ nome: 'Cliente A Ltda' })],
       [
@@ -218,6 +220,28 @@ describe('planejarClientes', () => {
     assert.equal(plano.inserir[0]!.atributos.nome, 'Cliente A Ltda');
     assert.equal(plano.resumo.alteradas, 1);
     assert.equal(plano.resumo.encerradas, 1);
+  });
+
+  it('exclusão lógica vira versão nova com status excluido, sem encerrar a chave', () => {
+    const excluido = cliente({ status: statusDoClienteNaDimensao('archived', new Date('2026-11-19T10:00:00.000Z')) });
+    const plano = planejarClientes([excluido], [{ chave: 'org-1|cli-a', abertas: 1, hashAberta: hashDoCliente(cliente()) }], agora);
+    assert.deepEqual(plano.fechar, ['org-1|cli-a']);
+    assert.equal(plano.inserir.length, 1);
+    assert.equal(plano.inserir[0]!.atributos.status, STATUS_DE_CLIENTE_EXCLUIDO);
+    assert.equal(plano.inserir[0]!.atual, true);
+    assert.equal(plano.inserir[0]!.validoDe.getTime(), agora.getTime());
+    assert.equal(plano.resumo.encerradas, 0);
+  });
+
+  it('restaurar devolve o status do Postgres e abre outra versão', () => {
+    assert.equal(statusDoClienteNaDimensao('paused', null), 'paused');
+    const plano = planejarClientes(
+      [cliente({ status: 'paused' })],
+      [{ chave: 'org-1|cli-a', abertas: 1, hashAberta: hashDoCliente(cliente({ status: STATUS_DE_CLIENTE_EXCLUIDO })) }],
+      agora,
+    );
+    assert.equal(plano.inserir[0]!.atributos.status, 'paused');
+    assert.equal(plano.resumo.alteradas, 1);
   });
 
   it('cliente novo começa no início dos tempos', () => {

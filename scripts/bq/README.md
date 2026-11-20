@@ -60,8 +60,29 @@ BY` do `QUALIFY` da view. Sem granularidade declarada a tabela não entra.
   `external_id`) na view `vw_*`: `cliente_na_epoca_*` (versão válida às 00:00
   America/Sao_Paulo do dia do fato) e `cliente_atual_*` (versão aberta). Molde:
   `05_dimensoes_scd2.sql` e `06_meta_dataset_formularios.sql`.
-- Toda tabela com chave de fonte entra no manifesto de exclusão
+- Toda tabela com chave de fonte entra no manifesto de expurgo
   (`manifesto/<plataforma>.json`).
+
+### Exclusão de cliente: lógica, nunca DELETE (ADR 0022)
+
+- Excluir um cliente (`scripts/titular.mjs excluir-cliente`) **não apaga
+  nada** no BigQuery. A sincronização de dimensões, disparada pelo próprio
+  script logo após a mudança no Postgres, grava em
+  `dim_cliente_scd2` uma versão nova com `status = 'excluido'`; restaurar
+  grava outra versão com o status de volta. `dim_fonte_scd2` não muda: a
+  fonte continua do cliente excluído, e o histórico de posse fica verdadeiro.
+- Toda view `vw_*` expõe `cliente_atual_status` (e, nas de fato,
+  `cliente_na_epoca_status`) e **esconde** a linha cujo cliente atual ou
+  cliente na época está excluído:
+  `WHERE IFNULL(cliente_epoca.status, '') != 'excluido' AND
+  IFNULL(cliente_atual.status, '') != 'excluido'` (só o segundo termo nas
+  `vw_dim_*`). O filtro fica no fim de cada view, com o mesmo texto em
+  todas; `registro.test.ts` recusa view sem ele.
+- Quem consome dado de cliente lê as `vw_*`. Consulta direta em `fato_*` ou
+  `dim_*` vê também o histórico de clientes excluídos e precisa juntar
+  `dim_cliente_scd2` com o mesmo filtro.
+- `DELETE` só no **expurgo** (`scripts/titular.mjs expurgar-cliente`), por
+  obrigação legal de eliminação, pelo manifesto abaixo.
 
 ### Partição e cluster
 
@@ -107,14 +128,17 @@ gravação inteira (`tabela_desconhecida:<nome>`).
    `tabelas/index.ts`.
 3. **Coletor** (`n8n/workflows/coletores/<plataforma>.json`): marque as linhas
    com `_tabela`.
-4. **Manifesto** em `scripts/bq/manifesto/<plataforma>.json` (exclusão de
-   cliente, `scripts/titular.mjs`), com `grao` igual à `chave` da
+4. **Manifesto** em `scripts/bq/manifesto/<plataforma>.json` (expurgo de
+   cliente, `scripts/titular.mjs expurgar-cliente`), com `grao` igual à `chave` da
    configuração e, se o fato aponta para uma dimensão de entidade,
    `entidades` (`registro.test.ts` confere).
 5. **Esta página**: seção da plataforma, com granularidade.
 6. **ADR** quando houver decisão de modelagem (granularidade, semântica).
 
-### Manifesto de exclusão
+### Manifesto de expurgo
+
+Usado só pelo expurgo (`expurgar-cliente`); a exclusão lógica não lê o
+manifesto.
 
 Cada entrada: `{ "tabela", "chave", "plataforma", "colunaPlataforma"?, e
 exatamente um de "data" | "momento" | "todoPeriodo": true, "grao",
@@ -808,6 +832,8 @@ Todas com chave `organization_id` e `conteiner_id` (o ID público `GTM-XXXX`). D
 - Granularidade: uma versão por `organization_id`, `client_id` e intervalo.
 - Colunas: `sk`, `nome`, `status`, `parent_client_id`, `business_model`,
   colunas de validade.
+- `status`: o do Postgres (`active`, `paused`, `archived`) ou `excluido`
+  quando o cliente foi excluído logicamente (`core.clients.excluido_em`).
 - Cluster `organization_id, client_id`. Carga: `dimensoesBigQuery.ts`.
 
 ### `gov_snapshot_fontes`
@@ -824,7 +850,7 @@ Todas com chave `organization_id` e `conteiner_id` (o ID público `GTM-XXXX`). D
 - Granularidade: uma linha por divergência detectada (`organization_id`,
   `client_id`, `platform`, `fonte_id`, `tipo`, `detectado_em`).
 - Colunas: `esperado`, `observado`, `execucao_id`. Tem `client_id` (registro
-  operacional, ADR 0013); apagada por `client_id` na exclusão.
+  operacional, ADR 0013); apagada por `client_id` no expurgo.
 - Partição `DATE(detectado_em)`; cluster `organization_id, client_id`.
 
 ### `qc_execucoes`
@@ -840,7 +866,7 @@ Todas com chave `organization_id` e `conteiner_id` (o ID público `GTM-XXXX`). D
 
 ## Views (`vw_*`)
 
-Cada view lê uma única tabela-base, deduplica pelo grão quando a base é fato (`QUALIFY ROW_NUMBER()` pela chave do MERGE) e acrescenta o dono pela `dim_fonte_scd2` (cliente na época e cliente atual). Uma linha da view corresponde a uma linha da base: o `bq:verificar` confere essa contagem.
+Cada view lê uma única tabela-base, deduplica pelo grão quando a base é fato (`QUALIFY ROW_NUMBER()` pela chave do MERGE) e acrescenta o dono pela `dim_fonte_scd2` (cliente na época e cliente atual, com nome e status). Esconde a linha de cliente excluído (ver [Exclusão de cliente](#exclusão-de-cliente-lógica-nunca-delete-adr-0022)). Fora isso, uma linha da view corresponde a uma linha da base: o `bq:verificar` confere que a view nunca tem mais linhas que a base e informa quantas ficaram ocultas.
 
 | View | Base | DDL |
 |---|---|---|
@@ -959,11 +985,12 @@ npm run bq:verificar -- --imprimir-sql   # só mostra as consultas
 | Toda tabela/view do dataset (fora `stg_*`) está neste README, e todo nome de tabela citado aqui existe | sim |
 | Fato sem duplicata no `grao` do manifesto | sim |
 | SCD2 (`dim_*_scd2`): uma versão atual por chave, sem sobreposição nem lacuna entre versões, `valido_de < valido_ate`, `atual` ⇔ `valido_ate = 9999-12-31` | sim |
-| View `vw_*` executa (dry run) e tem as mesmas linhas que a base (deduplicada pelo grão) | sim |
+| View `vw_*` executa (dry run) e não tem mais linhas que a base (deduplicada pelo grão); a diferença para menos são as linhas de cliente excluído, informadas | sim |
 | `fato_ads_diario` (campanha × dia) = soma de `fato_meta_entrega_diaria` (Meta) e = `fato_google_campanha_diario` (Google), desde `--desde` (padrão 35 dias), tolerância 0,5% | sim |
 | Linha de fato sem versão de `dim_fonte_scd2` que cubra a data | aviso |
 | Id de entidade do fato sem versão na dimensão (`entidades`) | aviso |
 
 Quando rodar: depois de aplicar DDL, de um backfill ou de mudar um coletor.
 Os testes unitários cobrem a parte estática: `registro.test.ts` confere
-`grao` x chave do registro, manifesto x DDL e DDL x este README.
+`grao` x chave do registro, manifesto x DDL, DDL x este README e o filtro de
+cliente excluído em toda `vw_*`.

@@ -114,3 +114,25 @@ describe('DDL x README', () => {
     for (const { arquivo, entrada } of manifestos) assert.ok(objetosDoDdl.has(entrada.tabela), `${arquivo}: ${entrada.tabela}`);
   });
 });
+
+describe('views vw_* x exclusão lógica de cliente (ADR 0022)', () => {
+  const views = [...ddl.matchAll(/CREATE OR REPLACE VIEW `\{\{DATASET\}\}\.(vw_\w+)` AS([\s\S]*?);\n/g)].map((m) => ({ nome: m[1]!, corpo: m[2]! }));
+
+  it('o DDL tem views vw_*', () => {
+    assert.ok(views.length > 0);
+  });
+
+  it('toda view expõe cliente_atual_status e esconde linha de cliente atual excluído', () => {
+    for (const { nome, corpo } of views) {
+      assert.ok(corpo.includes('cliente_atual.status AS cliente_atual_status'), `${nome} sem cliente_atual_status`);
+      assert.ok(corpo.includes("IFNULL(cliente_atual.status, '') != 'excluido'"), `${nome} sem o filtro do dono atual`);
+    }
+  });
+
+  it('view com dono na época também esconde linha cujo dono na época foi excluído', () => {
+    for (const { nome, corpo } of views.filter((view) => view.corpo.includes('cliente_epoca'))) {
+      assert.ok(corpo.includes('cliente_epoca.status AS cliente_na_epoca_status'), `${nome} sem cliente_na_epoca_status`);
+      assert.ok(corpo.includes("IFNULL(cliente_epoca.status, '') != 'excluido'"), `${nome} sem o filtro do dono na época`);
+    }
+  });
+});
