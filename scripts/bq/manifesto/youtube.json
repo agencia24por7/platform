@@ -1,3 +1,11 @@
 [
-  { "tabela": "fato_youtube_diario", "chave": "channel_id", "plataforma": "youtube", "data": "data_dia" }
+  { "tabela": "fato_youtube_diario", "chave": "channel_id", "plataforma": "youtube", "data": "data_dia" },
+  { "tabela": "fato_youtube_video_diario", "chave": "channel_id", "plataforma": "youtube", "data": "data_dia" },
+  { "tabela": "fato_youtube_origem_trafego_diario", "chave": "channel_id", "plataforma": "youtube", "data": "data_dia" },
+  { "tabela": "fato_youtube_dispositivo_diario", "chave": "channel_id", "plataforma": "youtube", "data": "data_dia" },
+  { "tabela": "fato_youtube_local_reproducao_diario", "chave": "channel_id", "plataforma": "youtube", "data": "data_dia" },
+  { "tabela": "fato_youtube_pais_diario", "chave": "channel_id", "plataforma": "youtube", "data": "data_dia" },
+  { "tabela": "fato_youtube_audiencia_diario", "chave": "channel_id", "plataforma": "youtube", "data": "data_dia" },
+  { "tabela": "dim_youtube_video_scd2", "chave": "channel_id", "plataforma": "youtube", "todoPeriodo": true },
+  { "tabela": "dim_youtube_playlist_scd2", "chave": "channel_id", "plataforma": "youtube", "todoPeriodo": true }
 ]

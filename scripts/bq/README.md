@@ -210,6 +210,78 @@ Configuração: `tabelas/youtube.ts`. Manifesto: `manifesto/youtube.json`. DDL: 
 - Partição `data_dia`; cluster `organization_id, channel_id`.
 - Staging `stg_youtube_diario`; view `vw_youtube_diario`.
 
+Origem: YouTube Analytics API v2 (`reports.query`, escopo `yt-analytics.readonly`)
+e YouTube Data API v3 (`videos.list`, `playlists.list`, escopo `youtube.readonly`,
+1 unidade de cota por chamada; nunca `search.list`, que custa 100). Decisões: ADR
+[0016](../../docs/adr/0016-youtube-gbp-modelagem.md). Cada tabela abaixo tem
+`_tabela` própria no coletor (entre parênteses). Todas as `vw_*` de fato dão o
+dono `cliente_na_epoca_*` e `cliente_atual_*`; as `vw_dim_*` dão só
+`cliente_atual_*`.
+
+### `dim_youtube_video_scd2` (`dim_video`)
+
+- Granularidade: uma versão por `organization_id`, `channel_id`, `video_id` e
+  intervalo `[valido_de, valido_ate)`.
+- Atributos (hash da versão): `titulo`, `duracao_segundos`, `publicado_em`,
+  `privacidade`, `categoria_id`.
+- Cluster `organization_id, channel_id, video_id`.
+- Origem: `videos.list` (`snippet.title`, `snippet.publishedAt`,
+  `snippet.categoryId`, `contentDetails.duration` ISO 8601 convertida em
+  segundos, `status.privacyStatus`), só dos vídeos mais vistos da janela (até 25).
+- Staging `stg_youtube_video`; view `vw_dim_youtube_video_scd2`.
+
+### `dim_youtube_playlist_scd2` (`dim_playlist`)
+
+- Granularidade: uma versão por `organization_id`, `channel_id`, `playlist_id`
+  e intervalo.
+- Atributos: `titulo`, `privacidade`, `qtd_videos`.
+- Cluster `organization_id, channel_id, playlist_id`.
+- Origem: `playlists.list` (primeira página, 50 playlists).
+- Staging `stg_youtube_playlist`; view `vw_dim_youtube_playlist_scd2`.
+
+### `fato_youtube_video_diario` (`video_diario`)
+
+- Granularidade: uma linha por `organization_id`, `channel_id`, `video_id`,
+  `data_dia`.
+- Colunas: `views`, `minutos_assistidos`, `duracao_media_visualizacao_s`,
+  `curtidas`, `comentarios`, `compartilhamentos`, `inscritos_ganhos`,
+  `inscritos_perdidos`, `execucao_id`, `inserido_em`.
+- Partição `data_dia`; cluster `organization_id, channel_id, video_id`.
+- Origem: `reports.query` com `filters=video==<id>`, `dimensions=day`, um
+  pedido por vídeo (os 25 mais vistos da janela, descobertos por
+  `dimensions=video&sort=-views&maxResults=25`).
+- Staging `stg_youtube_video_diario`; view `vw_youtube_video_diario`.
+
+### Recortes do canal por dia
+
+Mesmas colunas de dado: `views`, `minutos_assistidos`; mesmo particionamento
+(`data_dia`), cluster `organization_id, channel_id, <recorte>`.
+
+| Tabela (`_tabela`) | Granularidade (além de `organization_id`, `channel_id`, `data_dia`) | Origem (`dimensions`) |
+|---|---|---|
+| `fato_youtube_origem_trafego_diario` (`origem_trafego`) | `origem_trafego` | `day,insightTrafficSourceType` |
+| `fato_youtube_dispositivo_diario` (`dispositivo`) | `dispositivo` | `day,deviceType` |
+| `fato_youtube_local_reproducao_diario` (`local_reproducao`) | `local_reproducao` | `day,insightPlaybackLocationType` |
+| `fato_youtube_pais_diario` (`pais`) | `pais` (ISO 3166-1 alfa-2) | `country`, um pedido por dia |
+
+Staging `stg_youtube_<recorte>_diario`; view `vw_youtube_<recorte>_diario`.
+
+### `fato_youtube_audiencia_diario` (`audiencia`)
+
+- Granularidade: uma linha por `organization_id`, `channel_id`, `data_dia`,
+  `faixa_etaria`, `genero`.
+- Colunas: `percentual_espectadores` (`viewerPercentage`, soma 100 no dia),
+  `execucao_id`, `inserido_em`.
+- Partição `data_dia`; cluster `organization_id, channel_id`.
+- Origem: `ageGroup,gender` com `viewerPercentage`, um pedido por dia. Dia
+  com poucos espectadores volta sem linhas (limiar de privacidade da API).
+- Staging `stg_youtube_audiencia_diario`; view `vw_youtube_audiencia_diario`.
+
+Limites do coletor: país e audiência só são consultáveis sem `day` na API, por
+isso um pedido por dia, no máximo os 31 dias mais recentes da janela. Falha
+nos recortes e nos metadados é ignorada (só `fato_youtube_diario` derruba a
+execução).
+
 <!-- YouTube: novas tabelas acima desta linha -->
 
 ## Google Business Profile
@@ -223,6 +295,42 @@ Configuração: `tabelas/gbp.ts`. Manifesto: `manifesto/gbp.json`. DDL: `25_gbp*
 - Colunas: `valor`, `execucao_id`, `inserido_em`.
 - Partição `data_dia`; cluster `organization_id, location_id`.
 - Staging `stg_gbp_diario`; view `vw_gbp_diario`.
+
+`fato_gbp_diario` agora pede 10 métricas diárias da Business Profile
+Performance API (`fetchMultiDailyMetricsTimeSeries`): as quatro
+`BUSINESS_IMPRESSIONS_*`, `BUSINESS_DIRECTION_REQUESTS`, `CALL_CLICKS`,
+`WEBSITE_CLICKS`, `MESSAGING_CLICKS`, `BUSINESS_BOOKINGS` e
+`BUSINESS_FOOD_MENU_CLICKS` (as duas métricas depreciadas ficam de fora).
+Decisões: ADR [0016](../../docs/adr/0016-youtube-gbp-modelagem.md).
+
+### `dim_gbp_local_scd2` (`dim_local`)
+
+- Granularidade: uma versão por `organization_id`, `location_id` e intervalo
+  `[valido_de, valido_ate)`.
+- Atributos (hash da versão): `nome`, `categoria_primaria`, `endereco`,
+  `cidade`, `estado`, `cep`, `pais`, `status`, `site`. São dados do
+  estabelecimento, não de pessoas.
+- Cluster `organization_id, location_id`.
+- Origem: Business Information API v1, `locations.get` com `readMask`
+  `name,title,categories,storefrontAddress,openInfo,websiteUri`
+  (`title`, `categories.primaryCategory.displayName`,
+  `storefrontAddress.*`, `openInfo.status`, `websiteUri`).
+- Staging `stg_gbp_local`; view `vw_dim_gbp_local_scd2`.
+
+### `fato_gbp_palavras_chave_mensal` (`palavras_chave`)
+
+- Granularidade: uma linha por `organization_id`, `location_id`, `mes` (dia 1
+  do mês), `termo`.
+- Colunas: `valor` (usuários únicos que buscaram o termo; nulo quando a API só
+  informa o limiar), `limiar` (a API informa "abaixo de N"), `execucao_id`,
+  `inserido_em`. Exatamente um dos dois vem preenchido.
+- Partição `mes`; cluster `organization_id, location_id`.
+- Origem: `searchkeywords/impressions/monthly`, um pedido por mês da janela
+  (até 3), `pageSize=100`, só a primeira página.
+- Staging `stg_gbp_palavras_chave_mensal`; view `vw_gbp_palavras_chave_mensal`
+  (dono pelo mês: `cliente_na_epoca_*` usa o dia 1 do mês).
+
+Avaliações (contagem e nota média): ficaram de fora, ver ADR 0016.
 
 <!-- Google Business Profile: novas tabelas acima desta linha -->
 

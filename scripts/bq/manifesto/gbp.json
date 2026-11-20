@@ -1,3 +1,5 @@
 [
-  { "tabela": "fato_gbp_diario", "chave": "location_id", "plataforma": "gbp", "data": "data_dia" }
+  { "tabela": "fato_gbp_diario", "chave": "location_id", "plataforma": "gbp", "data": "data_dia" },
+  { "tabela": "fato_gbp_palavras_chave_mensal", "chave": "location_id", "plataforma": "gbp", "data": "mes" },
+  { "tabela": "dim_gbp_local_scd2", "chave": "location_id", "plataforma": "gbp", "todoPeriodo": true }
 ]
