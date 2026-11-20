@@ -25,4 +25,11 @@ describe('erro de autorização', () => {
     assert.match(mensagemDoErroDeAutorizacao('estado_invalido'), /outra aba/);
     assert.match(mensagemDoErroDeAutorizacao('qualquer'), /Tente de novo/);
   });
+  it('um caminho que normaliza para //outro-dominio nunca vira redirecionamento externo', () => {
+    for (const origem of ['/a/..//evil.example', '/%2e%2e//evil.example', '/./..//evil.example']) {
+      const destino = destinoDoErroDeAutorizacao(origem, 'estado_invalido', 'meta');
+      assert.ok(destino.startsWith('/') && !destino.startsWith('//'), `${origem} → ${destino}`);
+      assert.equal(new URL(destino, 'https://platform.example').host, 'platform.example');
+    }
+  });
 });

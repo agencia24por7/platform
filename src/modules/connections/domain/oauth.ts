@@ -368,7 +368,8 @@ export function isSafeReturnPath(path: string): boolean {
   if (path.includes('\\') || CONTROL_CHARACTERS.test(path)) return false;
 
   try {
-    return new URL(path, INTERNAL_ORIGIN).origin === INTERNAL_ORIGIN;
+    const normalizado = new URL(path, INTERNAL_ORIGIN);
+    return normalizado.origin === INTERNAL_ORIGIN && !normalizado.pathname.startsWith('//');
   } catch {
     return false;
   }
