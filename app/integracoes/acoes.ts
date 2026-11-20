@@ -287,7 +287,7 @@ export async function guardarChave(formData: FormData): Promise<void> {
   voltar('Chave testada com sucesso e guardada no cofre. O banco ficou só com a referência.');
 }
 
-export async function removerChave(formData: FormData): Promise<void> {
+export async function removerConexao(formData: FormData): Promise<void> {
   const contexto = await contextoDeConexoes();
   const ator = await atorAtual();
   const destino = destinoDoRetorno(formData);
@@ -299,7 +299,7 @@ export async function removerChave(formData: FormData): Promise<void> {
     return;
   }
 
-  const resultado = await modules().connections.removerChave(
+  const resultado = await modules().connections.removerConexao(
     {
       organizationId: contexto.organization.id,
       papelDeQuemAge: contexto.role,
@@ -312,5 +312,5 @@ export async function removerChave(formData: FormData): Promise<void> {
     voltar(toActionState(resultado.error).error ?? 'Não deu para remover a conexão.');
     return;
   }
-  voltar('Conexão removida.');
+  voltar('Conexão removida. A credencial foi apagada do cofre e a coleta dessa conta parou.');
 }

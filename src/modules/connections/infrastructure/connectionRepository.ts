@@ -1,6 +1,11 @@
 import { withTenant } from '@/shared/db/tenant';
 import type { Connection, NewConnection } from '@/modules/connections/domain/connection';
 
+export type WorkflowsDaConexao = {
+  readonly coletorRef: string | null;
+  readonly executorRef: string | null;
+};
+
 type Row = {
   id: string;
   organization_id: string;
@@ -41,7 +46,7 @@ export type ConnectionRepository = {
   findByExternalId(organizationId: string, platform: string, externalId: string): Promise<Connection | null>;
   renew(input: NewConnection & { readonly id: string }): Promise<Connection>;
   list(organizationId: string): Promise<readonly Connection[]>;
-  remove(organizationId: string, id: string): Promise<boolean>;
+  revogar(organizationId: string, id: string): Promise<WorkflowsDaConexao | null>;
   trocarColetorRef(organizationId: string, id: string, coletorRef: string): Promise<string | null>;
   trocarExecutorRef(organizationId: string, id: string, executorRef: string): Promise<string | null>;
 };
@@ -101,11 +106,29 @@ export function createConnectionRepository(): ConnectionRepository {
       });
     },
 
-    async remove(organizationId, id) {
+    async revogar(organizationId, id) {
       return withTenant(organizationId, async (tx) => {
         const rows = (await tx`
-          DELETE FROM integrations.connections WHERE id = ${id} RETURNING id`) as unknown as { id: string }[];
-        return rows.length > 0;
+          WITH antes AS (
+            SELECT id, coletor_ref, executor_ref FROM integrations.connections
+            WHERE id = ${id} AND status <> 'revoked'
+            FOR UPDATE
+          )
+          UPDATE integrations.connections c
+          SET status         = 'revoked',
+              credential_ref = 'descartada',
+              account_email  = NULL,
+              webhook_token  = NULL,
+              coletor_ref    = NULL,
+              executor_ref   = NULL
+          FROM antes
+          WHERE c.id = antes.id
+          RETURNING antes.coletor_ref, antes.executor_ref`) as unknown as {
+          coletor_ref: string | null;
+          executor_ref: string | null;
+        }[];
+        const linha = rows[0];
+        return linha ? { coletorRef: linha.coletor_ref, executorRef: linha.executor_ref } : null;
       });
     },
 

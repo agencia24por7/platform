@@ -43,7 +43,7 @@ export type ConnectionService = {
     platform: Platform;
     chave: string;
   }, ator: Ator): Promise<Result<Connection, Failure>>;
-  removerChave(input: {
+  removerConexao(input: {
     organizationId: string;
     papelDeQuemAge: MemberRole;
     connectionId: string;
@@ -71,6 +71,10 @@ export type ClientOwnership = {
   findById(organizationId: string, id: string): Promise<{ readonly id: string; readonly name: string } | null>;
 };
 
+export type RemovedorDeWorkflow = {
+  remover(workflowId: string): Promise<boolean>;
+};
+
 export function createConnectionService(
   connections: ConnectionRepository,
   accounts: AdAccountRepository,
@@ -78,6 +82,7 @@ export function createConnectionService(
   clients: ClientOwnership,
   vault: CredentialVault,
   tester: CredentialTester,
+  workflows: RemovedorDeWorkflow,
 ): ConnectionService {
   return {
     async guardarChave(input, ator) {
@@ -157,26 +162,35 @@ export function createConnectionService(
       return ok(connection);
     },
 
-    async removerChave(input, ator) {
+    async removerConexao(input, ator) {
       if (!canAdminister(input.papelDeQuemAge)) {
-        return err(failure('forbidden', MOTIVO_DA_CHAVE.sem_permissao));
+        return err(failure('forbidden', 'Só quem administra a organização pode remover uma conexão.'));
       }
 
       const conexao = await connections.findById(input.organizationId, input.connectionId);
-      if (!conexao || !usaChaveDeApi(conexao.platform)) {
+      if (!conexao || conexao.status === 'revoked') {
         return err(failure('not_found', 'Conexão não encontrada.'));
       }
 
-      const removida = await connections.remove(input.organizationId, conexao.id);
-      if (!removida) return err(failure('not_found', 'Conexão não encontrada.'));
+      const descarte = await vault.discard(conexao.credentialRef);
+      if (descarte === 'falhou' || descarte === 'sem_permissao') {
+        return err(
+          failure('conflict', 'Não deu para apagar a credencial no cofre. Nada foi alterado; tente de novo.'),
+        );
+      }
 
-      await vault.discard(conexao.credentialRef);
+      const revogada = await connections.revogar(input.organizationId, conexao.id);
+      if (!revogada) return err(failure('not_found', 'Conexão não encontrada.'));
+
+      for (const workflowId of [revogada.coletorRef, revogada.executorRef]) {
+        if (workflowId) await workflows.remover(workflowId);
+      }
 
       await audit.record({
         organizationId: input.organizationId,
         actorType: 'user',
         actorId: ator.userId,
-        action: 'connection.key_removed',
+        action: 'connection.removed',
         targetType: 'connection',
         targetId: conexao.id,
         requestId: ator.requestId,
@@ -197,11 +211,14 @@ export function createConnectionService(
         return err(failure('validation', `Escopo obrigatório ausente: ${absent.join(', ')}.`));
       }
 
-      if (await connections.findByExternalId(input.organizationId, input.platform, input.externalId)) {
+      const existente = await connections.findByExternalId(input.organizationId, input.platform, input.externalId);
+      if (existente && existente.status !== 'revoked') {
         return err(failure('conflict', 'Esta autorização já existe nesta organização.'));
       }
 
-      const connection = await connections.insert(input);
+      const connection = existente
+        ? await connections.renew({ ...input, id: existente.id })
+        : await connections.insert(input);
 
       await audit.record({
         organizationId: connection.organizationId,
