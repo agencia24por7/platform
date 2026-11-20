@@ -23,9 +23,9 @@ type Props = {
 };
 
 const USO: Record<EntradaDoBrain['sensibilidade']['usoPorAgente'], string> = {
-  livre: 'Agente pode usar',
-  com_cautela: 'Agente usa com cautela',
-  proibido: 'Fora do alcance de agentes',
+  permitido: 'Agente pode usar',
+  restrito: 'Agente vê só metadados',
+  negado: 'Fora do alcance de agentes',
 };
 
 function dataCurta(iso: string | null): string {
@@ -150,7 +150,7 @@ export function ExploradorDoBrain({ clienteNome, entradas, mapa }: Props) {
                 {grupo.lacunas.map((lacuna) => (
                   <a key={lacuna.rotulo} href={lacuna.href} className="mapa-vivo__falta" aria-label={`Falta: ${lacuna.rotulo}`}>
                     <circle cx={lacuna.x} cy={lacuna.y} r="9" />
-                    <text x={lacuna.x} y={lacuna.y + 22} textAnchor="middle">{lacuna.rotulo.length > 18 ? `${lacuna.rotulo.slice(0, 17)}…` : lacuna.rotulo}</text>
+                    <text x={lacuna.x} y={lacuna.y + 22} textAnchor="middle">{lacuna.rotulo.length > 14 ? `${lacuna.rotulo.slice(0, 13)}…` : lacuna.rotulo}</text>
                   </a>
                 ))}
               </g>

@@ -1,20 +1,29 @@
 export const FRESCORES = ['fresco', 'atrasado', 'parado', 'desconhecido'] as const;
 export type Frescor = (typeof FRESCORES)[number];
 
-export const TIPOS_DE_ENTRADA = ['conexao', 'tabela', 'contexto', 'arquivo'] as const;
+export const TIPOS_DE_ENTRADA = [
+  'conexao',
+  'fonte',
+  'tabela_de_dados',
+  'contexto_secao',
+  'contexto_lista',
+  'arquivo',
+  'capacidade',
+] as const;
 export type TipoDeEntrada = (typeof TIPOS_DE_ENTRADA)[number];
 
 export const AGRUPAMENTOS = ['conexoes', 'dados', 'contexto', 'arquivos'] as const;
 export type Agrupamento = (typeof AGRUPAMENTOS)[number];
 
-export const NIVEIS_DE_SENSIBILIDADE = ['publico', 'interno', 'restrito'] as const;
+export const NIVEIS_DE_SENSIBILIDADE = ['publico', 'negocio', 'pessoal_possivel', 'restrito'] as const;
 export type NivelDeSensibilidade = (typeof NIVEIS_DE_SENSIBILIDADE)[number];
 
-export type UsoPorAgente = 'livre' | 'com_cautela' | 'proibido';
+export const USOS_POR_AGENTE = ['permitido', 'restrito', 'negado'] as const;
+export type UsoPorAgente = (typeof USOS_POR_AGENTE)[number];
 
 export type ColunaDoEsquema = { readonly nome: string; readonly tipo: string; readonly descricao: string };
 
-export type Relacao = { readonly urn: string; readonly tipo: 'deriva_de' | 'alimenta' | 'descreve' };
+export type Relacao = { readonly urn: string; readonly tipo: string };
 
 export type EntradaDoBrain = {
   readonly urn: string;
@@ -33,7 +42,7 @@ export type EntradaDoBrain = {
   };
   readonly frescor: { readonly status: Frescor; readonly ultimaAtualizacao: string | null };
   readonly qualidade: { readonly completude: number; readonly avisos: readonly string[] };
-  readonly acesso: { readonly via: 'bigquery' | 'armazenamento' | 'contexto' | 'conexao'; readonly receita: string };
+  readonly acesso: { readonly via: 'bigquery' | 'contexto' | 'arquivo' | 'status' | 'derivado' | 'restrito' | 'externo'; readonly receita: string };
   readonly sensibilidade: {
     readonly nivel: NivelDeSensibilidade;
     readonly piiPossivel: boolean;
@@ -101,26 +110,34 @@ export const ROTULO_DO_AGRUPAMENTO: Record<Agrupamento, string> = {
 
 export const ROTULO_DO_TIPO: Record<TipoDeEntrada, string> = {
   conexao: 'Conexão',
-  tabela: 'Tabela',
-  contexto: 'Contexto',
+  fonte: 'Fonte',
+  tabela_de_dados: 'Tabela',
+  contexto_secao: 'Seção do contexto',
+  contexto_lista: 'Lista do contexto',
   arquivo: 'Arquivo',
+  capacidade: 'Capacidade',
 };
 
 export const ROTULO_DA_SENSIBILIDADE: Record<NivelDeSensibilidade, string> = {
   publico: 'Público',
-  interno: 'Interno',
+  negocio: 'Negócio',
+  pessoal_possivel: 'Pode ter dado pessoal',
   restrito: 'Restrito',
 };
 
-export function agrupamentoDe(tipo: TipoDeEntrada): Agrupamento {
+export function agrupamentoDe(tipo: TipoDeEntrada): Agrupamento | null {
   switch (tipo) {
     case 'conexao':
       return 'conexoes';
-    case 'tabela':
+    case 'fonte':
+    case 'tabela_de_dados':
       return 'dados';
-    case 'contexto':
+    case 'contexto_secao':
+    case 'contexto_lista':
       return 'contexto';
     case 'arquivo':
       return 'arquivos';
+    case 'capacidade':
+      return null;
   }
 }

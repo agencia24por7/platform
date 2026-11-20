@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { CopyButton } from '@/../app/_components/CopyButton';
 import { Anel } from '@/../app/clientes/[id]/_componentes/Anel';
@@ -63,10 +64,20 @@ function MarkdownDoCatalogo({ texto }: { readonly texto: string }) {
 export default async function BrainDoCliente({ params }: { readonly params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { ctx, cliente } = await carregarPainel(id);
-  const brain = await buscarBrainDoCliente({ organizationId: ctx.organization.id, clientId: cliente.id, clienteNome: cliente.name });
+  const buscado = await buscarBrainDoCliente({ organizationId: ctx.organization.id, clientId: cliente.id });
+  if (!buscado.ok && buscado.motivo === 'nao_encontrado') notFound();
+  if (!buscado.ok) {
+    return (
+      <div className="vazio">
+        <div className="vazio__titulo">O Brain não respondeu agora</div>
+        <p className="vazio__texto">O índice deste cliente é montado na hora a partir das conexões, coletas e contexto. Tente de novo em instantes; se persistir, avise o time técnico.</p>
+      </div>
+    );
+  }
+  const brain = buscado.brain;
   const mapa = montarMapa(brain);
   const agora = new Date();
-  const tabelas = brain.entradas.filter((e) => e.tipo === 'tabela' && e.cobertura.ultimos90Dias);
+  const tabelas = brain.entradas.filter((e) => e.tipo === 'tabela_de_dados' && e.cobertura.ultimos90Dias);
 
   return (
     <div className="brain pilha">

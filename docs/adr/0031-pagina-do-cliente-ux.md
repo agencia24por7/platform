@@ -2,7 +2,7 @@
 
 - Situação: aceita
 - Data: 2026-11-20
-- Relacionadas: 0022 (exclusão lógica), 0026 (contexto do cliente), 0027 (armazenamento do contexto), 0028 (limite de corpo no Caddy)
+- Relacionadas: 0022 (exclusão lógica), 0030 (catálogo do Brain), 0026 (contexto do cliente), 0027 (armazenamento do contexto), 0028 (limite de corpo no Caddy)
 
 ## Contexto
 
@@ -73,22 +73,23 @@ agora 26 MB). A política de tipos e cota continua no serviço.
 - O link aparece uma única vez, no diálogo de envio, com mensagem pronta em pt-BR. Pode ser amarrado a um convite de
   integração (só quem administra); a página do convite passa a mostrar os dois passos com progresso.
 
-### Seção Brain: porta, fixtures e troca
+### Seção Brain: serviço real, view-model e fixtures
 
-- O Brain é um índice do que o cliente tem (conexões, dados, contexto, arquivos) mais governança (frescor, lacunas,
-  capacidades, próximas ações). A UI consome um view-model tipado em `src/modules/clients/domain/painel/brain/tipos.ts`,
-  espelho do esquema de entrada do catálogo (URN, tipo, esquema, grão, cobertura, frescor, qualidade, acesso,
-  sensibilidade, relações).
-- `app/clientes/[id]/_brain/fonte.ts` é o único ponto de troca: `buscarBrainDoCliente` chama o adaptador configurado.
-  Hoje é `adaptadorDeExemplo`, que usa conexões, contexto e arquivos reais e simula cobertura/frescor/esquemas a partir
-  do catálogo de tabelas (`scripts/bq/README.md`), de forma determinística. A página mostra a faixa "Prévia".
-- Quando `modules().brain` existir, basta um adaptador que converta a resposta do catálogo para `BrainDoCliente` e
-  trocar a constante `ADAPTADOR` nesse arquivo.
+- O Brain é um índice do que o cliente tem (conexões, fontes, tabelas, contexto, arquivos) mais governança (frescor,
+  lacunas, capacidades, próximas ações). Vem do módulo `src/modules/brain` (ADR 0030), chamado no servidor por
+  `modules().brain.montarNaOrganizacao(organizationId, clientId)`, nunca pelo endpoint HTTP do worker.
+- Autorização: a aba só abre depois de `carregarPainel` (sessão, papel e recorte de clientes); a organização vem da
+  sessão, não do resolvedor do worker (`core.brain_resolver_cliente` é só de `orla_worker`). O inventário roda com
+  `withTenant`, então cliente de outra organização ou excluído não monta e a aba responde 404. Falha do serviço vira o
+  estado "o Brain não respondeu agora", sem derrubar a página.
+- `src/modules/clients/domain/painel/brain/doCatalogo.ts` converte o `Snapshot` (entradas, capacidades, diagnóstico)
+  para o view-model da UI (`tipos.ts`, com os mesmos enums do esquema da entrada) e usa o `renderizarCatalogoMd` do
+  módulo para a prévia "Como um agente enxerga". A série de 90 dias vem de `cobertura.desde/ate/lacunas`.
+- `exemplo.ts` (fixture determinística a partir do catálogo de tabelas) ficou só para testes e desenvolvimento.
 - Visualizações em SVG/CSS próprio, sem biblioteca de gráficos; toda visualização tem alternativa em lista/tabela.
 
 ## Consequências
 
 - Rotas antigas continuam: `/clientes/{id}` é a visão geral; ações que redirecionavam para lá agora vão para a aba certa.
 - O teste de integração de mover fonte aponta para `/clientes/{id}/dados`.
-- O Brain mostra dados de exemplo até o módulo real chegar; o risco de confundir é mitigado pela faixa de prévia e pela
-  etiqueta `exemplo` nas entradas simuladas.
+- `BrainService` ganhou `montarNaOrganizacao` (mesmo núcleo de `montar`, sem o resolvedor do worker) para a UI.

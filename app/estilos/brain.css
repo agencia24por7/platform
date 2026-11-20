@@ -118,3 +118,5 @@
 .markdown code { font-family: var(--font-mono); font-size: .9em; background: var(--bg-sunken); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
 
 .mapa-vivo__hub-rotulo { paint-order: stroke; stroke: var(--bg-elev); stroke-width: 6px; }
+
+.sensivel--pessoal_possivel { color: var(--c-warn); border-color: var(--c-warn); background: var(--c-warn-bg); }

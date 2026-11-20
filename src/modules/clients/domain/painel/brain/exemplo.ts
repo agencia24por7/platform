@@ -262,8 +262,8 @@ function entradasDaConta(conta: ContaParaOBrain, agora: Date, exemplo: boolean, 
     cobertura: { desde: null, ate: ultima ? diaIso(ultima) : null, linhas: null, diasComDado: null, ultimos90Dias: null },
     frescor: { status: frescor, ultimaAtualizacao: ultima ? ultima.toISOString() : null },
     qualidade: { completude: conta.coletaLigada ? 1 : 0.5, avisos: conta.coletaLigada ? [] : ['Coleta pausada: o dado para de chegar.'] },
-    acesso: { via: 'conexao', receita: `/integracoes/conector/${conta.platform}` },
-    sensibilidade: { nivel: 'interno', piiPossivel: false, usoPorAgente: 'livre' },
+    acesso: { via: 'status', receita: `/integracoes/conector/${conta.platform}` },
+    sensibilidade: { nivel: 'negocio', piiPossivel: false, usoPorAgente: 'permitido' },
     tags,
     relacoes: [],
   };
@@ -278,7 +278,7 @@ function entradasDaConta(conta: ContaParaOBrain, agora: Date, exemplo: boolean, 
     if (modelo.pii) avisos.push('Pode conter dado pessoal pseudonimizado.');
     return {
       urn: `urn:orla:tabela:${modelo.nome}:${conta.externalId}`,
-      tipo: 'tabela',
+      tipo: 'tabela_de_dados',
       titulo: modelo.titulo,
       descricao: modelo.descricao,
       provedor: conta.platform,
@@ -298,8 +298,8 @@ function entradasDaConta(conta: ContaParaOBrain, agora: Date, exemplo: boolean, 
         receita: `SELECT *\nFROM \`tria_dw.vw_${modelo.nome}\`\nWHERE cliente_atual_id = '${clienteId}'\n  AND ${modelo.chave} = '${conta.externalId}'\n  AND data_dia >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)`,
       },
       sensibilidade: modelo.pii
-        ? { nivel: 'restrito', piiPossivel: true, usoPorAgente: 'com_cautela' }
-        : { nivel: 'interno', piiPossivel: false, usoPorAgente: 'livre' },
+        ? { nivel: 'restrito', piiPossivel: true, usoPorAgente: 'restrito' }
+        : { nivel: 'negocio', piiPossivel: false, usoPorAgente: 'permitido' },
       tags: [...tags, modelo.nome.startsWith('dim_') ? 'dimensão' : 'fato'],
       relacoes: [{ urn: urnConexao, tipo: 'deriva_de' }],
     };
@@ -311,7 +311,7 @@ function entradasDaConta(conta: ContaParaOBrain, agora: Date, exemplo: boolean, 
 function entradasDoContexto(entrada: EntradaDoExemplo): EntradaDoBrain[] {
   return entrada.secoes.map((secao) => ({
     urn: `urn:orla:contexto:${secao.secao}`,
-    tipo: 'contexto',
+    tipo: 'contexto_secao',
     titulo: `${secao.letra} · ${secao.titulo}`,
     descricao: `Mapa de contexto, seção ${secao.titulo.toLowerCase()}: ${secao.percentual}% preenchido.`,
     provedor: null,
@@ -324,7 +324,7 @@ function entradasDoContexto(entrada: EntradaDoExemplo): EntradaDoBrain[] {
       avisos: secao.percentual < 50 ? ['Menos da metade preenchida: o agente vai responder com cautela.'] : [],
     },
     acesso: { via: 'contexto', receita: `brain/${secao.secao}.md` },
-    sensibilidade: { nivel: 'interno', piiPossivel: secao.secao === 'publico', usoPorAgente: 'livre' },
+    sensibilidade: { nivel: 'negocio', piiPossivel: secao.secao === 'publico', usoPorAgente: 'permitido' },
     tags: ['contexto', secao.secao],
     relacoes: [],
   }));
@@ -342,8 +342,8 @@ function entradasDeArquivos(entrada: EntradaDoExemplo): EntradaDoBrain[] {
     cobertura: { desde: diaIso(arquivo.criadoEm), ate: diaIso(arquivo.criadoEm), linhas: null, diasComDado: null, ultimos90Dias: null },
     frescor: { status: 'fresco', ultimaAtualizacao: arquivo.criadoEm.toISOString() },
     qualidade: { completude: 1, avisos: [] },
-    acesso: { via: 'armazenamento', receita: `arquivos/${arquivo.id}` },
-    sensibilidade: { nivel: 'interno', piiPossivel: false, usoPorAgente: 'livre' },
+    acesso: { via: 'arquivo', receita: `arquivos/${arquivo.id}` },
+    sensibilidade: { nivel: 'negocio', piiPossivel: false, usoPorAgente: 'permitido' },
     tags: ['arquivo', arquivo.fieldKey],
     relacoes: [{ urn: `urn:orla:contexto:${arquivo.fieldKey}`, tipo: 'descreve' }],
   }));
@@ -355,7 +355,7 @@ function percentualDaSecao(entrada: EntradaDoExemplo, secao: string): number {
 
 function capacidades(entrada: EntradaDoExemplo, plataformas: ReadonlySet<string>, entradas: readonly EntradaDoBrain[]): Capacidade[] {
   const id = entrada.clienteId;
-  const urns = (provedor: string) => entradas.filter((e) => e.tipo === 'tabela' && e.provedor === provedor).map((e) => e.urn);
+  const urns = (provedor: string) => entradas.filter((e) => e.tipo === 'tabela_de_dados' && e.provedor === provedor).map((e) => e.urn);
   const temAds = plataformas.has('meta') || plataformas.has('google');
   const ctx = (secao: string) => percentualDaSecao(entrada, secao);
 
@@ -471,7 +471,7 @@ export function montarBrainDeExemplo(entrada: EntradaDoExemplo): BrainDoCliente 
     ...entradasDeArquivos(entrada),
   ];
   const plataformas = new Set(contas.map(({ conta }) => conta.platform));
-  const tabelas = entradas.filter((e) => e.tipo === 'tabela');
+  const tabelas = entradas.filter((e) => e.tipo === 'tabela_de_dados');
   const cobertura = tabelas.length === 0 ? 0 : Math.round((tabelas.reduce((s, t) => s + (t.cobertura.diasComDado ?? 0), 0) / (tabelas.length * DIAS)) * 100);
   const conexoes = entradas.filter((e) => e.tipo === 'conexao');
   const frescor = conexoes.length === 0 ? 0 : Math.round((conexoes.reduce((s, c) => s + PESO_DO_FRESCOR[c.frescor.status], 0) / conexoes.length) * 100);

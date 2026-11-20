@@ -48,7 +48,7 @@ describe('brain de exemplo', () => {
 
   it('séries de 90 dias, receita de acesso filtrada pelo cliente e lacunas', () => {
     const brain = montarBrainDeExemplo(base);
-    const tabela = brain.entradas.find((e) => e.tipo === 'tabela');
+    const tabela = brain.entradas.find((e) => e.tipo === 'tabela_de_dados');
     assert.equal(tabela?.cobertura.ultimos90Dias?.length, 90);
     assert.match(tabela?.acesso.receita ?? '', /cliente_atual_id = '95ec64b4/);
     assert.ok(brain.lacunas.some((l) => l.rotulo === 'GA4'));
