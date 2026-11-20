@@ -11,5 +11,5 @@ export async function currentUser(): Promise<SignedInUser | null> {
   const session = readSession(token, env().TRIA_SESSION_SECRET, Date.now());
   if (!session) return null;
 
-  return modules().identity.resolve(session.userId);
+  return modules().identity.resolve(session.userId, session.issuedAt);
 }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
-import { acaoComCampo, appIsUp, browse, ensureUser, makeOwner, signIn, signOut, submitAction } from './helpers.mjs';
+import { BASE, acaoComCampo, appIsUp, browse, ensureUser, makeOwner, signIn, signOut, submitAction } from './helpers.mjs';
 
 const dono = (sql) =>
   execFileSync('docker', ['exec', '-i', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
@@ -60,6 +60,31 @@ describe('remover uma conexão', { concurrency: false }, () => {
   it('remover de novo não acha a conexão', async () => {
     const tela = await (await browse('/integracoes/conector/ga4')).text();
     assert.ok(!tela.includes(`value="${conexao}"`));
+    signOut();
+  });
+});
+
+describe('sair encerra a sessão de verdade', { concurrency: false }, () => {
+  it('um cookie copiado antes do logout deixa de valer depois dele', async () => {
+    const pessoa = ensureUser('sair@tria.local');
+    const org = umaLinha(dono(
+      `INSERT INTO core.organizations (name, slug, type) VALUES ('Sair', 'sair-${Date.now()}', 'agency') RETURNING id`,
+    ));
+    makeOwner(pessoa, org);
+    const cookie = signIn(pessoa);
+    await new Promise((resolver) => setTimeout(resolver, 20));
+
+    assert.equal((await browse('/clientes')).status, 200);
+
+    const saida = await fetch(`${BASE}/api/auth/sair`, {
+      method: 'POST',
+      headers: { Cookie: cookie, Origin: BASE },
+      redirect: 'manual',
+    });
+    assert.equal(saida.status, 303);
+
+    const depois = await browse('/clientes');
+    assert.ok([302, 307].includes(depois.status), `sessão antiga ainda vale: ${depois.status}`);
     signOut();
   });
 });

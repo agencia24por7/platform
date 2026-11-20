@@ -45,4 +45,9 @@ test('chave do Apify é redigida mesmo solta no texto', () => {
   const texto = 'falhou ao usar apify_api_AbCdEf1234567890xyz no passo 3';
   assert.ok(!redactText(texto).includes('AbCdEf1234567890xyz'));
   assert.match(redactText(texto), /\[redigido\]/);
+  it('passa a redação de texto em todo valor string, mesmo com chave inocente', () => {
+    const limpo = redact({ error: 'token Bearer abcDEF123456xyz recusado', quem: 'ana@x.com' }) as Record<string, string>;
+    assert.ok(!limpo['error']?.includes('abcDEF123456xyz'));
+    assert.equal(limpo.quem, 'a***@x.com');
+  });
 });

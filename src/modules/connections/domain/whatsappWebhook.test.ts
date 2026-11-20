@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import test from 'node:test';
-import { assinaturaDaMetaValida, referenciaExternaDoWhatsapp } from './whatsappWebhook.ts';
+import { assinaturaDaMetaValida, referenciaExternaDoWhatsapp, resumirAvisoDoWhatsapp } from './whatsappWebhook.ts';
 
 const SEGREDO = 'segredo-de-teste-com-tamanho-razoavel';
 
@@ -46,4 +46,35 @@ test('payload sem entry devolve null', () => {
   assert.equal(referenciaExternaDoWhatsapp({}), null);
   assert.equal(referenciaExternaDoWhatsapp(null), null);
   assert.equal(referenciaExternaDoWhatsapp('texto'), null);
+});
+
+test('o aviso da Cloud API guarda a atribuição ao anúncio, sem texto, nome nem telefone', () => {
+  const payload = {
+    entry: [{ changes: [{ value: {
+      contacts: [{ profile: { name: 'Maria da Silva' }, wa_id: '5581999990000' }],
+      messages: [{
+        id: 'wamid.1', timestamp: '1763600000', type: 'text', from: '5581999990000',
+        text: { body: 'quero o empréstimo' },
+        referral: { ctwa_clid: 'clid-1', source_id: '1200', source_type: 'ad', source_url: 'https://fb.me/x' },
+      }],
+    } }] }],
+  };
+  const resumo = resumirAvisoDoWhatsapp(payload, 'chave');
+  const serializado = JSON.stringify(resumo);
+
+  assert.ok(!serializado.includes('Maria'));
+  assert.ok(!serializado.includes('empréstimo'));
+  assert.ok(!serializado.includes('5581999990000'));
+  assert.match(serializado, /clid-1/);
+  assert.match(serializado, /wamid\.1/);
+});
+
+test('o aviso da Z-API vira o mesmo resumo, e o pseudônimo do contato é estável', () => {
+  const um = resumirAvisoDoWhatsapp({ phone: '5581999990000', messageId: 'm1', senderName: 'Maria', text: { message: 'oi' } }, 'chave');
+  const outro = resumirAvisoDoWhatsapp({ phone: '+55 81 99999-0000', messageId: 'm2' }, 'chave');
+  const contato = (r: Record<string, unknown>) => (r['mensagens'] as { contato: string }[])[0]!.contato;
+
+  assert.ok(!JSON.stringify(um).includes('Maria'));
+  assert.equal(contato(um), contato(outro));
+  assert.notEqual(contato(um), contato(resumirAvisoDoWhatsapp({ phone: '5581999990000' }, 'outra-chave')));
 });

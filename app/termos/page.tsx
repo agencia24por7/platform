@@ -55,7 +55,21 @@ export default function Termos() {
       </section>
 
       <section>
-        <h2>5. Disponibilidade e responsabilidade</h2>
+        <h2>5. Confidencialidade e propriedade</h2>
+        <ul>
+          <li>
+            Os dados e relatórios de um cliente são confidenciais: só a equipe da agência e as pessoas indicadas por
+            esse cliente os acessam.
+          </li>
+          <li>
+            A orla, seu código, marca e layout pertencem à Agência 24/7. O uso é permitido só para os fins destes
+            termos, sem copiar, revender ou fazer engenharia reversa.
+          </li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>6. Disponibilidade e responsabilidade</h2>
         <p>
           Trabalhamos para manter a orla disponível e correta, mas ela pode ter interrupções para manutenção ou por
           falhas de terceiros. Na medida permitida por lei, não respondemos por decisões tomadas só com base nos
@@ -64,15 +78,17 @@ export default function Termos() {
       </section>
 
       <section>
-        <h2>6. Mudanças e encerramento</h2>
+        <h2>7. Mudanças e encerramento</h2>
         <p>
-          Podemos atualizar estes termos; a data no topo indica a versão em vigor. Você pode deixar de usar a orla a
-          qualquer momento e pedir a exclusão dos seus dados.
+          Podemos atualizar estes termos; a data no topo indica a versão em vigor. Mudanças relevantes são avisadas a
+          quem usa a orla com pelo menos 15 dias de antecedência. Você pode deixar de usar a orla a qualquer momento e
+          pedir a exclusão dos seus dados; ao fim do contrato com um cliente, os dados dele são excluídos conforme a{' '}
+          <Link href="/privacidade">Política de Privacidade</Link>.
         </p>
       </section>
 
       <section>
-        <h2>7. Lei aplicável</h2>
+        <h2>8. Lei aplicável</h2>
         <p>Estes termos seguem as leis do Brasil. Fica eleito o foro da comarca do Recife, Pernambuco.</p>
       </section>
     </DocumentoPublico>
