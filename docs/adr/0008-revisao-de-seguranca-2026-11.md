@@ -100,3 +100,17 @@ terraform -chdir=infra/terraform/bootstrap init -backend-config="bucket=tria-pla
 terraform -chdir=infra/terraform/bootstrap plan \
   -var project_id=tria-platform -var region=us-central1 -var github_repository=agencia24por7/platform
 ```
+
+## Adendo: upload do backup só com `objects.create` (2026-11-19)
+
+O `gcloud storage cp` faz um `GET` no objeto antes de gravar, e isso exige
+`storage.objects.get`, que a VM não tem de propósito. Em vez de ampliar a
+permissão, `vm-desligar.sh` passou a enviar o dump direto pela API JSON do GCS
+com `ifGenerationMatch=0`, que exige só `objects.create` e impede sobrescrever
+um backup existente. O dump fica num arquivo temporário (600) na VM, apagado
+ao sair.
+
+**Restauração testada:** o dump de 3,4 MB foi restaurado num Postgres 16.15
+descartável. As contagens bateram com produção (10 conexões, 1.884 registros
+de auditoria, 600 coletas, 19 workflows e 15 credenciais do n8n) e o RLS ficou
+ativo em 17 tabelas.
