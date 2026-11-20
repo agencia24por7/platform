@@ -31,7 +31,12 @@ import {
 export type { ContextoGravacao } from '@/modules/coleta/infrastructure/tabelas/tipos';
 
 export type ResultadoGravacao =
-  | { readonly ok: true; readonly linhasGravadas: number; readonly linhasDescartadas: number }
+  | {
+      readonly ok: true;
+      readonly linhasGravadas: number;
+      readonly linhasDescartadas: number;
+      readonly descartesDeChave: Readonly<Record<string, number>>;
+    }
   | { readonly ok: false; readonly motivo: string };
 
 export type BigQueryGravador = {
@@ -118,17 +123,21 @@ export function createBigQueryGravador(): BigQueryGravador {
     }
   }
 
-  async function gravarTabela(cfg: ConfiguracaoTabela, linhas: readonly LinhaBruta[], ctx: ContextoGravacao): Promise<number> {
+  async function gravarTabela(
+    cfg: ConfiguracaoTabela,
+    linhas: readonly LinhaBruta[],
+    ctx: ContextoGravacao,
+  ): Promise<{ readonly gravadas: number; readonly chaveInvalida: number }> {
     const preparadas = cfg.preparar ? cfg.preparar(linhas) : linhas;
-    if (preparadas.length === 0) return 0;
+    if (preparadas.length === 0) return { gravadas: 0, chaveInvalida: 0 };
     const { validas, descartadas } = separarPorChaveValida(preparadas.map((linha) => cfg.mapear(linha, ctx)), cfg.chave, cfg.tipos);
     if (descartadas > 0) logger.warn('coleta.bigquery.chave_invalida', { tabela: nomeDaTabela(cfg), descartadas });
-    if (validas.length === 0) return 0;
+    if (validas.length === 0) return { gravadas: 0, chaveInvalida: descartadas };
 
     if (cfg.tipo === 'fato') await gravarFato(cfg, validas, ctx);
     else if (cfg.tipo === 'scd2') await gravarScd2(cfg, validas, ctx);
     else await gravarSnapshot(cfg, validas, ctx);
-    return validas.length;
+    return { gravadas: validas.length, chaveInvalida: descartadas };
   }
 
   return {
@@ -148,11 +157,13 @@ export function createBigQueryGravador(): BigQueryGravador {
 
       let linhasGravadas = 0;
       let linhasDescartadas = 0;
+      const descartesDeChave: Record<string, number> = {};
       for (const [nome, grupo] of agrupamento.grupos) {
         try {
-          const gravadas = await gravarTabela(tabelas[nome]!, grupo, ctx);
+          const { gravadas, chaveInvalida } = await gravarTabela(tabelas[nome]!, grupo, ctx);
           linhasGravadas += gravadas;
           linhasDescartadas += grupo.length - gravadas;
+          if (chaveInvalida > 0) descartesDeChave[nomeDaTabela(tabelas[nome]!)] = chaveInvalida;
         } catch (error) {
           logger.error('coleta.bigquery.gravar.erro', {
             platform,
@@ -162,7 +173,7 @@ export function createBigQueryGravador(): BigQueryGravador {
           return { ok: false, motivo: 'falha_ao_gravar' };
         }
       }
-      return { ok: true, linhasGravadas, linhasDescartadas };
+      return { ok: true, linhasGravadas, linhasDescartadas, descartesDeChave };
     },
 
     async registrarQc(execucao) {

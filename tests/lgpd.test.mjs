@@ -235,6 +235,26 @@ describe('retenção e direitos do titular', { concurrency: false }, () => {
       `SELECT count(*) FROM audit.audit_log WHERE organization_id = '${org}' AND metadata::text LIKE '%"Purga"%'`)), '0');
   });
 
+  it('expurgar um cliente não apaga o nome da trilha do homônimo', () => {
+    const { cliente: saindo } = clienteComConta('Gemeo', '0007');
+    dono(`SELECT core.excluir_cliente('${saindo}', 'teste')`);
+    const { cliente: fica, conta } = clienteComConta('Gemeo', '0008');
+    const doHomonimo = umaLinha(dono(
+      `INSERT INTO audit.audit_log (organization_id, actor_type, action, target_type, target_id, metadata)
+       VALUES ('${org}', 'user', 'ad_account.reassigned', 'ad_account', '${conta}',
+               '{"de": "Gemeo", "deId": "${fica}", "para": "Outro"}') RETURNING id`,
+    ));
+    const legado = umaLinha(dono(
+      `INSERT INTO audit.audit_log (organization_id, actor_type, action, target_type, target_id, metadata)
+       VALUES ('${org}', 'user', 'ad_account.reassigned', 'ad_account', '${conta}', '{"de": "Gemeo"}') RETURNING id`,
+    ));
+
+    dono(`SELECT core.expurgar_cliente('${saindo}')`);
+
+    assert.equal(umaLinha(dono(`SELECT metadata ->> 'de' FROM audit.audit_log WHERE id = '${doHomonimo}'`)), 'Gemeo');
+    assert.equal(umaLinha(dono(`SELECT metadata ->> 'de' FROM audit.audit_log WHERE id = '${legado}'`)), 'Gemeo');
+  });
+
   it('o dono anterior vem do deId; nome antigo repetido entre clientes fica desconhecido', () => {
     const { cliente: antigo } = clienteComConta('Homonimo', '0005');
     dono(`SELECT core.excluir_cliente('${antigo}', 'teste')`);

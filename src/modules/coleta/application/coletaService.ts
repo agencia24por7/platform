@@ -4,6 +4,7 @@ import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import type { AbrirColetaInput, Coleta, FecharColetaInput, FonteElegivel } from '@/modules/coleta/domain/coleta';
 import { isJanelaSana } from '@/modules/coleta/domain/coleta';
 import { recusaDaGravacao } from '@/modules/coleta/domain/gravacaoPermitida';
+import { resolverAbertura } from '@/modules/coleta/domain/tentativaDeColeta';
 import { fonteDe, janelaAteOntem, janelaDias, plataformasColetaveis, type ModoColeta } from '@/modules/coleta/domain/mapaDeFontes';
 import type { ColetaRepository } from '@/modules/coleta/infrastructure/coletaRepository';
 import type { BigQueryGravador } from '@/modules/coleta/infrastructure/bigQueryGravador';
@@ -17,7 +18,10 @@ export type GravarColetaInput = { readonly coletaId: string; readonly linhas: re
 export type ColetaService = {
   fontes(limit: number, modo: ModoColeta, worker: WorkerIdentity): Promise<readonly FonteElegivel[]>;
   abrir(input: AbrirColetaInput, worker: WorkerIdentity): Promise<Result<Coleta, Failure>>;
-  gravar(input: GravarColetaInput, worker: WorkerIdentity): Promise<Result<{ linhasGravadas: number; linhasDescartadas: number }, Failure>>;
+  gravar(
+    input: GravarColetaInput,
+    worker: WorkerIdentity,
+  ): Promise<Result<{ linhasGravadas: number; linhasDescartadas: number; descartesDeChave: Readonly<Record<string, number>> }, Failure>>;
   fechar(input: FecharColetaInput, worker: WorkerIdentity): Promise<Result<Coleta, Failure>>;
 };
 
@@ -49,8 +53,12 @@ export function createColetaService(coletas: ColetaRepository, audit: AuditRecor
         if (existing.fonteTipo !== input.fonteTipo || existingFonteId !== input.fonteId) {
           return err(failure('conflict', 'Esta chave de idempotência já pertence a uma execução de outra fonte.'));
         }
-        return ok(existing);
+        if (existing.status === 'running') return ok(existing);
       }
+      const abertura = existing ? await resolverAbertura(input.idempotencyKey, (k) => coletas.findByIdempotencyKey(k)) : null;
+      if (abertura?.tipo === 'existente') return ok(abertura.coleta);
+      if (abertura?.tipo === 'esgotada') return err(failure('conflict', 'Tentativas demais com esta chave de idempotência.'));
+      const chave = abertura?.tipo === 'nova' ? abertura.chave : input.idempotencyKey;
 
       const resolved = await coletas.resolveFonte(input.fonteTipo, input.fonteId);
       if (!resolved) return err(failure('not_found', 'Fonte de coleta não encontrada ou inelegível.'));
@@ -65,7 +73,7 @@ export function createColetaService(coletas: ColetaRepository, audit: AuditRecor
         return err(failure('validation', `Janela maior que ${limiteJanela} dias para o modo ${input.mode} nesta plataforma.`));
       }
 
-      const coleta = await coletas.abrir(input, resolved.organizationId, resolved.clientId, resolved.platform);
+      const coleta = await coletas.abrir({ ...input, idempotencyKey: chave }, resolved.organizationId, resolved.clientId, resolved.platform);
 
       await audit.record({
         organizationId: resolved.organizationId,
@@ -81,7 +89,7 @@ export function createColetaService(coletas: ColetaRepository, audit: AuditRecor
           platform: coleta.platform,
           mode: coleta.mode,
           window: coleta.window,
-          idempotencyKey: input.idempotencyKey,
+          idempotencyKey: chave,
           n8nExecutionId: input.n8nExecutionId,
         },
       });
@@ -115,10 +123,19 @@ export function createColetaService(coletas: ColetaRepository, audit: AuditRecor
         targetId: input.coletaId,
         requestId: worker.requestId,
         sourceIp: worker.sourceIp,
-        metadata: { platform: contexto.platform, linhasGravadas: resultado.linhasGravadas, linhasDescartadas: resultado.linhasDescartadas },
+        metadata: {
+          platform: contexto.platform,
+          linhasGravadas: resultado.linhasGravadas,
+          linhasDescartadas: resultado.linhasDescartadas,
+          descartesDeChave: resultado.descartesDeChave,
+        },
       });
 
-      return ok({ linhasGravadas: resultado.linhasGravadas, linhasDescartadas: resultado.linhasDescartadas });
+      return ok({
+        linhasGravadas: resultado.linhasGravadas,
+        linhasDescartadas: resultado.linhasDescartadas,
+        descartesDeChave: resultado.descartesDeChave,
+      });
     },
 
     async fechar(input, worker) {

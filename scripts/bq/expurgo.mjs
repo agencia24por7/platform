@@ -56,6 +56,10 @@ export function sqlExpurgoDasSobras(fato, destino, fontes) {
          SELECT 1 FROM ${dim} o WHERE o.client_id IS NOT NULL AND o.client_id != @id AND ${mesmaFonte('o')})${filtroPlataforma}`;
 }
 
+export function sqlVersoesDoCliente(destino) {
+  return `SELECT COUNT(*) AS versoes FROM ${qualificada(destino, 'dim_fonte_scd2')} WHERE client_id = @id`;
+}
+
 export function sqlExpurgoPorClientId(tabela, destino) {
   if (!IDENTIFICADOR.test(tabela)) throw new Error(`tabela inválida: ${tabela}`);
   return `DELETE FROM ${qualificada(destino, tabela)} WHERE CAST(client_id AS STRING) = @id`;

@@ -6,6 +6,7 @@ import {
   executarPassos,
   passosPorClientId,
   planoDoExpurgo,
+  sqlVersoesDoCliente,
   validarEntrada as entradaValida,
   validarFontes,
 } from './bq/expurgo.mjs';
@@ -64,7 +65,7 @@ function exigirUuid(valor) {
   if (!valor || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(valor)) {
     falhar(`client_id inválido.\n\n${USO}`);
   }
-  return valor;
+  return valor.toLowerCase();
 }
 
 function exportar(email) {
@@ -151,8 +152,21 @@ function fontesDoCliente(id) {
 
 function estadoDoCliente(id) {
   return JSON.parse(consultar(`
-    SELECT json_build_object('existe', count(*) > 0, 'excluido', bool_or(excluido_em IS NOT NULL))
+    SELECT json_build_object(
+      'existe', count(*) > 0,
+      'id', min(id::text),
+      'excluido', bool_or(excluido_em IS NOT NULL),
+      'expurgado', EXISTS (SELECT 1 FROM audit.audit_log
+                           WHERE action = 'client.purged' AND target_type = 'client' AND target_id = ${id}::uuid::text))
     FROM core.clients WHERE id = ${id}::uuid;`));
+}
+
+function versoesDoClienteEmDimFonte(clientId) {
+  const saida = execFileSync('bq', [
+    '--project_id', PROJETO, 'query', '--use_legacy_sql=false', '--format=csv', `--parameter=id:STRING:${clientId}`,
+    sqlVersoesDoCliente(DESTINO),
+  ], { encoding: 'utf8' });
+  return Number(saida.split('\n')[1]?.trim() ?? 'NaN');
 }
 
 function tabelasComCliente() {
@@ -242,9 +256,13 @@ async function restaurarCliente(clientId) {
   console.log('Cliente restaurado e pausado. Retome a coleta na tela do cliente.');
 }
 
-async function expurgarCliente(clientId) {
+async function expurgarCliente(idInformado) {
+  const estado = estadoDoCliente(literal(idInformado));
+  if (!estado.existe && !estado.expurgado) {
+    falhar(`Cliente ${idInformado} não existe e não há client.purged para esse id na auditoria. Confira o id.`);
+  }
+  const clientId = estado.existe ? estado.id : idInformado;
   const id = literal(clientId);
-  const estado = estadoDoCliente(id);
   const tabelas = local ? [] : tabelasComCliente();
 
   if (!estado.existe) {
@@ -278,6 +296,12 @@ async function expurgarCliente(clientId) {
 
   if (!local) {
     await sincronizarDimensoes({ obrigatoria: true });
+    if (fontes.length > 0) {
+      const versoes = versoesDoClienteEmDimFonte(clientId);
+      if (!(versoes > 0)) {
+        falhar(`dim_fonte_scd2 não tem versões do cliente ${clientId}, que tem ${fontes.length} fonte(s) no Postgres. Expurgo abortado antes de apagar qualquer coisa: confira a sincronização de dimensões.`);
+      }
+    }
     const plano = planoDoExpurgo({ manifesto: FATOS_POR_FONTE, tabelasComCliente: tabelas, fontes, destino: DESTINO });
     rodarPassos(plano, clientId, 'O Postgres ainda não foi tocado. Rode o mesmo comando de novo: cada passo é idempotente.');
   }

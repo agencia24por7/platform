@@ -1,14 +1,5 @@
 BEGIN;
 
-DO $$
-BEGIN
-  PERFORM set_config(
-    'revisao.papel_app',
-    (SELECT rolname FROM pg_roles WHERE rolname IN ('orla_app', 'tria_app') ORDER BY rolname = 'orla_app' DESC LIMIT 1),
-    true
-  );
-END $$;
-
 CREATE OR REPLACE FUNCTION automation.dono_anterior_da_auditoria(p_organizacao uuid, p_metadata jsonb)
 RETURNS uuid
 LANGUAGE sql

@@ -25,6 +25,7 @@ export function validarEntrada(entrada: Partial<EntradaDoManifesto> & Record<str
 export function literalBigQuery(valor: string): string;
 export function sqlExpurgoPorPosse(fato: EntradaDoManifesto, destino: Destino): string;
 export function sqlExpurgoDasSobras(fato: EntradaDoManifesto, destino: Destino, fontes: readonly Fonte[]): string | null;
+export function sqlVersoesDoCliente(destino: Destino): string;
 export function sqlExpurgoPorClientId(tabela: string, destino: Destino): string;
 export function validarFontes(fontes: readonly Fonte[]): readonly Fonte[];
 export function passosPorClientId(tabelasComCliente: readonly string[], destino: Destino): readonly Passo[];

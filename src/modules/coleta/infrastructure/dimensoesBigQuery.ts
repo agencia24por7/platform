@@ -3,6 +3,7 @@ import { env } from '@/shared/config/env';
 import type { EstadoDaFonte, EstadoDoCliente, NovaVersao, PlanoScd2, VersaoExistente } from '@/modules/coleta/domain/dimensoes';
 import { linhaParaBigQuery, paraParametroBigQuery } from '@/modules/coleta/infrastructure/parametrosBigQuery';
 import { comRetentativa } from '@/modules/coleta/infrastructure/retentativaBigQuery';
+import { expressaoDaChave, sqlAplicarDimensao } from '@/modules/coleta/infrastructure/sqlDasDimensoes';
 
 type ConfiguracaoDaDimensao<A> = {
   readonly tabela: string;
@@ -72,9 +73,6 @@ export type DimensoesBigQuery = {
   aplicarClientes(plano: PlanoScd2<EstadoDoCliente>): Promise<void>;
 };
 
-const expressaoDaChave = (colunas: readonly string[], alias = ''): string =>
-  `CONCAT(${colunas.map((coluna) => `${alias}${coluna}`).join(", '|', ")})`;
-
 export function createDimensoesBigQuery(): DimensoesBigQuery {
   const config = env();
   const available = Boolean(config.BQ_PROJECT_ID);
@@ -104,23 +102,7 @@ export function createDimensoesBigQuery(): DimensoesBigQuery {
   async function aplicar<A>(cfg: ConfiguracaoDaDimensao<A>, plano: PlanoScd2<A>): Promise<void> {
     if (plano.fechar.length === 0 && plano.inserir.length === 0) return;
 
-    const colunas = Object.keys(cfg.tipos);
-    const mesmaChave = cfg.colunasDaChave.map((coluna) => `d.${coluna} = n.${coluna}`).join(' AND ');
-    const query = `
-      BEGIN TRANSACTION;
-
-      UPDATE ${tabela(cfg.tabela)}
-      SET valido_ate = @agora, atual = FALSE
-      WHERE atual AND ${expressaoDaChave(cfg.colunasDaChave)} IN UNNEST(@fechar);
-
-      INSERT INTO ${tabela(cfg.tabela)} (${colunas.join(', ')}, carregado_em)
-      SELECT ${colunas.map((coluna) => `n.${coluna}`).join(', ')}, @agora
-      FROM UNNEST(@novas) AS n
-      WHERE NOT EXISTS (SELECT 1 FROM ${tabela(cfg.tabela)} d WHERE d.sk = n.sk)
-        AND NOT (n.atual AND EXISTS (SELECT 1 FROM ${tabela(cfg.tabela)} d WHERE d.atual AND ${mesmaChave}));
-
-      COMMIT TRANSACTION;
-    `;
+    const query = sqlAplicarDimensao(tabela(cfg.tabela), Object.keys(cfg.tipos), cfg.colunasDaChave);
 
     await comRetentativa(async () => {
       const [job] = await cliente().createQueryJob({

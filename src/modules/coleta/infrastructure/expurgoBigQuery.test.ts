@@ -7,6 +7,7 @@ import {
   planoDoExpurgo,
   sqlExpurgoDasSobras,
   sqlExpurgoPorPosse,
+  sqlVersoesDoCliente,
   validarEntrada,
   validarFontes,
   type EntradaDoManifesto,
@@ -101,6 +102,10 @@ describe('plano e retomada do expurgo', () => {
 
   it('só client_id quando o Postgres já foi expurgado', () => {
     assert.deepEqual(passosPorClientId(['dim_fonte_scd2', 'x'], destino).map((passo) => passo.nome), ['x (client_id)', 'dim_fonte_scd2 (client_id)']);
+  });
+
+  it('conferência de versões do cliente em dim_fonte_scd2 antes de apagar', () => {
+    assert.equal(sqlVersoesDoCliente(destino), 'SELECT COUNT(*) AS versoes FROM `p.d.dim_fonte_scd2` WHERE client_id = @id');
   });
 
   it('manifesto exige exatamente um recorte de período', () => {

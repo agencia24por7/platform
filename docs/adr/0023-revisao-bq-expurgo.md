@@ -42,6 +42,14 @@ gravações que quebravam por uma linha ruim ou por concorrência:
 
 ### Expurgo (itens 1, 2, 4, 11)
 
+- **Id normalizado.** O `client_id` informado vai para minúsculas, e o id
+  usado nos `DELETE` do BigQuery é o `id::text` devolvido pelo Postgres (o
+  BigQuery compara `@id` como texto). Se o cliente tem fontes, o script confere,
+  depois da sincronização, que `dim_fonte_scd2` tem versões dele, e aborta
+  antes de apagar se não tiver. Se o cliente não existe, só segue (limpeza por
+  `client_id`) quando há `client.purged` para aquele id na auditoria; id errado
+  falha.
+
 - **BigQuery antes do Postgres.** `titular.mjs expurgar-cliente --confirmar`
   agora: exige o cliente **já excluído logicamente** (fora da coleta, e o
   `/coleta/gravar` recusa); sincroniza as dimensões e **aborta** se falhar;
@@ -89,6 +97,19 @@ gravações que quebravam por uma linha ruim ou por concorrência:
   nome em `de`, **só se exatamente um** cliente da organização (excluído ou
   não) casar. Mais de um vira dono desconhecido, como nome que não casa.
   `dimensao_mudancas_de_posse` usa essa função nos dois ramos.
+- **Dono desconhecido empurra o histórico.** `reconstruirPosse`
+  (`dimensoes.ts`) descarta tudo antes da última mudança com dono desconhecido
+  e o primeiro dono conhecido passa a valer desde 1970 (versões iniciais sem
+  cliente também são descartadas). Mantemos: é a regra que já valia para nome
+  que não casa, e gravar um período com `client_id NULL` mudaria a semântica
+  das views (fato sem dono na época). Consequência aceita: os fatos anteriores
+  a uma mudança ambígua ficam com o próximo dono conhecido, inclusive para o
+  expurgo dele. Só afeta a primeira carga de cada fonte; linhas novas têm
+  `deId`.
+- **Cliente renomeado.** `dono_anterior_da_auditoria` (linha antiga) e a
+  anonimização do expurgo comparam com o nome **atual** do cliente. Linha
+  antiga gravada com um nome anterior não casa: o dono fica desconhecido e o
+  nome antigo fica na trilha. Linhas novas não dependem do nome.
 
 ### Gravação no BigQuery (itens 5 a 8)
 
@@ -119,6 +140,21 @@ gravações que quebravam por uma linha ruim ou por concorrência:
   `organization_id`, `fonte_id`, `execucao_id` na janela de 7 dias. Com isso
   todas as tabelas do laço multi-tabela são idempotentes e o n8n pode repetir a
   chamada inteira.
+- **Descarte por chave vira `partial`.** A resposta de `/coleta/gravar` traz
+  `descartesDeChave` (linhas descartadas por chave inválida, por tabela), além
+  de `linhasGravadas` e `linhasDescartadas`. O nó "Conferir gravação" dos dois
+  fluxos (só esse nó mudou nos JSONs) soma por tabela, rebaixa `success` para
+  `partial` com `errorCode = coleta_incompleta` e acrescenta um faltante
+  `{ fonte: <tabela>, causa: coleta_incompleta, detalhe: "N linha(s) com chave
+  inválida descartada(s)" }` ao `qualidadeResumo`, sem mudar o contrato de
+  `/coleta/fechar`. Descarte comum do `preparar` (dedupe) continua `success`.
+- **Retentativa da sincronização de dimensões.** Se a transação de
+  `dim_fonte_scd2`/`dim_cliente_scd2` foi confirmada mas a resposta voltou
+  429/503, a nova tentativa fecharia a versão recém-aberta (`valido_ate =
+  valido_de = @agora`) e pularia o INSERT (o `sk` já existe), deixando a fonte
+  sem versão aberta. O `UPDATE` agora só fecha versão com `valido_de <
+  @agora` (`sqlDasDimensoes.ts`); a versão substituta sempre nasce com
+  `valido_de = @agora`.
 - **Chave inválida.** Depois do `mapear`, `separarPorChaveValida` descarta a
   linha cuja coluna da `chave` é nula ou inválida para o tipo (`DATE`
   `AAAA-MM-DD` real, `TIMESTAMP` legível, `INT64` inteiro, `BOOL`) e soma em
@@ -149,8 +185,18 @@ gravações que quebravam por uma linha ruim ou por concorrência:
 - `resolve_coleta_contexto` devolve também `coleta_status` e
   `cliente_excluido` (mantidos `SECURITY DEFINER`, `search_path` fixo e o
   `GRANT` ao papel do app). `/coleta/gravar` responde 404 para cliente excluído
-  e 409 para coleta que não está `running`. O orquestrador grava antes de
-  fechar, então o fluxo normal não muda.
+  e 409 para coleta que não está `running`.
+- **Reabrir depois de fechada.** O orquestrador usa a chave de idempotência
+  `fonteId:início:fim:modo`, que só muda de um dia para o outro: as rodadas
+  seguintes do mesmo dia reabriam a coleta já fechada e, com a regra acima,
+  gastariam cota para receber 409. Agora `coletaService.abrir` só devolve a
+  coleta existente se ela está `running` (retry em voo); se está fechada, abre
+  outra com a próxima chave livre `<chave>#2`, `#3`, ... (até 50, dentro dos
+  160 caracteres; `tentativaDeColeta.ts`). Retry de uma rodada nova cai na
+  mesma `#N` em `running`.
+- **Retry do n8n só antes do fechar.** A idempotência do laço multi-tabela vale
+  enquanto a coleta está `running`: repetir `/coleta/gravar` depois do
+  `/coleta/fechar` dá 409, e o reprocesso é uma rodada nova.
 
 ## Ordem de implantação
 
