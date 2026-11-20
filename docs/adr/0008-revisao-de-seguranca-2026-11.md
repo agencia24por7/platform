@@ -74,3 +74,29 @@ Melhorias de menor risco, adiadas:
 - CSP sem `'unsafe-inline'` (nonces);
 - testes de integração no CI;
 - versionar o provisionamento de workflows do n8n.
+
+## Adendo: state do bootstrap reconstruído (2026-11-19)
+
+O bootstrap (`infra/terraform/bootstrap`) não tinha state salvo: era um arquivo
+local que se perdeu. Por isso não dava para mudar as permissões do CI pelo
+Terraform. O bucket de backup (decisão 6) dependia de `storage.admin` para a
+SA do Terraform.
+
+- **Backend:** o bootstrap passou a usar o backend GCS no bucket de state, com
+  prefixo `bootstrap` (separado de `ambiente/producao`).
+- **Import:** os 34 recursos existentes foram importados. O `plan` mostrou só
+  rótulos cosméticos e, depois do import, **"No changes"**.
+- **Deriva corrigida no código:** o repositório de imagens `orla` (criado à
+  mão e usado pelo deploy) entrou como `app_orla`, do jeito que está, sem
+  política de limpeza. O antigo `tria` continua no código.
+- **Mudança aplicada:** `roles/storage.admin` para `tria-terraform`. O plano
+  tinha 1 adição e nenhuma outra mudança.
+
+Para aplicar o bootstrap daqui em diante (owner, fora do CI):
+
+```bash
+export GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token)
+terraform -chdir=infra/terraform/bootstrap init -backend-config="bucket=tria-platform-tfstate"
+terraform -chdir=infra/terraform/bootstrap plan \
+  -var project_id=tria-platform -var region=us-central1 -var github_repository=agencia24por7/platform
+```
