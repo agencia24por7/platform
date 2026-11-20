@@ -1,0 +1,3 @@
+[
+  { "tabela": "fato_gbp_diario", "chave": "location_id", "plataforma": "gbp", "data": "data_dia" }
+]

@@ -1,0 +1,3 @@
+[
+  { "tabela": "fato_youtube_diario", "chave": "channel_id", "plataforma": "youtube", "data": "data_dia" }
+]

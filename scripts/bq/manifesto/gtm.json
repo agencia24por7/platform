@@ -1,0 +1,3 @@
+[
+  { "tabela": "gov_snapshot_fontes", "chave": "fonte_id", "plataforma": "gtm", "colunaPlataforma": "platform", "momento": "visto_em" }
+]
