@@ -221,7 +221,7 @@ describe('fronteiras entre inquilinos', { concurrency: false }, () => {
   it('a web não executa função SECURITY DEFINER que atravessa inquilinos; o worker executa', () => {
     const daWeb = dono(
       `SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-        WHERE p.prosecdef AND (n.nspname = 'automation' OR p.oid = 'core.aplicar_retencao()'::regprocedure)
+        WHERE p.prosecdef AND (n.nspname = 'automation' OR (n.nspname = 'core' AND p.proname IN ('aplicar_retencao', 'contexto_brains_pendentes', 'contexto_clientes_para_reconstruir')))
           AND has_function_privilege('orla_app', p.oid, 'EXECUTE')`,
     );
     assert.equal(umaLinha(daWeb), '0', 'função de worker voltou a ser executável pela web (ADR 0028)');
@@ -230,7 +230,7 @@ describe('fronteiras entre inquilinos', { concurrency: false }, () => {
       `SELECT bool_and(has_function_privilege('orla_worker', p.oid, 'EXECUTE'))::text FROM pg_proc p
          JOIN pg_namespace n ON n.oid = p.pronamespace
         WHERE p.prosecdef AND p.prorettype <> 'trigger'::regtype
-          AND (n.nspname = 'automation' OR p.oid = 'core.aplicar_retencao()'::regprocedure)`,
+          AND (n.nspname = 'automation' OR (n.nspname = 'core' AND p.proname IN ('aplicar_retencao', 'contexto_brains_pendentes', 'contexto_clientes_para_reconstruir')))`,
     );
     assert.equal(umaLinha(doWorker), 'true');
 
@@ -241,6 +241,8 @@ describe('fronteiras entre inquilinos', { concurrency: false }, () => {
       'SELECT count(*) FROM automation.fontes_de_coleta(1)',
       'SELECT count(*) FROM automation.sync_queue(1, 1, interval \'1 hour\')',
       'SELECT core.aplicar_retencao()',
+      "SELECT count(*) FROM core.contexto_brains_pendentes(1, interval '1 second')",
+      'SELECT count(*) FROM core.contexto_clientes_para_reconstruir(NULL)',
     ]) {
       assert.match(recusa(() => comoApp(chamada)) ?? '', /permission denied/, chamada);
     }

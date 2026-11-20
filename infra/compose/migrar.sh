@@ -15,7 +15,7 @@ LEDGER="CREATE TABLE IF NOT EXISTS public.schema_migrations (
 )"
 
 psql_admin() {
-  docker exec -i "$PG_CONTAINER" psql -X -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=1 "$@"
+  docker exec -i -e PGOPTIONS='-c client_min_messages=warning' "$PG_CONTAINER" psql -X -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=1 "$@"
 }
 
 roda_sem_transacao() {

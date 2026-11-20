@@ -37,6 +37,8 @@ Classificação das funções `SECURITY DEFINER` que `orla_app` executava:
 |---|---|---|
 | `automation.*` (17: `dimensao_clientes/fontes/mudancas_de_posse`, `fontes_de_coleta`, `historico_de_coleta`, `sync_queue`, `task_queue`, `task_result`, `fechar_coleta`, `coleta_concluida`, `coleta_falhou_por_auth`, `resolve_*`) | atravessa inquilinos; só rotas `/api/v0` | só `orla_worker` |
 | `core.aplicar_retencao()` | manutenção, `/api/v0/manutencao/retencao` | só `orla_worker` |
+| `core.contexto_brains_pendentes`, `core.contexto_clientes_para_reconstruir` (0060) | fila do brain de todos os clientes; `/api/v0/contexto/*` | só `orla_worker` |
+| `core.contexto_link_*` (0060) | link público do cliente, por token | fica em `orla_app` |
 | `core.*` de identidade e escopo (`upsert_identity`, `sessao_*`, `client_scope_of`, `is_member`, `memberships_of`, `organizations_of`, `pending_invitations_for`, `accept_invitation`, `create_organization`, `slug_taken`, `any_organization_exists`, `shares_organization`, `encerrar_sessoes`) | web, escopadas pelo usuário da sessão | fica em `orla_app` |
 | `integrations.*` de convite e webhook (`resolve_invite_*`, `invite_item_still_pending`, `complete_invite_item`, `resolve_webhook_connection`, `record_whatsapp_inbound`) | rotas públicas da web (convite, webhooks), por token | fica em `orla_app` |
 
@@ -50,8 +52,8 @@ Classificação das funções `SECURITY DEFINER` que `orla_app` executava:
   ganho de segurança mudasse — o que importa é a web **não** ter as funções
   que atravessam inquilinos, e isso a migração garante.
 - A 0070 revoga de `PUBLIC` e de `orla_app` e concede a `orla_worker` toda
-  função `SECURITY DEFINER` de `automation` (não-trigger) e
-  `core.aplicar_retencao()`, varrendo o catálogo. Migração futura que criar
+  função `SECURITY DEFINER` de `automation` (não-trigger),
+  `core.aplicar_retencao()` e as duas filas do brain, varrendo o catálogo. Migração futura que criar
   função de worker concede a `orla_worker`, não ao `coleta.papel_app`; o teste
   de integração (`tests/fronteiras.test.mjs`) falha se `orla_app` voltar a
   executar qualquer uma.
@@ -66,7 +68,11 @@ Classificação das funções `SECURITY DEFINER` que `orla_app` executava:
   dentro de `comoWorker()` (AsyncLocalStorage); `sql()`, `withTenant()` e
   `withoutTenant()` escolhem o pool pelo contexto. Assim nenhum repositório
   muda e uma rota web não tem como chegar ao pool do worker: só o
-  `workerRoute` chama `comoWorker` (teste de unidade
+  `workerRoute` chama `comoWorker`. O `AsyncLocalStorage` fica em `globalThis`,
+  como os pools e o `modules()`: o Next carrega uma cópia de `client.ts` por
+  rota, e os repositórios do `modules()` em cache seriam de outra cópia que a
+  do `workerRoute` — com uma instância por cópia, a rota de worker caía no pool
+  da web (foi o que a primeira rodada do CI mostrou). Teste de unidade
   `src/shared/db/fronteiraDoWorker.test.ts`, que também exige que toda rota
   `/api/v0` use `workerRoute` e nenhuma outra o use).
 - Configuração: `DATABASE_URL_WORKER` (e `DATABASE_WORKER_MAX_CONNECTIONS`,
@@ -204,6 +210,11 @@ O Next não limita corpo por rota; o Caddy sim. `infra/compose/Caddyfile`:
   compose (os workflows apontam para lá), sem passar pelo Caddy; por isso
   `/api/v0/coleta/gravar` mantém os 12 MB do próprio `workerRoute`
   (`GRAVAR_COLETA_MAX_BYTES`). Pelo endereço público, `/api/v0` fica em 1 MB.
+- **Atenção para a funcionalidade de arquivos de contexto (ADR 0027, até 25 MB
+  por arquivo):** o upload precisa entrar por `/api/contexto/...`. Se for uma
+  server action postada na página (`/clientes/...`), o limite de 1 MB a
+  derruba; nesse caso o matcher `@upload_de_contexto` tem de ganhar o caminho
+  real no mesmo PR da funcionalidade.
 - O Caddy corta o corpo quando o upstream o lê (`MaxBytesReader`) e responde
   413; não decide pelo `Content-Length`. O Next lê o corpo antes de a rota
   rodar, então o corte acontece antes do buffer de 16 MB.

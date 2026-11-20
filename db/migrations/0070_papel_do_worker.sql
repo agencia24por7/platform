@@ -18,7 +18,7 @@ ALTER ROLE orla_worker WITH LOGIN INHERIT NOSUPERUSER NOBYPASSRLS NOCREATEDB NOC
 GRANT orla_app TO orla_worker;
 
 COMMENT ON ROLE orla_worker IS
-  'Rotas /api/v0 (n8n). Herda orla_app (políticas RLS TO orla_app valem para membros) e é o único a executar as funções SECURITY DEFINER de automation e core.aplicar_retencao, que atravessam inquilinos. Senha sincronizada pelo migrar.sh a partir de WORKER_DB_PASSWORD. ADR 0028.';
+  'Rotas /api/v0 (n8n). Herda orla_app (políticas RLS TO orla_app valem para membros) e é o único a executar as funções SECURITY DEFINER de automation, core.aplicar_retencao e as filas do brain de contexto (core.contexto_brains_pendentes, core.contexto_clientes_para_reconstruir), que atravessam inquilinos. Senha sincronizada pelo migrar.sh a partir de WORKER_DB_PASSWORD. ADR 0028.';
 
 DO $$
 DECLARE
@@ -30,7 +30,10 @@ BEGIN
       JOIN pg_namespace n ON n.oid = p.pronamespace
      WHERE p.prosecdef
        AND p.prorettype <> 'trigger'::regtype
-       AND (n.nspname = 'automation' OR (n.nspname = 'core' AND p.proname = 'aplicar_retencao'))
+       AND (
+         n.nspname = 'automation'
+         OR (n.nspname = 'core' AND p.proname IN ('aplicar_retencao', 'contexto_brains_pendentes', 'contexto_clientes_para_reconstruir'))
+       )
   LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', funcao);
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM orla_app', funcao);
