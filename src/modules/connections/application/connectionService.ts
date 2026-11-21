@@ -103,9 +103,6 @@ export type ResultadoDaRemocao = {
   readonly expurgo: ResultadoDoExpurgoDaConexao;
 };
 
-const MENSAGEM_DE_REMOCAO_QUE_FALHOU_DEPOIS_DE_REVOGAR =
-  'O acesso já foi revogado no provedor, mas a conexão mudou enquanto era removida. Ela continua na lista; recarregue e remova de novo.';
-
 export type CofreDaConexao = Pick<CofreDeTokens, 'selar' | 'revogarEApagar' | 'esquecer'>;
 
 export function createConnectionService(
@@ -218,22 +215,9 @@ export function createConnectionService(
       const revogacao = decisao.tentar ? resultadoDaRevogacaoNoCofre(remocao.revogacao) : decisao.resultado;
 
       if (!remocao.apagado) {
-        if (revogacao.revogadoNoProvedor === true) {
-          await audit.record({
-            organizationId: input.organizationId,
-            actorType: 'user',
-            actorId: ator.userId,
-            action: 'connection.provider_revoked',
-            targetType: 'connection',
-            targetId: conexao.id,
-            requestId: ator.requestId,
-            sourceIp: ator.sourceIp,
-            metadata: { platform: conexao.platform, revogadoNoProvedor: true, aindaNoCofre: true },
-          });
-        }
         const atual = await connections.findById(input.organizationId, conexao.id);
         if (!atual || atual.status === 'revoked') return err(failure('not_found', 'Conexão não encontrada.'));
-        return err(failure('conflict', revogacao.revogadoNoProvedor === true ? MENSAGEM_DE_REMOCAO_QUE_FALHOU_DEPOIS_DE_REVOGAR : MENSAGEM_DE_CONEXAO_ALTERADA));
+        return err(failure('conflict', MENSAGEM_DE_CONEXAO_ALTERADA));
       }
 
       const liberadas = await liberarContasDaConexao(

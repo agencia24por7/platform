@@ -28,7 +28,10 @@ export type AcessoEmitido = {
   readonly tipo: FormaDoAcesso;
   readonly expiraEm: string | null;
   readonly cabecalhosExtras?: Readonly<Record<string, string>>;
+  readonly appsecretProof?: string;
 };
+
+export type ProvaDoSegredoDoApp = (platform: Platform, token: string) => string | null;
 
 export type LimiteDeChamadas = (chave: string) => boolean;
 
@@ -79,6 +82,7 @@ export function createAcessoDoWorker(deps: {
   readonly cofre: CofreDeTokens;
   readonly audit: AuditRecorder;
   readonly limitar: LimiteDeChamadas;
+  readonly provaDoSegredoDoApp?: ProvaDoSegredoDoApp;
 }): AcessoDoWorker {
   return {
     async emitir(origem, worker) {
@@ -119,11 +123,13 @@ export function createAcessoDoWorker(deps: {
       const expiraEm = acesso.value.expiraEm ? acesso.value.expiraEm.toISOString() : null;
       await auditar('tokens.acesso.emitido', { forma: acesso.value.tipo, expiraEm });
 
+      const prova = deps.provaDoSegredoDoApp?.(contexto.platform, acesso.value.token) ?? null;
       return ok({
         token: acesso.value.token,
         tipo: acesso.value.tipo,
         expiraEm,
         ...(acesso.value.cabecalhosExtras ? { cabecalhosExtras: acesso.value.cabecalhosExtras } : {}),
+        ...(prova ? { appsecretProof: prova } : {}),
       });
     },
 

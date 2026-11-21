@@ -54,6 +54,7 @@ function redirectComResultado(
   fallback: string,
   platform: string,
   discovered: number,
+  pendentesDeOutraConta = 0,
 ): NextResponse {
   const base = env().TRIA_APP_BASE_URL;
   const destination = isSafeReturnPath(returnTo) ? returnTo : fallback;
@@ -66,6 +67,7 @@ function redirectComResultado(
 
   url.searchParams.set('autorizado', platform);
   url.searchParams.set('descobertas', String(discovered));
+  if (pendentesDeOutraConta > 0) url.searchParams.set('outraConta', String(pendentesDeOutraConta));
   return clear(NextResponse.redirect(url));
 }
 
@@ -258,5 +260,11 @@ export async function GET(
     }
   }
 
-  return redirectComResultado(returnTo, '/comecar?passo=contas', platform, outcome.value.discovered);
+  return redirectComResultado(
+    returnTo,
+    '/comecar?passo=contas',
+    platform,
+    outcome.value.discovered,
+    outcome.value.pendentesDeOutraConta,
+  );
 }

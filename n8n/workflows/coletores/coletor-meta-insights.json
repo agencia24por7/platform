@@ -193,6 +193,15 @@
               "value": "={{ 'Bearer ' + $('Obter token').first().json.body.token }}"
             }
           ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "appsecret_proof",
+              "value": "={{ $('Obter token').first().json.body.appsecretProof }}"
+            }
+          ]
         }
       },
       "onError": "continueRegularOutput",
@@ -252,6 +261,15 @@
               "value": "={{ 'Bearer ' + $('Obter token').first().json.body.token }}"
             }
           ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "appsecret_proof",
+              "value": "={{ $('Obter token').first().json.body.appsecretProof }}"
+            }
+          ]
         }
       },
       "onError": "continueRegularOutput",
@@ -298,6 +316,15 @@
               "value": "={{ 'Bearer ' + $('Obter token').first().json.body.token }}"
             }
           ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "appsecret_proof",
+              "value": "={{ $('Obter token').first().json.body.appsecretProof }}"
+            }
+          ]
         }
       },
       "onError": "continueRegularOutput",
@@ -342,6 +369,15 @@
             {
               "name": "Authorization",
               "value": "={{ 'Bearer ' + $('Obter token').first().json.body.token }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "appsecret_proof",
+              "value": "={{ $('Obter token').first().json.body.appsecretProof }}"
             }
           ]
         }
@@ -407,6 +443,15 @@
             {
               "name": "Authorization",
               "value": "={{ 'Bearer ' + $('Obter token').first().json.body.token }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "appsecret_proof",
+              "value": "={{ $('Obter token').first().json.body.appsecretProof }}"
             }
           ]
         }
@@ -520,6 +565,15 @@
               "value": "={{ 'Bearer ' + $('Obter token').first().json.body.token }}"
             }
           ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "appsecret_proof",
+              "value": "={{ $('Obter token').first().json.body.appsecretProof }}"
+            }
+          ]
         }
       },
       "onError": "continueRegularOutput",
@@ -564,6 +618,15 @@
             {
               "name": "Authorization",
               "value": "={{ 'Bearer ' + $('Obter token').first().json.body.token }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "appsecret_proof",
+              "value": "={{ $('Obter token').first().json.body.appsecretProof }}"
             }
           ]
         }
@@ -612,6 +675,15 @@
               "value": "={{ 'Bearer ' + $('Obter token').first().json.body.token }}"
             }
           ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "appsecret_proof",
+              "value": "={{ $('Obter token').first().json.body.appsecretProof }}"
+            }
+          ]
         }
       },
       "onError": "continueRegularOutput",
@@ -656,6 +728,15 @@
             {
               "name": "Authorization",
               "value": "={{ 'Bearer ' + $('Obter token').first().json.body.token }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "appsecret_proof",
+              "value": "={{ $('Obter token').first().json.body.appsecretProof }}"
             }
           ]
         }

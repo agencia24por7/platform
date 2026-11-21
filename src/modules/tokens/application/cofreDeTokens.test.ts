@@ -34,7 +34,7 @@ type Linha = {
 function criarRepositorio(conexoes: Record<string, { organizationId: string; platform: Platform }>) {
   const linhas = new Map<string, Linha>();
   for (const [id, conexao] of Object.entries(conexoes)) linhas.set(id, { ...conexao, registro: null });
-  const concessoes = new Set<string>();
+  const concessoes = new Map<string, string>();
   const reivindicacoes: string[] = [];
 
   const repositorio: RepositorioDeTokens = {
@@ -62,16 +62,16 @@ function criarRepositorio(conexoes: Record<string, { organizationId: string; pla
       };
       concessoes.delete(alvo.connectionId);
     },
-    async reivindicarRenovacao(alvo) {
+    async reivindicarRenovacao(alvo, _prazo, concessao) {
       const linha = linhas.get(alvo.connectionId);
       if (!linha?.registro || linha.organizationId !== alvo.organizationId) return { registro: null, dono: false };
       if (concessoes.has(alvo.connectionId)) return { registro: linha.registro, dono: false };
-      concessoes.add(alvo.connectionId);
+      concessoes.set(alvo.connectionId, concessao);
       reivindicacoes.push(alvo.connectionId);
       return { registro: linha.registro, dono: true };
     },
-    async concluirRenovacao(alvo, versaoLida, mudanca: MudancaDeToken) {
-      concessoes.delete(alvo.connectionId);
+    async concluirRenovacao(alvo, versaoLida, concessao, mudanca: MudancaDeToken) {
+      if (concessoes.get(alvo.connectionId) === concessao) concessoes.delete(alvo.connectionId);
       const linha = linhas.get(alvo.connectionId);
       if (!linha?.registro || linha.registro.versao !== versaoLida) return false;
       linha.registro = {
@@ -84,7 +84,8 @@ function criarRepositorio(conexoes: Record<string, { organizationId: string; pla
       falhas.push(mudanca.falha ?? null);
       return true;
     },
-    async liberarRenovacao(alvo, falha) {
+    async liberarRenovacao(alvo, concessao, falha) {
+      if (concessoes.get(alvo.connectionId) !== concessao) return;
       concessoes.delete(alvo.connectionId);
       if (falha !== undefined) falhas.push(falha);
     },
@@ -169,7 +170,12 @@ function montar(opcoes: { roteiro?: Roteiro; agora?: () => Date; esperar?: (ms: 
       repositorio,
       cifra,
       provedores,
-      marcador: { marcar: async (alvo, motivo) => void marcadas.push({ alvo, motivo }) },
+      marcador: {
+        marcar: async (alvo, motivo, versaoLida) => {
+          if ((linhas.get(alvo.connectionId)?.registro?.versao ?? null) !== versaoLida) return;
+          marcadas.push({ alvo, motivo });
+        },
+      },
       registro,
       relogio,
       esperar: opcoes.esperar ?? ((ms) => new Promise((resolver) => setTimeout(resolver, Math.min(ms, 5)))),
@@ -406,7 +412,7 @@ describe('CofreDeTokens — renovação única sem transação aberta na chamada
     let esperas = 0;
     const t = montar({ esperar: async () => void (esperas += 1) });
     await t.cofre.guardar(GOOGLE, { tipo: 'oauth_refresh', segredo: REFRESH });
-    t.concessoes.add(GOOGLE.connectionId);
+    t.concessoes.set(GOOGLE.connectionId, 'concessao-de-outro-processo');
     assert.deepEqual(await t.cofre.obterAcesso(GOOGLE), { ok: false, error: 'indisponivel' });
     assert.equal(t.google.chamadas.length, 0);
     assert.ok(esperas > 1);
@@ -463,7 +469,7 @@ describe('CofreDeTokens — remoção com política e apagamento atômico', () =
     assert.equal(t.google.revogados.length, 0);
   });
 
-  it('revoga antes de apagar; se o apagamento recusa (conexão mudou), devolve apagado=false', async () => {
+  it('apaga (condicionado à versão) ANTES de revogar; perdendo a corrida, não revoga o grant da reautorização', async () => {
     const t = montar();
     await t.cofre.guardar(GOOGLE, { tipo: 'oauth_refresh', segredo: REFRESH });
     const ordem: string[] = [];
@@ -471,13 +477,46 @@ describe('CofreDeTokens — remoção com política e apagamento atômico', () =
       ordem.push('revogar');
       return { ok: true, value: 'revogado' };
     };
-    const resultado = await t.cofre.revogarEApagar(GOOGLE, {
+    const perdeu = await t.cofre.revogarEApagar(GOOGLE, {
       apagar: async () => {
         ordem.push('apagar');
         return false;
       },
     });
-    assert.deepEqual(resultado, { revogacao: 'revogado', apagado: false });
-    assert.deepEqual(ordem, ['revogar', 'apagar']);
+    assert.deepEqual(perdeu, { revogacao: 'nao_tentada', apagado: false });
+    assert.deepEqual(ordem, ['apagar'], 'quem perdeu a corrida não revoga');
+
+    const ganhou = await t.cofre.revogarEApagar(GOOGLE, {
+      apagar: async () => {
+        ordem.push('apagar');
+        return true;
+      },
+    });
+    assert.deepEqual(ganhou, { revogacao: 'revogado', apagado: true });
+    assert.deepEqual(ordem, ['apagar', 'apagar', 'revogar']);
+  });
+});
+
+describe('CofreDeTokens — corridas com reautorização (versão do token)', () => {
+  it('invalid_grant de uma renovação com o segredo velho não marca reauth_pending por cima da reautorização', async () => {
+    let cofre: ReturnType<typeof montar>['cofre'] | null = null;
+    const t = montar({
+      roteiro: async () => {
+        await cofre!.guardar(GOOGLE, { tipo: 'oauth_refresh', segredo: '1//novo-da-reautorizacao' });
+        return { ok: false, error: { natureza: 'reautorizar', codigo: 'invalid_grant' } };
+      },
+    });
+    cofre = t.novoCofre();
+    await t.cofre.guardar(GOOGLE, { tipo: 'oauth_refresh', segredo: REFRESH });
+    assert.deepEqual(await t.cofre.obterAcesso(GOOGLE), { ok: false, error: 'reautorizar' });
+    assert.deepEqual(t.marcadas, [], 'a versão mudou: a marcação não vale para o token novo');
+  });
+
+  it('a concessão de outro processo não é solta por quem chegou atrasado', async () => {
+    const t = montar({ roteiro: async () => ({ ok: false, error: { natureza: 'transitoria', codigo: 'http_503' } }) });
+    await t.cofre.guardar(GOOGLE, { tipo: 'oauth_refresh', segredo: REFRESH });
+    t.concessoes.set(GOOGLE.connectionId, 'concessao-de-outro-processo');
+    await t.repositorio.liberarRenovacao(GOOGLE, 'concessao-vencida-minha', 'http_503');
+    assert.equal(t.concessoes.get(GOOGLE.connectionId), 'concessao-de-outro-processo');
   });
 });

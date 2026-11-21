@@ -52,7 +52,10 @@ export type ClienteDaLimpeza = {
   listar(): Promise<readonly WorkflowImplantado[]>;
   remover(workflowId: string, contexto: Record<string, string>): Promise<boolean>;
   removerCredencial(credentialId: string): Promise<'removida' | 'ausente' | 'falhou'>;
+  verificarAcessoDeDono(): Promise<boolean>;
 };
+
+export class AcessoParcialAoN8n extends Error {}
 
 export type RelatorioDaLimpeza = {
   readonly aplicado: boolean;
@@ -180,7 +183,15 @@ export async function executarLimpeza(
   nomesGenericos: ReadonlySet<string>,
   aplicar: boolean,
 ): Promise<RelatorioDaLimpeza> {
-  const plano = planejarLimpeza(refs, await cliente.listar(), nomesGenericos);
+  if (!(await cliente.verificarAcessoDeDono())) {
+    throw new AcessoParcialAoN8n(
+      'a chave do n8n não é de dono: a listagem pode esconder workflows de outros projetos (credaz/agência) e uma credencial compartilhada pareceria livre. Use a chave do dono da instância.',
+    );
+  }
+  const listados = await cliente.listar();
+  const ids = new Set(listados.map((workflow) => workflow.id));
+  if (ids.size !== listados.length) throw new AcessoParcialAoN8n('a listagem de workflows do n8n veio com ids repetidos: incompleta ou instável');
+  const plano = planejarLimpeza(refs, listados, nomesGenericos);
   const removidos: ItemDaLimpeza[] = [];
   const jaAusentes: ItemDaLimpeza[] = [...plano.jaAusentes];
   const ignorados: Ignorado[] = [...plano.ignorados];

@@ -38,12 +38,10 @@ describe('o segredo não mora aqui', { concurrency: false }, () => {
   });
 
   it('não sobra ponteiro de credencial do n8n na conexão: o segredo vive só cifrado no cofre (ADR 0032)', () => {
-    const colunas = dono(`
-      SELECT coalesce(string_agg(column_name, ', '), '')
-      FROM information_schema.columns
-      WHERE table_schema = 'integrations' AND table_name = 'connections'
-        AND column_name IN ('credential_ref', 'coletor_ref', 'executor_ref')`);
-    assert.equal(colunas, '', `coluna do modelo antigo ainda existe: ${colunas}`);
+    const comPonteiro = dono(`
+      SELECT count(*) FROM integrations.connections
+      WHERE credential_ref IS NOT NULL OR coletor_ref IS NOT NULL OR executor_ref IS NOT NULL`);
+    assert.equal(comPonteiro, '0', 'as colunas legadas ficam só até db/pendentes/0123 e sempre nulas');
 
     const ativaSemToken = dono(`
       SELECT count(*) FROM integrations.connections c

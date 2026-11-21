@@ -415,14 +415,14 @@ describe('remover conexão (desconectar), por plataforma', () => {
     });
   }
 
-  it('revoga no provedor ANTES de apagar o ciphertext e expurga depois, registrando o resultado na trilha', async () => {
+  it('apaga o ciphertext condicionado à versão, só então revoga no provedor e expurga depois, registrando na trilha', async () => {
     const c = montar({ expurgo: { enfileirados: 1, concluidos: 1 } });
     const id = await semearConexao(c, 'youtube');
 
     const resultado = await c.servico.removerConexao({ organizationId: ORGANIZACAO, papelDeQuemAge: 'owner', connectionId: id }, ator);
 
     assert.ok(resultado.ok);
-    assert.deepEqual(c.ordem, ['revogar', 'apagar', 'expurgar:youtube:revoked']);
+    assert.deepEqual(c.ordem, ['apagar', 'revogar', 'expurgar:youtube:revoked']);
     assert.equal(resultado.value.revogadoNoProvedor, true);
     assert.equal(resultado.value.avisoDeRevogacao, null);
     const removida = c.eventos.find((e) => e.action === 'connection.removed')!;
@@ -679,7 +679,7 @@ describe('concorrência: a versão do token substitui a trava de credential_ref 
     assert.equal(c.eventos.length, 0);
   });
 
-  it('revogou no provedor mas a conexão mudou antes de apagar: conflito que diz que o acesso já caiu e deixa rastro', async () => {
+  it('remoção que perde a corrida para uma reautorização NÃO revoga no provedor (o grant novo continua vivo)', async () => {
     const c = montar();
     const id = await semearConexao(c, 'meta');
     c.armarCorrida(() => {
@@ -690,10 +690,11 @@ describe('concorrência: a versão do token substitui a trava de credential_ref 
     const resultado = await c.servico.removerConexao(pedido(id), ator);
 
     assert.ok(!resultado.ok);
-    assert.match(resultado.error.message, /já foi revogado no provedor/);
+    assert.equal(resultado.error.code, 'conflict');
     assert.equal(c.conexoes.get(id)!.status, 'active');
-    assert.deepEqual(c.ordem, ['revogar', 'apagar']);
-    assert.deepEqual(c.eventos.map((e) => e.action), ['connection.provider_revoked']);
+    assert.deepEqual(c.ordem, ['apagar']);
+    assert.deepEqual(c.revogadosNoProvedor, []);
+    assert.deepEqual(c.eventos, []);
   });
 
   it('remove conexão degradada sem token mesmo com o provedor fora do ar', async () => {

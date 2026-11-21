@@ -101,4 +101,4 @@ npm run n8n:sincronizar -- --conexoes conexoes.json --aplicar  # grava
 - Workflows por conexão do modelo antigo (`Coletor · ORLA · coletor · …`, `Executor · ORLA · tarefas · …`) são
   ignorados pela sincronização e removidos por `scripts/n8n-limpar-legado.mjs`.
 - O item "Coletores e executores por conexão: pelo ID do workflow gravado na conexão" do adendo anterior não vale
-  mais: `coletor_ref`/`executor_ref` foram removidos (migração 0122).
+  mais: `coletor_ref`/`executor_ref` estão zerados desde o corte (0121) e saem em `db/pendentes/0123`.

@@ -160,6 +160,10 @@
             {
               "name": "fields",
               "value": "access_token,name,category"
+            },
+            {
+              "name": "appsecret_proof",
+              "value": "={{ $('Obter token').first().json.body.appsecretProof }}"
             }
           ]
         },

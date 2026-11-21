@@ -136,7 +136,10 @@ desfecho (`revogado` | `sem_suporte` | `falhou` | `sem_token`) e **sempre** apag
 revogação falhar ou a decifragem falhar. Token já inválido conta como revogado. A revogação é melhor esforço:
 a remoção da conexão nunca fica presa no provedor. Fase 2: `revogarEApagar(alvo, { revogarNoProvedor, apagar })`
 recebe da política se deve tentar (`nao_tentada` quando não) e o apagamento atômico da conexão
-(`connectionRepository.revogar(versaoLida)`), que só apaga se a versão do token ainda for a lida.
+(`connectionRepository.revogar(versaoLida)`), que só apaga se a versão do token ainda for a lida. Ordem (depois da
+revisão): decifra o segredo, **apaga primeiro** (condicionado à versão), e só se apagou chama o provedor com o
+segredo já em memória. Quem perde a corrida para uma reautorização não revoga: revogar no Google mataria o grant
+inteiro, inclusive o refresh token recém-concedido.
 
 ### 6. Rotas do worker
 
@@ -203,20 +206,27 @@ coletas e todo o BigQuery: reautorizar a **mesma identidade** (mesmo `external_i
 conexão existente e as fontes voltam a coletar sem revincular. `corte_para_cofre_refs` não tem chave
 estrangeira: o ponteiro sobrevive à remoção da conexão para a limpeza do n8n não perdê-lo.
 
-Migração `db/migrations/0122_cofre_modo_unico.sql` (mesmo deploy, logo depois do corte):
-1. `connection_tokens.renovacao_iniciada_em` (concessão de renovação, seção 4) e o `CHECK` de
+Migração `db/migrations/0122_cofre_modo_unico.sql` (mesmo deploy, logo depois do corte), só com o que a
+imagem anterior tolera (as migrações rodam com ela no ar; o "subir a nova versão" vem depois e pode falhar):
+1. `connection_tokens.renovacao_iniciada_em` + `renovacao_dono` (concessão de renovação, seção 4) e o `CHECK` de
    `ultima_falha_codigo` aceitando dígitos (`http_503`, `meta_190` violavam o padrão da fase 1);
-2. `automation.fontes_de_coleta`, `automation.task_queue` e `automation.sync_queue` recriadas **sem**
-   `credential_ref`/`coletor_ref`/`executor_ref` e com `tem_token` (e `connection_id` na fila de tarefas),
-   executáveis só por `orla_worker` (ADR 0028);
-3. **drop** de `credential_ref`, `coletor_ref` e `executor_ref` em `integrations.connections`.
+2. `resolver_conexao_do_token` passa a exigir coleta/tarefa `running` **há menos de 6 h**;
+3. `automation.fontes_de_coleta`, `task_queue` e `sync_queue` recriadas com `tem_token` (e `connection_id` na fila
+   de tarefas). As colunas `credential_ref`/`coletor_ref`/`executor_ref` **continuam no resultado, sempre nulas**,
+   e na tabela, anuláveis e zeradas: a imagem anterior lê nulo e cai em "sem coletor"/"sem executor" em vez de
+   quebrar (teste `tests/corte.test.mjs`). `task_queue` só reivindica tarefa de conexão ativa e com token (a de
+   conexão a reautorizar fica pendente sem gastar tentativa; a rota registra quantas esperam);
+4. RLS forçada sem política para o app em `corte_para_cofre_refs` e `REVOKE` do `PUBLIC` na função do gatilho;
+   o bloco de concessões tolera a ausência dos papéis (avisa em vez de quebrar).
 
-Decisão sobre o drop (revista na fase 2): nada mais lê as colunas depois desta mudança, e o rollback honesto já
-era "backup + imagem anterior" (abaixo) — um rollback só de imagem não funcionaria de qualquer forma, porque as
-conexões estão `reauth_pending` e as credenciais antigas são apagadas no passo 5. Por isso as colunas saem já,
-e os ponteiros ficam só em `corte_para_cofre_refs`. **Pré-condição** de uma migração futura que apague
-`corte_para_cofre_refs`: todas as linhas com `limpo_em` preenchido (limpeza do n8n concluída) e a verificação
-do runbook feita.
+A imagem anterior **não** consegue autorizar durante a janela (o gatilho recusa conexão ativa sem token): é a
+única regressão tolerada do esquema intermediário, e dura só até "subir a nova versão".
+
+**Remoção das colunas e da tabela do corte: release seguinte.** `db/pendentes/0123_remover_legado_do_cofre.sql`
+(fora de `db/migrations/`, não roda no deploy do corte). Pré-condições, verificadas pela própria migração:
+todas as linhas de `corte_para_cofre_refs` com `limpo_em` (limpeza do n8n concluída) e nenhuma conexão com
+ponteiro do n8n (a imagem anterior não voltou). Para aplicar: mover para `db/migrations/` com o próximo número
+livre num release **depois** de a nova imagem estar estável em produção.
 
 ### 8. Infra
 
@@ -244,7 +254,7 @@ demanda e externo ao bundle (`serverExternalPackages`).
   preservados; uma conexão `reauth_pending` sem token volta a `active`.
 - **Remover.** `removerConexao` → política (`createPoliticaDeRevogacao`) → `CofreDeTokens.revogarEApagar` com
   `apagar = connectionRepository.revogar(versaoLida)` (apaga o token e marca `revoked` numa transação).
-  Revogação no provedor é melhor esforço e acontece antes; o apagamento acontece sempre que a conexão não mudou
+  Apagamento condicionado à versão lida primeiro; a revogação no provedor (melhor esforço) só acontece se apagou, quando a conexão não mudou
   no meio. Auditoria `revogadoNoProvedor`, `motivoDaRevogacao`, `cofreApagado` (nomes sem "token"/"segredo", que o `redact` da auditoria mascara); aviso ao admin com o caminho
   manual quando não revogou; expurgo do YouTube depois.
 - **Descoberta.** Continua usando o access token recém-concedido, em memória, no próprio fluxo de autorização;
@@ -287,57 +297,60 @@ demanda e externo ao bundle (`serverExternalPackages`).
 
 ## Runbook do corte em produção
 
-Ordem estrita; cada passo só começa com o anterior verificado. Ninguém roda nada disso a partir de CI.
+Ordem estrita (revisão independente do PR #120); cada passo só começa com o anterior verificado. Todo push em
+`main` dispara o deploy, e o deploy aplica o corte: por isso o passo 1 é uma trava automática do próprio deploy.
 
-1. **Terraform do KMS** (PR em `main` → `infra.yml`): anel, chave, IAM e audit config (`infra/terraform/tokens.tf`).
-   Verificar o output `tokens_kms_key`, que a SA da VM tem `cryptoKeyEncrypterDecrypter` só nessa chave e que,
-   depois do próximo boot/startup, o `.env` da VM tem `TOKENS_KMS_KEY` não vazio (sem ele o cofre falha fechado e
-   nenhuma autorização conclui).
-2. **Backup e estado** (antes do deploy): conferir que o backup lógico diário de hoje existe; exportar
-   `SELECT id, platform, credential_ref, coletor_ref, executor_ref FROM integrations.connections` para um arquivo
-   fora do repositório (redundante com `corte_para_cofre_refs`, mas sobrevive a um restore).
-3. **Deploy do app** (merge em `dev`/`main` conforme o fluxo normal). O deploy aplica 0121 e 0122 em transação
-   (ADR 0028). Verificar no log do deploy `aplicando 0121_corte_para_cofre.sql ... ok` e `0122 ... ok`, e no banco:
-   `SELECT status, count(*) FROM integrations.connections GROUP BY 1` (nada `active` sem token),
-   `SELECT count(*) FROM integrations.corte_para_cofre_refs` (= conexões antigas). A partir daqui **a coleta
-   para** para todas as conexões até cada reconexão (o orquestrador antigo, se rodar antes do passo 4, recebe
-   fontes vazias).
-4. **Sincronizar os workflows** (pelo túnel IAP, ADR 0009): `npm run n8n:sincronizar` (simulação, revisar) e
-   `npm run n8n:sincronizar -- --criar --aplicar`. Ordem automática: `ORLA · plataforma · alertas de falha` →
-   10 coletores e 2 executores genéricos → `coleta · backfill · janela` → orquestrador, backfill, tarefas de conta,
-   jobs (incluindo `ORLA · tokens · renovação`). Se algum chamador ficar `bloqueado` por genérico ainda não
-   implantado, rode `--aplicar` de novo. Conferir que os genéricos têm a tag `platform`, estão publicados e que o
-   orquestrador mostra os ids dos genéricos no `Chamar coletor`.
-5. **Limpeza do legado no n8n**: `npm run n8n:limpar-legado` (dry-run; lê `corte_para_cofre_refs` pela VM),
-   revisar o relatório (removeria/ausente/ignorado com motivo) e só então
-   `npm run n8n:limpar-legado -- --aplicar`. Guarda o JSON do relatório (`n8n-limpeza-*.json`). Nunca toca
-   credaz/agência, genéricos nem "ORLA · worker token". Rode de novo até `falhas = 0`; é idempotente. Para manter
-   o rollback limpo, este passo pode esperar a primeira reconexão bem-sucedida de cada família (Google, Meta,
-   chave de API).
-6. **Reconectar** cada conexão (tela de conectores → **Reautorizar**): entrar com a **mesma conta** que concedeu
-   antes (o e-mail aparece na lista), conceder os mesmos escopos; chaves de API (RD, Apify, Z-API) são coladas de
-   novo no formulário do conector.
-7. **Verificação por conexão**:
-   - `SELECT c.id, c.status, t.tipo, t.versao FROM integrations.connections c LEFT JOIN
-     integrations.connection_tokens t ON t.connection_id = c.id WHERE c.id = '<id>'` ⇒ `active` com linha no cofre;
-   - o id é o mesmo de antes (`corte_para_cofre_refs`) e `connection_accounts`/`ad_accounts` continuam vinculados
-     aos mesmos clientes;
-   - disparar o orquestrador (execução manual) e conferir a primeira coleta `success`/`partial` da fonte
-     (`automation.coletas`) e linhas novas no BigQuery;
-   - Meta: `connections.expires_at` ≈ 60 dias à frente.
-8. **Renovação proativa**: executar `ORLA · tokens · renovação` à mão uma vez e conferir a resposta
-   `{ avaliadas, renovadas, reautorizar, falhas }` sem falha e o evento `tokens.renovacao_proativa` na auditoria.
+1. **KMS antes de tudo.** Terraform do KMS (PR em `main` → `infra.yml`: anel, chave, IAM, audit config; output
+   `tokens_kms_key`). No deploy, o passo "Aplicar migrações" roda `completar-env.sh` (grava `TOKENS_KMS_KEY` no
+   `.env` da VM quando falta, derivada dos metadados como o startup faz) e `tokens-verificar-kms.sh` (formato
+   `projects/.../cryptoKeys/...` e um **cifrar + decifrar real com AAD** no KMS pela conta da VM). Se falhar, o
+   deploy para **antes** do `migrar.sh`: o corte nunca roda sem KMS. Depois, `docker pull` da imagem nova, ainda
+   antes de migrar, para o intervalo esquema-novo/imagem-velha ficar curto.
+2. **Backup e estado.** Conferir o backup lógico do dia; exportar `SELECT id, platform, credential_ref,
+   coletor_ref, executor_ref FROM integrations.connections` para fora do repositório.
+3. **Deploy em janela anunciada** (0121 e 0122, só o que a imagem anterior tolera). Conferir no log `0121 ... ok` e
+   `0122 ... ok`; no banco, `SELECT status, count(*) FROM integrations.connections GROUP BY 1` e
+   `SELECT count(*) FROM integrations.corte_para_cofre_refs`. A partir daqui **a coleta para** até cada
+   reconexão.
+4. **Sincronizar o n8n na hora** (túnel IAP): `npm run n8n:sincronizar` (simulação, revisar),
+   `npm run n8n:sincronizar -- --criar --aplicar` (repita se algum chamador ficar `bloqueado`). Conferir no
+   `Chamar coletor` do orquestrador e no `Executar tarefa` das tarefas de conta que os ids são os dos genéricos
+   recém-criados, e que eles têm a tag `platform`.
+5. **Piloto: reautorizar 1 Google, 1 Meta e 1 chave de API** (mesma conta que concedeu antes; o e-mail aparece na
+   lista e no aviso "Você autorizou com outra conta" quando erra). Validar para cada um: linha no cofre, mesmo id,
+   vínculos preservados, primeira coleta `success`/`partial` e linhas novas no BigQuery. **Primeira coleta do
+   Google Ads**: conferir `automation.coletas.error_message`; se vier `DEVELOPER_TOKEN_*` (o Google voltou a exigir
+   o cabeçalho), o ponto exato é `cabecalhosExtras` do `Acesso` (`src/modules/tokens/domain/token.ts`), devolvido
+   pela rota em `cabecalhosExtras` (`acessoDoWorker.ts`), e o nó HTTP do coletor/executor Google Ads passa a
+   enviar `developer-token: {{ $('Obter token').first().json.body.cabecalhosExtras['developer-token'] }}`. Hoje não
+   é necessário: a chamada real de produção de 2026-11-20 só com `Authorization` + `login-customer-id` voltou 200.
+   Depois do piloto, reautorizar o resto.
+6. **Só então a limpeza do n8n**: `npm run n8n:limpar-legado` (simulação, com a chave de **dono** da instância;
+   sem ela o script aborta), revisão do relatório, `npm run n8n:limpar-legado -- --aplicar`; repetir até
+   `falhas = 0`.
+7. **Release seguinte**: mover `db/pendentes/0123_remover_legado_do_cofre.sql` para `db/migrations/` (apaga
+   `corte_para_cofre_refs` e as colunas legadas; recusa se a limpeza não terminou).
 
-**Janela sem coleta**: do passo 3 até a reconexão de cada conexão. Nada se perde: ao reconectar, o modo
-incremental (ADR 0025) preenche até 28 dias por rodada a partir da última janela com sucesso; mais de 28 dias de
-atraso são recuperados em rodadas sucessivas. Esperado: horas a poucos dias, conforme a disponibilidade de quem
-autoriza cada conta.
+Verificação da renovação proativa: executar `ORLA · tokens · renovação` à mão uma vez e conferir
+`{ avaliadas, renovadas, reautorizar, falhas }` e o evento `tokens.renovacao_proativa`.
 
-**Rollback honesto.** Não há volta ao n8n: as colunas de ponteiro saem no deploy (0122) e as credenciais antigas
-são apagadas no passo 5. Rollback = restaurar o backup do Postgres anterior ao passo 3 **e** voltar a imagem do
-app anterior, e só funciona por inteiro **antes do passo 5** (depois dele, as conexões restauradas apontam para
-credenciais/workflows apagados e precisam ser autorizadas de novo no modelo antigo). Restaurar perde tudo que o
-banco registrou depois do backup (reconexões, coletas, edições de contexto). BigQuery não é afetado em nenhum caso.
+**Reautorizar com outra conta** cria conexão nova e deixa a antiga `reauth_pending`; a tela avisa com o e-mail
+esperado. Não aposente a antiga com "Remover" para trocar de conta: remover solta os vínculos dos clientes e, no
+YouTube, enfileira o expurgo do BigQuery. Peça a reautorização com a conta certa; se a conta antiga não existir
+mais, mova os vínculos à mão pelo fluxo de mover conta antes de remover a antiga.
+
+**Janela sem coleta (o que volta e o que não volta).** Do passo 3 até a reconexão de cada conexão:
+- recuperado pelo incremental (ADR 0025): fatos diários com histórico na API (Google Ads, Meta insights, GA4,
+  Search Console, YouTube, GBP, RD), até 28 dias por rodada a partir da última janela com sucesso; atrasos maiores
+  em rodadas sucessivas, dentro do limite de histórico de cada API;
+- **não** recuperado: fotos do dia (GTM, dimensões SCD2 de campanhas/contas/canais, estatísticas e recortes do
+  dataset da Meta) ficam sem a foto dos dias da janela; Lead Ads perde o que passar de 90 dias (a API só devolve
+  90 dias de leads/contagens). Por isso o piloto e as reconexões devem acontecer na mesma janela anunciada.
+
+**Rollback honesto.** Antes do passo 6, rollback = backup do Postgres anterior ao passo 3 + imagem anterior (as
+credenciais e workflows antigos ainda existem no n8n). Depois do passo 6 não há volta ao modelo antigo: as
+credenciais foram apagadas e cada conexão restaurada teria de ser autorizada de novo. Restaurar perde o que o
+banco registrou depois do backup. BigQuery não é afetado.
 
 ## Script de limpeza do n8n (`scripts/n8n-limpar-legado.mjs`)
 
@@ -352,6 +365,9 @@ banco registrou depois do backup (reconexões, coletas, edições de contexto). 
   (`sem_identificacao_da_plataforma`), credencial usada por quem fica (`credencial_em_uso`) ou com nome de
   credencial compartilhada ("ORLA · worker token": `credencial_compartilhada_da_plataforma`). Na dúvida, ignora e
   relata.
+- Exige chave de **dono** da instância (`GET /api/v1/users` responde): com chave de outro usuário, workflows de
+  outros projetos (credaz/agência) ficam ocultos e uma credencial compartilhada pareceria livre. Aborta também se a
+  listagem vier incompleta (página vazia com cursor, cursor repetido, ids repetidos).
 - Dry-run por padrão; `--aplicar` explícito; idempotente (404 conta como ausente); marca `limpo_em` nas conexões
   sem pendência; relatório no terminal (removidos/ausentes/ignorados com motivo/falhas) e JSON (`--log`), sem
   segredo. Lógica em `src/shared/n8n/limpezaDoLegado.ts`, testada com cliente n8n falso.
@@ -374,6 +390,20 @@ banco registrou depois do backup (reconexões, coletas, edições de contexto). 
   superfície nova é o access token de curta duração de execuções em andamento.
 - Riscos conhecidos: o cache em memória é por processo (o cifrado no banco cobre reinícios); revogar no Google um
   refresh token derruba o grant inteiro do usuário naquele app OAuth, por isso a política não revoga quando a
-  mesma conta sustenta outra conexão ativa (`acesso_compartilhado`); uma remoção que corre com uma reautorização
-  da mesma conta pode revogar no Google o grant recém-concedido (a remoção recebe conflito e a conexão fica, mas
-  pode precisar de nova autorização).
+  mesma conta sustenta outra conexão ativa (`acesso_compartilhado`), e a remoção só revoga **depois** de apagar
+  o token condicionado à versão lida: quem perde a corrida para uma reautorização não revoga nada.
+
+## Endurecimento depois da revisão independente (PR #120)
+
+- **Rede.** O Caddy responde 404 a `/api/v0/coleta/token*`, `/api/v0/tokens/*` e `/api/v0/tarefas/token*`
+  (smoke `scripts/smoke-limite-de-corpo.sh`, inclusive `//`, `./` e `%74`); o n8n chama `http://app:3000` pela
+  rede interna. Não fechamos todo `/api/v0` no proxy: `scripts/titular.mjs` e `scripts/contexto-reconstruir-brain.mjs`
+  ainda chamam rotas de manutenção pelo endereço público. As duas rotas do cofre também recusam com 404
+  (`veioDeFora`) o que chega com `Forwarded`, `X-Real-IP`, `X-Forwarded-Proto: https` ou `X-Forwarded-For` com mais
+  de um salto ou endereço público (o Next preenche o endereço privado do socket quando a chamada é direta).
+- **Origem recente.** Só coleta/tarefa `running` há menos de 6 h recebe token (0122).
+- **Corridas.** Marcar `reauth_pending` exige a `versao` lida (falha com o segredo velho não derruba a
+  reautorização); a concessão tem dono (`renovacao_dono`, UUID) e só quem a tem pode soltá-la.
+- **Meta.** A rota devolve `appsecretProof` = HMAC-SHA256(token, segredo do app) e os nós da Graph com o token do
+  usuário mandam `appsecret_proof=` (inofensivo se o app não exige). A troca pelo token de longa duração que falha
+  recusa a autorização (nada é gravado).

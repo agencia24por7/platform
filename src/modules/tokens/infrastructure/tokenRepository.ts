@@ -66,6 +66,7 @@ export async function gravarSegredoNaTransacao(tx: TenantSession, alvo: Alvo, no
       ultima_falha_codigo = NULL,
       ultima_falha_em = NULL,
       renovacao_iniciada_em = NULL,
+      renovacao_dono = NULL,
       versao = integrations.connection_tokens.versao + 1`;
 }
 
@@ -126,11 +127,11 @@ export function createTokenRepository(): RepositorioDeTokens {
       await withTenant(alvo.organizationId, (tx) => gravarSegredoNaTransacao(tx, alvo, novo));
     },
 
-    async reivindicarRenovacao(alvo, prazoMs) {
+    async reivindicarRenovacao(alvo, prazoMs, concessao) {
       return withTenant(alvo.organizationId, async (tx) => {
         const reivindicadas = (await tx`
           UPDATE integrations.connection_tokens
-          SET renovacao_iniciada_em = now()
+          SET renovacao_iniciada_em = now(), renovacao_dono = ${concessao}
           WHERE connection_id = ${alvo.connectionId}
             AND (renovacao_iniciada_em IS NULL OR renovacao_iniciada_em < now() - make_interval(secs => ${prazoMs / 1000}))
           RETURNING connection_id`) as unknown as unknown[];
@@ -139,16 +140,18 @@ export function createTokenRepository(): RepositorioDeTokens {
       });
     },
 
-    async concluirRenovacao(alvo, versaoLida, mudanca) {
+    async concluirRenovacao(alvo, versaoLida, concessao, mudanca) {
       return withTenant(alvo.organizationId, async (tx) => {
-        const colunas = { ...colunasDa(mudanca), renovacao_iniciada_em: null };
+        const colunas = { ...colunasDa(mudanca), renovacao_iniciada_em: null, renovacao_dono: null };
         const linhas = (await tx`
           UPDATE integrations.connection_tokens
           SET ${tx(colunas)}, versao = versao + 1
           WHERE connection_id = ${alvo.connectionId} AND versao = ${versaoLida}
           RETURNING tipo`) as unknown as { tipo: TipoDeSegredo }[];
         if (!linhas[0]) {
-          await tx`UPDATE integrations.connection_tokens SET renovacao_iniciada_em = NULL WHERE connection_id = ${alvo.connectionId}`;
+          await tx`
+            UPDATE integrations.connection_tokens SET renovacao_iniciada_em = NULL, renovacao_dono = NULL
+            WHERE connection_id = ${alvo.connectionId} AND renovacao_dono = ${concessao}`;
           return false;
         }
         if (mudanca.segredo && linhas[0].tipo === 'oauth_long_lived') {
@@ -160,11 +163,13 @@ export function createTokenRepository(): RepositorioDeTokens {
       });
     },
 
-    async liberarRenovacao(alvo, falha) {
+    async liberarRenovacao(alvo, concessao, falha) {
       await withTenant(alvo.organizationId, async (tx) => {
-        const colunas: Record<string, unknown> = { renovacao_iniciada_em: null };
+        const colunas: Record<string, unknown> = { renovacao_iniciada_em: null, renovacao_dono: null };
         if (falha !== undefined) Object.assign(colunas, { ultima_falha_codigo: falha, ultima_falha_em: falha === null ? null : new Date() });
-        await tx`UPDATE integrations.connection_tokens SET ${tx(colunas)} WHERE connection_id = ${alvo.connectionId}`;
+        await tx`
+          UPDATE integrations.connection_tokens SET ${tx(colunas)}
+          WHERE connection_id = ${alvo.connectionId} AND renovacao_dono = ${concessao}`;
       });
     },
 
@@ -190,11 +195,14 @@ export function createTokenRepository(): RepositorioDeTokens {
 
 export function createMarcadorDeReautorizacao(): MarcadorDeReautorizacao {
   return {
-    async marcar(alvo: Alvo) {
+    async marcar(alvo: Alvo, _motivo: string, versaoLida: number) {
       await withTenant(alvo.organizationId, async (tx) => {
         await tx`
-          UPDATE integrations.connections SET status = 'reauth_pending'
-          WHERE id = ${alvo.connectionId} AND status IN ('active', 'expiring', 'degraded')`;
+          UPDATE integrations.connections n SET status = 'reauth_pending'
+          WHERE n.id = ${alvo.connectionId} AND n.status IN ('active', 'expiring', 'degraded')
+            AND EXISTS (
+              SELECT 1 FROM integrations.connection_tokens t
+              WHERE t.connection_id = n.id AND t.versao = ${versaoLida})`;
       });
     },
   };

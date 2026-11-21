@@ -1,14 +1,5 @@
 BEGIN;
 
-DO $$
-BEGIN
-  PERFORM set_config(
-    'tokens.papel_app',
-    (SELECT rolname FROM pg_roles WHERE rolname IN ('orla_app', 'tria_app') ORDER BY rolname = 'orla_app' DESC LIMIT 1),
-    true
-  );
-END $$;
-
 CREATE TABLE IF NOT EXISTS integrations.corte_para_cofre_refs (
   connection_id    uuid PRIMARY KEY,
   organization_id  uuid NOT NULL,
@@ -49,7 +40,7 @@ WHERE NOT EXISTS (
 ALTER TABLE integrations.connections ALTER COLUMN credential_ref DROP NOT NULL;
 
 COMMENT ON COLUMN integrations.connections.credential_ref IS
-  'DEPRECADA desde o corte para o cofre (ADR 0032): sempre nula. O segredo vive em integrations.connection_tokens. A coluna sai na 0122.';
+  'DEPRECADA desde o corte para o cofre (ADR 0032): sempre nula. O segredo vive em integrations.connection_tokens. A coluna fica no release do corte (a imagem anterior ainda a grava) e sai em db/pendentes/0123_remover_legado_do_cofre.sql no release seguinte.';
 
 UPDATE integrations.connections n
 SET status = CASE WHEN n.status = 'revoked' THEN n.status ELSE 'reauth_pending' END,

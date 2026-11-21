@@ -76,6 +76,31 @@ describe('emissão de token para o worker', () => {
     }
   });
 
+  it('Meta: devolve a appsecret_proof (HMAC-SHA256 do token com o segredo do app) e não a audita', async () => {
+    const { createHmac } = await import('node:crypto');
+    const eventos: AuditEvent[] = [];
+    const servico = createAcessoDoWorker({
+      resolvedor: { resolver: async () => ({ ...VALIDO, platform: 'meta' }) },
+      cofre: {
+        selar: async () => ({ ok: false, error: 'indisponivel' }),
+        guardar: async () => ({ ok: true, value: undefined }),
+        obterAcesso: async () => ({ ok: true, value: { token: TOKEN, tipo: 'bearer', expiraEm: null } }),
+        revogarEApagar: async () => ({ revogacao: 'sem_token', apagado: false }),
+        renovarProativamente: async () => ({ avaliadas: 0, renovadas: 0, reautorizar: 0, falhas: 0 }),
+        esquecer: () => {},
+      },
+      audit: { record: async (evento) => void eventos.push(evento), list: async () => [], search: async () => [] },
+      limitar: () => true,
+      provaDoSegredoDoApp: (platform, token) => (platform === 'meta' ? createHmac('sha256', 'segredo-do-app').update(token).digest('hex') : null),
+    });
+    const resultado = await servico.emitir({ coletaId: 'col-1' }, WORKER);
+    assert.ok(resultado.ok);
+    assert.equal(resultado.value.appsecretProof, createHmac('sha256', 'segredo-do-app').update(TOKEN).digest('hex'));
+    assert.ok(!JSON.stringify(eventos).includes(resultado.value.appsecretProof!));
+    const google = await montar(VALIDO).servico.emitir({ coletaId: 'col-1' }, WORKER);
+    assert.ok(google.ok && !('appsecretProof' in google.value));
+  });
+
   it('origem desconhecida é 404 e limite estourado é 429', async () => {
     const desconhecida = await montar(null).servico.emitir({ coletaId: 'x' }, WORKER);
     assert.equal(!desconhecida.ok && desconhecida.error.code, 'not_found');

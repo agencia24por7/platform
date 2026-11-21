@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { err, ok, type Result } from '@/shared/result/result';
 import type { Platform } from '@/modules/connections/domain/connection';
 import {
@@ -16,6 +17,7 @@ import {
 } from '@/modules/tokens/domain/token';
 import type {
   CifraDeTokens,
+  Concessao,
   Espera,
   FabricaDeProvedores,
   MarcadorDeReautorizacao,
@@ -124,10 +126,10 @@ export function createCofreDeTokens(deps: DependenciasDoCofre): CofreDeTokens {
     return acesso;
   }
 
-  async function marcarReautorizacao(alvo: Alvo, motivo: string): Promise<void> {
+  async function marcarReautorizacao(alvo: Alvo, motivo: string, versaoLida: number): Promise<void> {
     lembrancas.delete(alvo.connectionId);
     try {
-      await deps.marcador.marcar(alvo, motivo);
+      await deps.marcador.marcar(alvo, motivo, versaoLida);
     } catch {
       deps.registro.erro('tokens.reautorizacao.nao_marcada', { connectionId: alvo.connectionId, motivo });
     }
@@ -139,52 +141,62 @@ export function createCofreDeTokens(deps: DependenciasDoCofre): CofreDeTokens {
     return { token, tipo: 'bearer', expiraEm: registro.acessoExpiraEm };
   }
 
-  async function liberar(alvo: Alvo, falha?: string | null): Promise<void> {
+  async function liberar(alvo: Alvo, concessao: Concessao, falha?: string | null): Promise<void> {
     try {
-      await deps.repositorio.liberarRenovacao(alvo, falha);
+      await deps.repositorio.liberarRenovacao(alvo, concessao, falha);
     } catch {
       deps.registro.erro('tokens.renovacao.nao_liberada', { connectionId: alvo.connectionId });
     }
   }
 
-  async function comConcessao<T>(alvo: Alvo, trabalho: (registro: RegistroDeToken) => Promise<T>): Promise<Desfecho<T> | null> {
-    const { registro, dono } = await deps.repositorio.reivindicarRenovacao(alvo, PRAZO_DA_RENOVACAO_MS);
+  async function comConcessao<T>(
+    alvo: Alvo,
+    trabalho: (registro: RegistroDeToken, concessao: Concessao) => Promise<T>,
+  ): Promise<Desfecho<T> | null> {
+    const concessao = randomUUID();
+    const { registro, dono } = await deps.repositorio.reivindicarRenovacao(alvo, PRAZO_DA_RENOVACAO_MS, concessao);
     if (!registro) return null;
     if (!dono) return { tipo: 'ocupado' };
     try {
-      return { tipo: 'feito', valor: await trabalho(registro) };
+      return { tipo: 'feito', valor: await trabalho(registro, concessao) };
     } catch (erro) {
-      await liberar(alvo);
+      await liberar(alvo, concessao);
       throw erro;
     }
   }
 
-  async function registrarFalha(alvo: Alvo, natureza: NaturezaDaFalha, codigo: string): Promise<FalhaDoCofre> {
-    await liberar(alvo, codigo);
+  async function registrarFalha(
+    alvo: Alvo,
+    registro: RegistroDeToken,
+    concessao: Concessao,
+    natureza: NaturezaDaFalha,
+    codigo: string,
+  ): Promise<FalhaDoCofre> {
+    await liberar(alvo, concessao, codigo);
     deps.registro.aviso('tokens.renovacao.falhou', { connectionId: alvo.connectionId, natureza, codigo });
     if (natureza === 'reautorizar') {
-      await marcarReautorizacao(alvo, codigo);
+      await marcarReautorizacao(alvo, codigo, registro.versao);
       return 'reautorizar';
     }
     return natureza === 'configuracao' ? 'sem_provedor' : 'indisponivel';
   }
 
-  async function renovarComoDono(alvo: Alvo, registro: RegistroDeToken): Promise<Result<Acesso, FalhaDoCofre>> {
+  async function renovarComoDono(alvo: Alvo, registro: RegistroDeToken, concessao: Concessao): Promise<Result<Acesso, FalhaDoCofre>> {
     const jaRenovado = await acessoEmCache(registro);
     if (jaRenovado) {
-      await liberar(alvo);
+      await liberar(alvo, concessao);
       return ok(lembrar(alvo.connectionId, jaRenovado, registro.tipo));
     }
 
     const provedor = deps.provedores(registro.platform, registro.tipo);
     if (!provedor) {
-      await liberar(alvo);
+      await liberar(alvo, concessao);
       return err('sem_provedor');
     }
 
     const segredo = await decifrar(registro.segredo, contexto(registro, 'segredo'));
     const renovacao = await provedor.renovar(segredo);
-    if (!renovacao.ok) return err(await registrarFalha(alvo, renovacao.error.natureza, renovacao.error.codigo));
+    if (!renovacao.ok) return err(await registrarFalha(alvo, registro, concessao, renovacao.error.natureza, renovacao.error.codigo));
 
     const agora = relogio();
     const expiraEm = renovacao.value.expiraEm ?? new Date(agora.getTime() + VALIDADE_PADRAO_DO_ACESSO_MS);
@@ -196,7 +208,7 @@ export function createCofreDeTokens(deps: DependenciasDoCofre): CofreDeTokens {
         }
       : undefined;
 
-    const gravou = await deps.repositorio.concluirRenovacao(alvo, registro.versao, {
+    const gravou = await deps.repositorio.concluirRenovacao(alvo, registro.versao, concessao, {
       acesso: { cifrado: acessoCifrado, expiraEm },
       ...(novoSegredo ? { segredo: novoSegredo } : {}),
       falha: null,
@@ -210,7 +222,7 @@ export function createCofreDeTokens(deps: DependenciasDoCofre): CofreDeTokens {
 
   async function renovarUnico(alvo: Alvo): Promise<Result<Acesso, FalhaDoCofre>> {
     for (let tentativa = 0; tentativa < tentativasDeEspera; tentativa++) {
-      const desfecho = await comConcessao(alvo, (registro) => renovarComoDono(alvo, registro));
+      const desfecho = await comConcessao(alvo, (registro, concessao) => renovarComoDono(alvo, registro, concessao));
       if (!desfecho) return err('sem_token');
       if (desfecho.tipo === 'feito') return desfecho.valor;
 
@@ -236,7 +248,7 @@ export function createCofreDeTokens(deps: DependenciasDoCofre): CofreDeTokens {
 
       if (registro.tipo === 'oauth_long_lived') {
         if (!aindaValido(registro.segredoExpiraEm, relogio(), 0)) {
-          await marcarReautorizacao(alvo, 'segredo_expirado');
+          await marcarReautorizacao(alvo, 'segredo_expirado', registro.versao);
           return err('reautorizar');
         }
         const token = await decifrar(registro.segredo, contexto(registro, 'segredo'));
@@ -253,34 +265,38 @@ export function createCofreDeTokens(deps: DependenciasDoCofre): CofreDeTokens {
     }
   }
 
-  async function renovarUmComoDono(alvo: Alvo, registro: RegistroDeToken): Promise<'renovada' | 'reautorizar' | 'falhou' | 'ignorada'> {
+  async function renovarUmComoDono(
+    alvo: Alvo,
+    registro: RegistroDeToken,
+    concessao: Concessao,
+  ): Promise<'renovada' | 'reautorizar' | 'falhou' | 'ignorada'> {
     const agora = relogio();
     if (registro.tipo !== 'oauth_long_lived' || !precisaRenovarProativamente(registro.segredoExpiraEm, agora)) {
-      await liberar(alvo);
+      await liberar(alvo, concessao);
       return 'ignorada';
     }
     if (!aindaValido(registro.segredoExpiraEm, agora, 0)) {
-      await liberar(alvo);
-      await marcarReautorizacao(alvo, 'segredo_expirado');
+      await liberar(alvo, concessao);
+      await marcarReautorizacao(alvo, 'segredo_expirado', registro.versao);
       return 'reautorizar';
     }
 
     const provedor = deps.provedores(registro.platform, registro.tipo);
     if (!provedor) {
-      await liberar(alvo);
+      await liberar(alvo, concessao);
       return 'falhou';
     }
 
     const segredo = await decifrar(registro.segredo, contexto(registro, 'segredo'));
     const renovacao = await provedor.renovar(segredo);
     if (!renovacao.ok) {
-      const falha = await registrarFalha(alvo, renovacao.error.natureza, renovacao.error.codigo);
+      const falha = await registrarFalha(alvo, registro, concessao, renovacao.error.natureza, renovacao.error.codigo);
       return falha === 'reautorizar' ? 'reautorizar' : 'falhou';
     }
 
     const novo = renovacao.value.novoSegredo ?? renovacao.value.accessToken;
     const cifrado = await deps.cifra.cifrar(novo, contexto(registro, 'segredo'));
-    const gravou = await deps.repositorio.concluirRenovacao(alvo, registro.versao, {
+    const gravou = await deps.repositorio.concluirRenovacao(alvo, registro.versao, concessao, {
       segredo: { cifrado, expiraEm: renovacao.value.segredoExpiraEm ?? renovacao.value.expiraEm },
       falha: null,
       renovadoEm: agora,
@@ -294,7 +310,7 @@ export function createCofreDeTokens(deps: DependenciasDoCofre): CofreDeTokens {
   }
 
   async function renovarUm(alvo: Alvo): Promise<'renovada' | 'reautorizar' | 'falhou' | 'ignorada'> {
-    const desfecho = await comConcessao(alvo, (registro) => renovarUmComoDono(alvo, registro));
+    const desfecho = await comConcessao(alvo, (registro, concessao) => renovarUmComoDono(alvo, registro, concessao));
     if (!desfecho || desfecho.tipo === 'ocupado') return 'ignorada';
     return desfecho.valor;
   }
@@ -340,26 +356,37 @@ export function createCofreDeTokens(deps: DependenciasDoCofre): CofreDeTokens {
     async revogarEApagar(alvo, opcoes = {}) {
       lembrancas.delete(alvo.connectionId);
       const registro = await deps.repositorio.carregar(alvo).catch(() => null);
-      let revogacao: Revogacao = registro ? 'nao_tentada' : 'sem_token';
+      const tentar = registro !== null && opcoes.revogarNoProvedor !== false;
 
-      if (registro && opcoes.revogarNoProvedor !== false) {
-        try {
-          const provedor = deps.provedores(registro.platform, registro.tipo);
-          if (!provedor) revogacao = 'sem_suporte';
-          else {
-            const segredo = await decifrar(registro.segredo, contexto(registro, 'segredo'));
-            const resultado = await provedor.revogar(segredo);
-            revogacao = resultado.ok ? resultado.value : 'falhou';
+      let provedor: ReturnType<FabricaDeProvedores> = null;
+      let segredo: string | null = null;
+      let revogacao: Revogacao = registro ? 'nao_tentada' : 'sem_token';
+      if (tentar) {
+        provedor = deps.provedores(registro.platform, registro.tipo);
+        if (!provedor) revogacao = 'sem_suporte';
+        else {
+          try {
+            segredo = await decifrar(registro.segredo, contexto(registro, 'segredo'));
+          } catch {
+            revogacao = 'falhou';
           }
-        } catch {
-          revogacao = 'falhou';
         }
-        if (revogacao === 'falhou') deps.registro.aviso('tokens.revogacao.falhou', { connectionId: alvo.connectionId });
       }
 
       const apagar = opcoes.apagar ?? (() => deps.repositorio.apagar(alvo));
       const apagado = await apagar(registro?.versao ?? null);
       lembrancas.delete(alvo.connectionId);
+      if (!apagado) return { revogacao: registro ? 'nao_tentada' : 'sem_token', apagado };
+
+      if (provedor && segredo !== null) {
+        try {
+          const resultado = await provedor.revogar(segredo);
+          revogacao = resultado.ok ? resultado.value : 'falhou';
+        } catch {
+          revogacao = 'falhou';
+        }
+      }
+      if (revogacao === 'falhou') deps.registro.aviso('tokens.revogacao.falhou', { connectionId: alvo.connectionId });
       return { revogacao, apagado };
     },
 

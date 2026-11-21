@@ -56,4 +56,27 @@ describe('cofre de tokens contra o Postgres de verdade (ADR 0032)', { concurrenc
   it('o banco recusa conexão ativa sem token (gatilho adiado do corte)', () => {
     assert.match(resultado.ativaSemToken, /ativa sem token no cofre/);
   });
+
+  it('falha velha após reautorizar não marca reauth_pending e não solta nem sobrescreve a concessão de outro processo', () => {
+    const c = resultado.corridas;
+    assert.equal(c.aDono, true);
+    assert.equal(c.reautorizadaVersao, 2);
+    assert.equal(c.statusDepoisDaFalhaVelha, 'active');
+    assert.equal(c.bDono, true);
+    assert.equal(c.leaseDeBPreservado, true);
+    assert.equal(c.falhaVelhaNaoGravada, true);
+    assert.equal(c.gravouAtrasado, false);
+    assert.equal(c.leaseDeBDepoisDoAtrasado, true);
+  });
+
+  it('autorização (Google e Meta) contra o banco: conexão pós-corte reautorizada volta com o MESMO id', () => {
+    for (const platform of ['ga4', 'meta']) {
+      assert.deepEqual(resultado.autorizacao[platform], { mesmoId: true, status: 'active', versao: 1 }, platform);
+    }
+  });
+
+  it('guardarChave contra o banco: rotacionar mantém o id, sobe a versão e guarda a chave nova cifrada', () => {
+    assert.deepEqual(resultado.chave, { mesmoId: true, versao: 2, decifrada: 'apify_api_chave-segunda-com-mais-de-vinte', tipo: 'api_key' });
+  });
 });
+

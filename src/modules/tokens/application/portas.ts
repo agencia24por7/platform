@@ -62,6 +62,8 @@ export type Reivindicacao = {
   readonly dono: boolean;
 };
 
+export type Concessao = string;
+
 export type MudancaDeToken = {
   readonly acesso?: { readonly cifrado: Cifrado; readonly expiraEm: Date } | null;
   readonly segredo?: { readonly cifrado: Cifrado; readonly expiraEm: Date | null };
@@ -79,15 +81,15 @@ export type RepositorioDeTokens = {
   plataformaDa(alvo: Alvo): Promise<Platform | null>;
   carregar(alvo: Alvo): Promise<RegistroDeToken | null>;
   guardar(alvo: Alvo, novo: NovoSegredo): Promise<void>;
-  reivindicarRenovacao(alvo: Alvo, prazoMs: number): Promise<Reivindicacao>;
-  concluirRenovacao(alvo: Alvo, versaoLida: number, mudanca: MudancaDeToken): Promise<boolean>;
-  liberarRenovacao(alvo: Alvo, falha?: string | null): Promise<void>;
+  reivindicarRenovacao(alvo: Alvo, prazoMs: number, concessao: Concessao): Promise<Reivindicacao>;
+  concluirRenovacao(alvo: Alvo, versaoLida: number, concessao: Concessao, mudanca: MudancaDeToken): Promise<boolean>;
+  liberarRenovacao(alvo: Alvo, concessao: Concessao, falha?: string | null): Promise<void>;
   apagar(alvo: Alvo): Promise<boolean>;
   aRenovar(antes: Date, limite: number): Promise<readonly Alvo[]>;
 };
 
 export type MarcadorDeReautorizacao = {
-  marcar(alvo: Alvo, motivo: string): Promise<void>;
+  marcar(alvo: Alvo, motivo: string, versaoLida: number): Promise<void>;
 };
 
 export type Registro = {

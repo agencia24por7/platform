@@ -61,6 +61,7 @@ export type TaskRepository = {
   listByConnection(organizationId: string, connectionId: string): Promise<readonly AccountTask[]>;
   listByClient(organizationId: string, clientId: string): Promise<readonly AccountTask[]>;
   claim(limit: number, kinds: readonly string[] | null): Promise<readonly ClaimedTask[]>;
+  esperandoReautorizacao(): Promise<number>;
   report(taskId: string, sucesso: boolean, outcome: string): Promise<string | null>;
 };
 
@@ -137,6 +138,13 @@ export function createTaskRepository(): TaskRepository {
           connectionId: row.connection_id,
           temToken: row.tem_token,
         }));
+      });
+    },
+
+    async esperandoReautorizacao() {
+      return withoutTenant(async (tx) => {
+        const rows = (await tx`SELECT automation.tarefas_esperando_reautorizacao() AS total`) as unknown as { total: number }[];
+        return rows[0]?.total ?? 0;
       });
     },
 

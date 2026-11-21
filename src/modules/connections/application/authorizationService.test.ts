@@ -97,7 +97,7 @@ function montarCenario(opcoes: { falhaNoInsert?: boolean; semIdentidade?: boolea
       return null;
     },
     async list() {
-      return [];
+      return [...conexoes.values()].map(comVersao);
     },
     async revogar() {
       return false;
@@ -422,6 +422,24 @@ for (const plataforma of COM_COFRE) {
   });
 }
 
+describe('reautorizar com outra conta', () => {
+  it('cria conexão nova e avisa que a pendente (outra identidade) continua sem token', async () => {
+    const c = montarCenario();
+    const primeira = await c.servico.complete(pedido('ga4'));
+    assert.ok(primeira.ok);
+    const antiga = c.conexoes.get(primeira.value.connectionId)!;
+    c.conexoes.set(antiga.id, { ...antiga, status: 'reauth_pending', externalId: 'identidade-de-outra-conta' });
+    c.tokens.delete(antiga.id);
+
+    const outra = await c.servico.complete(pedido('ga4'));
+    assert.ok(outra.ok);
+    assert.notEqual(outra.value.connectionId, antiga.id);
+    assert.equal(outra.value.pendentesDeOutraConta, 1);
+    assert.equal(c.conexoes.get(antiga.id)!.status, 'reauth_pending', 'a pendente não é tocada');
+    assert.equal(primeira.value.pendentesDeOutraConta, 0);
+  });
+});
+
 describe('segredo que o cofre não sabe guardar', () => {
   it('Google sem refresh token é recusado sem criar conexão', async () => {
     responderToken({ corpo: { access_token: SEGREDO_DO_TOKEN, expires_in: 3600 } });
@@ -437,6 +455,21 @@ describe('segredo que o cofre não sabe guardar', () => {
     const resultado = await c.servico.complete(pedido('rdstation'));
     assert.ok(!resultado.ok);
     assert.equal(c.conexoes.size, 0);
+  });
+
+  it('Meta: se a troca pelo token de longa duração falha, nada é gravado (o token curto não vira de 60 dias)', async () => {
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      const corpo = String(init?.body ?? '');
+      if (corpo.includes('fb_exchange_token')) return new Response(JSON.stringify({ error: { code: 1 } }), { status: 500 });
+      return new Response(JSON.stringify({ access_token: SEGREDO_DO_TOKEN, expires_in: 3600 }), { status: 200 });
+    }) as typeof fetch;
+    const c = montarCenario();
+    const resultado = await c.servico.complete(pedido('meta'));
+    assert.ok(!resultado.ok);
+    assert.equal(resultado.error.code, 'unavailable');
+    assert.match(resultado.error.message, /longa duração/);
+    assert.equal(c.conexoes.size, 0);
+    assert.equal(c.selados.length, 0);
   });
 
   it('Meta sem expires_in assume 60 dias de validade', async () => {

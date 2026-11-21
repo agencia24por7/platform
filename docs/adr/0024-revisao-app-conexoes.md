@@ -154,7 +154,7 @@ Proposta:
 
 ## Adendo (ADR 0032, 2026-11-20): cofre no app, trava pela versão do token
 
-- `credential_ref` deixou de existir (migração 0122). Os casos `pendente:cofre-indisponivel` e `descartada` sumiram
+- `credential_ref` deixou de ser usada (zerada no corte 0121; a coluna sai em `db/pendentes/0123` no release seguinte). Os casos `pendente:cofre-indisponivel` e `descartada` sumiram
   junto: conexão ativa sem token é estado inválido (gatilho adiado `conexao_ativa_exige_token`) e o cofre
   indisponível recusa a autorização em vez de criar conexão `degraded`.
 - A trava otimista de `credential_ref` do PR #107 foi substituída pela `versao` de `connection_tokens`: `renew` e

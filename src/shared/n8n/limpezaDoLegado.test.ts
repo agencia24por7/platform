@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { WorkflowImplantado } from './clienteN8n.ts';
-import { executarLimpeza, idDaCredencial, planejarLimpeza, type ClienteDaLimpeza, type RefsDoCorte } from './limpezaDoLegado.ts';
+import { AcessoParcialAoN8n, executarLimpeza, idDaCredencial, planejarLimpeza, type ClienteDaLimpeza, type RefsDoCorte } from './limpezaDoLegado.ts';
 
 const GENERICOS = new Set(['ORLA · Google Analytics · coletor', 'ORLA · coleta · orquestrador']);
 
@@ -17,14 +17,18 @@ function workflow(id: string, name: string, tags: string[], credenciais: Record<
   };
 }
 
-function clienteFalso(iniciais: WorkflowImplantado[], opcoes: { falharWorkflow?: string; falharCredencial?: string } = {}) {
+function clienteFalso(iniciais: WorkflowImplantado[], opcoes: { falharWorkflow?: string; falharCredencial?: string; dono?: boolean; repetir?: boolean } = {}) {
   let workflows = [...iniciais];
   const credenciais = new Set(['cred1', 'cred2', 'cred3', 'credWorker', 'credCredaz']);
   const chamadas: string[] = [];
   const cliente: ClienteDaLimpeza = {
+    async verificarAcessoDeDono() {
+      chamadas.push('dono');
+      return opcoes.dono ?? true;
+    },
     async listar() {
       chamadas.push('listar');
-      return workflows;
+      return opcoes.repetir ? [...workflows, workflows[0]!] : workflows;
     },
     async remover(id) {
       chamadas.push(`remover:${id}`);
@@ -82,7 +86,7 @@ describe('limpeza do legado do n8n (ADR 0032)', () => {
     const relatorio = await executarLimpeza(refs, falso.cliente, GENERICOS, false);
 
     assert.equal(relatorio.aplicado, false);
-    assert.deepEqual(falso.chamadas, ['listar']);
+    assert.deepEqual(falso.chamadas, ['dono', 'listar']);
     assert.deepEqual(relatorio.planejados.map((item) => `${item.tipo}:${item.id}`).sort(), ['credencial:cred1', 'credencial:credSumida', 'workflow:wf1', 'workflow:wf2']);
 
     const motivo = (id: string) => relatorio.ignorados.find((item) => item.id === id)?.motivo;
@@ -105,7 +109,7 @@ describe('limpeza do legado do n8n (ADR 0032)', () => {
 
     assert.deepEqual(relatorio.removidos.map((item) => item.id).sort(), ['cred1', 'wf1', 'wf2']);
     assert.ok(relatorio.jaAusentes.some((item) => item.id === 'credSumida'));
-    const ordem = falso.chamadas.filter((chamada) => chamada !== 'listar');
+    const ordem = falso.chamadas.filter((chamada) => chamada !== 'listar' && chamada !== 'dono');
     assert.ok(ordem.indexOf('remover:wf1') < ordem.indexOf('credencial:cred1'));
     assert.ok(!falso.chamadas.some((chamada) => /wf3|wf4|wf5|wf6|wf7|cred3|credWorker|credCredaz/.test(chamada)));
     assert.deepEqual(falso.workflows().map((w) => w.id).sort(), ['wf3', 'wf4', 'wf5', 'wf6', 'wf7']);
@@ -145,5 +149,17 @@ describe('limpeza do legado do n8n (ADR 0032)', () => {
   it('o relatório não carrega segredo, só ids e nomes', async () => {
     const relatorio = await executarLimpeza(refs, clienteFalso(legado).cliente, GENERICOS, false);
     assert.ok(!/token=|Bearer |access_token/.test(JSON.stringify(relatorio)));
+  });
+
+  it('aborta sem chave de dono: credaz/agência ocultos fariam uma credencial compartilhada parecer livre', async () => {
+    const falso = clienteFalso(legado, { dono: false });
+    await assert.rejects(executarLimpeza(refs, falso.cliente, GENERICOS, true), AcessoParcialAoN8n);
+    assert.deepEqual(falso.chamadas, ['dono']);
+  });
+
+  it('aborta quando a listagem vem incompleta (ids repetidos)', async () => {
+    const falso = clienteFalso(legado, { repetir: true });
+    await assert.rejects(executarLimpeza(refs, falso.cliente, GENERICOS, true), AcessoParcialAoN8n);
+    assert.ok(!falso.chamadas.some((chamada) => chamada.startsWith('remover') || chamada.startsWith('credencial')));
   });
 });

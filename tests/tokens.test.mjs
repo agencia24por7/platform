@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { before, describe, it } from 'node:test';
-import { BASE, acessoDeTeste, appIsUp, envelopeLocal, ensureUser, makeOwner, post, signIn, sqlDeConexao, submitForm } from './helpers.mjs';
+import { BASE, acessoDeTeste, appIsUp, envelopeLocal, ensureUser, makeOwner, post, signIn, get, sqlDeConexao, submitForm, workerHeaders } from './helpers.mjs';
 
 const query = (sql) =>
   execFileSync('docker', ['exec', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
@@ -95,6 +95,26 @@ describe('cofre de tokens: rota do worker', { concurrency: false }, () => {
     assert.equal(proativa.status, 401);
   });
 
+  it('pelo proxy público a rota não existe: X-Forwarded-For de fora, Forwarded ou https encaminhado viram 404', async () => {
+    const cabecalhos = [
+      { 'X-Forwarded-For': '203.0.113.9' },
+      { 'X-Forwarded-For': '10.0.0.5, 203.0.113.9' },
+      { Forwarded: 'for=203.0.113.9' },
+      { 'X-Real-IP': '203.0.113.9' },
+      { 'X-Forwarded-Proto': 'https' },
+    ];
+    for (const extra of cabecalhos) {
+      for (const rota of ['/api/v0/coleta/token', '/api/v0/tokens/renovar-proativo']) {
+        const resposta = await fetch(`${BASE}${rota}`, {
+          method: 'POST',
+          headers: { ...workerHeaders(), ...extra },
+          body: JSON.stringify({ coletaId: fonte.coletaId }),
+        });
+        assert.equal(resposta.status, 404, `${rota} ${JSON.stringify(extra)}`);
+      }
+    }
+  });
+
   it('valida o corpo e não conhece coleta inventada', async () => {
     assert.equal((await pedirToken({ coletaId: 'nao-e-uuid' })).status, 422);
     assert.equal((await pedirToken({ coletaId: fonte.coletaId, tarefaId: randomUUID() })).status, 422);
@@ -168,7 +188,25 @@ describe('cofre de tokens: rota do worker', { concurrency: false }, () => {
     const resposta = await pedirToken({ coletaId: fonte.coletaId });
     assert.equal(resposta.status, 409);
     assert.equal((await resposta.json()).errors.motivo, 'reauth_pending');
+
+    const pendente = query(
+      `insert into automation.account_tasks (organization_id, connection_id, kind, manager_external_id, target_external_id)
+       values ('${fonte.organizationId}', '${fonte.connectionId}', 'mcc_invite', '8124459032', '${Math.floor(Math.random() * 9e9 + 1e9)}')
+       returning id`,
+    );
+    const fila = await get('/api/v0/tasks/queue?limit=50&kinds=mcc_invite').then((r) => r.json());
+    assert.ok(!fila.tasks.some((tarefa) => tarefa.taskId === pendente), 'tarefa de conexão a reautorizar não é reivindicada');
+    assert.ok(fila.esperandoReautorizacao >= 1);
+    assert.equal(query(`select status || '|' || attempts from automation.account_tasks where id = '${pendente}'`), 'pending|0');
     query(`update integrations.connections set status = 'active' where id = '${fonte.connectionId}'`);
+  });
+
+  it('coleta running há mais de 6 horas não entrega token', async () => {
+    query(`update automation.coletas set started_at = now() - interval '7 hours' where id = '${fonte.coletaId}'`);
+    const resposta = await pedirToken({ coletaId: fonte.coletaId });
+    assert.equal(resposta.status, 409);
+    assert.equal((await resposta.json()).errors.motivo, 'origem_encerrada');
+    query(`update automation.coletas set started_at = now() where id = '${fonte.coletaId}'`);
   });
 
   it('coleta encerrada é recusada', async () => {

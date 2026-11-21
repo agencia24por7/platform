@@ -63,7 +63,7 @@ export default async function ConectorPage({
   searchParams,
 }: {
   params: Promise<{ platform: string }>;
-  searchParams: Promise<{ aviso?: string }>;
+  searchParams: Promise<{ aviso?: string; outraConta?: string }>;
 }) {
   const { platform } = await params;
   const plataforma = plataformaValida(platform);
@@ -74,7 +74,7 @@ export default async function ConectorPage({
   const organization = ctx.organization;
   const agencia = organization.type === 'agency';
   const podeVincular = canOperate(ctx.role);
-  const { aviso } = await searchParams;
+  const { aviso, outraConta } = await searchParams;
 
   const voltarPara = `/integracoes/conector/${plataforma}`;
 
@@ -141,6 +141,16 @@ export default async function ConectorPage({
       </div>
 
       <Feedback message={aviso} tone="info" />
+
+      {outraConta && aReautorizar.length > 0 ? (
+        <div className="aviso" role="alert">
+          <strong>Você autorizou com outra conta.</strong> Isso criou uma conexão nova; a conexão pendente de{' '}
+          {aReautorizar.map((conexao) => conexao.accountEmail ?? conexao.externalId).join(', ')} continua sem token e as
+          contas vinculadas a ela não voltam a coletar. Reautorize entrando com essa mesma conta. Não remova a conexão
+          pendente para "trocar de conta": remover solta os vínculos dos clientes e, no YouTube, apaga os dados do
+          BigQuery (ADR 0032, runbook do corte).
+        </div>
+      ) : null}
 
       {aReautorizar.length > 0 ? (
         <div className="aviso" role="status">

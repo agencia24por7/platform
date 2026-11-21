@@ -93,9 +93,26 @@ for (const { plataforma, arquivo, tipo } of genericos) {
       assert.deepEqual(retomar, [{ json: { fonte: { externalId: 'x' }, janela: { start: 'a', end: 'b' } } }]);
     });
 
+    if (['meta', 'pixel', 'leadads'].includes(plataforma)) {
+      it('Meta: toda chamada com o token do usuário leva a appsecret_proof devolvida pela rota', () => {
+        for (const chamada of daApi.filter((no) => !COM_TOKEN_DA_PAGINA.has(no.name))) {
+          assert.equal(
+            parametros(chamada, 'queryParameters').find((p) => p.name === 'appsecret_proof')?.value,
+            "={{ $('Obter token').first().json.body.appsecretProof }}",
+            chamada.name,
+          );
+        }
+      });
+    }
+
     if (plataforma === 'google') {
-      it('o Google Ads continua mandando o login-customer-id da administradora', () => {
-        for (const chamada of daApi) assert.ok(parametros(chamada, 'headerParameters').some((p) => p.name === 'login-customer-id'), chamada.name);
+      it('contrato do Google Ads: todo nó leva só Authorization (do cofre) e login-customer-id, sem developer-token', () => {
+        for (const chamada of daApi) {
+          const nomes = parametros(chamada, 'headerParameters').map((p) => p.name.toLowerCase());
+          assert.ok(nomes.includes('authorization'), chamada.name);
+          assert.ok(nomes.includes('login-customer-id'), chamada.name);
+          assert.ok(!nomes.includes('developer-token'), chamada.name);
+        }
       });
     }
 

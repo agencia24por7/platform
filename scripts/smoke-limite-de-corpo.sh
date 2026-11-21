@@ -55,6 +55,14 @@ conferir() {
 conferir app.smoke.local /api/webhooks/whatsapp 500000 200
 conferir app.smoke.local /api/webhooks/whatsapp 2000000 413
 conferir app.smoke.local /api/v0/coleta/gravar 2000000 413
+conferir app.smoke.local /api/v0/coleta/gravar 100 200
+conferir app.smoke.local /api/v0/coleta/token 100 404
+conferir app.smoke.local /api/v0/coleta/token/ 100 404
+conferir app.smoke.local //api/v0/coleta/token 100 404
+conferir app.smoke.local /api/v0/coleta/./token 100 404
+conferir app.smoke.local /api/v0/coleta/%74oken 100 404
+conferir app.smoke.local /api/v0/tokens/renovar-proativo 100 404
+conferir app.smoke.local /api/v0/tarefas/token 100 404
 conferir app.smoke.local /api/contexto/arquivos 20000000 200
 conferir app.smoke.local /api/contexto/arquivos 31000000 413
 conferir n8n.smoke.local /webhook/qualquer 2000000 413

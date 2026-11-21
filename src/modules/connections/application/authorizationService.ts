@@ -5,6 +5,7 @@ import { logger } from '@/shared/logging/logger';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import {
   MENSAGEM_DE_CONEXAO_ALTERADA,
+  precisaReautorizar,
   veiculaAnuncio,
   type Connection,
   type GrantType,
@@ -52,6 +53,7 @@ export type AuthorizationOutcome = {
   readonly connectionId: string;
   readonly discovered: number;
   readonly organizationCreated: boolean;
+  readonly pendentesDeOutraConta: number;
 };
 
 function administradoraDe(accounts: readonly DiscoveredAccount[]): string | null {
@@ -224,10 +226,14 @@ export function createAuthorizationService(
           signal: AbortSignal.timeout(15_000),
         });
 
-        if (longLived.ok) {
-          const upgraded = parseTokenResponse('meta', await longLived.json());
-          if (upgraded) granted = { ...upgraded, grantedScopes: granted.grantedScopes };
+        const upgraded = longLived.ok ? parseTokenResponse('meta', await longLived.json().catch(() => null)) : null;
+        if (!upgraded) {
+          logger.warn('oauth.exchange.longo_falhou', { platform: input.platform, status: longLived.status });
+          return err(
+            failure('unavailable', 'A Meta não trocou o acesso por um token de longa duração. Nada foi guardado; autorize de novo.'),
+          );
         }
+        granted = { ...upgraded, grantedScopes: granted.grantedScopes };
       }
 
       const accounts = await descobrirRecursos(discovery, input.platform, granted.accessToken);
@@ -324,6 +330,18 @@ export function createAuthorizationService(
       }
 
       const stored = await discovered.replace(organizationId, connection.id, accounts);
+      const autorizada = connection;
+      const pendentesDeOutraConta = (await connections.list(organizationId)).filter(
+        (outra) =>
+          outra.platform === input.platform &&
+          outra.id !== autorizada.id &&
+          outra.externalId !== autorizada.externalId &&
+          outra.status !== 'revoked' &&
+          precisaReautorizar(outra),
+      ).length;
+      if (pendentesDeOutraConta > 0) {
+        logger.warn('oauth.authorize.outra_conta', { platform: input.platform, pendentes: pendentesDeOutraConta });
+      }
 
       await audit.record({
         organizationId,
@@ -342,6 +360,7 @@ export function createAuthorizationService(
           discoveryFailure: discovery.lastFailure(),
           varredura: discovery.lastSweep(),
           renovouConexao: Boolean(already),
+          pendentesDeOutraConta,
           tipoNoCofre: segredo.value.tipo,
           organizationCreated,
           refreshTokenReceived: granted.refreshToken !== null,
@@ -351,7 +370,7 @@ export function createAuthorizationService(
         },
       });
 
-      return ok({ organizationId, connectionId: connection.id, discovered: stored, organizationCreated });
+      return ok({ organizationId, connectionId: connection.id, discovered: stored, organizationCreated, pendentesDeOutraConta });
     },
   };
 }
