@@ -14,6 +14,7 @@ import { requireContext } from '@/shared/http/currentOrganization';
 export const dynamic = 'force-dynamic';
 
 const LIMITE_DE_PRONTIDAO = 30;
+const LOTE_DE_PRONTIDAO = 4;
 const CLASSE_DO_VEREDITO: Record<Veredito, string> = { sim: 'pill--ok', parcial: 'pill--warn', nao: 'pill--danger' };
 const ICONE_DO_VEREDITO = { sim: 'ok', parcial: 'parcial', nao: 'nao' } as const;
 
@@ -59,9 +60,8 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
   const noun = vocabulario.clientes;
   const substantivo = vocabulario.cliente;
   const ehAnunciante = organization.type === 'advertiser';
-  const ativos = todosClientes.filter((client) => client.status === 'active');
-  if (ehAnunciante && ativos.length === 1 && !filtro.situacao && !filtro.busca && (await escopoDeCliente(organization.id)) === ORGANIZACAO_INTEIRA) {
-    redirect(`/clientes/${ativos[0]!.id}`);
+  if (ehAnunciante && todosClientes.length === 1 && !filtro.situacao && !filtro.busca && (await escopoDeCliente(organization.id)) === ORGANIZACAO_INTEIRA) {
+    redirect(`/clientes/${todosClientes[0]!.id}`);
   }
 
   const termo = filtro.busca?.trim().toLowerCase() ?? '';
@@ -71,14 +71,14 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
     return true;
   });
   const prontidoes = new Map<string, Awaited<ReturnType<typeof carregarProntidao>>>();
-  await Promise.all(
-    clients
-      .filter((client) => client.status !== 'archived')
-      .slice(0, LIMITE_DE_PRONTIDAO)
-      .map(async (client) => {
+  const paraAvaliar = clients.filter((client) => client.status !== 'archived').slice(0, LIMITE_DE_PRONTIDAO);
+  for (let i = 0; i < paraAvaliar.length; i += LOTE_DE_PRONTIDAO) {
+    await Promise.all(
+      paraAvaliar.slice(i, i + LOTE_DE_PRONTIDAO).map(async (client) => {
         prontidoes.set(client.id, await carregarProntidao(organization.id, client.id));
       }),
-  );
+    );
+  }
   const filtrando = Boolean(filtro.situacao) || termo.length > 0;
 
   return (

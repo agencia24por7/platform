@@ -98,12 +98,12 @@ describe('página do cliente: abas, papéis e formulário público', { concurren
     }
   });
 
-  it('existe um único "Conectar conta" na página de conexões', async () => {
+  it('existe um único ponto de entrada para conectar na página de conexões', async () => {
     signIn(pessoas.owner);
     for (const rota of ['/conexoes', '/conexoes?secao=fontes']) {
       const resposta = await browse(`/clientes/${cliente}${rota}`);
       const corpo = (await resposta.text()).replaceAll('<!-- -->', '').replace(/<script[\s\S]*?<\/script>/g, '');
-      assert.equal((corpo.match(/>Conectar conta</g) ?? []).length, 1, rota);
+      assert.equal((corpo.match(/<a [^>]*>(?:Conectar|Vincular)[^<]*<\/a>/g) ?? []).length, 1, rota);
     }
   });
 

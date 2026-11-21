@@ -56,7 +56,11 @@ function MarkdownDoCatalogo({ texto }: { readonly texto: string }) {
       );
     } else if (linha.trim()) blocos.push(<p key={i}>{emLinha(linha)}</p>);
   }
-  return <div className="markdown">{blocos}</div>;
+  return (
+    <div className="markdown" tabIndex={0} role="region" aria-label="Conteúdo do catalogo.md">
+      {blocos}
+    </div>
+  );
 }
 
 export async function BrainView({ clienteId }: { readonly clienteId: string }) {
@@ -103,17 +107,17 @@ export async function BrainView({ clienteId }: { readonly clienteId: string }) {
             <div className="medida">
               <dt>Cobertura</dt>
               <dd>{brain.pulso.cobertura}%</dd>
-              <span className="medida__ajuda">dias com dado nos últimos 90</span>
+              <dd className="medida__ajuda">dias com dado nos últimos 90</dd>
             </div>
             <div className="medida">
               <dt>Frescor</dt>
               <dd>{brain.pulso.frescor}%</dd>
-              <span className="medida__ajuda">conexões coletando em dia</span>
+              <dd className="medida__ajuda">conexões coletando em dia</dd>
             </div>
             <div className="medida">
               <dt>Contexto</dt>
               <dd>{brain.pulso.completudeDoContexto}%</dd>
-              <span className="medida__ajuda">mapa de contexto preenchido</span>
+              <dd className="medida__ajuda">mapa de contexto preenchido</dd>
             </div>
           </dl>
         </div>

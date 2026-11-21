@@ -46,7 +46,7 @@ export function atrasoDaColeta(ultimaColeta: Date | null, agora: Date): string |
   const horas = (agora.getTime() - ultimaColeta.getTime()) / HORA;
   if (horas <= 36) return null;
   const dias = Math.floor(horas / 24);
-  return `${dias} dias de atraso`;
+  return `${dias} ${dias === 1 ? 'dia' : 'dias'} de atraso`;
 }
 
 export function situacaoDeRecurso(precisaReautorizar: boolean): SituacaoDaFonte {

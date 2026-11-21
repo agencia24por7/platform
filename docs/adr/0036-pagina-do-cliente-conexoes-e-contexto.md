@@ -73,7 +73,8 @@ não compartilhável nem anotação interna (verificado no servidor).
 | Contexto | Contexto › Perfil |
 | Brain | Contexto › Brain |
 | Configurações | menu `⋯` do cabeçalho |
-| `contas/nova`, `convite/novo` | mantidas, abertas pelo bloco Conexões |
+| `contas/nova` | mantida, aberta pelo bloco Conexões |
+| `convite/novo` | redireciona para Conexões › Pedir ao cliente |
 
 ## Comitê (resumo das decisões)
 
@@ -126,14 +127,18 @@ Decisões de implementação:
 - **Veredito** (`prontidao.ts`): sim quando todas as capacidades estão disponíveis; não quando nenhuma está disponível
   nem parcial; parcial no resto. Lacunas: até 3 ações de `diagnostico.acoes` por impacto. Estado de cada bloco vem do
   `diagnostico` (reautorizar, vazio, atenção, ok; contexto: vazio, parcial, completo).
-- **Ação principal**: primeira de `diagnostico.acoes`. Contexto vazio vira "Enviar mapa" na agência. Conectar vira o
-  rótulo específico da ação ("Conectar Meta Ads"); o botão "Conectar conta" único mora em Fontes. Quem só consulta não
+- **Ação principal**: primeira de `diagnostico.acoes`. Contexto vazio vira "Enviar mapa" na agência. Conectar e reautorizar usam
+  o rótulo específico ("Conectar Meta Ads", "Reautorizar Meta Ads"); no anunciante conectar vira "Conectar conta". O botão
+  "Conectar conta" de Fontes só aparece quando o cabeçalho não tem ação de conectar ou vincular, então a página tem um
+  único ponto de entrada. Reautorizar não esconde o botão, porque não adiciona conta nova. Membro com recorte só recebe
+  ação de contexto. Quem só consulta não
   recebe ação.
 - **`?secao=` em Contexto**: `brain` abre o Brain; qualquer outro valor abre o Perfil, e chaves do catálogo (`empresa`,
   `produtos`...) continuam rolando o editor até a seção. Os links antigos seguem válidos.
 - **Estados da fonte** (`fontes.ts`): reautorizar, erro, atenção, vazia, pausada, ok. Ordem de problema primeiro.
-- **Lista /clientes**: veredito por cliente com consulta ao Brain de até 30 clientes não arquivados por página (sem
-  consulta agregada nova: o limite evita N+1 ilimitado).
+- **Lista /clientes**: veredito por cliente, com consultas ao Brain em lotes de 4 e teto de 30 clientes não arquivados;
+  do 31º em diante aparece "—". Próximo passo: uma agregação única (consulta por organização) no lugar de um snapshot
+  por cliente.
 - **Pedir ao cliente**: `criarPedidoAoCliente` cria o convite de integração (mesma validação, auditoria e permissão da
   ação anterior) e o link do mapa com `conviteDeIntegracaoId`; se o link falha, o convite criado é revogado.
 - **Anunciante convidado** (`/convite/[token]`): vocabulário Conectar contas / Contexto, estados com ícone e rótulo,
@@ -151,9 +156,37 @@ Organização `type='advertiser'` gerencia os próprios anúncios, sem agência.
 - Negócio no lugar de cliente em cabeçalho, lista, mensagens, papéis e menu. Rotas `/clientes/*` ficam.
 - Pedir ao cliente vira **Convidar** (colega ou consultor, secundário). A ação principal usa "Conectar conta" ou
   "Preencher contexto", nunca "Enviar mapa" nem "Pedir ao cliente"; o Perfil não oferece envio.
-- Com exatamente um negócio ativo, `/clientes` redireciona para o negócio e o menu lateral esconde a entrada
-  "Conexões" da organização (a rota `/integracoes` continua). Com dois ou mais, lista normal.
+- Com exatamente um negócio não excluído (ativo, pausado ou arquivado), `/clientes` redireciona para ele e o menu
+  lateral esconde a entrada "Conexões" da organização (a rota `/integracoes` continua). Com zero ou dois ou mais, lista
+  normal. "Novo negócio" existe também no cabeçalho do negócio para owner e admin, senão o anunciante nunca passaria de
+  um para dois.
 - Em `/config` o anunciante não vê "Como esta organização trabalha" nem Conta administradora e Business Manager.
-  `changeType` agora exige papel `owner` no serviço (vale para a ação do servidor, não só para a tela).
+  `changeType` agora exige papel `owner` no serviço (vale para a ação do servidor, não só para a tela). A mudança de
+  anunciante para agência é só de ida e intencional: o anunciante não vê o seletor, então não volta sozinho.
 - Fora de escopo, para a revisão de segurança: `any_organization_exists()` global, inferência de tipo por contagem em
   `authorizationService.ts`, multi-negócio agregado, papéis e convite de colega.
+
+## Correções da revisão
+
+- **Estado ao vivo**: a prontidão soma ao `diagnostico.acoes` uma ação de reautorizar para toda conexão que precisa
+  (`precisaReautorizar` ou revogada), sem depender de catálogo publicado. Com reautorização pendente o veredito nunca é
+  "sim". As lacunas da faixa só listam o que bloqueia capacidade (reautorizar, vincular, conectar, coleta parada,
+  contexto essencial).
+- **Fontes agrupadas por conexão**: uma ação "Reautorizar" por conexão, com contas e fontes dentro do grupo.
+- **Escopo por cliente**: todas as ações de Conexões e de Pedir validam o id, o recorte (`ctx.clientIds`), que o cliente
+  é da organização e não está excluído, que a conta ou fonte pertence ao cliente informado e que o destino de uma
+  movimentação também está no escopo. Teste de integração em `tests/escopo-por-cliente.test.mjs`.
+- **`convite/novo`**: virou redirecionamento para Pedir ao cliente e a ação antiga foi removida; o fluxo único é o
+  diálogo de Pedir.
+- **Convite público**: "não uso esta plataforma" viaja no retorno do OAuth (`nao` no `returnTo` validado por
+  `isSafeReturnPath`); erro de autorização volta com `plataforma`, foco na conta e "Tentar de novo"; convite expirado
+  ou revogado não mostra item como pendente; sucesso só aparece se o item está concluído.
+- **Menu `⋯`** também para quem só consulta (arquivos e Brain publicado, sem ação de escrita). Qualquer rota antiga com
+  `?enviar=contexto` vai para Pedir.
+- **Carregamento**: `montarSnapshotDoCliente` e `carregarContexto` usam o cache de requisição do React. Medido por
+  requisição em `/contexto?secao=brain`: snapshots do Brain 2 antes, 1 depois; em `/contexto`: carregamentos de
+  contexto 2 antes, 1 depois; demais telas ficam em 1 e 1. O snapshot ainda carrega o contexto por dentro (reuso fica
+  para a agregação).
+- **Acessibilidade**: axe-core 4.10.2 sem violações em Conexões, Pedir, Contexto, Brain e convite público (ajustes:
+  `--fg-subtle` mais escuro, lista de definição e região rolável do Brain, ícone do `⋯`). Teclado validado no menu `⋯`,
+  em "Mais" de Fontes e no diálogo de Pedir (abre, Esc fecha e devolve o foco).

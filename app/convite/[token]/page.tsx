@@ -61,7 +61,8 @@ export default async function PaginaDoConvite({
   const conectadas = convite.items.filter((i) => i.status === 'completed').length;
   const resolvidas = convite.items.filter((i) => i.status === 'completed' || naoUso.includes(i.platform)).length;
   const todasResolvidas = resolvidas === convite.items.length;
-  const autorizada = unico(busca['autorizado']);
+  const autorizadaBruta = unico(busca['autorizado']);
+  const autorizada = convite.items.some((i) => i.platform === autorizadaBruta && i.status === 'completed') ? autorizadaBruta : undefined;
   const aviso = avisoDoConvite(unico(busca['erroConexao']) ?? unico(busca['erro']), unico(busca['plataforma']));
   const linkNao = (lista: readonly string[]) => (lista.length > 0 ? `/convite/${token}?nao=${lista.join(',')}` : `/convite/${token}`);
   const progressoDoMapa = comMapa
@@ -113,7 +114,8 @@ export default async function PaginaDoConvite({
               {convite.items.map((item) => {
                 const concluido = item.status === 'completed';
                 const dispensada = !concluido && naoUso.includes(item.platform);
-                const situacao = situacaoDoItem(item.status, dispensada);
+                const statusEfetivo = item.status === 'pending' && !ativo ? (convite.status === 'revoked' ? 'revoked' : 'expired') : item.status;
+                const situacao = situacaoDoItem(statusEfetivo, dispensada);
                 const doErro = aviso && aviso.plataforma === item.platform ? aviso : null;
                 const destacada = autorizada === item.platform;
                 return (
@@ -131,7 +133,7 @@ export default async function PaginaDoConvite({
                     </span>
                     {ativo && !concluido && !dispensada ? (
                       <span className="conta__acao">
-                        <a className="btn btn--primary btn--compacto" href={`/api/convite/${token}/oauth/${item.platform}/start`}>
+                        <a className="btn btn--primary btn--compacto" href={`/api/convite/${token}/oauth/${item.platform}/start${naoUso.length > 0 ? `?nao=${naoUso.join(',')}` : ''}`}>
                           {doErro?.podeTentarDeNovo ? 'Tentar de novo' : 'Conectar'}
                         </a>{' '}
                         <a className="quiet-link small" href={linkNao([...naoUso, item.platform])}>
@@ -172,7 +174,7 @@ export default async function PaginaDoConvite({
           </div>
         ) : null}
 
-        {autorizada ? <FocoNaConta id={`conta-${autorizada}`} /> : null}
+        {autorizada ? <FocoNaConta id={`conta-${autorizada}`} /> : aviso?.plataforma ? <FocoNaConta id={`conta-${aviso.plataforma}`} /> : null}
 
         <p className="portao__nota">
           Ao conectar, você autoriza {convite.organizationName} a acessar, pela orla, os dados descritos na{' '}

@@ -46,7 +46,8 @@ export function destinoDaRotaLegada(
   segmento: SegmentoLegado,
   busca: Readonly<Record<string, string | readonly string[] | undefined>> = {},
 ): string {
-  const { aba, secao } = DESTINO_DO_LEGADO[segmento];
+  const pedeEnvio = [busca['enviar']].flat()[0] === 'contexto';
+  const { aba, secao } = pedeEnvio ? { aba: 'conexoes' as const, secao: 'pedir' } : DESTINO_DO_LEGADO[segmento];
   const preservada: Record<string, string> = {};
   for (const [chave, valor] of Object.entries(busca)) {
     const primeiro = Array.isArray(valor) ? valor[0] : valor;

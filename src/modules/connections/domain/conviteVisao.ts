@@ -24,6 +24,9 @@ const AVISOS: Readonly<Record<string, { readonly texto: string; readonly podeTen
   indisponivel: { texto: 'Esta plataforma está indisponível agora.', podeTentarDeNovo: true },
   muitas_tentativas: { texto: 'Muitas tentativas. Espere um pouco.', podeTentarDeNovo: true },
   plataforma_desconhecida: { texto: 'Plataforma não reconhecida.', podeTentarDeNovo: false },
+  app_indisponivel: { texto: 'O aplicativo desta plataforma não está habilitado agora.', podeTentarDeNovo: false },
+  sessao_expirada: { texto: 'A sessão expirou durante a autorização.', podeTentarDeNovo: true },
+  sessao_trocada: { texto: 'A autorização começou em outra sessão.', podeTentarDeNovo: true },
   convite_invalido: { texto: 'Este convite expirou ou foi revogado.', podeTentarDeNovo: false },
 };
 

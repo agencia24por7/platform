@@ -30,8 +30,8 @@ function membro(nome, org, papel) {
   return id;
 }
 
-function negocio(org, nome) {
-  return dono(`INSERT INTO core.clients (organization_id, name, business_model) VALUES ('${org}', '${nome}', 'ecommerce') RETURNING id`);
+function negocio(org, nome, situacao = 'active') {
+  return dono(`INSERT INTO core.clients (organization_id, name, business_model, status) VALUES ('${org}', '${nome}', 'ecommerce', '${situacao}') RETURNING id`);
 }
 
 async function html(caminho) {
@@ -50,6 +50,15 @@ describe('anunciante direto: vocabulário, atalho e tipo da organização', { co
     pessoas.admin = membro('admin', orgs.anunciante, 'admin');
     pessoas.agencia = membro('agencia', orgs.agencia, 'owner');
     pessoas.varios = membro('varios', orgs.varios, 'owner');
+    orgs.pausado = organizacao('advertiser', 'pausado');
+    orgs.misto = organizacao('advertiser', 'misto');
+    orgs.zero = organizacao('advertiser', 'zero');
+    pessoas.pausado = membro('pausado', orgs.pausado, 'owner');
+    pessoas.misto = membro('misto', orgs.misto, 'owner');
+    pessoas.zero = membro('zero', orgs.zero, 'owner');
+    orgs.negocioPausado = negocio(orgs.pausado, `Parado ${sufixo}`, 'paused');
+    negocio(orgs.misto, `Ativo ${sufixo}`);
+    negocio(orgs.misto, `Pausado ${sufixo}`, 'paused');
     orgs.negocio = negocio(orgs.anunciante, `Loja ${sufixo}`);
     orgs.cliente = negocio(orgs.agencia, `Cliente ${sufixo}`);
     negocio(orgs.varios, `Primeiro ${sufixo}`);
@@ -63,6 +72,35 @@ describe('anunciante direto: vocabulário, atalho e tipo da organização', { co
     const { status, location } = await html('/clientes');
     assert.ok([307, 308].includes(status), `status ${status}`);
     assert.equal(new URL(location, BASE).pathname, `/clientes/${orgs.negocio}`);
+  });
+
+  it('um único negócio em qualquer situação leva direto a ele; zero ou mais de um mostram a lista', async () => {
+    signIn(pessoas.pausado);
+    const pausado = await html('/clientes');
+    assert.equal(new URL(pausado.location, BASE).pathname, `/clientes/${orgs.negocioPausado}`);
+    signIn(pessoas.misto);
+    assert.equal((await html('/clientes')).status, 200);
+    signIn(pessoas.zero);
+    const zero = await html('/clientes');
+    assert.equal(zero.status, 200);
+    assert.ok(zero.texto.includes('Novo negócio'));
+  });
+
+  it('anunciante dono ou admin cria o segundo negócio a partir do cabeçalho do negócio', async () => {
+    signIn(pessoas.dono);
+    const { texto } = await html(`/clientes/${orgs.negocio}/conexoes`);
+    assert.ok(texto.includes('Novo negócio'));
+    signIn(pessoas.agencia);
+    assert.ok(!(await html(`/clientes/${orgs.cliente}/conexoes`)).texto.includes('Novo negócio'));
+  });
+
+  it('um único ponto de entrada para conectar, em anunciante e em agência', async () => {
+    for (const [pessoa, alvo] of [[pessoas.dono, orgs.negocio], [pessoas.agencia, orgs.cliente]]) {
+      signIn(pessoa);
+      const resposta = await browse(`/clientes/${alvo}/conexoes`);
+      const corpo = (await resposta.text()).replaceAll('<!-- -->', '').replace(/<script[\s\S]*?<\/script>/g, '');
+      assert.equal((corpo.match(/<a [^>]*>(?:Conectar|Vincular)[^<]*<\/a>/g) ?? []).length, 1);
+    }
   });
 
   it('com dois ou mais negócios a lista continua normal', async () => {

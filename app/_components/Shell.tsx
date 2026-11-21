@@ -45,7 +45,7 @@ export async function Shell({ title, organization, active, children }: Props) {
 
   const negocioUnico =
     organization?.type === 'advertiser' && !recortado
-      ? (await modules().clients.list(organization.id)).filter((c) => c.status === 'active').length === 1
+      ? (await modules().clients.list(organization.id)).length === 1
       : false;
   const entradas = navFor(organization, recortado, negocioUnico);
   const modo = organization ? (organization.type === 'agency' ? 'Modo agência' : 'Modo anunciante') : null;

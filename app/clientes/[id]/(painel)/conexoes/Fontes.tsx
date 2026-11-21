@@ -1,7 +1,8 @@
 import Link from 'next/link';
+import { MenuMais } from '@/../app/clientes/[id]/_componentes/MenuMais';
 import { Marca } from '@/../app/_components/Marca';
 import { Icone, type NomeDoIcone } from '@/../app/clientes/[id]/_componentes/Icones';
-import { carregarContas, carregarPainel } from '@/../app/clientes/[id]/_dados';
+import { carregarConexoes, carregarContas, carregarPainel, carregarProntidao } from '@/../app/clientes/[id]/_dados';
 import {
   alternarColeta,
   desvincularContaDeAnuncio,
@@ -10,6 +11,7 @@ import {
   moverFonte,
 } from '@/../app/clientes/[id]/(painel)/conexoes/acoes';
 import { modules } from '@/composition';
+import { acaoPrincipal } from '@/modules/clients/domain/painel/prontidao';
 import {
   ROTULO_DA_PLATAFORMA,
   ROTULO_DO_RECURSO,
@@ -30,12 +32,13 @@ const ICONE_DA_VARIACAO: Record<VariacaoDoEstado, NomeDoIcone> = {
   erro: 'erro',
 };
 
-const CLASSE_DO_ESTADO: Record<SituacaoDaFonte['estado'], string> = {
+const CLASSE_DA_VARIACAO: Record<VariacaoDoEstado, string> = {
   ok: 'pill--ok',
   atencao: 'pill--warn',
   reautorizar: 'pill--danger',
   vazio: '',
-  pausado: 'pill--info',
+  pausada: 'pill--info',
+  erro: 'pill--danger',
 };
 
 type Linha = {
@@ -49,20 +52,47 @@ type Linha = {
   readonly situacao: SituacaoDaFonte;
   readonly frescor: string;
   readonly conexaoId: string | null;
+  readonly conexaoRotulo: string;
   readonly coletaLigada: boolean;
 };
+
+type Grupo = {
+  readonly chave: string;
+  readonly conexaoId: string | null;
+  readonly plataforma: Platform;
+  readonly rotulo: string;
+  readonly reautorizar: boolean;
+  readonly linhas: Linha[];
+};
+
+function agruparPorConexao(ordenadas: readonly Linha[]): Grupo[] {
+  const grupos = new Map<string, Grupo>();
+  for (const linha of ordenadas) {
+    const chave = linha.conexaoId ?? `sem-${linha.chave}`;
+    const existente = grupos.get(chave);
+    if (existente) {
+      existente.linhas.push(linha);
+      continue;
+    }
+    grupos.set(chave, { chave, conexaoId: linha.conexaoId, plataforma: linha.plataforma, rotulo: linha.conexaoRotulo, reautorizar: linha.situacao.estado === 'reautorizar', linhas: [linha] });
+  }
+  return [...grupos.values()];
+}
 
 function conexaoPrecisaReautorizar(conexao: Connection | undefined): boolean {
   return conexao ? precisaReautorizar(conexao) || conexao.status === 'revoked' : false;
 }
 
 export async function Fontes({ clienteId }: { readonly clienteId: string }) {
-  const { ctx, cliente, podeEditar } = await carregarPainel(clienteId);
+  const { ctx, cliente, podeEditar, organizacaoInteira } = await carregarPainel(clienteId);
   const [[contas, fontes], irmaos, conexoes] = await Promise.all([
     carregarContas(ctx.organization.id, cliente.id),
     modules().clients.list(ctx.organization.id),
-    modules().connections.listConnections(ctx.organization.id),
+    carregarConexoes(ctx.organization.id),
   ]);
+  const prontidao = await carregarProntidao(ctx.organization.id, cliente.id);
+  const principal = prontidao ? acaoPrincipal(prontidao.acoes, cliente.id, { podeEditar, organizacaoInteira, tipo: ctx.organization.type }) : null;
+  const cabecalhoTemConexao = principal?.ehConexao === true;
   const agora = new Date();
   const destinos = irmaos.filter((item) => item.id !== cliente.id);
   const destinosAtivos = destinos.filter((item) => item.status === 'active');
@@ -87,6 +117,7 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
         situacao,
         frescor: conta.lastSyncAt ? `Coleta ${tempoRelativo(conta.lastSyncAt, agora)}${atraso ? ` · ${atraso}` : ''}` : 'Sem coleta ainda',
         conexaoId: conta.connectionId,
+        conexaoRotulo: conexao?.label ?? 'Conexão',
         coletaLigada: conta.syncEnabled,
       };
     }),
@@ -103,11 +134,13 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
         situacao: situacaoDeRecurso(conexaoPrecisaReautorizar(conexao)),
         frescor: 'Entra na coleta',
         conexaoId: fonte.connectionId,
+        conexaoRotulo: conexao?.label ?? 'Conexão',
         coletaLigada: true,
       };
     }),
   ];
   const ordenadas = ordenarPorProblema(linhas);
+  const grupos = agruparPorConexao(ordenadas);
   const pedemAcao = ordenadas.filter((l) => l.situacao.estado !== 'ok').length;
 
   return (
@@ -121,7 +154,7 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
             {ordenadas.length === 0 ? 'Nada conectado ainda.' : pedemAcao > 0 ? `${pedemAcao} de ${ordenadas.length} pedem ação.` : `${ordenadas.length} em dia.`}
           </p>
         </div>
-        {podeEditar ? (
+        {podeEditar && !cabecalhoTemConexao ? (
           <Link className="btn btn--primary" href={`/clientes/${cliente.id}/contas/nova`}>
             Conectar conta
           </Link>
@@ -134,19 +167,32 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
           <p className="vazio__texto">Sem conta vinculada o cliente não entra na coleta.</p>
         </div>
       ) : (
-        <ul className="fontes">
-          {ordenadas.map((linha) => (
+        <ul className="fontes fontes--grupos">
+          {grupos.map((grupo) => (
+            <li key={grupo.chave} className="grupo-fonte">
+              <div className="grupo-fonte__topo">
+                <Marca platform={grupo.plataforma} tamanho={28} />
+                <div className="grupo-fonte__quem">
+                  <span className="strong">{ROTULO_DA_PLATAFORMA[grupo.plataforma]}</span>
+                  <span className="subtle xsmall">{grupo.rotulo}</span>
+                </div>
+                {podeEditar && grupo.reautorizar && grupo.conexaoId ? (
+                  <Link className="btn btn--compacto btn--primary" href={`/integracoes/${grupo.conexaoId}`}>
+                    Reautorizar
+                  </Link>
+                ) : null}
+              </div>
+              <ul className="fontes">
+          {grupo.linhas.map((linha) => (
             <li key={linha.chave} className={`fonte fonte--${linha.situacao.variacao}`}>
               <div className="fonte__quem">
-                <Marca platform={linha.plataforma} tamanho={28} />
                 <div className="fonte__textos">
-                  <span className="fonte__plataforma">{ROTULO_DA_PLATAFORMA[linha.plataforma]}</span>
                   <span className="strong fonte__nome">{linha.nome}</span>
                   <span className="mono subtle xsmall">{linha.externalId}</span>
                 </div>
               </div>
               <div className="fonte__estado">
-                <span className={`pill ${CLASSE_DO_ESTADO[linha.situacao.estado]}`}>
+                <span className={`pill ${CLASSE_DA_VARIACAO[linha.situacao.variacao]}`}>
                   <Icone nome={ICONE_DA_VARIACAO[linha.situacao.variacao]} tamanho={14} />
                   {linha.situacao.rotulo}
                 </span>
@@ -155,11 +201,6 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
               </div>
               {podeEditar ? (
                 <div className="fonte__acoes">
-                  {linha.situacao.estado === 'reautorizar' && linha.conexaoId ? (
-                    <Link className="btn btn--compacto btn--primary" href={`/integracoes/${linha.conexaoId}`}>
-                      Reautorizar
-                    </Link>
-                  ) : null}
                   {linha.tipo === 'conta' ? (
                     <form action={alternarColeta}>
                       <input type="hidden" name="clientId" value={cliente.id} />
@@ -170,11 +211,8 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
                       </button>
                     </form>
                   ) : null}
-                  <details className="fonte__mais">
-                    <summary className="btn btn--compacto" aria-label={`Mais ações de ${linha.nome}`}>
-                      Mais
-                    </summary>
-                    <div className="fonte__mais-painel">
+                  <MenuMais rotulo={`Mais ações de ${linha.nome}`} textoDoGatilho="Mais" compacto>
+                    <div className="menu-mais__bloco">
                       {linha.tipo === 'conta' && destinos.length > 0 ? (
                         <form action={moverConta} className="form--inline">
                           <input type="hidden" name="clientId" value={cliente.id} />
@@ -221,9 +259,12 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
                         </button>
                       </form>
                     </div>
-                  </details>
+                  </MenuMais>
                 </div>
               ) : null}
+            </li>
+          ))}
+              </ul>
             </li>
           ))}
         </ul>

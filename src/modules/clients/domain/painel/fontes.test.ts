@@ -35,6 +35,7 @@ describe('situação da fonte', () => {
     assert.equal(atrasoDaColeta(HORAS(10), AGORA), null);
     assert.equal(atrasoDaColeta(null, AGORA), null);
     assert.equal(atrasoDaColeta(HORAS(24 * 5), AGORA), '5 dias de atraso');
+    assert.equal(atrasoDaColeta(HORAS(40), AGORA), '1 dia de atraso');
   });
 });
 
@@ -46,6 +47,11 @@ describe('rotas antigas do cliente', () => {
     assert.equal(destinoDaRotaLegada(ID, 'acessos'), `/clientes/${ID}/conexoes?secao=pedir`);
     assert.equal(destinoDaRotaLegada(ID, 'brain'), `/clientes/${ID}/contexto?secao=brain`);
     assert.equal(destinoDaRotaLegada(ID, 'configuracoes'), `/clientes/${ID}/conexoes`);
+  });
+  it('enviar=contexto vai para Pedir em qualquer rota antiga', () => {
+    for (const segmento of ['visao', 'dados', 'brain', 'configuracoes'] as const) {
+      assert.equal(destinoDaRotaLegada(ID, segmento, { enviar: 'contexto' }), `/clientes/${ID}/conexoes?enviar=contexto&secao=pedir`);
+    }
   });
   it('preserva a busca, inclusive enviar=contexto e os avisos', () => {
     assert.equal(destinoDaRotaLegada(ID, 'acessos', { enviar: 'contexto' }), `/clientes/${ID}/conexoes?enviar=contexto&secao=pedir`);

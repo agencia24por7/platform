@@ -33,9 +33,9 @@ export default async function LayoutDoCliente({
   readonly params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { ctx, cliente, podeEditar } = await carregarPainel(id);
+  const { ctx, cliente, podeEditar, podeAdministrar, organizacaoInteira } = await carregarPainel(id);
   const [prontidao, contexto] = await Promise.all([carregarProntidao(ctx.organization.id, cliente.id), carregarContexto(ctx.organization.id, cliente.id)]);
-  const principal = prontidao ? acaoPrincipal(prontidao.acoes, cliente.id, podeEditar, ctx.organization.type) : null;
+  const principal = prontidao ? acaoPrincipal(prontidao.acoes, cliente.id, { podeEditar, organizacaoInteira, tipo: ctx.organization.type }) : null;
   const vocabulario = vocabularioDe(ctx.organization.type);
   const opcoes = SITUACOES.filter((valor) => mudancaPermitida(ctx.role, valor) === null);
 
@@ -73,8 +73,13 @@ export default async function LayoutDoCliente({
                 {principal.rotulo}
               </Link>
             ) : null}
-            {podeEditar ? (
-              <MenuMais rotulo="Situação e arquivos">
+            {ctx.organization.type === 'advertiser' && podeAdministrar && organizacaoInteira ? (
+              <Link className="btn" href="/clientes/novo">
+                Novo negócio
+              </Link>
+            ) : null}
+            <MenuMais rotulo="Situação e arquivos">
+              {podeEditar ? (
                 <form className="menu-mais__bloco" action={mudarSituacao}>
                   <input type="hidden" name="clientId" value={cliente.id} />
                   <label className="field">
@@ -92,6 +97,7 @@ export default async function LayoutDoCliente({
                     Aplicar
                   </BotaoDeEnvio>
                 </form>
+              ) : null}
                 <dl className="menu-mais__bloco fatos">
                   <div className="fatos__item">
                     <dt className="fatos__rotulo">Arquivos</dt>
@@ -110,7 +116,6 @@ export default async function LayoutDoCliente({
                 </dl>
                 <p className="field__hint menu-mais__bloco">Excluir é lógico (ADR 0022) e fica com quem administra: arquive aqui.</p>
               </MenuMais>
-            ) : null}
           </div>
         </div>
         {cliente.status !== 'active' ? (

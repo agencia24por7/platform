@@ -24,30 +24,71 @@ export type LacunaDaProntidao = { readonly id: string; readonly titulo: string; 
 
 export const LIMITE_DE_LACUNAS = 3;
 
+const TIPOS_QUE_BLOQUEIAM: readonly TipoDeAcao[] = ['reautorizar', 'vincular_recurso', 'conectar', 'investigar_coleta', 'preencher_contexto'];
+
 export function lacunasDaProntidao(acoes: readonly AcaoRecomendada[], limite: number = LIMITE_DE_LACUNAS): readonly LacunaDaProntidao[] {
   return ordenarPorPeso(acoes)
+    .filter((a) => TIPOS_QUE_BLOQUEIAM.includes(a.tipo))
     .slice(0, limite)
     .map((a) => ({ id: a.id, titulo: a.titulo, impacto: a.impacto }));
 }
 
-export type AcaoPrincipal = { readonly id: string; readonly titulo: string; readonly rotulo: string; readonly href: string };
+export type AcaoPrincipal = { readonly id: string; readonly titulo: string; readonly rotulo: string; readonly href: string; readonly ehConexao: boolean };
 
-export function acaoPrincipal(
-  acoes: readonly AcaoRecomendada[],
-  clienteId: string,
-  podeEditar: boolean,
-  tipo: OrganizationType = 'agency',
-): AcaoPrincipal | null {
-  const primeira = ordenarPorPeso(acoes)[0];
-  if (!primeira || !podeEditar) return null;
-  const vocabulario = vocabularioDe(tipo);
+export type OpcoesDaAcaoPrincipal = {
+  readonly podeEditar: boolean;
+  readonly organizacaoInteira: boolean;
+  readonly tipo?: OrganizationType;
+};
+
+const TIPOS_DE_CONTEXTO_DA_ACAO: readonly TipoDeAcao[] = ['preencher_contexto', 'confirmar_sugestoes', 'resolver_contradicao'];
+
+function rotuloDeVincular(titulo: string): string {
+  const plataforma = /recurso de (.+) a este cliente/.exec(titulo)?.[1];
+  return plataforma ? `Vincular ${plataforma}` : 'Vincular recurso';
+}
+
+export function acaoPrincipal(acoes: readonly AcaoRecomendada[], clienteId: string, opcoes: OpcoesDaAcaoPrincipal): AcaoPrincipal | null {
+  if (!opcoes.podeEditar) return null;
+  const elegiveis = opcoes.organizacaoInteira ? acoes : acoes.filter((a) => TIPOS_DE_CONTEXTO_DA_ACAO.includes(a.tipo));
+  const primeira = ordenarPorPeso(elegiveis)[0];
+  if (!primeira) return null;
+  const vocabulario = vocabularioDe(opcoes.tipo ?? 'agency');
   const visao = acaoDaVisao(primeira, clienteId);
   if (primeira.tipo === 'preencher_contexto') {
-    const href = vocabulario.enviarMapaNoPerfil ? rotaDoCliente(clienteId, 'conexoes', { secao: 'pedir', enviar: 'contexto' }) : visao.href;
-    return { id: primeira.id, titulo: primeira.titulo, rotulo: vocabulario.rotuloDaAcaoDeContexto, href };
+    const href = vocabulario.enviarMapaNoPerfil && opcoes.organizacaoInteira ? rotaDoCliente(clienteId, 'conexoes', { secao: 'pedir', enviar: 'contexto' }) : visao.href;
+    const rotulo = opcoes.organizacaoInteira ? vocabulario.rotuloDaAcaoDeContexto : 'Preencher contexto';
+    return { id: primeira.id, titulo: primeira.titulo, rotulo, href, ehConexao: false };
   }
   const ehConexao = primeira.tipo === 'conectar' || primeira.tipo === 'vincular_recurso';
-  return { id: primeira.id, titulo: visao.titulo, rotulo: !vocabulario.enviarMapaNoPerfil && ehConexao ? vocabulario.rotuloDaAcaoDeConexao : visao.rotulo, href: visao.href };
+  if (primeira.tipo === 'reautorizar') return { id: primeira.id, titulo: visao.titulo, rotulo: visao.titulo, href: visao.href, ehConexao: false };
+  if (ehConexao) {
+    const especifico = primeira.tipo === 'conectar' ? visao.titulo : rotuloDeVincular(visao.titulo);
+    const rotulo = vocabulario.enviarMapaNoPerfil ? especifico : vocabulario.rotuloDaAcaoDeConexao;
+    return { id: primeira.id, titulo: visao.titulo, rotulo, href: visao.href, ehConexao: true };
+  }
+  return { id: primeira.id, titulo: visao.titulo, rotulo: visao.rotulo, href: visao.href, ehConexao: false };
+}
+
+export type ConexaoAoVivo = { readonly platform: string; readonly rotulo: string; readonly precisaReautorizar: boolean };
+
+export function acoesComConexoesAoVivo(acoes: readonly AcaoRecomendada[], conexoes: readonly ConexaoAoVivo[]): readonly AcaoRecomendada[] {
+  const jaTem = new Set(acoes.filter((a) => a.tipo === 'reautorizar').map((a) => a.id));
+  const extras: AcaoRecomendada[] = [];
+  for (const conexao of conexoes) {
+    const id = `reautorizar:${conexao.platform}`;
+    if (!conexao.precisaReautorizar || jaTem.has(id)) continue;
+    jaTem.add(id);
+    extras.push({
+      id,
+      tipo: 'reautorizar',
+      impacto: 100,
+      titulo: `Reautorizar ${conexao.rotulo}`,
+      motivo: 'A autorização expirou ou foi revogada: a coleta parou para as fontes desta conexão.',
+      alvo: null,
+    });
+  }
+  return extras.length === 0 ? acoes : [...acoes, ...extras];
 }
 
 export type TomDoBloco = 'ok' | 'atencao' | 'critico' | 'vazio';
@@ -66,7 +107,7 @@ function primeiroPasso(acoes: readonly AcaoRecomendada[], tipos: readonly TipoDe
 export function blocoDeConexoes(entrada: EntradaDoBloco): EstadoDoBloco {
   const proximoPasso = primeiroPasso(entrada.acoes, TIPOS_DE_CONEXOES);
   const { conectores, fontes } = entrada.resumo;
-  if (conectores.precisa_reautorizar > 0) return { tom: 'critico', rotulo: 'Reautorizar', proximoPasso };
+  if (conectores.precisa_reautorizar > 0 || entrada.acoes.some((a) => a.tipo === 'reautorizar')) return { tom: 'critico', rotulo: 'Reautorizar', proximoPasso };
   if (conectores.conectado === 0 && conectores.conexao_sem_vinculo === 0) return { tom: 'vazio', rotulo: 'Vazio', proximoPasso };
   if (fontes.parado + fontes.atrasado > 0) return { tom: 'atencao', rotulo: 'Atenção', proximoPasso };
   return { tom: 'ok', rotulo: 'Ok', proximoPasso };
@@ -93,8 +134,10 @@ export function prontidaoDoCliente(entrada: {
   readonly diagnostico: EntradaDoBloco;
 }): ProntidaoDoCliente {
   const { diagnostico } = entrada;
+  const base = vereditoDeProntidao(entrada.capacidades.map((c) => c.status));
+  const veredito: Veredito = base === 'sim' && diagnostico.acoes.some((a) => a.tipo === 'reautorizar') ? 'parcial' : base;
   return {
-    veredito: vereditoDeProntidao(entrada.capacidades.map((c) => c.status)),
+    veredito,
     lacunas: lacunasDaProntidao(diagnostico.acoes),
     conexoes: blocoDeConexoes(diagnostico),
     contexto: blocoDeContexto(diagnostico),

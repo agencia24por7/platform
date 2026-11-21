@@ -1,3 +1,5 @@
+import type { OrganizationType } from '../../../organizations/domain/organization.ts';
+
 export const PRESETS_DE_SECOES = ['essencial', 'completo', 'personalizado'] as const;
 export type PresetDeSecoes = (typeof PRESETS_DE_SECOES)[number];
 
@@ -8,8 +10,6 @@ export function secoesDoPreset(preset: PresetDeSecoes, todas: readonly string[],
   if (preset === 'essencial') return todas.filter((s) => (SECOES_ESSENCIAIS as readonly string[]).includes(s));
   return todas.filter((s) => escolhidas.includes(s));
 }
-
-import type { OrganizationType } from '../../../organizations/domain/organization.ts';
 
 export type DadosDaMensagem = {
   readonly tipo?: OrganizationType;

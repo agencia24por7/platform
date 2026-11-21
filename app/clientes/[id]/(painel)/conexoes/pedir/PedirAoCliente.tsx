@@ -134,7 +134,8 @@ export function PedirAoCliente({ rotulo, tipo, clienteId, clienteNome, organizac
             </div>
             {resultado.conviteUrl && resultado.secoes.length > 0 ? (
               <p className="subtle small">
-                Um link só: o cliente conecta as contas e depois preenche o contexto.
+                Um link só: o cliente conecta as contas e depois preenche o contexto. O link direto do contexto também vale:{' '}
+                <span className="mono">{resultado.url}</span>
               </p>
             ) : null}
             {mensagem ? (

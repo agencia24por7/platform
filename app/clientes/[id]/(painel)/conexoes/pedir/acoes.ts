@@ -1,13 +1,12 @@
 'use server';
 
 import { redirect } from 'next/navigation';
+import { escopoDoClienteNaOrganizacao } from '@/../app/clientes/[id]/_escopo';
 import { modules } from '@/composition';
 import { comAviso, enderecoDoConvite, enderecoDoFormulario, idValido, rotaDoCliente } from '@/modules/clients/domain/painel/enderecos';
 import { env } from '@/shared/config/env';
 import { text } from '@/shared/http/actions';
 import { atorAtual } from '@/shared/http/ator';
-import { requireContext } from '@/shared/http/currentOrganization';
-import { canAdminister } from '@/modules/identity/domain/user';
 import { MOTIVO_DO_CONVITE_DE_INTEGRACAO, validarPlataformasEscolhidas } from '@/modules/connections/domain/integrationInvite';
 
 export type LinkGerado =
@@ -20,12 +19,7 @@ export type LinkGerado =
     }
   | { readonly ok: false; readonly erro: string };
 
-async function escopoDoCliente(clientId: string) {
-  const ctx = await requireContext();
-  if (!idValido(clientId)) return null;
-  if (ctx.clientIds !== null && !ctx.clientIds.includes(clientId)) return null;
-  return { ctx, admin: canAdminister(ctx.role), comando: { organizationId: ctx.organization.id, clientId, papelDeQuemAge: ctx.role } };
-}
+const escopoDoCliente = escopoDoClienteNaOrganizacao;
 
 async function urlDoConvite(organizationId: string, clientId: string, conviteId: string | null): Promise<string | null> {
   if (!conviteId) return null;
@@ -123,7 +117,21 @@ export async function criarPedidoAoCliente(clientId: string, pedido: PedidoAoCli
     conviteDeIntegracaoId: conviteId,
   });
   if (!gerado.ok && pedido.plataformas.length > 0 && conviteId) {
-    await modules().connectionInvites.revoke(escopo.comando.organizationId, conviteId);
+    const revogado = await modules().connectionInvites.revoke(escopo.comando.organizationId, conviteId);
+    if (revogado) {
+      const ator = await atorAtual();
+      await modules().audit.record({
+        organizationId: escopo.comando.organizationId,
+        actorType: 'user',
+        actorId: ator.userId,
+        action: 'integration_invite.revoked',
+        targetType: 'client',
+        targetId: clientId,
+        requestId: ator.requestId,
+        sourceIp: ator.sourceIp,
+        metadata: { inviteId: conviteId, motivo: 'pedido_falhou' },
+      });
+    }
   }
   return gerado;
 }
