@@ -31,7 +31,20 @@ const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2
 
 type Chamada = { metodo: string; args: unknown[] };
 
-function montar(opcoes: { armazenamento?: PortaDoArmazenamento; escopo?: EscopoDoLink | null; liberar?: boolean } = {}) {
+type OpcoesDoMontar = {
+  armazenamento?: PortaDoArmazenamento;
+  escopo?: EscopoDoLink | null;
+  liberar?: boolean;
+  reserva?: string | Error;
+  confirmacao?: string | Error;
+  alvo?: string;
+  abertura?: boolean;
+  semVaga?: boolean;
+  reservasAVarrer?: { id: string; organizationId: string; clientId: string; caminho: string }[];
+  conhecidos?: string[];
+};
+
+function montar(opcoes: OpcoesDoMontar = {}) {
   const eventos: AuditEvent[] = [];
   const chamadas: Chamada[] = [];
   const agendados: string[] = [];
@@ -77,6 +90,7 @@ function montar(opcoes: { armazenamento?: PortaDoArmazenamento; escopo?: EscopoD
       return itens.size;
     },
     async inserirItem(_o: string, input: Parameters<ContextoRepository['inserirItem']>[1]) {
+      if (opcoes.semVaga) return null;
       const item: ItemDeLista = {
         id: `00000000-0000-4000-8000-00000000000${itens.size + 1}`,
         secao: input.secao,
@@ -93,6 +107,52 @@ function montar(opcoes: { armazenamento?: PortaDoArmazenamento; escopo?: EscopoD
     },
     async usoDeArquivos() {
       return 0;
+    },
+    async reservarArquivo(_o: string, input: unknown) {
+      anota('reservarArquivo', input);
+      if (opcoes.reserva instanceof Error) throw opcoes.reserva;
+      return opcoes.reserva ?? 'ok';
+    },
+    async liberarReserva(_o: string, _c: string, id: string) {
+      anota('liberarReserva', id);
+    },
+    async reservarArquivoPeloLink(hash: string, input: unknown) {
+      anota('reservarArquivoPeloLink', hash, input);
+      if (opcoes.reserva instanceof Error) throw opcoes.reserva;
+      return opcoes.reserva ?? 'ok';
+    },
+    async confirmarArquivoPeloLink(hash: string, input: unknown) {
+      anota('confirmarArquivoPeloLink', hash, input);
+      if (opcoes.confirmacao instanceof Error) throw opcoes.confirmacao;
+      return opcoes.confirmacao ?? 'ok';
+    },
+    async liberarReservaPeloLink(_h: string, id: string) {
+      anota('liberarReservaPeloLink', id);
+    },
+    async registrarAberturaPeloLink(hash: string) {
+      anota('registrarAberturaPeloLink', hash);
+      return opcoes.abertura ?? true;
+    },
+    async alvoDoArmazenamento() {
+      return opcoes.alvo ?? 'excluido';
+    },
+    async marcarBrainDespublicado(clientId: string) {
+      anota('marcarBrainDespublicado', clientId);
+    },
+    async reservasAVarrer() {
+      return opcoes.reservasAVarrer ?? [];
+    },
+    async marcarReservaVarrida(id: string) {
+      anota('marcarReservaVarrida', id);
+    },
+    async clientesParaVarrerArquivos() {
+      return [{ organizationId: ORG, clientId: CLIENTE }];
+    },
+    async caminhosConhecidos() {
+      return new Set(opcoes.conhecidos ?? []);
+    },
+    async brainsDeExcluidos() {
+      return [];
     },
     async registrarArquivo(_o: string, input: Parameters<ContextoRepository['registrarArquivo']>[1]) {
       anota('registrarArquivo', input);
@@ -121,6 +181,28 @@ function montar(opcoes: { armazenamento?: PortaDoArmazenamento; escopo?: EscopoD
     async lerLink(_o: string, _c: string, id: string) {
       return links.find((l) => l.id === id) ?? null;
     },
+    async regenerarLink(_o: string, input: Parameters<ContextoRepository['regenerarLink']>[1]) {
+      anota('regenerarLink', input);
+      const indice = links.findIndex((l) => l.id === input.linkAnteriorId);
+      if (indice < 0) return null;
+      if (!links[indice]!.revogadoEm) links[indice] = { ...links[indice]!, revogadoEm: AGORA };
+      const novo: LinkDeContexto = {
+        id: `link-${links.length + 1}`,
+        clientId: input.clientId,
+        secoes: input.secoes,
+        expiraEm: input.expiraEm,
+        revogadoEm: null,
+        criadoEm: AGORA,
+        criadoPor: input.criadoPor,
+        primeiroUsoEm: null,
+        ultimoUsoEm: null,
+        concluidoEm: null,
+        nota: input.nota,
+        conviteDeIntegracaoId: input.conviteDeIntegracaoId,
+      };
+      links.push(novo);
+      return novo;
+    },
     async revogarLink(_o: string, _c: string, id: string) {
       const indice = links.findIndex((l) => l.id === id && !l.revogadoEm);
       if (indice < 0) return null;
@@ -128,7 +210,9 @@ function montar(opcoes: { armazenamento?: PortaDoArmazenamento; escopo?: EscopoD
       return links[indice]!;
     },
     async conviteDoCliente(_o: string, _c: string, id: string) {
-      return id === 'convite-vivo' ? { status: 'pending' } : id === 'convite-revogado' ? { status: 'revoked' } : null;
+      if (id === 'convite-vivo') return { status: 'pending', expiraEm: new Date('2026-12-01T00:00:00Z') };
+      if (id === 'convite-vencido') return { status: 'pending', expiraEm: new Date('2026-11-19T00:00:00Z') };
+      return id === 'convite-revogado' ? { status: 'revoked', expiraEm: null } : null;
     },
     async estadoDoBrain() {
       return estadoDoBrain
@@ -181,10 +265,11 @@ function montar(opcoes: { armazenamento?: PortaDoArmazenamento; escopo?: EscopoD
   return { servico, eventos, chamadas, agendados, entradas, links, tentativas };
 }
 
-function armazenamentoEmMemoria(falharEm: string | null = null) {
+function armazenamentoEmMemoria(falharEm: string | null = null, listados: { caminho: string; atualizadoEm: Date }[] = []) {
   const objetos = new Map<string, Uint8Array>();
   const gravacoes: string[] = [];
   const apagados: string[] = [];
+  const prefixosApagados: string[] = [];
   const armazenamento: PortaDoArmazenamento = {
     configurado: true,
     async put(caminho, conteudo, meta) {
@@ -194,16 +279,29 @@ function armazenamentoEmMemoria(falharEm: string | null = null) {
       return ok({ caminho, contentType: meta.contentType, tamanhoBytes: 1, atualizadoEm: AGORA });
     },
     get: async () => err(failure('not_found', 'x')),
-    list: async () => ok([]),
+    list: async () =>
+      ok([
+        ...listados.map((l) => ({ caminho: l.caminho, contentType: 'image/png', tamanhoBytes: 1, atualizadoEm: l.atualizadoEm })),
+        ...[...objetos.keys()].map((caminho) => ({ caminho, contentType: 'image/png', tamanhoBytes: 1, atualizadoEm: AGORA })),
+      ]),
     async delete(caminho) {
       apagados.push(caminho);
       objetos.delete(caminho);
       return ok(undefined);
     },
-    deletePrefix: async () => ok({ apagados: 0 }),
+    async deletePrefix(prefixo) {
+      prefixosApagados.push(prefixo);
+      let total = 0;
+      for (const caminho of [...objetos.keys()]) {
+        if (!caminho.startsWith(prefixo)) continue;
+        objetos.delete(caminho);
+        total += 1;
+      }
+      return ok({ apagados: total });
+    },
     saudavel: async () => true,
   };
-  return { armazenamento, objetos, gravacoes, apagados };
+  return { armazenamento, objetos, gravacoes, apagados, prefixosApagados };
 }
 
 const ESCOPO: EscopoDoLink = {
@@ -278,6 +376,12 @@ describe('contexto pela equipe', () => {
     assert.equal(entradas.get('segmento')?.revisao, 'confirmado');
   });
 
+  it('lista cheia no banco (conferida sob trava) recusa o item', async () => {
+    const { servico } = montar({ semVaga: true });
+    const r = await servico.adicionarItem({ ...comando, listKey: 'redes_sociais', dados: { rede: 'instagram', perfil: '@x' } }, ator);
+    assert.equal(r.ok ? 'ok' : r.error.code, 'validation');
+  });
+
   it('item de lista valida o esquema do item', async () => {
     const { servico } = montar();
     const ruim = await servico.adicionarItem({ ...comando, listKey: 'redes_sociais', dados: { perfil: '@x' } }, ator);
@@ -309,6 +413,28 @@ describe('links de contexto', () => {
     assert.equal(revogado.ok ? 'ok' : revogado.error.code, 'validation');
     const vivo = await servico.criarLink({ ...comando, secoes: ['empresa'], conviteDeIntegracaoId: 'convite-vivo' }, ator);
     assert.equal(vivo.ok && vivo.value.link.conviteDeIntegracaoId, 'convite-vivo');
+  });
+
+  it('regenerar com o convite vencido falha sem revogar o link atual', async () => {
+    const { servico, links } = montar();
+    links.push({
+      id: 'link-convite',
+      clientId: CLIENTE,
+      secoes: ['empresa'],
+      expiraEm: new Date('2026-12-20T00:00:00Z'),
+      revogadoEm: null,
+      criadoEm: AGORA,
+      criadoPor: null,
+      primeiroUsoEm: null,
+      ultimoUsoEm: null,
+      concluidoEm: null,
+      nota: null,
+      conviteDeIntegracaoId: 'convite-vencido',
+    });
+    const r = await servico.regenerarLink({ ...comando, linkId: 'link-convite' }, ator);
+    assert.equal(r.ok ? 'ok' : r.error.code, 'validation');
+    assert.equal(links[0]?.revogadoEm, null);
+    assert.equal(links.length, 1);
   });
 
   it('regenerar revoga o anterior e cria outro com o mesmo recorte', async () => {
@@ -355,6 +481,13 @@ describe('formulário público', () => {
     assert.equal(eventos[0]?.sourceIp, null);
   });
 
+  it('a abertura do formulário vai à trilha no máximo uma vez por hora', async () => {
+    const { servico, eventos } = montar({ escopo: ESCOPO, abertura: false });
+    const r = await servico.carregarPeloLink({ credencial: { tipo: 'link', token: gerarTokenDeContexto() }, ip: null, requestId: 'r' });
+    assert.ok(r.ok);
+    assert.ok(!eventos.some((e) => e.action === 'client.context.link_opened'));
+  });
+
   it('o convite de integração abre o formulário amarrado a ele', async () => {
     const { servico, chamadas } = montar({ escopo: ESCOPO });
     const r = await servico.carregarPeloLink({ credencial: { tipo: 'convite', token: 'convite-com-contexto-123' }, ip: null, requestId: 'r' });
@@ -389,43 +522,221 @@ describe('formulário público', () => {
   });
 });
 
+const lerDe = (conteudo: Uint8Array) => {
+  const chamadas: number[] = [];
+  const ler = async (esperado: number) => {
+    chamadas.push(esperado);
+    return ok(conteudo);
+  };
+  return { ler, chamadas };
+};
+
+const anexo = (fieldKey: string, nome: string, mime: string, conteudo: Uint8Array, extra: { listKey?: string; itemId?: string } = {}) => ({
+  fieldKey,
+  nome,
+  mime,
+  listKey: extra.listKey ?? null,
+  itemId: extra.itemId ?? null,
+  tamanhoDeclarado: conteudo.byteLength,
+});
+
+const ACESSO = { credencial: { tipo: 'link' as const, token: gerarTokenDeContexto() }, ip: null, requestId: 'r' };
+const ESCOPO_DE_MARCA: EscopoDoLink = { ...ESCOPO, secoes: ['marca'] };
+
 describe('arquivos', () => {
-  it('sem bucket, anexar fica indisponível', async () => {
-    const { servico } = montar();
-    const r = await servico.anexarArquivo({ ...comando, fieldKey: 'logo', nome: 'logo.png', mime: 'image/png', conteudo: PNG }, ator);
+  it('sem bucket, anexar fica indisponível e nada é reservado', async () => {
+    const { servico, chamadas } = montar();
+    const r = await servico.anexarArquivo({ ...comando, ...anexo('logo', 'logo.png', 'image/png', PNG) }, lerDe(PNG).ler, ator);
     assert.equal(r.ok ? 'ok' : r.error.code, 'unavailable');
+    assert.ok(!chamadas.some((c) => c.metodo === 'reservarArquivo'));
   });
 
-  it('recusa SVG e conteúdo que não bate com o tipo', async () => {
-    const { servico } = montar({ armazenamento: armazenamentoEmMemoria().armazenamento });
-    const svg = await servico.anexarArquivo(
-      { ...comando, fieldKey: 'logo', nome: 'logo.svg', mime: 'image/svg+xml', conteudo: new TextEncoder().encode('<svg/>') },
-      ator,
-    );
-    assert.equal(svg.ok ? 'ok' : svg.error.details?.motivo, 'tipo_nao_permitido');
-    const zip = await servico.anexarArquivo(
-      { ...comando, fieldKey: 'banco_de_midia', nome: 'midia.zip', mime: 'application/zip', conteudo: new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1]) },
-      ator,
-    );
-    assert.equal(zip.ok ? 'ok' : zip.error.details?.motivo, 'tipo_nao_permitido');
-    const falso = await servico.anexarArquivo(
-      { ...comando, fieldKey: 'logo', nome: 'logo.png', mime: 'image/png', conteudo: new TextEncoder().encode('<html>') },
-      ator,
-    );
-    assert.equal(falso.ok ? 'ok' : falso.error.details?.motivo, 'tipo_nao_permitido');
-  });
-
-  it('grava sob o prefixo do cliente e desfaz o objeto se o registro falhar', async () => {
+  it('recusa SVG e conteúdo que não bate com o tipo, devolvendo a reserva', async () => {
     const memoria = armazenamentoEmMemoria();
-    const { servico } = montar({ armazenamento: memoria.armazenamento });
-    const r = await servico.anexarArquivo({ ...comando, fieldKey: 'logo', nome: 'Logo Final.png', mime: 'image/png', conteudo: PNG }, ator);
+    const { servico, chamadas } = montar({ armazenamento: memoria.armazenamento });
+    const svgBytes = new TextEncoder().encode('<svg/>');
+    const svg = await servico.anexarArquivo({ ...comando, ...anexo('logo', 'logo.svg', 'image/svg+xml', svgBytes) }, lerDe(svgBytes).ler, ator);
+    assert.equal(svg.ok ? 'ok' : svg.error.details?.motivo, 'tipo_nao_permitido');
+    const zipBytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1]);
+    const zip = await servico.anexarArquivo({ ...comando, ...anexo('banco_de_midia', 'midia.zip', 'application/zip', zipBytes) }, lerDe(zipBytes).ler, ator);
+    assert.equal(zip.ok ? 'ok' : zip.error.details?.motivo, 'tipo_nao_permitido');
+    const html = new TextEncoder().encode('<html>');
+    const falso = await servico.anexarArquivo({ ...comando, ...anexo('logo', 'logo.png', 'image/png', html) }, lerDe(html).ler, ator);
+    assert.equal(falso.ok ? 'ok' : falso.error.details?.motivo, 'tipo_nao_permitido');
+    assert.equal(memoria.gravacoes.length, 0);
+    assert.equal(chamadas.filter((c) => c.metodo === 'liberarReserva').length, 3);
+  });
+
+  it('grava sob o prefixo do cliente e desfaz o objeto e a reserva se o registro falhar', async () => {
+    const memoria = armazenamentoEmMemoria();
+    const { servico, chamadas } = montar({ armazenamento: memoria.armazenamento });
+    const r = await servico.anexarArquivo({ ...comando, ...anexo('logo', 'Logo Final.png', 'image/png', PNG) }, lerDe(PNG).ler, ator);
     assert.ok(r.ok);
     assert.match(r.value.caminho, new RegExp(`^orgs/${ORG}/clientes/${CLIENTE}/arquivos/[0-9a-f-]{36}-logo-final[.]png$`));
 
     await assert.rejects(
-      servico.anexarArquivo({ ...comando, fieldKey: 'logo', nome: 'falha.png', mime: 'image/png', conteudo: PNG }, ator),
+      servico.anexarArquivo({ ...comando, ...anexo('logo', 'falha.png', 'image/png', PNG) }, lerDe(PNG).ler, ator),
     );
     assert.equal(memoria.apagados.length, 1);
+    assert.equal(memoria.objetos.size, 1);
+    assert.equal(chamadas.filter((c) => c.metodo === 'liberarReserva').length, 1);
+  });
+
+  it('cota excedida na reserva: o corpo nem é lido e nada vai ao bucket', async () => {
+    const memoria = armazenamentoEmMemoria();
+    const { servico } = montar({ armazenamento: memoria.armazenamento, reserva: 'cota_excedida' });
+    const leitor = lerDe(PNG);
+    const r = await servico.anexarArquivo({ ...comando, ...anexo('logo', 'logo.png', 'image/png', PNG) }, leitor.ler, ator);
+    assert.equal(r.ok ? 'ok' : r.error.details?.motivo, 'cota_excedida');
+    assert.equal(leitor.chamadas.length, 0);
+    assert.equal(memoria.gravacoes.length, 0);
+  });
+});
+
+describe('arquivos pelo link público', () => {
+  it('token malformado ou limite de tentativas: o corpo nunca é lido', async () => {
+    const malformado = montar({ escopo: ESCOPO_DE_MARCA, armazenamento: armazenamentoEmMemoria().armazenamento });
+    const leitor = lerDe(PNG);
+    const r = await malformado.servico.anexarArquivoPeloLink(
+      { credencial: { tipo: 'link', token: '../x' }, ip: null, requestId: 'r' },
+      anexo('logo', 'logo.png', 'image/png', PNG),
+      leitor.ler,
+    );
+    assert.equal(r.ok ? 'ok' : r.error.code, 'not_found');
+
+    const contido = montar({ escopo: ESCOPO_DE_MARCA, liberar: false, armazenamento: armazenamentoEmMemoria().armazenamento });
+    const limitado = await contido.servico.anexarArquivoPeloLink(ACESSO, anexo('logo', 'logo.png', 'image/png', PNG), leitor.ler);
+    assert.equal(limitado.ok ? 'ok' : limitado.error.code, 'rate_limited');
+
+    const vencido = montar({ escopo: null, armazenamento: armazenamentoEmMemoria().armazenamento });
+    const semLink = await vencido.servico.anexarArquivoPeloLink(ACESSO, anexo('logo', 'logo.png', 'image/png', PNG), leitor.ler);
+    assert.equal(semLink.ok ? 'ok' : semLink.error.code, 'not_found');
+    assert.equal(leitor.chamadas.length, 0);
+  });
+
+  it('campo fora do recorte do link é recusado antes de reservar', async () => {
+    const memoria = armazenamentoEmMemoria();
+    const { servico, chamadas } = montar({ escopo: ESCOPO, armazenamento: memoria.armazenamento });
+    const leitor = lerDe(PNG);
+    const r = await servico.anexarArquivoPeloLink(ACESSO, anexo('logo', 'logo.png', 'image/png', PNG), leitor.ler);
+    assert.equal(r.ok ? 'ok' : r.error.code, 'forbidden');
+    assert.ok(!chamadas.some((c) => c.metodo === 'reservarArquivoPeloLink'));
+    assert.equal(leitor.chamadas.length, 0);
+  });
+
+  it('item inválido derruba a reserva no banco: nenhum objeto fica no bucket', async () => {
+    const memoria = armazenamentoEmMemoria();
+    const { servico } = montar({ escopo: ESCOPO_DE_MARCA, armazenamento: memoria.armazenamento, reserva: new Error('invalid input syntax for type uuid') });
+    const leitor = lerDe(PNG);
+    await assert.rejects(servico.anexarArquivoPeloLink(ACESSO, anexo('logo', 'logo.png', 'image/png', PNG), leitor.ler));
+    assert.equal(leitor.chamadas.length, 0);
+    assert.equal(memoria.gravacoes.length, 0);
+    assert.equal(memoria.objetos.size, 0);
+  });
+
+  it('falha do banco depois de gravar apaga o objeto e devolve a reserva', async () => {
+    const memoria = armazenamentoEmMemoria();
+    const { servico, chamadas } = montar({ escopo: ESCOPO_DE_MARCA, armazenamento: memoria.armazenamento, confirmacao: new Error('banco fora') });
+    await assert.rejects(servico.anexarArquivoPeloLink(ACESSO, anexo('logo', 'logo.png', 'image/png', PNG), lerDe(PNG).ler));
+    assert.equal(memoria.gravacoes.length, 1);
+    assert.equal(memoria.objetos.size, 0);
+    assert.equal(chamadas.filter((c) => c.metodo === 'liberarReservaPeloLink').length, 1);
+
+    const recusado = montar({ escopo: ESCOPO_DE_MARCA, armazenamento: memoria.armazenamento, confirmacao: 'recusado' });
+    const r = await recusado.servico.anexarArquivoPeloLink(ACESSO, anexo('logo', 'logo.png', 'image/png', PNG), lerDe(PNG).ler);
+    assert.equal(r.ok ? 'ok' : r.error.code, 'not_found');
+    assert.equal(memoria.objetos.size, 0);
+  });
+
+  it('orçamento do link esgotado volta 429 sem ler o corpo', async () => {
+    const memoria = armazenamentoEmMemoria();
+    const { servico } = montar({ escopo: ESCOPO_DE_MARCA, armazenamento: memoria.armazenamento, reserva: 'orcamento_excedido' });
+    const leitor = lerDe(PNG);
+    const r = await servico.anexarArquivoPeloLink(ACESSO, anexo('logo', 'logo.png', 'image/png', PNG), leitor.ler);
+    assert.equal(r.ok ? 'ok' : r.error.code, 'rate_limited');
+    assert.equal(leitor.chamadas.length, 0);
+    assert.equal(memoria.gravacoes.length, 0);
+  });
+
+  it('envio completo lê exatamente o tamanho declarado, grava e confirma pela reserva', async () => {
+    const memoria = armazenamentoEmMemoria();
+    const { servico, chamadas } = montar({ escopo: ESCOPO_DE_MARCA, armazenamento: memoria.armazenamento });
+    const leitor = lerDe(PNG);
+    const r = await servico.anexarArquivoPeloLink(ACESSO, anexo('logo', 'logo.png', 'image/png', PNG), leitor.ler);
+    assert.ok(r.ok);
+    assert.deepEqual(leitor.chamadas, [PNG.byteLength]);
+    const reserva = chamadas.find((c) => c.metodo === 'reservarArquivoPeloLink')!.args[1] as { caminho: string; tamanhoBytes: number };
+    assert.equal(reserva.tamanhoBytes, PNG.byteLength);
+    assert.ok(memoria.objetos.has(reserva.caminho));
+  });
+});
+
+describe('armazenamento do cliente excluído', () => {
+  it('cliente ativo não tem o bucket apagado', async () => {
+    const memoria = armazenamentoEmMemoria();
+    const { servico } = montar({ armazenamento: memoria.armazenamento, alvo: 'ativo' });
+    const r = await servico.expurgarArmazenamento({ organizationId: ORG, clientId: CLIENTE }, 'tudo');
+    assert.equal(r.ok ? 'ok' : r.error.code, 'conflict');
+    assert.equal(memoria.prefixosApagados.length, 0);
+  });
+
+  it('expurgo apaga o prefixo inteiro, audita e é idempotente', async () => {
+    const memoria = armazenamentoEmMemoria();
+    const prefixo = `orgs/${ORG}/clientes/${CLIENTE}/`;
+    memoria.objetos.set(`${prefixo}arquivos/a.png`, PNG);
+    memoria.objetos.set(`${prefixo}contexto/brain/perfil.md`, PNG);
+    memoria.objetos.set(`${prefixo}brain/catalogo.md`, PNG);
+    memoria.objetos.set(`orgs/${ORG}/clientes/33333333-3333-4333-8333-333333333333/arquivos/b.png`, PNG);
+    const { servico, eventos } = montar({ armazenamento: memoria.armazenamento, alvo: 'expurgado' });
+    const primeira = await servico.expurgarArmazenamento({ organizationId: ORG, clientId: CLIENTE }, 'tudo');
+    assert.ok(primeira.ok);
+    assert.equal(primeira.value.apagados, 3);
+    assert.deepEqual(memoria.prefixosApagados, [prefixo]);
+    assert.equal(memoria.objetos.size, 1);
+    const segunda = await servico.expurgarArmazenamento({ organizationId: ORG, clientId: CLIENTE }, 'tudo');
+    assert.ok(segunda.ok);
+    assert.equal(segunda.value.apagados, 0);
+    assert.equal(eventos.filter((e) => e.action === 'client.context.storage_purged').length, 2);
+  });
+
+  it('exclusão lógica despublica só os derivados do brain', async () => {
+    const memoria = armazenamentoEmMemoria();
+    const prefixo = `orgs/${ORG}/clientes/${CLIENTE}/`;
+    memoria.objetos.set(`${prefixo}arquivos/a.png`, PNG);
+    memoria.objetos.set(`${prefixo}contexto/brain/perfil.md`, PNG);
+    memoria.objetos.set(`${prefixo}brain/catalogo.md`, PNG);
+    const { servico, chamadas } = montar({ armazenamento: memoria.armazenamento, alvo: 'excluido' });
+    const r = await servico.expurgarArmazenamento({ organizationId: ORG, clientId: CLIENTE }, 'derivados');
+    assert.ok(r.ok);
+    assert.deepEqual([...memoria.objetos.keys()], [`${prefixo}arquivos/a.png`]);
+    assert.ok(chamadas.some((c) => c.metodo === 'marcarBrainDespublicado'));
+  });
+});
+
+describe('varredura de órfãos', () => {
+  it('apaga objeto de reserva não consumida e objeto velho sem registro; mantém conhecido e recente', async () => {
+    const prefixo = `orgs/${ORG}/clientes/${CLIENTE}/arquivos/`;
+    const velho = new Date(AGORA.getTime() - 2 * 3_600_000);
+    const memoria = armazenamentoEmMemoria(null, [
+      { caminho: `${prefixo}orfao.png`, atualizadoEm: velho },
+      { caminho: `${prefixo}conhecido.png`, atualizadoEm: velho },
+      { caminho: `${prefixo}recente.png`, atualizadoEm: new Date(AGORA.getTime() - 60_000) },
+    ]);
+    const { servico, chamadas } = montar({
+      armazenamento: memoria.armazenamento,
+      conhecidos: [`${prefixo}conhecido.png`],
+      reservasAVarrer: [{ id: 'r1', organizationId: ORG, clientId: CLIENTE, caminho: `${prefixo}reservado.png` }],
+    });
+    const resumo = await servico.varrerArquivos();
+    assert.equal(resumo.reservasVarridas, 1);
+    assert.equal(resumo.orfaosApagados, 1);
+    assert.deepEqual(memoria.apagados.sort(), [`${prefixo}orfao.png`, `${prefixo}reservado.png`]);
+    assert.ok(chamadas.some((c) => c.metodo === 'marcarReservaVarrida'));
+  });
+
+  it('sem bucket a varredura não faz nada', async () => {
+    const { servico } = montar();
+    assert.equal((await servico.varrerArquivos()).desativado, true);
   });
 });
 

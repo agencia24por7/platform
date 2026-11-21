@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { frescorPelaColeta, montarBrainDeExemplo, type EntradaDoExemplo } from './exemplo.ts';
+import { frescorPelaColeta } from './frescor.ts';
+import { montarBrainDeExemplo, type EntradaDoExemplo } from './exemploDeTeste.ts';
 import { ALTURA_DO_MAPA, LARGURA_DO_MAPA, MAX_NOS_POR_GRUPO, montarMapa } from './mapa.ts';
 
 const agora = new Date('2026-11-20T12:00:00Z');

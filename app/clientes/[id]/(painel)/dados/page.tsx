@@ -16,7 +16,7 @@ import {
   temRecursoParaVincular,
   type Platform,
 } from '@/modules/connections/domain/connection';
-import { frescorPelaColeta } from '@/modules/clients/domain/painel/brain/exemplo';
+import { frescorPelaColeta } from '@/modules/clients/domain/painel/brain/frescor';
 import { ROTULO_DO_FRESCOR } from '@/modules/clients/domain/painel/brain/tipos';
 import { saudeDosDados, tempoRelativo } from '@/modules/clients/domain/painel/resumo';
 

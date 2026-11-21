@@ -3,12 +3,14 @@ import type { z } from 'zod';
 import type { WorkerContext } from '@/shared/http/workerRoute';
 import { failure, type Failure } from '@/shared/result/failure';
 import { err, ok, type Result } from '@/shared/result/result';
-import { consume } from '@/shared/security/rateLimit';
+import { env } from '@/shared/config/env';
+import { consumeAll } from '@/shared/security/rateLimit';
+import { limitesDeLeitura, pedidosDeLeitura } from './limitesDeLeitura.ts';
 import { newRequestId } from '@/shared/security/tokens';
 import type { Resposta } from '../application/brainService.ts';
 import { etagCasa } from './etag.ts';
 
-export const LIMITE_DE_LEITURAS_POR_MINUTO = 60;
+export { LIMITE_DE_LEITURAS_POR_MINUTO, TETO_DE_LEITURAS_POR_MINUTO } from './limitesDeLeitura.ts';
 const JANELA_MS = 60_000;
 
 type Envelope<T> = { readonly etag: string; readonly corpo: T };
@@ -21,10 +23,12 @@ export function comEtag<P, Q, T>(
   executar: (params: P, query: Q, worker: WorkerContext) => Promise<Result<Resposta<T>, Failure>>,
 ) {
   return async (query: Q, worker: WorkerContext): Promise<Result<Envelope<T>, Failure>> => {
-    if (!consume(`brain:${worker.callerFingerprint}`, LIMITE_DE_LEITURAS_POR_MINUTO, JANELA_MS).allowed) {
-      return err(failure('rate_limited', 'Limite de leituras do catálogo excedido.'));
-    }
     const params = brutos ? paramsSchema.safeParse(brutos) : null;
+    const clienteId = params?.success ? String((params.data as { clienteId?: unknown }).clienteId ?? '') || null : null;
+    const veredito = consumeAll(pedidosDeLeitura(worker.callerFingerprint, clienteId, limitesDeLeitura(env())), JANELA_MS);
+    if (!veredito.allowed) {
+      return err(failure('rate_limited', 'Limite de leituras do catálogo excedido.', { retryAfterSeconds: String(veredito.retryAfterSeconds) }));
+    }
     if (!params?.success) return err(failure('not_found', 'Recurso não encontrado.'));
     const resultado = await executar(params.data, query, worker);
     return resultado.ok ? ok({ etag: resultado.value.etag, corpo: resultado.value.corpo }) : resultado;

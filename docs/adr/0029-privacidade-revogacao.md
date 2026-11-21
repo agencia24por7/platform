@@ -234,3 +234,7 @@ iguais: o campo `revogadoNoProvedor`/`motivoDaRevogacao` em `connection.removed`
 manual quando não revogou, `connection.provider_revoked` quando revogou mas a remoção não completou, e o expurgo
 do YouTube depois da remoção. Conexão pós-corte sem token (`reauth_pending`) é removida com o aviso de revogar a
 autorização antiga à mão (motivo `sem_credencial_no_cofre`).
+
+## Adendo (2026-11-20)
+
+Revisado pela ADR 0033 (revisão adversarial de contexto, brain e privacidade): reserva de cota antes do bucket, ordem de validação do envio, expurgo e despublicação do bucket, carência do YouTube, posse legada com renomeações, pimenta dedicada da Meta, limite de leitura por cliente e listas pessoais fora do perfil. Onde houver divergência, vale a 0033.

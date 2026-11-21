@@ -22,6 +22,7 @@ export type PedidoNaOrganizacao = {
 export type PedidosDeExclusaoRepository = {
   registrarDaMeta(input: {
     readonly usuarioHash: string;
+    readonly usuarioHashesAnteriores: readonly string[];
     readonly usuarioExterno: string;
     readonly codigo: string;
   }): Promise<{ readonly codigo: string; readonly situacao: SituacaoDoPedido['situacao']; readonly novo: boolean }>;
@@ -32,6 +33,7 @@ export type PedidosDeExclusaoRepository = {
 export type ConfiguracaoDosPedidos = {
   readonly segredoDoApp: string | undefined;
   readonly pimenta: string;
+  readonly pimentasAnteriores?: readonly string[];
   readonly enderecoPublico: string;
   readonly agoraEmSegundos?: () => number;
   readonly novoCodigo?: () => string;
@@ -64,8 +66,13 @@ export function createPedidosDeExclusaoService(
       const leitura = lerSignedRequest(signedRequest, configuracao.segredoDoApp, agora());
       if (!leitura.ok) return { ok: false, motivo: leitura.motivo };
 
+      const usuarioHash = pseudonimoDoUsuarioDaMeta(leitura.usuarioDaMeta, configuracao.pimenta);
+      const usuarioHashesAnteriores = (configuracao.pimentasAnteriores ?? [])
+        .map((pimenta) => pseudonimoDoUsuarioDaMeta(leitura.usuarioDaMeta, pimenta))
+        .filter((hash) => hash !== usuarioHash);
       const registro = await repositorio.registrarDaMeta({
-        usuarioHash: pseudonimoDoUsuarioDaMeta(leitura.usuarioDaMeta, configuracao.pimenta),
+        usuarioHash,
+        usuarioHashesAnteriores,
         usuarioExterno: leitura.usuarioDaMeta,
         codigo: novoCodigo(),
       });

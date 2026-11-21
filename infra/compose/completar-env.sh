@@ -55,10 +55,23 @@ if [ -z "$chave_do_kms" ]; then
   fi
 fi
 
+pimenta_da_meta=$(valor META_EXCLUSAO_PEPPER)
+if [ -z "$pimenta_da_meta" ] && [ -z "${METADADOS_URL:-}" ] && command -v gcloud > /dev/null 2>&1; then
+  projeto_da_pimenta=$(metadado project/project-id)
+  instancia_da_pimenta=$(metadado instance/name)
+  prefixo_da_pimenta=${instancia_da_pimenta%-vm}
+  if [ -n "$projeto_da_pimenta" ] && [ -n "$instancia_da_pimenta" ] && [ "$prefixo_da_pimenta" != "$instancia_da_pimenta" ]; then
+    pimenta_da_meta=$(gcloud secrets versions access latest --secret="$prefixo_da_pimenta-meta-exclusao-pepper" \
+      --project="$projeto_da_pimenta" 2>/dev/null || true)
+  fi
+fi
+[ -n "$pimenta_da_meta" ] || echo "META_EXCLUSAO_PEPPER ausente: com META_APP_SECRET definido o app não sobe em produção (ADR 0033)." >&2
+
 temporario=$(mktemp "$ARQUIVO.XXXXXX")
-grep -v -e '^DATABASE_URL_WORKER=' -e '^TOKENS_KMS_KEY=' "$ARQUIVO" > "$temporario" || true
+grep -v -e '^DATABASE_URL_WORKER=' -e '^TOKENS_KMS_KEY=' -e '^META_EXCLUSAO_PEPPER=' "$ARQUIVO" > "$temporario" || true
 printf 'DATABASE_URL_WORKER=%s\n' "$url_do_worker" >> "$temporario"
 printf 'TOKENS_KMS_KEY=%s\n' "$chave_do_kms" >> "$temporario"
+printf 'META_EXCLUSAO_PEPPER=%s\n' "$pimenta_da_meta" >> "$temporario"
 chmod 600 "$temporario"
 mv "$temporario" "$ARQUIVO"
 echo "DATABASE_URL_WORKER derivada de DATABASE_URL (papel orla_worker, destino $destino)"

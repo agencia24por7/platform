@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { deveFecharAGaveta } from '@/shared/ui/gaveta';
 
 export function NavegacaoMovel({ children }: { readonly children: ReactNode }) {
   const gaveta = useRef<HTMLDialogElement>(null);
@@ -17,8 +18,8 @@ export function NavegacaoMovel({ children }: { readonly children: ReactNode }) {
     setAberta(true);
   }
 
-  function fecharNoVeu(evento: MouseEvent<HTMLDialogElement>) {
-    if (evento.target === gaveta.current) gaveta.current.close();
+  function fecharNoVeuOuNoLink(evento: MouseEvent<HTMLDialogElement>) {
+    if (deveFecharAGaveta(evento.target, gaveta.current)) gaveta.current?.close();
   }
 
   return (
@@ -42,7 +43,7 @@ export function NavegacaoMovel({ children }: { readonly children: ReactNode }) {
         className="gaveta"
         aria-label="Navegação"
         onClose={() => setAberta(false)}
-        onClick={fecharNoVeu}
+        onClick={fecharNoVeuOuNoLink}
       >
         <div className="gaveta__topo">
           <img className="side__logo" src="/orla/logo.png" alt="orla" />

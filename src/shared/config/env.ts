@@ -22,11 +22,14 @@ const schema = z.object({
   DATABASE_URL_WORKER: opcional(z.string().url().startsWith('postgres')),
   TRIA_WORKER_TOKEN: strongSecret,
   TRIA_SESSION_SECRET: strongSecret,
+  META_EXCLUSAO_PEPPER: opcional(strongSecret),
   TRIA_APP_BASE_URL: z.string().url(),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   DATABASE_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(50).default(10),
   DATABASE_WORKER_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(20).default(5),
   DATABASE_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60_000).default(10_000),
+  BRAIN_LEITURAS_POR_MINUTO: opcional(z.coerce.number().int().min(10).max(10_000)),
+  BRAIN_TETO_DE_LEITURAS_POR_MINUTO: opcional(z.coerce.number().int().min(10).max(50_000)),
   GOOGLE_OAUTH_CLIENT_ID: opcional(z.string().min(10)),
   GOOGLE_OAUTH_CLIENT_SECRET: opcional(z.string().min(10)),
   META_APP_ID: opcional(z.string().min(5)),
@@ -52,6 +55,16 @@ const schema = z.object({
   ),
 }).superRefine((valores, contexto) => {
   if (valores.NODE_ENV !== 'production') return;
+  if (valores.META_APP_SECRET && !valores.META_EXCLUSAO_PEPPER) {
+    contexto.addIssue({
+      code: 'custom',
+      path: ['META_EXCLUSAO_PEPPER'],
+      message: 'obrigatória em produção com o callback de exclusão da Meta ligado (META_APP_SECRET), ADR 0033',
+    });
+  }
+  if (valores.META_EXCLUSAO_PEPPER && valores.META_EXCLUSAO_PEPPER === valores.TRIA_SESSION_SECRET) {
+    contexto.addIssue({ code: 'custom', path: ['META_EXCLUSAO_PEPPER'], message: 'precisa ser diferente de TRIA_SESSION_SECRET (ADR 0033)' });
+  }
   if (!valores.DATABASE_URL_WORKER) {
     contexto.addIssue({ code: 'custom', path: ['DATABASE_URL_WORKER'], message: 'obrigatória em produção (papel orla_worker, ADR 0028)' });
     return;

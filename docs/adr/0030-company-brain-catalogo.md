@@ -251,3 +251,7 @@ somente leitura e podem ficar. Para desfazer de vez: remover as rotas e o módul
 cinco `core.brain_*`, `DROP TABLE core.client_brain_catalog_state, core.client_brain_coverage`, `DROP
 TABLE gov_cobertura_cliente` no BigQuery e apagar `orgs/*/clientes/*/brain/` do bucket. Nada disso
 toca as tabelas de coleta, o contexto ou o export `contexto/brain/`.
+
+## Adendo (2026-11-20)
+
+Revisado pela ADR 0033 (revisão adversarial de contexto, brain e privacidade): reserva de cota antes do bucket, ordem de validação do envio, expurgo e despublicação do bucket, carência do YouTube, posse legada com renomeações, pimenta dedicada da Meta, limite de leitura por cliente e listas pessoais fora do perfil. Onde houver divergência, vale a 0033.

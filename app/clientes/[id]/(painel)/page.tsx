@@ -9,7 +9,7 @@ import { rotuloDaOpcao } from '@/modules/clients/domain/contexto/valores';
 import { ROTULO_DA_PLATAFORMA } from '@/modules/connections/domain/connection';
 import { rotaDoCliente } from '@/modules/clients/domain/painel/enderecos';
 import { barrasDaSecao, resumirCompletude, saudeDosDados, tempoRelativo } from '@/modules/clients/domain/painel/resumo';
-import { frescorPelaColeta } from '@/modules/clients/domain/painel/brain/exemplo';
+import { frescorPelaColeta } from '@/modules/clients/domain/painel/brain/frescor';
 import { ROTULO_DO_FRESCOR } from '@/modules/clients/domain/painel/brain/tipos';
 
 export const dynamic = 'force-dynamic';

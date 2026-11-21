@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import { request as pedidoHttp } from 'node:http';
 import { before, describe, it } from 'node:test';
+import { BASE, appIsUp, env as ambiente } from './helpers.mjs';
 
 const CONTAINER = process.env.ORLA_PG_CONTAINER ?? 'orla-postgres';
 
@@ -214,17 +216,104 @@ describe('contexto do cliente no banco', { concurrency: false }, () => {
     assert.equal(umaLinha(publico(`SELECT coalesce(core.contexto_link_concluir('${revogado.hash}')::text, 'nulo')`)), 'nulo');
   });
 
-  it('arquivo só registra dentro do prefixo do cliente e dentro da cota', () => {
+  it('arquivo só registra com reserva prévia, dentro do prefixo do cliente, da cota e do orçamento do link', () => {
     const link = criarLink(orgA, clienteA, ['marca']);
-    const registrar = (caminho, tamanho, cota = 524288000) => umaLinha(publico(
-      `SELECT core.contexto_link_registrar_arquivo('${link.hash}', gen_random_uuid(), 'marca', 'logo', NULL,
-         '${caminho}', 'logo.png', 'image/png', ${tamanho}, '${'a'.repeat(64)}', ${cota})`,
+    const prefixo = `orgs/${orgA}/clientes/${clienteA}/arquivos/`;
+    const reservar = (id, caminho, tamanho, cota = 524288000, orcamento = 209715200, envios = 60) => umaLinha(publico(
+      `SELECT core.contexto_link_reservar_arquivo('${link.hash}', '${id}', 'marca', NULL, '${caminho}', ${tamanho},
+         ${cota}, ${orcamento}, ${envios})`,
     ));
-    const prefixo = `orgs/${orgA}/clientes/${clienteA}/contexto/arquivos/`;
-    assert.equal(registrar(`${prefixo}${marca}-logo.png`, 1000), 'ok');
-    assert.equal(registrar(`${prefixo}${marca}-b.png`, 1000, 1500), 'cota_excedida');
-    const erro = recusa(() => registrar(`orgs/${orgB}/clientes/${clienteB}/contexto/arquivos/x.png`, 10));
-    assert.ok(erro && /client_context_files_no_prefixo/.test(erro), erro ?? 'gravou caminho de outro cliente');
+    const confirmar = (id, tamanho) => umaLinha(publico(
+      `SELECT core.contexto_link_confirmar_arquivo('${link.hash}', '${id}', 'marca', 'logo', NULL, 'logo.png', 'image/png',
+         ${tamanho}, '${'a'.repeat(64)}')`,
+    ));
+    const id = () => umaLinha(dono('SELECT gen_random_uuid()'));
+
+    const primeiro = id();
+    assert.equal(reservar(primeiro, `${prefixo}${primeiro}-logo.png`, 1000), 'ok');
+    assert.equal(confirmar(primeiro, 1001), 'reserva_invalida', 'não confirma mais bytes do que reservou');
+    assert.equal(confirmar(primeiro, 1000), 'ok');
+    assert.equal(confirmar(primeiro, 1000), 'reserva_invalida', 'reserva consumida não serve de novo');
+
+    const segundo = id();
+    assert.equal(reservar(segundo, `${prefixo}${segundo}-b.png`, 1000, 1500), 'cota_excedida');
+    const terceiro = id();
+    assert.equal(reservar(terceiro, `${prefixo}${terceiro}-c.png`, 1000, 524288000, 1500), 'orcamento_excedido',
+      'o orçamento do link conta os bytes da última hora');
+    assert.equal(reservar(terceiro, `${prefixo}${terceiro}-c.png`, 10, 524288000, 209715200, 1), 'orcamento_excedido',
+      'e o número de envios');
+    assert.equal(reservar(terceiro, `${prefixo}${terceiro}-c.png`, 0), 'tamanho_invalido');
+
+    const outroCliente = recusa(() => reservar(id(), `orgs/${orgB}/clientes/${clienteB}/arquivos/x.png`, 10));
+    assert.ok(outroCliente && /no_prefixo/.test(outroCliente), outroCliente ?? 'reservou caminho de outro cliente');
+    assert.match(recusa(() => reservar('nao-e-uuid', `${prefixo}x.png`, 10)) ?? '', /uuid/i);
+    assert.match(
+      recusa(() => publico(`SELECT core.contexto_link_registrar_arquivo('${link.hash}', gen_random_uuid(), 'marca', 'logo', NULL,
+        '${prefixo}y.png', 'y.png', 'image/png', 10, '${'a'.repeat(64)}', 524288000)`)) ?? '',
+      /permission denied/, 'o registro antigo, sem reserva, não está mais com o app');
+
+    const semReserva = recusa(() => naOrg(orgA, `INSERT INTO core.client_context_files
+      (id, organization_id, client_id, section, field_key, object_path, filename, mime, size_bytes, sha256, source)
+      VALUES (gen_random_uuid(), '${orgA}', '${clienteA}', 'marca', 'logo', '${prefixo}z.png', 'z.png', 'image/png', 10, '${'a'.repeat(64)}', 'equipe')`));
+    assert.ok(semReserva && /reserva/.test(semReserva), semReserva ?? 'gravou arquivo sem reserva');
+
+    const liberada = id();
+    assert.equal(reservar(liberada, `${prefixo}${liberada}-d.png`, 10), 'ok');
+    assert.equal(umaLinha(publico(`SELECT core.contexto_link_liberar_reserva('${link.hash}', '${liberada}')`)), 't');
+    assert.equal(confirmar(liberada, 10), 'reserva_invalida');
+  });
+
+  it('a equipe também reserva antes de gravar, sob a mesma cota', () => {
+    const prefixo = `orgs/${orgA}/clientes/${clienteA}/arquivos/`;
+    const novo = umaLinha(dono('SELECT gen_random_uuid()'));
+    assert.equal(umaLinha(naOrg(orgA,
+      `SELECT core.contexto_reservar_arquivo_da_equipe('${clienteA}', '${novo}', '${prefixo}${novo}-e.png', 10, 524288000)`)), 'ok');
+    assert.equal(umaLinha(naOrg(orgA,
+      `SELECT core.contexto_reservar_arquivo_da_equipe('${clienteA}', gen_random_uuid(), '${prefixo}f.png', 10, 5)`)), 'cota_excedida');
+    assert.equal(umaLinha(naOrg(orgB,
+      `SELECT core.contexto_reservar_arquivo_da_equipe('${clienteA}', gen_random_uuid(), '${prefixo}g.png', 10, 524288000)`)), 'recusado');
+    naOrg(orgA, `INSERT INTO core.client_context_files
+      (id, organization_id, client_id, section, field_key, object_path, filename, mime, size_bytes, sha256, source)
+      VALUES ('${novo}', '${orgA}', '${clienteA}', 'marca', 'logo', '${prefixo}${novo}-e.png', 'e.png', 'image/png', 10, '${'a'.repeat(64)}', 'equipe')`);
+    assert.equal(umaLinha(dono(`SELECT consumida_em IS NOT NULL FROM core.client_context_file_reservations WHERE id = '${novo}'`)), 't');
+  });
+
+  it('a varredura vê reserva vencida e não consumida e a trava do bucket só libera cliente excluído ou expurgado', () => {
+    const prefixo = `orgs/${orgA}/clientes/${clienteA}/arquivos/`;
+    const velha = umaLinha(dono('SELECT gen_random_uuid()'));
+    dono(`INSERT INTO core.client_context_file_reservations (id, organization_id, client_id, object_path, size_bytes, criada_em, vence_em)
+          VALUES ('${velha}', '${orgA}', '${clienteA}', '${prefixo}${velha}-velha.png', 10, now() - interval '2 hours', now() - interval '100 minutes')`);
+    assert.match(recusa(() => comoApp(`SELECT count(*) FROM core.contexto_reservas_a_varrer(10, interval '1 hour')`)) ?? '',
+      /permission denied/, 'a varredura atravessa inquilinos: só o worker executa');
+    assert.ok(dono(`SELECT id FROM core.contexto_reservas_a_varrer(1000, interval '1 hour')`).includes(velha));
+    assert.ok(!dono(`SELECT object_path FROM core.contexto_caminhos_conhecidos('${clienteA}')`).includes(`${velha}-velha.png`));
+    dono(`SELECT core.contexto_reserva_varrida('${velha}')`);
+    assert.ok(!dono(`SELECT id FROM core.contexto_reservas_a_varrer(1000, interval '1 hour')`).includes(velha));
+
+    assert.equal(umaLinha(dono(`SELECT core.contexto_alvo_do_armazenamento('${orgA}', '${clienteA}')`)), 'ativo');
+    assert.equal(umaLinha(dono(`SELECT core.contexto_alvo_do_armazenamento('${orgB}', '${clienteA}')`)), 'desconhecido');
+  });
+
+  it('itens: o teto da lista é conferido sob trava e vale também para a equipe', () => {
+    const link = criarLink(orgA, clienteA, ['presenca_digital']);
+    const salvar = (maximo) => umaLinha(publico(`SELECT resultado FROM core.contexto_link_salvar_item(
+      '${link.hash}', 'presenca_digital', 'redes_sociais', NULL, '{"rede":"instagram","perfil":"@p"}', 'fato', 0, ${maximo})`));
+    const atuais = Number(umaLinha(dono(`SELECT count(*) FROM core.client_context_items WHERE client_id = '${clienteA}' AND list_key = 'redes_sociais'`)));
+    assert.equal(salvar(atuais + 1), 'ok');
+    assert.equal(salvar(atuais + 1), 'limite');
+    dono(`INSERT INTO core.client_context_items (organization_id, client_id, section, list_key, position, data)
+          SELECT '${orgA}', '${clienteA}', 'presenca_digital', 'lotada', g, '{}'::jsonb FROM generate_series(1, 500) g`);
+    const erro = recusa(() => dono(`INSERT INTO core.client_context_items (organization_id, client_id, section, list_key, position, data)
+                                    VALUES ('${orgA}', '${clienteA}', 'presenca_digital', 'lotada', 501, '{}')`));
+    assert.ok(erro && /limite/.test(erro), erro ?? 'passou de 500 itens');
+  });
+
+  it('abertura do formulário vai à trilha no máximo uma vez por hora', () => {
+    const link = criarLink(orgA, clienteA, ['empresa']);
+    assert.equal(umaLinha(publico(`SELECT core.contexto_link_registrar_abertura('${link.hash}')`)), 't');
+    assert.equal(umaLinha(publico(`SELECT core.contexto_link_registrar_abertura('${link.hash}')`)), 'f');
+    dono(`UPDATE core.client_context_links SET abertura_registrada_em = now() - interval '61 minutes' WHERE id = '${link.id}'`);
+    assert.equal(umaLinha(publico(`SELECT core.contexto_link_registrar_abertura('${link.hash}')`)), 't');
   });
 
   it('o convite de integração leva ao link de contexto amarrado a ele', () => {
@@ -236,6 +325,25 @@ describe('contexto do cliente no banco', { concurrency: false }, () => {
     assert.equal(umaLinha(publico(`SELECT core.contexto_link_pelo_convite('${tokenConvite}')`)), link.hash);
 
     dono(`UPDATE integrations.connection_invites SET status = 'revoked', revoked_at = now() WHERE id = '${convite}'`);
+    assert.equal(umaLinha(publico(`SELECT coalesce(core.contexto_link_pelo_convite('${tokenConvite}'), 'nulo')`)), 'nulo');
+  });
+
+  it('convite vencido pelo prazo não abre o formulário, e link vencido não bloqueia um novo para o mesmo convite', () => {
+    const tokenConvite = randomBytes(24).toString('base64url');
+    const convite = umaLinha(dono(`INSERT INTO integrations.connection_invites
+      (organization_id, client_id, kind, token, expires_at)
+      VALUES ('${orgA}', '${clienteA}', 'oauth_self_service', '${tokenConvite}', now() + interval '7 days') RETURNING id`));
+    const vencido = criarLink(orgA, clienteA, ['empresa'], `connection_invite_id='${convite}'`);
+    dono(`UPDATE core.client_context_links SET created_at = now() - interval '2 days', expires_at = now() - interval '1 second'
+          WHERE id = '${vencido.id}'`);
+    const novo = criarLink(orgA, clienteA, ['empresa'], `connection_invite_id='${convite}'`);
+    assert.equal(umaLinha(publico(`SELECT core.contexto_link_pelo_convite('${tokenConvite}')`)), novo.hash);
+
+    const duplicado = recusa(() => criarLink(orgA, clienteA, ['empresa'], `connection_invite_id='${convite}'`));
+    assert.ok(duplicado && /um_vivo_por_convite|link de contexto vivo/.test(duplicado), duplicado ?? 'aceitou dois links vivos');
+
+    dono(`UPDATE integrations.connection_invites SET expires_at = now() - interval '1 second', created_at = now() - interval '2 days'
+          WHERE id = '${convite}'`);
     assert.equal(umaLinha(publico(`SELECT coalesce(core.contexto_link_pelo_convite('${tokenConvite}'), 'nulo')`)), 'nulo');
   });
 
@@ -260,5 +368,125 @@ describe('contexto do cliente no banco', { concurrency: false }, () => {
         tabela,
       );
     }
+  });
+});
+
+function enviarCru({ caminho, cabecalhos, pedacos = [], manterAberto = false, esperaMs = 8000 }) {
+  return new Promise((resolver, rejeitar) => {
+    const inicio = Date.now();
+    const alvo = new URL(caminho, BASE);
+    const pedido = pedidoHttp(
+      { method: 'POST', hostname: alvo.hostname, port: alvo.port, path: alvo.pathname, headers: cabecalhos },
+      (resposta) => {
+        const partes = [];
+        resposta.on('data', (p) => partes.push(p));
+        resposta.on('end', () => {
+          pedido.destroy();
+          resolver({ status: resposta.statusCode, cabecalhos: resposta.headers, corpo: Buffer.concat(partes).toString('utf8'), ms: Date.now() - inicio });
+        });
+      },
+    );
+    pedido.on('error', (erro) => (erro.code === 'ECONNRESET' || erro.code === 'EPIPE' ? undefined : rejeitar(erro)));
+    const relogio = setTimeout(() => {
+      pedido.destroy();
+      rejeitar(new Error(`sem resposta em ${esperaMs} ms: o servidor esperou o corpo`));
+    }, esperaMs);
+    pedido.on('close', () => clearTimeout(relogio));
+    for (const pedaco of pedacos) pedido.write(pedaco);
+    if (!manterAberto) pedido.end();
+  });
+}
+
+describe('envio de arquivo pelo link público, pela camada HTTP (ADR 0033)', { concurrency: false }, () => {
+  let org = '';
+  let cliente = '';
+  let origem = '';
+
+  before(async () => {
+    if (!(await appIsUp())) throw new Error('App não está no ar');
+    origem = new URL(ambiente().TRIA_APP_BASE_URL).origin;
+    org = umaLinha(dono(
+      `INSERT INTO core.organizations (name, slug, type) VALUES ('Ctx HTTP', 'ctx-http-${marca}', 'agency') RETURNING id`));
+    cliente = umaLinha(dono(
+      `INSERT INTO core.clients (organization_id, name, business_model) VALUES ('${org}', 'Padaria HTTP', 'leads') RETURNING id`));
+  });
+
+  const cabecalhosDeEnvio = (extra = {}) => ({
+    Origin: origem,
+    'Content-Type': 'image/png',
+    'x-campo': 'logo',
+    'x-nome': 'logo.png',
+    'Content-Length': '1024',
+    ...extra,
+  });
+  const reservasDoCliente = () => umaLinha(dono(
+    `SELECT count(*) FROM core.client_context_file_reservations WHERE client_id = '${cliente}'`));
+
+  it('POST sem token válido responde sem ler o corpo, e a rota não passa pelo proxy que bufferiza o corpo', async () => {
+    const resposta = await enviarCru({
+      caminho: `/api/contexto/publico/${novoToken()}/arquivos`,
+      cabecalhos: cabecalhosDeEnvio({ 'Content-Length': String(25 * 1024 * 1024) }),
+      pedacos: [Buffer.alloc(1024)],
+      manterAberto: true,
+    });
+    assert.equal(resposta.status, 404, resposta.corpo);
+    assert.equal(resposta.cabecalhos['content-security-policy'], undefined, 'o proxy (que clona o corpo na memória) rodou na rota de envio');
+  });
+
+  it('origem estranha e envio sem tamanho declarado são recusados antes do corpo', async () => {
+    const link = criarLink(org, cliente, ['marca']);
+    const estranha = await enviarCru({
+      caminho: `/api/contexto/publico/${link.token}/arquivos`,
+      cabecalhos: cabecalhosDeEnvio({ Origin: 'https://mal.example' }),
+      pedacos: [Buffer.alloc(10)],
+      manterAberto: true,
+    });
+    assert.equal(estranha.status, 403);
+    const { 'Content-Length': _semTamanho, ...semTamanho } = cabecalhosDeEnvio();
+    const fragmentado = await enviarCru({
+      caminho: `/api/contexto/publico/${link.token}/arquivos`,
+      cabecalhos: { ...semTamanho, 'Transfer-Encoding': 'chunked' },
+      pedacos: [Buffer.alloc(10)],
+      manterAberto: true,
+    });
+    assert.equal(fragmentado.status, 411, fragmentado.corpo);
+    assert.equal(reservasDoCliente(), '0');
+  });
+
+  it('x-item que não é UUID não chega ao banco nem ao bucket', async () => {
+    const link = criarLink(org, cliente, ['produtos']);
+    const resposta = await enviarCru({
+      caminho: `/api/contexto/publico/${link.token}/arquivos`,
+      cabecalhos: cabecalhosDeEnvio({ 'x-campo': 'foto', 'x-lista': 'produtos', 'x-item': "1' OR '1'='1" }),
+      pedacos: [Buffer.alloc(10)],
+      manterAberto: true,
+    });
+    assert.equal(resposta.status, 400, resposta.corpo);
+    assert.equal(reservasDoCliente(), '0');
+  });
+
+  it('campo fora das seções do link é recusado pela rota (escopo) sem reservar', async () => {
+    const link = criarLink(org, cliente, ['empresa']);
+    const resposta = await enviarCru({
+      caminho: `/api/contexto/publico/${link.token}/arquivos`,
+      cabecalhos: cabecalhosDeEnvio(),
+      pedacos: [Buffer.alloc(10)],
+      manterAberto: true,
+    });
+    assert.equal(resposta.status, 403, resposta.corpo);
+    assert.equal(reservasDoCliente(), '0');
+  });
+
+  it('sem bucket configurado, o envio dentro do escopo para antes de reservar ou ler o corpo', async () => {
+    if (ambiente().CONTEXT_BUCKET) return;
+    const link = criarLink(org, cliente, ['marca']);
+    const resposta = await enviarCru({
+      caminho: `/api/contexto/publico/${link.token}/arquivos`,
+      cabecalhos: cabecalhosDeEnvio(),
+      pedacos: [Buffer.alloc(10)],
+      manterAberto: true,
+    });
+    assert.equal(resposta.status, 503, resposta.corpo);
+    assert.equal(reservasDoCliente(), '0');
   });
 });

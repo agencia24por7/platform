@@ -63,6 +63,20 @@ O expurgo apaga também as `stg_*` das fontes do cliente (por organização + ch
 expiram em 7 dias. Período de posse de dono desconhecido (linha antiga da trilha com nome ambíguo) não é
 apagado: não se sabe se era deste cliente ou de um homônimo (ADR 0029).
 
+### Bucket do contexto na exclusão e no expurgo (ADR 0033)
+
+- `excluir-cliente` despublica do bucket o brain derivado (`contexto/brain/` e `brain/`). Os arquivos
+  enviados (`arquivos/`) ficam, sem nenhuma rota de leitura no app, até o expurgo ou a restauração. Se a
+  despublicação falhar, a varredura de `publicar-pendentes` despublica na próxima rodada.
+- `expurgar-cliente --confirmar` apaga, nesta ordem: BigQuery, o prefixo inteiro do cliente no bucket
+  (todas as gerações, pela rota `POST /api/v0/manutencao/expurgar-armazenamento`, que só aceita cliente
+  excluído ou já expurgado), Postgres e a limpeza final por `client_id`. Falhou no bucket: o Postgres não
+  foi tocado; rode o mesmo comando de novo.
+- `expurgar-cliente <id> --somente-armazenamento --confirmar` repete só o bucket, inclusive depois de o
+  cliente sumir do Postgres (a organização vem da linha `client.purged`).
+- O objeto apagado fica recuperável por 7 dias (soft delete do bucket): é o prazo efetivo do apagamento
+  físico a informar ao titular (docs/lgpd/retencao.md).
+
 ### Pedidos de exclusão da Meta (ADR 0029)
 
 Quem remove o app *Agencia24/7 Ads* no Facebook dispara o callback `POST /api/meta/exclusao`. A orla grava o
