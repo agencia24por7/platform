@@ -123,3 +123,7 @@ sandbox` e `Cache-Control: private, no-store`.
    credencial de operador.
 3. Só então o deploy do app com a funcionalidade. Sem a variável, o app sobe normalmente e as rotas de arquivo
    respondem "indisponível".
+
+## Adendo (2026-11-20)
+
+Revisado pela ADR 0033 (revisão adversarial de contexto, brain e privacidade): reserva de cota antes do bucket, ordem de validação do envio, expurgo e despublicação do bucket, carência do YouTube, posse legada com renomeações, pimenta dedicada da Meta, limite de leitura por cliente e listas pessoais fora do perfil. Onde houver divergência, vale a 0033.

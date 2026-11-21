@@ -1,16 +1,19 @@
 import { ROTULO_DA_SENSIBILIDADE, ROTULO_DO_FRESCOR, type BrainDoCliente } from './tipos.ts';
+import { AVISO_DE_DADOS, textoNeutro } from '../../../../../shared/markdown/dadoNoMarkdown.ts';
 
 type SemMd = Omit<BrainDoCliente, 'catalogoMd'>;
 
 const ESTADO: Record<string, string> = { disponivel: 'disponível', parcial: 'parcial', indisponivel: 'indisponível' };
 
 function linhaDaTabela(celulas: readonly string[]): string {
-  return `| ${celulas.map((c) => c.replace(/\|/g, '\\|').replace(/\n/g, ' ')).join(' | ')} |`;
+  return `| ${celulas.join(' | ')} |`;
 }
 
 export function renderizarCatalogoMd(clienteNome: string, brain: SemMd): string {
   const linhas: string[] = [
-    `# Catálogo do Brain · ${clienteNome}`,
+    `# Catálogo do Brain · ${textoNeutro(clienteNome)}`,
+    '',
+    `> ${AVISO_DE_DADOS}`,
     '',
     `versão ${brain.versao} · hash ${brain.hash} · gerado em ${brain.atualizadoEm.slice(0, 16).replace('T', ' ')} UTC`,
     '',
@@ -20,7 +23,8 @@ export function renderizarCatalogoMd(clienteNome: string, brain: SemMd): string 
     '',
   ];
   for (const capacidade of brain.capacidades) {
-    linhas.push(`- **${capacidade.pergunta}** — ${ESTADO[capacidade.estado] ?? capacidade.estado}${capacidade.falta.length ? ` (falta: ${capacidade.falta.join('; ')})` : ''}`);
+    const falta = capacidade.falta.length ? ` (falta: ${textoNeutro(capacidade.falta.join('; '))})` : '';
+    linhas.push(`- **${textoNeutro(capacidade.pergunta)}** — ${ESTADO[capacidade.estado] ?? capacidade.estado}${falta}`);
   }
   linhas.push('', '## Entradas', '');
   linhas.push(linhaDaTabela(['URN', 'Tipo', 'Título', 'Frescor', 'Sensibilidade', 'Acesso']));
@@ -29,11 +33,11 @@ export function renderizarCatalogoMd(clienteNome: string, brain: SemMd): string 
     linhas.push(
       linhaDaTabela([
         `\`${entrada.urn}\``,
-        entrada.tipo,
-        entrada.titulo,
+        textoNeutro(entrada.tipo),
+        textoNeutro(entrada.titulo),
         ROTULO_DO_FRESCOR[entrada.frescor.status],
         `${ROTULO_DA_SENSIBILIDADE[entrada.sensibilidade.nivel]}${entrada.sensibilidade.piiPossivel ? ' · PII possível' : ''}`,
-        entrada.acesso.via,
+        textoNeutro(entrada.acesso.via),
       ]),
     );
   }
@@ -41,8 +45,10 @@ export function renderizarCatalogoMd(clienteNome: string, brain: SemMd): string 
   if (comEsquema.length > 0) {
     linhas.push('', '## Esquemas', '');
     for (const entrada of comEsquema) {
-      linhas.push(`### ${entrada.titulo}`, '', `\`${entrada.urn}\` · grão: ${entrada.grao ?? '—'}`, '');
-      for (const coluna of entrada.esquema) linhas.push(`- \`${coluna.nome}\` ${coluna.tipo} — ${coluna.descricao}`);
+      linhas.push(`### ${textoNeutro(entrada.titulo)}`, '', `\`${entrada.urn}\` · grão: ${textoNeutro(entrada.grao ?? '—')}`, '');
+      for (const coluna of entrada.esquema) {
+        linhas.push(`- \`${coluna.nome}\` ${textoNeutro(coluna.tipo)} — ${textoNeutro(coluna.descricao)}`);
+      }
       linhas.push('');
     }
   }

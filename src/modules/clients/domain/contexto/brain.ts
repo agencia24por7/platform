@@ -13,8 +13,9 @@ import { calcularCompletude } from './completude.ts';
 import { jsonEstavel } from './jsonEstavel.ts';
 import { entraNoBrain, type ArquivoDeContexto, type ContextoBruto, type ItemDeLista, type Marcacao } from './tipos.ts';
 import { rotuloDaOpcao, valorPreenchido } from './valores.ts';
+import { AVISO_DE_DADOS, emBloco, emLinha } from '../../../../shared/markdown/dadoNoMarkdown.ts';
 
-export const VERSAO_DO_BRAIN = 1;
+export const VERSAO_DO_BRAIN = 2;
 
 export type EntradaDoBrain = {
   readonly organizationId: string;
@@ -117,9 +118,17 @@ function comDoisPontos(rotulo: string): string {
 }
 
 function linhaDeValor(rotulo: string, texto: string, sufixo: string, multilinha: boolean): string[] {
-  if (!multilinha && !texto.includes('\n')) return [`- **${comDoisPontos(rotulo)}** ${texto} ${sufixo}`.trimEnd()];
+  if (!multilinha && !texto.includes('\n')) return [`- **${comDoisPontos(rotulo)}** ${emLinha(texto)} ${sufixo}`.trimEnd()];
   const titulo = `- **${comDoisPontos(rotulo)}** ${sufixo}`.trimEnd();
-  return [titulo, '', ...texto.split('\n').map((l) => (l ? `  ${l}` : '')), ''];
+  return [titulo, '', ...emBloco(texto, '  '), ''];
+}
+
+const LISTAS_COM_DADO_PESSOAL: ReadonlySet<string> = new Set(
+  CATALOGO.flatMap((secao) => secao.campos.filter((c): c is CampoLista => c.tipo === 'lista' && c.avisoDeDadoPessoal !== null).map((c) => c.key)),
+);
+
+export function listaComDadoPessoal(listKey: string): boolean {
+  return LISTAS_COM_DADO_PESSOAL.has(listKey);
 }
 
 type Organizado = {
@@ -130,6 +139,7 @@ type Organizado = {
 };
 
 function organizar(contexto: ContextoBruto): Organizado {
+  const itensPessoais = new Set(contexto.itens.filter((i) => listaComDadoPessoal(i.listKey)).map((i) => i.id));
   const entradas = new Map(
     contexto.campos.filter((e) => entraNoBrain(e) && valorPreenchido(e.valor)).map((e) => [e.fieldKey, e]),
   );
@@ -141,7 +151,9 @@ function organizar(contexto: ContextoBruto): Organizado {
   }
   for (const lista of itens.values()) lista.sort((a, b) => a.posicao - b.posicao || a.id.localeCompare(b.id));
 
-  const arquivos = [...contexto.arquivos].sort((a, b) => a.id.localeCompare(b.id));
+  const arquivos = contexto.arquivos
+    .filter((a) => a.itemId === null || !itensPessoais.has(a.itemId))
+    .sort((a, b) => a.id.localeCompare(b.id));
   const arquivosPorCampo = new Map<string, ArquivoDeContexto[]>();
   for (const arquivo of arquivos.filter((a) => a.itemId === null)) {
     const lista = arquivosPorCampo.get(arquivo.fieldKey) ?? [];
@@ -169,10 +181,17 @@ function valorDoCampo(campo: CampoSimples, org: Organizado): { texto: string; ma
 function markdownDaLista(campo: CampoLista, itens: readonly ItemDeLista[], org: Organizado): string[] {
   const linhas = [`### ${campo.rotulo}`, ''];
   if (itens.length === 0) return [...linhas, '_Nenhum item confirmado._', ''];
+  if (listaComDadoPessoal(campo.key)) {
+    return [
+      ...linhas,
+      `_Lista com possível dado pessoal: ${itens.length} item(ns) confirmado(s), fora deste arquivo. Acesso restrito em ${campo.arquivoBrain}._`,
+      '',
+    ];
+  }
 
   itens.forEach((item, indice) => {
     const titulo = item.dados[campo.campoTitulo];
-    linhas.push(`#### ${indice + 1}. ${titulo === undefined ? campo.rotuloDoItem : String(titulo)}`, '');
+    linhas.push(`#### ${indice + 1}. ${titulo === undefined ? campo.rotuloDoItem : emLinha(String(titulo))}`, '');
     linhas.push(`- **id:** \`${item.id}\` ${etiqueta(item)}`);
     for (const sub of campo.item) {
       const valor = item.dados[sub.key];
@@ -199,7 +218,8 @@ function markdownDaSecao(secao: Secao, org: Organizado): string[] {
     simples.push(...linhaDeValor(campo.rotulo, valor.texto, etiqueta(valor.marcacao), campo.tipo === 'texto_longo'));
   }
 
-  if (simples.length === 0 && listas.every((l) => !l.startsWith('#### '))) {
+  const listasVazias = secao.campos.every((c) => c.tipo !== 'lista' || (org.itens.get(c.key) ?? []).length === 0);
+  if (simples.length === 0 && listasVazias) {
     linhas.push('_Sem dados confirmados nesta seção._', '');
     return linhas;
   }
@@ -208,10 +228,13 @@ function markdownDaSecao(secao: Secao, org: Organizado): string[] {
 
 function perfilMarkdown(entrada: EntradaDoBrain, org: Organizado): string {
   const cabecalho = [
-    `# Contexto do cliente: ${entrada.nomeDoCliente}`,
+    `# Contexto do cliente: ${emLinha(entrada.nomeDoCliente)}`,
     '',
     `> Mapa de contexto exportado pela Orla (esquema ${VERSAO_DO_BRAIN}, catálogo ${VERSAO_DO_CATALOGO}). ` +
-      'Só entram dados confirmados; cada informação traz o status (Fato, Hipótese ou Desejo) e a fonte.',
+      'Só entram dados confirmados; cada informação traz o status (Fato, Hipótese ou Desejo) e a fonte. ' +
+      'Listas com possível dado pessoal aparecem só com a contagem.',
+    '>',
+    `> ${AVISO_DE_DADOS}`,
     '',
   ];
   const corpo = CATALOGO.flatMap((secao) => markdownDaSecao(secao, org));
@@ -236,7 +259,10 @@ function perfilJson(entrada: EntradaDoBrain, org: Organizado): string {
     const listas: Record<string, unknown> = {};
     for (const campo of secao.campos) {
       if (campo.tipo === 'lista') {
-        listas[campo.key] = (org.itens.get(campo.key) ?? []).map(itemJson);
+        const itens = org.itens.get(campo.key) ?? [];
+        listas[campo.key] = listaComDadoPessoal(campo.key)
+          ? { restrita: true, total: itens.length, arquivo: campo.arquivoBrain }
+          : itens.map(itemJson);
         continue;
       }
       const e = org.entradas.get(campo.key);
@@ -251,6 +277,7 @@ function perfilJson(entrada: EntradaDoBrain, org: Organizado): string {
       catalogoVersao: VERSAO_DO_CATALOGO,
       clientId: entrada.clientId,
       cliente: entrada.nomeDoCliente,
+      aviso: AVISO_DE_DADOS,
       secoes,
     },
     2,

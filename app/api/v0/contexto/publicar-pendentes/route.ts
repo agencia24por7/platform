@@ -5,6 +5,8 @@ import { modules } from '@/composition';
 
 export const dynamic = 'force-dynamic';
 
-export const POST = workerRoute(publicarBrainsPendentesBody, async (input) =>
-  ok(await modules().contexto.publicarPendentes(input.limite)),
-);
+export const POST = workerRoute(publicarBrainsPendentesBody, async (input) => {
+  const publicacao = await modules().contexto.publicarPendentes(input.limite);
+  const varredura = await modules().contexto.varrerArquivos();
+  return ok({ ...publicacao, varredura });
+});

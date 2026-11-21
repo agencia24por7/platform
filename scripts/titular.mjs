@@ -11,21 +11,25 @@ import {
   validarEntrada as entradaValida,
   validarFontes,
 } from './bq/expurgo.mjs';
+import { etapasDoExpurgo, expurgarArmazenamento } from './lib/armazenamentoDoTitular.mjs';
 
 const USO = `uso:
   node scripts/titular.mjs exportar <email>
   node scripts/titular.mjs anonimizar <email> [--confirmar]
   node scripts/titular.mjs excluir-cliente <client_id> [--confirmar] [--por <quem>]
   node scripts/titular.mjs restaurar-cliente <client_id> [--confirmar] [--por <quem>]
-  node scripts/titular.mjs expurgar-cliente <client_id> [--confirmar]
+  node scripts/titular.mjs expurgar-cliente <client_id> [--confirmar] [--somente-armazenamento]
   node scripts/titular.mjs expurgar-fonte <organization_id> <plataforma> <external_id> [--confirmar]
   node scripts/titular.mjs pedidos-de-exclusao listar
   node scripts/titular.mjs pedidos-de-exclusao andamento <codigo> [--confirmar] [--por <quem>]
   node scripts/titular.mjs pedidos-de-exclusao concluir <codigo> --evidencia <texto> [--confirmar] [--por <quem>]
 
-excluir-cliente é a exclusão lógica (nada é apagado; restaurar-cliente desfaz).
-expurgar-cliente apaga de vez no BigQuery e depois no Postgres: só para obrigação legal,
-com o cliente já excluído logicamente. Se falhar no meio, rode o mesmo comando de novo.
+excluir-cliente é a exclusão lógica (nada é apagado; restaurar-cliente desfaz); despublica do
+bucket o brain derivado (contexto/brain/ e brain/), que volta a ser gerado se o cliente for restaurado.
+expurgar-cliente apaga de vez no BigQuery, no bucket do contexto (orgs/{org}/clientes/{cliente}/,
+todas as gerações) e por fim no Postgres: só para obrigação legal, com o cliente já excluído
+logicamente. Se falhar no meio, rode o mesmo comando de novo. --somente-armazenamento repete só
+o expurgo do bucket (também depois de o cliente sumir do Postgres).
 expurgar-fonte apaga do BigQuery todos os dados de uma fonte (fatos, dimensões, staging) numa
 organização, qualquer que seja o cliente: é o expurgo de quando a autorização acaba (YouTube, ADR 0029).
 pedidos-de-exclusao lista e atende os pedidos recebidos pelo callback de exclusão da Meta.
@@ -43,6 +47,7 @@ const PSQL = ['docker', 'exec', '-i', 'orla-postgres', 'psql', '-U', 'postgres',
 
 const [comando, alvo, ...resto] = process.argv.slice(2);
 const confirmar = resto.includes('--confirmar');
+const somenteArmazenamento = resto.includes('--somente-armazenamento');
 const local = resto.includes('--local') || process.argv.includes('--local');
 const indiceDoPor = resto.indexOf('--por');
 const por = indiceDoPor >= 0 ? resto[indiceDoPor + 1] : `titular.mjs (${process.env.USER ?? 'operador'})`;
@@ -163,6 +168,9 @@ function estadoDoCliente(id) {
     SELECT json_build_object(
       'existe', count(*) > 0,
       'id', min(id::text),
+      'organizationId', coalesce(min(organization_id::text), (
+        SELECT min(organization_id::text) FROM audit.audit_log
+         WHERE action = 'client.purged' AND target_type = 'client' AND target_id = ${id}::uuid::text)),
       'excluido', bool_or(excluido_em IS NOT NULL),
       'expurgado', EXISTS (SELECT 1 FROM audit.audit_log
                            WHERE action = 'client.purged' AND target_type = 'client' AND target_id = ${id}::uuid::text))
@@ -246,6 +254,26 @@ async function sincronizarDimensoes({ obrigatoria = false } = {}) {
   }
 }
 
+async function purgarArmazenamento(organizationId, clientId, modo, { obrigatoria, contexto }) {
+  const base = local ? 'http://localhost:3000' : APP_URL;
+  let token = '';
+  try {
+    token = tokenDoWorker();
+  } catch (erro) {
+    token = '';
+    console.warn(`Token do worker indisponível (${erro.message}).`);
+  }
+  const resultado = await expurgarArmazenamento({ base, token, organizationId, clientId, modo, local });
+  if (resultado.ok) {
+    const sufixo = resultado.desativado ? ' (bucket desativado neste ambiente)' : '';
+    console.log(`Bucket do contexto (${modo}): ${resultado.apagados} objeto(s) apagado(s), todas as gerações${sufixo}.`);
+    return true;
+  }
+  if (obrigatoria) falhar(`O expurgo do bucket falhou (${resultado.erro}). ${contexto}`);
+  console.warn(`AVISO: o bucket não foi despublicado (${resultado.erro}). ${contexto}`);
+  return false;
+}
+
 async function excluirCliente(clientId) {
   const id = literal(clientId);
   const quem = literal(exigirPor(por));
@@ -255,8 +283,13 @@ async function excluirCliente(clientId) {
     console.log('\nSimulação. Rode de novo com --confirmar para a exclusão lógica (some do app, sai da coleta, nada é apagado).');
     return;
   }
-  console.log(consultar(`SELECT jsonb_pretty(core.excluir_cliente(${id}::uuid, ${quem}));`));
+  const excluido = JSON.parse(consultar(`SELECT core.excluir_cliente(${id}::uuid, ${quem});`));
+  console.log(JSON.stringify(excluido, null, 2));
   await sincronizarDimensoes();
+  await purgarArmazenamento(excluido.organizacao, clientId, 'derivados', {
+    obrigatoria: false,
+    contexto: 'A varredura do brain (publicar-pendentes) despublica o export do cliente excluído na próxima rodada; ou rode de novo pelo workflow.',
+  });
   console.log(`Cliente excluído logicamente. Para desfazer: node scripts/titular.mjs restaurar-cliente ${clientId} --confirmar`);
 }
 
@@ -281,16 +314,36 @@ async function expurgarCliente(idInformado) {
   }
   const clientId = estado.existe ? estado.id : idInformado;
   const id = literal(clientId);
+  const organizationId = estado.organizationId;
+  const etapas = etapasDoExpurgo({ existe: estado.existe, local, somenteArmazenamento });
+
+  if (somenteArmazenamento) {
+    console.log(`Só o bucket do contexto: orgs/${organizationId}/clientes/${clientId}/ (todas as gerações).`);
+    if (!estado.excluido && estado.existe) {
+      console.log('O cliente ainda não foi excluído logicamente: o app recusa apagar o bucket de cliente ativo.');
+      if (confirmar) process.exit(1);
+    }
+    if (!confirmar) {
+      console.log('Simulação. Rode de novo com --confirmar para apagar o prefixo do cliente no bucket.');
+      return;
+    }
+    await purgarArmazenamento(organizationId, clientId, 'tudo', { obrigatoria: true, contexto: 'Rode o mesmo comando de novo: é idempotente.' });
+    return;
+  }
+
   const tabelas = local ? [] : tabelasComCliente();
 
   if (!estado.existe) {
-    console.log('O cliente já não existe no Postgres: o expurgo foi até o fim lá. Só falta repetir a limpeza por client_id no BigQuery.');
+    console.log('O cliente já não existe no Postgres: o expurgo foi até o fim lá. Falta repetir o bucket do contexto e a limpeza por client_id no BigQuery.');
     if (!confirmar) {
-      console.log(`Simulação. Rode de novo com --confirmar para apagar as linhas com client_id em ${tabelas.join(', ') || '(nenhuma tabela)'}.`);
+      console.log(`Simulação. Rode de novo com --confirmar para apagar o prefixo do cliente no bucket e as linhas com client_id em ${tabelas.join(', ') || '(nenhuma tabela)'}.`);
       return;
     }
-    if (!local) rodarPassos(passosPorClientId(tabelas, DESTINO), clientId, 'Rode o mesmo comando de novo: cada passo é idempotente.');
-    await sincronizarDimensoes();
+    await executarEtapas(etapas, {
+      armazenamento: () => purgarArmazenamento(organizationId, clientId, 'tudo', { obrigatoria: true, contexto: 'Rode o mesmo comando de novo: cada passo é idempotente.' }),
+      bigquery_por_client_id: () => rodarPassos(passosPorClientId(tabelas, DESTINO), clientId, 'Rode o mesmo comando de novo: cada passo é idempotente.'),
+      dimensoes: () => sincronizarDimensoes(),
+    });
     console.log('Limpeza por client_id concluída.');
     return;
   }
@@ -301,6 +354,8 @@ async function expurgarCliente(idInformado) {
     console.log(`BigQuery: tabelas do manifesto (scripts/bq/manifesto), pelo período de posse em dim_fonte_scd2: ${FATOS_POR_FONTE.map((f) => `${f.tabela}[${f.plataforma}${f.todoPeriodo ? ', todo o período' : ''}]`).join(', ')}`);
     console.log(`BigQuery: depois, as linhas das fontes que só foram deste cliente (${fontes.length} fonte(s)), e por fim as linhas com client_id em ${tabelas.join(', ')}`);
   }
+  console.log(`Bucket do contexto: orgs/${organizationId}/clientes/${clientId}/ inteiro (arquivos/, contexto/, brain/, todas as gerações), antes do Postgres.`);
+  console.log(`Ordem: ${etapas.join(' → ')}`);
   if (!estado.excluido) {
     console.log('\nO cliente ainda não foi excluído logicamente. Rode antes excluir-cliente (tira o cliente da coleta) e depois o expurgo.');
     if (confirmar) process.exit(1);
@@ -308,32 +363,45 @@ async function expurgarCliente(idInformado) {
 
   if (!confirmar) {
     console.log('\nSimulação. EXPURGO apaga de vez e não tem volta: use só por obrigação legal de eliminação (docs/lgpd/atendimento-ao-titular.md).');
-    console.log('Rode de novo com --confirmar para expurgar no BigQuery e depois no Postgres.');
+    console.log('Rode de novo com --confirmar para expurgar no BigQuery, no bucket e depois no Postgres.');
     return;
   }
 
-  if (!local) {
-    await sincronizarDimensoes({ obrigatoria: true });
-    if (fontes.length > 0) {
-      const versoes = versoesDoClienteEmDimFonte(clientId);
-      if (!(versoes > 0)) {
-        falhar(`dim_fonte_scd2 não tem versões do cliente ${clientId}, que tem ${fontes.length} fonte(s) no Postgres. Expurgo abortado antes de apagar qualquer coisa: confira a sincronização de dimensões.`);
+  await executarEtapas(etapas, {
+    dimensoes_obrigatoria: () => sincronizarDimensoes({ obrigatoria: true }),
+    bigquery: () => {
+      if (fontes.length > 0) {
+        const versoes = versoesDoClienteEmDimFonte(clientId);
+        if (!(versoes > 0)) {
+          falhar(`dim_fonte_scd2 não tem versões do cliente ${clientId}, que tem ${fontes.length} fonte(s) no Postgres. Expurgo abortado antes de apagar qualquer coisa: confira a sincronização de dimensões.`);
+        }
       }
-    }
-    const plano = planoDoExpurgo({ manifesto: FATOS_POR_FONTE, tabelasComCliente: tabelas, fontes, destino: DESTINO });
-    rodarPassos(plano, clientId, 'O Postgres ainda não foi tocado. Rode o mesmo comando de novo: cada passo é idempotente.');
-  }
+      const plano = planoDoExpurgo({ manifesto: FATOS_POR_FONTE, tabelasComCliente: tabelas, fontes, destino: DESTINO });
+      rodarPassos(plano, clientId, 'O Postgres ainda não foi tocado. Rode o mesmo comando de novo: cada passo é idempotente.');
+    },
+    armazenamento: () =>
+      purgarArmazenamento(organizationId, clientId, 'tudo', {
+        obrigatoria: true,
+        contexto: 'O Postgres ainda não foi tocado. Rode o mesmo comando de novo: cada passo é idempotente.',
+      }),
+    postgres: () => console.log(consultar(`SELECT jsonb_pretty(core.expurgar_cliente(${id}::uuid));`)),
+    bigquery_por_client_id: () =>
+      rodarPassos(
+        passosPorClientId(tabelas, DESTINO),
+        clientId,
+        'O Postgres já foi expurgado. Rode o mesmo comando de novo: ele só repete o bucket e a limpeza por client_id.',
+      ),
+    dimensoes: () => sincronizarDimensoes(),
+  });
+  console.log('Cliente expurgado. Os backups expiram em até 30 dias, o time travel do BigQuery em até 7 e a exclusão reversível do bucket em 7 (docs/lgpd/retencao.md).');
+}
 
-  console.log(consultar(`SELECT jsonb_pretty(core.expurgar_cliente(${id}::uuid));`));
-  if (!local) {
-    rodarPassos(
-      passosPorClientId(tabelas, DESTINO),
-      clientId,
-      'O Postgres já foi expurgado. Rode o mesmo comando de novo: ele só repete a limpeza por client_id.',
-    );
+async function executarEtapas(etapas, executores) {
+  for (const etapa of etapas) {
+    const executor = executores[etapa];
+    if (!executor) falhar(`etapa sem executor: ${etapa}`);
+    await executor();
   }
-  await sincronizarDimensoes();
-  console.log('Cliente expurgado. Os backups expiram em até 30 dias e o time travel do BigQuery em até 7 (docs/lgpd/retencao.md).');
 }
 
 function executarNoBigQuerySemParametro(passo) {

@@ -5,7 +5,10 @@ import { readFileSync } from 'node:fs';
 import { before, describe, it } from 'node:test';
 import { BASE, appIsUp, sqlDeConexao } from './helpers.mjs';
 
+const CONTAINER = process.env.ORLA_PG_CONTAINER ?? 'orla-postgres';
+
 function senhaDoApp() {
+  if (process.env.APP_DB_PASSWORD) return process.env.APP_DB_PASSWORD;
   return readFileSync('.env', 'utf8')
     .split('\n')
     .find((linha) => linha.startsWith('APP_DB_PASSWORD='))
@@ -13,19 +16,20 @@ function senhaDoApp() {
 }
 
 const dono = (sql) =>
-  execFileSync('docker', ['exec', '-i', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
+  execFileSync('docker', ['exec', '-i', CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
     encoding: 'utf8',
   }).trim();
 
 const comoApp = (sql) =>
   execFileSync(
     'docker',
-    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoApp()}`, 'orla-postgres',
+    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoApp()}`, CONTAINER,
      'psql', '-U', 'orla_app', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
     { encoding: 'utf8' },
   ).trim();
 
 function senhaDoWorker() {
+  if (process.env.WORKER_DB_PASSWORD) return process.env.WORKER_DB_PASSWORD;
   return readFileSync('.env', 'utf8')
     .split('\n')
     .find((linha) => linha.startsWith('WORKER_DB_PASSWORD='))
@@ -35,7 +39,7 @@ function senhaDoWorker() {
 const comoWorker = (sql) =>
   execFileSync(
     'docker',
-    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoWorker()}`, 'orla-postgres',
+    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoWorker()}`, CONTAINER,
      'psql', '-U', 'orla_worker', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
     { encoding: 'utf8' },
   ).trim();
@@ -140,6 +144,7 @@ describe('privacidade: revogação, expurgo do YouTube e pedidos da Meta (ADR 00
 
   it('job do YouTube: título velho vira id, canal sem autorização entra com 7 dias de carência e sai se voltar a ter', () => {
     const parada = conexao(org, 'youtube', `yt-c-${marca}`, 'reauth_pending');
+    dono(`UPDATE integrations.connections SET status_desde = now() - interval '31 days' WHERE id = '${parada}'`);
     const velho = canal(org, parada, `UCvelho${marca}`);
     dono(`UPDATE integrations.connection_accounts SET discovered_at = now() - interval '31 days' WHERE id = '${velho}'`);
 
@@ -161,6 +166,70 @@ describe('privacidade: revogação, expurgo do YouTube e pedidos da Meta (ADR 00
     comoWorker('SELECT privacidade.preparar_conformidade_youtube()');
     assert.equal(umaLinha(dono(
       `SELECT cancelado_em IS NOT NULL FROM privacidade.expurgos_de_fonte WHERE external_id = 'UCvelho${marca}'`)), 't');
+  });
+
+  it('reauth_pending e degraded recentes ainda contam como autorização: nada é enfileirado', () => {
+    const reautorizar = conexao(org, 'youtube', `yt-r-${marca}`, 'reauth_pending');
+    const degradada = conexao(org, 'youtube', `yt-d-${marca}`, 'degraded');
+    canal(org, reautorizar, `UCreauth${marca}`);
+    canal(org, degradada, `UCdegradado${marca}`);
+    dono(`UPDATE integrations.connections SET status_desde = now() - interval '8 days' WHERE id IN ('${reautorizar}', '${degradada}')`);
+
+    comoWorker('SELECT privacidade.preparar_conformidade_youtube()');
+    assert.equal(umaLinha(dono(
+      `SELECT count(*) FROM privacidade.expurgos_de_fonte WHERE external_id IN ('UCreauth${marca}', 'UCdegradado${marca}')`)), '0',
+      'reautorizar no dia 8 não pode encontrar os dados apagados');
+
+    const revogada = conexao(org, 'youtube', `yt-v-${marca}`, 'revoked');
+    canal(org, revogada, `UCrevogado${marca}`);
+    comoWorker('SELECT privacidade.preparar_conformidade_youtube()');
+    assert.equal(umaLinha(dono(
+      `SELECT count(*) FROM privacidade.expurgos_de_fonte WHERE external_id = 'UCrevogado${marca}' AND cancelado_em IS NULL`)), '1',
+      'revogada não conta como autorização');
+  });
+
+  it('corte do cofre (todas as conexões em reauth_pending de uma vez) nunca enfileira nem executa expurgo', () => {
+    const cortada = conexao(org, 'youtube', `yt-corte-${marca}`, 'active');
+    canal(org, cortada, `UCcorte${marca}`);
+    const jaNaFila = conexao(org, 'youtube', `yt-fila-${marca}`, 'revoked');
+    canal(org, jaNaFila, `UCfila${marca}`);
+    comoWorker('SELECT privacidade.preparar_conformidade_youtube()');
+    dono(`UPDATE privacidade.expurgos_de_fonte SET apos = now() - interval '1 minute' WHERE external_id = 'UCfila${marca}'`);
+
+    try {
+      dono(`INSERT INTO integrations.corte_para_cofre_refs (connection_id, organization_id, platform, status_anterior)
+            VALUES ('${cortada}', '${org}', 'youtube', 'active')`);
+      dono(`UPDATE integrations.connections SET status = 'reauth_pending' WHERE id = '${cortada}'`);
+      dono(`UPDATE integrations.connections SET status_desde = now() - interval '60 days' WHERE id = '${cortada}'`);
+
+      const resumo = JSON.parse(comoWorker('SELECT privacidade.preparar_conformidade_youtube()'));
+      assert.equal(resumo.pausadoPeloCorte, true);
+      assert.equal(resumo.enfileirados, 0);
+      assert.equal(umaLinha(dono(`SELECT count(*) FROM privacidade.expurgos_de_fonte WHERE external_id = 'UCcorte${marca}'`)), '0');
+      assert.ok(!comoWorker('SELECT external_id FROM privacidade.expurgos_de_fonte_vencidos(500)').includes(`UCfila${marca}`),
+        'durante o corte nenhum expurgo por falta de autorização é executado');
+    } finally {
+      dono(`DELETE FROM integrations.corte_para_cofre_refs WHERE connection_id = '${cortada}'`);
+    }
+    assert.ok(comoWorker('SELECT external_id FROM privacidade.expurgos_de_fonte_vencidos(500)').includes(`UCfila${marca}`),
+      'terminado o corte, o expurgo da conexão revogada volta à fila');
+  });
+
+  it('pedido de exclusão da Meta com a pimenta dedicada migra o pseudônimo antigo e mantém o código', () => {
+    const usuario = String(marca + 7).slice(-9);
+    conexao(org, 'meta', usuario);
+    const antigo = hash(`sessao-${usuario}`);
+    const novo = hash(`pimenta-${usuario}`);
+    const codigo = `MIGRA${hash(`m-${marca}`).slice(0, 18)}`.toUpperCase();
+    const primeiro = umaLinha(comoApp(
+      `SELECT codigo FROM privacidade.registrar_pedido_de_exclusao_meta('${antigo}', '${usuario}', '${codigo}')`));
+    assert.equal(primeiro, codigo);
+    const segundo = umaLinha(comoApp(
+      `SELECT codigo || '|' || novo FROM privacidade.registrar_pedido_de_exclusao_meta('${novo}', ARRAY['${antigo}'], '${usuario}', 'OUTRO${codigo}')`));
+    assert.equal(segundo, `${codigo}|false`);
+    assert.equal(umaLinha(dono(`SELECT usuario_externo_hash FROM privacidade.pedidos_de_exclusao WHERE codigo_de_confirmacao = '${codigo}'`)), novo);
+    assert.match(falhaDe(() => comoApp(
+      `SELECT * FROM privacidade.registrar_pedido_de_exclusao_meta('nao-hex', ARRAY[]::text[], '${usuario}', 'X${codigo}')`)) ?? '', /pseudônimo inválido/);
   });
 
   it('pedido de exclusão da Meta: idempotente por usuário, liga as conexões da Meta e não guarda o id', () => {
@@ -234,6 +303,7 @@ describe('posse legada: ids preenchidos só quando o nome não é ambíguo (ADR 
        VALUES ('${org}', 'user', '${acao}', 'connection_account', 'x', '${JSON.stringify(metadata)}'::jsonb) RETURNING id`));
 
     const legadoUnico = linha('connection_account.unlink', { de: 'Único' });
+    const preenchidoErrado = linha('connection_account.unlink', { de: 'Repetido', deId: unico, idsPreenchidosPela: '0080' });
     const legadoAmbiguo = linha('connection_account.unlink', { de: 'Repetido' });
     linha('connection_account.reassigned', { de: 'Nome Antigo', deId: renomeado, para: 'X', paraId: unico });
     const legadoRenomeado = linha('ad_account.unlinked', { de: 'Nome Antigo' });
@@ -244,8 +314,11 @@ describe('posse legada: ids preenchidos só quando o nome não é ambíguo (ADR 
     const metadata = (id) => JSON.parse(umaLinha(dono(`SELECT metadata FROM audit.audit_log WHERE id = '${id}'`)));
 
     assert.equal(metadata(legadoUnico).deId, unico);
-    assert.equal(metadata(legadoUnico).idsPreenchidosPela, '0080');
+    assert.equal(metadata(legadoUnico).idsPreenchidosPela, '0133');
     assert.equal(metadata(legadoAmbiguo).deId, undefined);
+    assert.equal(metadata(legadoAmbiguo).posseDesconhecida, true);
+    assert.equal(metadata(preenchidoErrado).deId, undefined, 'o corretivo tira o id que a 0080 pôs por nome ambíguo');
+    assert.deepEqual(metadata(preenchidoErrado).idsRemovidos, { deId: unico });
     assert.equal(metadata(legadoRenomeado).deId, renomeado);
     assert.equal(metadata(legadoDesconhecido).deId, undefined);
     assert.equal(metadata(legadoLink).clientId, unico);
@@ -253,6 +326,41 @@ describe('posse legada: ids preenchidos só quando o nome não é ambíguo (ADR 
     assert.equal(umaLinha(dono(`SELECT automation.dono_anterior_da_auditoria('${org}', metadata) FROM audit.audit_log WHERE id = '${legadoRenomeado}'`)), renomeado);
     assert.equal(umaLinha(dono(`SELECT automation.dono_anterior_da_auditoria('${org}', metadata) IS NULL FROM audit.audit_log WHERE id = '${legadoAmbiguo}'`)), 't');
     assert.match(falhaDe(() => comoApp('SELECT automation.preencher_ids_de_posse_legados()')) ?? '', /permission denied/);
+    const repetida = JSON.parse(dono('SELECT automation.preencher_ids_de_posse_legados()'));
+    assert.deepEqual(repetida, { linhasCorrigidas: 0, idsPreenchidos: 0, posseDesconhecida: 0 }, 'idempotente');
+  });
+
+  it('cliente renomeado e outro cliente com o nome antigo: a linha antiga não vai para quem herdou o nome', () => {
+    const org = novaOrganizacao('Homonimo');
+    const cliente = (nome) => umaLinha(dono(
+      `INSERT INTO core.clients (organization_id, name, business_model) VALUES ('${org}', '${nome}', 'leads') RETURNING id`));
+    const linha = (metadata, atras) => umaLinha(dono(
+      `INSERT INTO audit.audit_log (organization_id, actor_type, action, target_type, target_id, metadata, occurred_at)
+       VALUES ('${org}', 'user', 'connection_account.unlink', 'connection_account', 'x', '${JSON.stringify(metadata)}'::jsonb,
+               now() - interval '${atras}') RETURNING id`));
+    const metadata = (id) => JSON.parse(umaLinha(dono(`SELECT metadata FROM audit.audit_log WHERE id = '${id}'`)));
+
+    const renomeado = cliente('Loja Velha');
+    const comEvidencia = linha({ de: 'Loja Velha' }, '1 second');
+    dono(`UPDATE core.clients SET name = 'Loja Nova' WHERE id = '${renomeado}'`);
+    assert.equal(umaLinha(dono(
+      `SELECT metadata ->> 'de' || '>' || (metadata ->> 'para') FROM audit.audit_log WHERE action = 'client.renamed' AND target_id = '${renomeado}'`)),
+      'Loja Velha>Loja Nova', 'renomear vira evidência na trilha');
+    const herdeiro = cliente('Loja Velha');
+
+    const semEvidencia = cliente('Antiga Sem Trilha');
+    const antiga = linha({ de: 'Antiga Sem Trilha' }, '1 second');
+    dono(`ALTER TABLE core.clients DISABLE TRIGGER clients_registrar_renomeacao;
+          UPDATE core.clients SET name = 'Atual Sem Trilha' WHERE id = '${semEvidencia}';
+          ALTER TABLE core.clients ENABLE TRIGGER clients_registrar_renomeacao;`);
+    cliente('Antiga Sem Trilha');
+
+    dono('SELECT automation.preencher_ids_de_posse_legados()');
+    assert.equal(metadata(comEvidencia).deId, undefined, 'nome que passou por dois clientes é ambíguo');
+    assert.equal(metadata(comEvidencia).posseDesconhecida, true);
+    assert.equal(metadata(antiga).deId, undefined, 'cliente criado depois da linha não pode ser o dono dela');
+    assert.equal(umaLinha(dono(`SELECT automation.dono_anterior_da_auditoria('${org}', metadata) IS NULL FROM audit.audit_log WHERE id = '${antiga}'`)), 't');
+    assert.notEqual(metadata(comEvidencia).deId, herdeiro);
   });
 });
 

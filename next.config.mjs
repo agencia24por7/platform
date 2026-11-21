@@ -19,7 +19,7 @@ export default {
   poweredByHeader: false,
   serverExternalPackages: ['postgres', '@google-cloud/kms'],
   experimental: {
-    proxyClientMaxBodySize: '26mb',
+    proxyClientMaxBodySize: '1mb',
   },
   async headers() {
     return [

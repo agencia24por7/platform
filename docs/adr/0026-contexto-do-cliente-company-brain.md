@@ -237,3 +237,7 @@ se preciso, uma migração nova que faça `DROP` das tabelas
 `core.client_context_*`, das funções `core.contexto_*` e do gatilho
 `clients_revoga_links_de_contexto`. O prefixo `.../contexto/` do bucket pode
 ser apagado sem efeito no resto.
+
+## Adendo (2026-11-20)
+
+Revisado pela ADR 0033 (revisão adversarial de contexto, brain e privacidade): reserva de cota antes do bucket, ordem de validação do envio, expurgo e despublicação do bucket, carência do YouTube, posse legada com renomeações, pimenta dedicada da Meta, limite de leitura por cliente e listas pessoais fora do perfil. Onde houver divergência, vale a 0033.

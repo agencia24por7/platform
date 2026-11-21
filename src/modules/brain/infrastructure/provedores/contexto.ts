@@ -14,6 +14,8 @@ const VERSAO = 1;
 const ID = 'contexto';
 const TIPOS_RESUMIVEIS = new Set(['selecao', 'multipla', 'booleano', 'escala', 'numero', 'dinheiro']);
 const TAMANHO_DO_RESUMO = 560;
+export const AVISO_DA_SECAO_COM_DADO_PESSOAL =
+  'Listas com possível dado pessoal ficam fora de perfil.json e perfil.md (só a contagem); o conteúdo está na entrada da lista, de uso restrito.';
 
 export function marcaAgregada(marcacoes: readonly MarcacaoDoContexto[]): Epistemico | null {
   if (marcacoes.length === 0) return null;
@@ -109,6 +111,7 @@ function entradaDaSecao(ctx: ContextoDeDescoberta, contexto: ContextoParaCatalog
       avisos: [
         ...(essenciaisFaltando > 0 ? [`${essenciaisFaltando} campo(s) essencial(is) sem resposta confirmada.`] : []),
         ...(epistemico && epistemico.sugestoesPendentes > 0 ? [`${epistemico.sugestoesPendentes} sugestão(ões) aguardando confirmação.`] : []),
+        ...(pessoal ? [AVISO_DA_SECAO_COM_DADO_PESSOAL] : []),
       ],
     },
     acesso: {

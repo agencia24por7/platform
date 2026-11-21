@@ -63,7 +63,8 @@ export function createPedidosDeExclusaoRepository(): PedidosDeExclusaoRepository
   return {
     async registrarDaMeta(input) {
       const rows = (await sql()`
-        SELECT * FROM privacidade.registrar_pedido_de_exclusao_meta(${input.usuarioHash}, ${input.usuarioExterno}, ${input.codigo})
+        SELECT * FROM privacidade.registrar_pedido_de_exclusao_meta(
+          ${input.usuarioHash}, ${input.usuarioHashesAnteriores as string[]}::text[], ${input.usuarioExterno}, ${input.codigo})
       `) as unknown as RegistroRow[];
       const row = rows[0]!;
       return { codigo: row.codigo, situacao: row.situacao, novo: row.novo };

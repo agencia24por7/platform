@@ -116,7 +116,8 @@ function build() {
     expurgoDeFontes,
     pedidosDeExclusao: createPedidosDeExclusaoService(createPedidosDeExclusaoRepository(), {
       segredoDoApp: config.META_APP_SECRET,
-      pimenta: config.TRIA_SESSION_SECRET,
+      pimenta: config.META_EXCLUSAO_PEPPER ?? config.TRIA_SESSION_SECRET,
+      pimentasAnteriores: config.META_EXCLUSAO_PEPPER ? [config.TRIA_SESSION_SECRET] : [],
       enderecoPublico: config.TRIA_APP_BASE_URL,
     }),
   };

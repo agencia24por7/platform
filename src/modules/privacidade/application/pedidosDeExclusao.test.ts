@@ -14,13 +14,23 @@ function assinar(carga: Record<string, unknown>): string {
   return `${createHmac('sha256', SEGREDO).update(cargaCodificada).digest('base64url')}.${cargaCodificada}`;
 }
 
-function montar(segredoDoApp: string | null = SEGREDO) {
-  const abertos = new Map<string, string>();
+function montar(
+  segredoDoApp: string | null = SEGREDO,
+  pimentas: { pimenta: string; anteriores?: string[] } = { pimenta: 'pimenta' },
+  abertos = new Map<string, string>(),
+) {
   const chamadas: { usuarioHash: string; usuarioExterno: string }[] = [];
   let sequencia = 0;
   const repositorio: PedidosDeExclusaoRepository = {
     async registrarDaMeta(input) {
       chamadas.push({ usuarioHash: input.usuarioHash, usuarioExterno: input.usuarioExterno });
+      for (const anterior of input.usuarioHashesAnteriores) {
+        const codigo = abertos.get(anterior);
+        if (codigo && !abertos.has(input.usuarioHash)) {
+          abertos.delete(anterior);
+          abertos.set(input.usuarioHash, codigo);
+        }
+      }
       const existente = abertos.get(input.usuarioHash);
       if (existente) return { codigo: existente, situacao: 'pendente', novo: false };
       abertos.set(input.usuarioHash, input.codigo);
@@ -35,12 +45,13 @@ function montar(segredoDoApp: string | null = SEGREDO) {
   };
   const servico = createPedidosDeExclusaoService(repositorio, {
     segredoDoApp: segredoDoApp ?? undefined,
-    pimenta: 'pimenta',
+    pimenta: pimentas.pimenta,
+    pimentasAnteriores: pimentas.anteriores ?? [],
     enderecoPublico: 'https://platform.exemplo.test',
     agoraEmSegundos: () => AGORA,
     novoCodigo: () => `CODIGO${String(++sequencia).padStart(12, '0')}`,
   });
-  return { servico, chamadas };
+  return { servico, chamadas, abertos };
 }
 
 describe('pedidos de exclusão da Meta', () => {
@@ -67,6 +78,24 @@ describe('pedidos de exclusão da Meta', () => {
     assert.equal(primeiro.novo, true);
     assert.equal(segundo.novo, false);
     assert.notEqual(outro.resposta.confirmation_code, primeiro.resposta.confirmation_code);
+  });
+
+  it('trocar o segredo de sessão não quebra a idempotência: a pimenta é dedicada e o pseudônimo antigo migra', async () => {
+    const pedido = assinar({ algorithm: 'HMAC-SHA256', issued_at: AGORA, user_id: '42' });
+    const legado = montar(SEGREDO, { pimenta: 'segredo-de-sessao-antigo' });
+    const primeiro = await legado.servico.registrarDaMeta(pedido);
+
+    const novo = montar(SEGREDO, { pimenta: 'pimenta-dedicada', anteriores: ['segredo-de-sessao-antigo'] }, legado.abertos);
+    const segundo = await novo.servico.registrarDaMeta(pedido);
+    assert.ok(primeiro.ok && segundo.ok);
+    assert.equal(segundo.resposta.confirmation_code, primeiro.resposta.confirmation_code);
+    assert.equal(segundo.novo, false);
+    assert.notEqual(novo.chamadas[0]!.usuarioHash, legado.chamadas[0]!.usuarioHash);
+
+    const sessaoTrocada = montar(SEGREDO, { pimenta: 'pimenta-dedicada', anteriores: ['segredo-de-sessao-novo'] }, legado.abertos);
+    const terceiro = await sessaoTrocada.servico.registrarDaMeta(pedido);
+    assert.ok(terceiro.ok);
+    assert.equal(terceiro.resposta.confirmation_code, primeiro.resposta.confirmation_code);
   });
 
   it('assinatura inválida não chega ao banco', async () => {

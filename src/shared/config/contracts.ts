@@ -177,3 +177,18 @@ export const tokenDeAcessoBody = z.union([
 export const renovacaoProativaBody = z.object({
   limite: z.coerce.number().int().min(1).max(200).default(50),
 }).strict();
+
+export const expurgarArmazenamentoBody = z
+  .object({
+    organizationId: uuid,
+    clientId: uuid,
+    modo: z.enum(['tudo', 'derivados']),
+  })
+  .strict();
+
+export const varrerArquivosBody = z
+  .object({
+    limite: z.number().int().min(1).max(1000).default(200),
+    completa: z.boolean().default(false),
+  })
+  .strict();

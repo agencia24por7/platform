@@ -95,7 +95,27 @@ export type VistoPeloLink = {
   }[];
 };
 
-export type ResultadoPeloLink = 'ok' | 'conflito' | 'recusado' | 'fora_do_escopo' | 'nao_encontrado' | 'limite' | 'cota_excedida';
+export type ResultadoPeloLink =
+  | 'ok'
+  | 'conflito'
+  | 'recusado'
+  | 'fora_do_escopo'
+  | 'nao_encontrado'
+  | 'limite'
+  | 'cota_excedida'
+  | 'orcamento_excedido'
+  | 'reserva_invalida'
+  | 'tamanho_invalido';
+
+export type ResultadoDaReserva = 'ok' | 'recusado' | 'fora_do_escopo' | 'cota_excedida' | 'orcamento_excedido' | 'tamanho_invalido';
+
+export type AlvoDoArmazenamento = 'excluido' | 'expurgado' | 'ativo' | 'desconhecido';
+
+export type ReservaAVarrer = { readonly id: string; readonly organizationId: string; readonly clientId: string; readonly caminho: string };
+
+export type ClienteDoContexto = { readonly organizationId: string; readonly clientId: string };
+
+export const CONVITE_COM_LINK_VIVO = 'convite_com_link_vivo' as const;
 
 export type NovoArquivo = {
   readonly id: string;
@@ -140,8 +160,9 @@ export type ContextoRepository = {
       readonly dados: DadosDoItem;
       readonly marcacao: Marcacao;
       readonly autorId: string | null;
+      readonly maximo: number;
     },
-  ): Promise<ItemDeLista>;
+  ): Promise<ItemDeLista | null>;
   alterarItem(
     organizationId: string,
     input: {
@@ -167,6 +188,11 @@ export type ContextoRepository = {
     filtro: { readonly limite: number; readonly chave: string | null },
   ): Promise<readonly RevisaoRegistrada[]>;
   usoDeArquivos(organizationId: string, clientId: string): Promise<number>;
+  reservarArquivo(
+    organizationId: string,
+    input: { readonly clientId: string; readonly id: string; readonly caminho: string; readonly tamanhoBytes: number; readonly cotaBytes: number },
+  ): Promise<ResultadoDaReserva>;
+  liberarReserva(organizationId: string, clientId: string, id: string): Promise<void>;
   registrarArquivo(
     organizationId: string,
     input: NovoArquivo & { readonly fonte: Fonte; readonly compartilhavel: boolean; readonly autorId: string | null },
@@ -184,11 +210,28 @@ export type ContextoRepository = {
       readonly criadoPor: string | null;
       readonly conviteDeIntegracaoId: string | null;
     },
-  ): Promise<LinkDeContexto>;
+  ): Promise<LinkDeContexto | typeof CONVITE_COM_LINK_VIVO>;
+  regenerarLink(
+    organizationId: string,
+    input: {
+      readonly clientId: string;
+      readonly linkAnteriorId: string;
+      readonly tokenHash: string;
+      readonly secoes: readonly SecaoKey[];
+      readonly expiraEm: Date;
+      readonly nota: string | null;
+      readonly criadoPor: string | null;
+      readonly conviteDeIntegracaoId: string | null;
+    },
+  ): Promise<LinkDeContexto | typeof CONVITE_COM_LINK_VIVO | null>;
   listarLinks(organizationId: string, clientId: string): Promise<readonly LinkDeContexto[]>;
   lerLink(organizationId: string, clientId: string, linkId: string): Promise<LinkDeContexto | null>;
   revogarLink(organizationId: string, clientId: string, linkId: string): Promise<LinkDeContexto | null>;
-  conviteDoCliente(organizationId: string, clientId: string, inviteId: string): Promise<{ readonly status: string } | null>;
+  conviteDoCliente(
+    organizationId: string,
+    clientId: string,
+    inviteId: string,
+  ): Promise<{ readonly status: string; readonly expiraEm: Date | null } | null>;
   estadoDoBrain(organizationId: string, clientId: string): Promise<EstadoDoBrainRegistrado | null>;
   registrarTentativaDoBrain(
     organizationId: string,
@@ -222,11 +265,34 @@ export type ContextoRepository = {
       readonly dados: DadosDoItem;
       readonly epistemico: Epistemico;
       readonly versaoEsperada: number;
+      readonly maximo: number;
     },
   ): Promise<{ readonly resultado: ResultadoPeloLink; readonly itemId: string | null; readonly versao: number | null }>;
   removerItemPeloLink(tokenHash: string, itemId: string, versaoEsperada: number): Promise<ResultadoPeloLink>;
   concluirPeloLink(tokenHash: string): Promise<Date | null>;
-  registrarArquivoPeloLink(tokenHash: string, input: NovoArquivo & { readonly cotaBytes: number }): Promise<ResultadoPeloLink>;
+  registrarAberturaPeloLink(tokenHash: string): Promise<boolean>;
+  reservarArquivoPeloLink(
+    tokenHash: string,
+    input: {
+      readonly id: string;
+      readonly secao: SecaoKey;
+      readonly itemId: string | null;
+      readonly caminho: string;
+      readonly tamanhoBytes: number;
+      readonly cotaBytes: number;
+      readonly orcamentoBytesPorHora: number;
+      readonly enviosPorHora: number;
+    },
+  ): Promise<ResultadoDaReserva>;
+  confirmarArquivoPeloLink(tokenHash: string, input: Omit<NovoArquivo, 'clientId' | 'caminho'>): Promise<ResultadoPeloLink>;
+  liberarReservaPeloLink(tokenHash: string, id: string): Promise<void>;
+  reservasAVarrer(limite: number): Promise<readonly ReservaAVarrer[]>;
+  marcarReservaVarrida(id: string): Promise<void>;
+  clientesParaVarrerArquivos(limite: number, completa: boolean): Promise<readonly ClienteDoContexto[]>;
+  caminhosConhecidos(clientId: string): Promise<ReadonlySet<string>>;
+  alvoDoArmazenamento(organizationId: string, clientId: string): Promise<AlvoDoArmazenamento>;
+  brainsDeExcluidos(limite: number): Promise<readonly ClienteDoContexto[]>;
+  marcarBrainDespublicado(clientId: string): Promise<void>;
   hashPeloConvite(inviteToken: string): Promise<string | null>;
 };
 
@@ -366,6 +432,33 @@ async function versaoDoItem(tx: Tx, clientId: string, itemId: string): Promise<n
   return rows[0]?.version ?? null;
 }
 
+const LIMITE_DE_ITENS_DA_LISTA = 500;
+
+type NovoLink = {
+  readonly clientId: string;
+  readonly tokenHash: string;
+  readonly secoes: readonly SecaoKey[];
+  readonly expiraEm: Date;
+  readonly nota: string | null;
+  readonly criadoPor: string | null;
+  readonly conviteDeIntegracaoId: string | null;
+};
+
+async function inserirLink(tx: Tx, organizationId: string, input: NovoLink): Promise<LinkDeContexto> {
+  const rows = (await tx`
+    INSERT INTO core.client_context_links
+      (organization_id, client_id, token_hash, sections, expires_at, note, created_by, connection_invite_id)
+    VALUES (${organizationId}, ${input.clientId}, ${input.tokenHash}, ${input.secoes as string[]}::text[],
+            ${input.expiraEm}, ${input.nota}, ${input.criadoPor}, ${input.conviteDeIntegracaoId})
+    RETURNING *`) as unknown as LinkRow[];
+  return paraLink(rows[0]!);
+}
+
+function violouLinkVivoDoConvite(erro: unknown): boolean {
+  const e = erro as { code?: unknown; constraint_name?: unknown } | null;
+  return e?.code === '23505' && e.constraint_name === 'client_context_links_um_vivo_por_convite';
+}
+
 function json(tx: Tx, valor: unknown) {
   return tx.json(valor as Parameters<Tx['json']>[0]);
 }
@@ -459,6 +552,11 @@ export function createContextoRepository(): ContextoRepository {
     async inserirItem(organizationId, input) {
       return withTenant(organizationId, async (tx) => {
         const m = input.marcacao;
+        await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`${input.clientId}:${input.listKey}`}, 61))`;
+        const contagem = (await tx`
+          SELECT count(*)::int AS total FROM core.client_context_items
+           WHERE client_id = ${input.clientId} AND list_key = ${input.listKey}`) as unknown as { total: number }[];
+        if ((contagem[0]?.total ?? 0) >= Math.min(input.maximo, LIMITE_DE_ITENS_DA_LISTA)) return null;
         const rows = (await tx`
           INSERT INTO core.client_context_items
             (organization_id, client_id, section, list_key, position, data, epistemic, source, review, shareable, updated_by)
@@ -554,6 +652,25 @@ export function createContextoRepository(): ContextoRepository {
       });
     },
 
+    async reservarArquivo(organizationId, input) {
+      return withTenant(organizationId, async (tx) => {
+        const rows = (await tx`
+          SELECT core.contexto_reservar_arquivo_da_equipe(${input.clientId}, ${input.id}, ${input.caminho},
+                                                          ${input.tamanhoBytes}, ${input.cotaBytes}) AS resultado`) as unknown as {
+          resultado: ResultadoDaReserva;
+        }[];
+        return rows[0]?.resultado ?? 'recusado';
+      });
+    },
+
+    async liberarReserva(organizationId, clientId, id) {
+      await withTenant(organizationId, async (tx) => {
+        await tx`
+          UPDATE core.client_context_file_reservations SET liberada_em = now()
+           WHERE id = ${id} AND client_id = ${clientId} AND consumida_em IS NULL AND liberada_em IS NULL`;
+      });
+    },
+
     async registrarArquivo(organizationId, input) {
       return withTenant(organizationId, async (tx) => {
         const rows = (await tx`
@@ -588,15 +705,31 @@ export function createContextoRepository(): ContextoRepository {
     },
 
     async criarLink(organizationId, input) {
-      return withTenant(organizationId, async (tx) => {
-        const rows = (await tx`
-          INSERT INTO core.client_context_links
-            (organization_id, client_id, token_hash, sections, expires_at, note, created_by, connection_invite_id)
-          VALUES (${organizationId}, ${input.clientId}, ${input.tokenHash}, ${input.secoes as string[]}::text[],
-                  ${input.expiraEm}, ${input.nota}, ${input.criadoPor}, ${input.conviteDeIntegracaoId})
-          RETURNING *`) as unknown as LinkRow[];
-        return paraLink(rows[0]!);
-      });
+      try {
+        return await withTenant(organizationId, (tx) => inserirLink(tx, organizationId, input));
+      } catch (erro) {
+        if (violouLinkVivoDoConvite(erro)) return CONVITE_COM_LINK_VIVO;
+        throw erro;
+      }
+    },
+
+    async regenerarLink(organizationId, input) {
+      try {
+        return await withTenant(organizationId, async (tx) => {
+          const anterior = (await tx`
+            SELECT id, revoked_at FROM core.client_context_links
+             WHERE client_id = ${input.clientId} AND id = ${input.linkAnteriorId}
+             FOR UPDATE`) as unknown as { id: string; revoked_at: Date | null }[];
+          if (!anterior[0]) return null;
+          if (!anterior[0].revoked_at) {
+            await tx`UPDATE core.client_context_links SET revoked_at = now() WHERE id = ${input.linkAnteriorId}`;
+          }
+          return inserirLink(tx, organizationId, input);
+        });
+      } catch (erro) {
+        if (violouLinkVivoDoConvite(erro)) return CONVITE_COM_LINK_VIVO;
+        throw erro;
+      }
     },
 
     async listarLinks(organizationId, clientId) {
@@ -629,9 +762,9 @@ export function createContextoRepository(): ContextoRepository {
     async conviteDoCliente(organizationId, clientId, inviteId) {
       return withTenant(organizationId, async (tx) => {
         const rows = (await tx`
-          SELECT status::text AS status FROM integrations.connection_invites
-           WHERE id = ${inviteId} AND client_id = ${clientId}`) as unknown as { status: string }[];
-        return rows[0] ?? null;
+          SELECT status::text AS status, expires_at FROM integrations.connection_invites
+           WHERE id = ${inviteId} AND client_id = ${clientId}`) as unknown as { status: string; expires_at: Date | null }[];
+        return rows[0] ? { status: rows[0].status, expiraEm: rows[0].expires_at } : null;
       });
     },
 
@@ -816,7 +949,8 @@ export function createContextoRepository(): ContextoRepository {
       return withoutTenant(async (tx) => {
         const rows = (await tx`
           SELECT * FROM core.contexto_link_salvar_item(${tokenHash}, ${input.secao}, ${input.listKey}, ${input.itemId},
-                                                       ${json(tx, input.dados)}, ${input.epistemico}, ${input.versaoEsperada})`) as unknown as {
+                                                       ${json(tx, input.dados)}, ${input.epistemico}, ${input.versaoEsperada},
+                                                       ${input.maximo}::integer)`) as unknown as {
           resultado: ResultadoPeloLink;
           item_id: string | null;
           versao: number | null;
@@ -843,15 +977,105 @@ export function createContextoRepository(): ContextoRepository {
       });
     },
 
-    async registrarArquivoPeloLink(tokenHash, input) {
+    async registrarAberturaPeloLink(tokenHash) {
+      return withoutTenant(async (tx) => {
+        const rows = (await tx`SELECT core.contexto_link_registrar_abertura(${tokenHash}) AS registrar`) as unknown as {
+          registrar: boolean;
+        }[];
+        return rows[0]?.registrar ?? false;
+      });
+    },
+
+    async reservarArquivoPeloLink(tokenHash, input) {
       return withoutTenant(async (tx) => {
         const rows = (await tx`
-          SELECT core.contexto_link_registrar_arquivo(
-            ${tokenHash}, ${input.id}, ${input.secao}, ${input.fieldKey}, ${input.itemId}, ${input.caminho},
-            ${input.nome}, ${input.mime}, ${input.tamanhoBytes}, ${input.sha256}, ${input.cotaBytes}) AS resultado`) as unknown as {
+          SELECT core.contexto_link_reservar_arquivo(
+            ${tokenHash}, ${input.id}, ${input.secao}, ${input.itemId}, ${input.caminho}, ${input.tamanhoBytes},
+            ${input.cotaBytes}, ${input.orcamentoBytesPorHora}, ${input.enviosPorHora}::integer) AS resultado`) as unknown as {
+          resultado: ResultadoDaReserva;
+        }[];
+        return rows[0]?.resultado ?? 'recusado';
+      });
+    },
+
+    async confirmarArquivoPeloLink(tokenHash, input) {
+      return withoutTenant(async (tx) => {
+        const rows = (await tx`
+          SELECT core.contexto_link_confirmar_arquivo(
+            ${tokenHash}, ${input.id}, ${input.secao}, ${input.fieldKey}, ${input.itemId},
+            ${input.nome}, ${input.mime}, ${input.tamanhoBytes}, ${input.sha256}) AS resultado`) as unknown as {
           resultado: ResultadoPeloLink;
         }[];
         return rows[0]?.resultado ?? 'recusado';
+      });
+    },
+
+    async liberarReservaPeloLink(tokenHash, id) {
+      await withoutTenant(async (tx) => {
+        await tx`SELECT core.contexto_link_liberar_reserva(${tokenHash}, ${id})`;
+      });
+    },
+
+    async reservasAVarrer(limite) {
+      return withoutTenant(async (tx) => {
+        const rows = (await tx`
+          SELECT * FROM core.contexto_reservas_a_varrer(${limite}::integer, interval '1 hour')`) as unknown as {
+          id: string;
+          organization_id: string;
+          client_id: string;
+          object_path: string;
+        }[];
+        return rows.map((r) => ({ id: r.id, organizationId: r.organization_id, clientId: r.client_id, caminho: r.object_path }));
+      });
+    },
+
+    async marcarReservaVarrida(id) {
+      await withoutTenant(async (tx) => {
+        await tx`SELECT core.contexto_reserva_varrida(${id})`;
+      });
+    },
+
+    async clientesParaVarrerArquivos(limite, completa) {
+      return withoutTenant(async (tx) => {
+        const rows = (await tx`
+          SELECT * FROM core.contexto_clientes_para_varrer_arquivos(${limite}::integer, ${completa})`) as unknown as {
+          organization_id: string;
+          client_id: string;
+        }[];
+        return rows.map((r) => ({ organizationId: r.organization_id, clientId: r.client_id }));
+      });
+    },
+
+    async caminhosConhecidos(clientId) {
+      return withoutTenant(async (tx) => {
+        const rows = (await tx`SELECT object_path FROM core.contexto_caminhos_conhecidos(${clientId})`) as unknown as {
+          object_path: string;
+        }[];
+        return new Set(rows.map((r) => r.object_path));
+      });
+    },
+
+    async alvoDoArmazenamento(organizationId, clientId) {
+      return withoutTenant(async (tx) => {
+        const rows = (await tx`
+          SELECT core.contexto_alvo_do_armazenamento(${organizationId}, ${clientId}) AS alvo`) as unknown as { alvo: AlvoDoArmazenamento }[];
+        return rows[0]?.alvo ?? 'desconhecido';
+      });
+    },
+
+    async brainsDeExcluidos(limite) {
+      return withoutTenant(async (tx) => {
+        const rows = (await tx`SELECT * FROM core.contexto_brains_de_excluidos(${limite}::integer)`) as unknown as {
+          organization_id: string;
+          client_id: string;
+        }[];
+        return rows.map((r) => ({ organizationId: r.organization_id, clientId: r.client_id }));
+      });
+    },
+
+    async marcarBrainDespublicado(clientId) {
+      await withoutTenant(async (tx) => {
+        await tx`SELECT core.contexto_brain_despublicado(${clientId})`;
       });
     },
 

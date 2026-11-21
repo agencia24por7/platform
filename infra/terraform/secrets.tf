@@ -25,6 +25,7 @@ locals {
     "leadads-login-config-id",
     "rdstation-client-id",
     "rdstation-client-secret",
+    "meta-exclusao-pepper",
   ]
 
   all_secret_names = concat(local.app_secret_names, local.oauth_secret_names)

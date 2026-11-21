@@ -1,5 +1,6 @@
 import { rotaDoCliente } from '../enderecos.ts';
 import { renderizarCatalogoMd } from './catalogoMd.ts';
+import { frescorPelaColeta } from './frescor.ts';
 import type {
   BrainDoCliente,
   Capacidade,
@@ -221,14 +222,6 @@ function sorteador(texto: string): () => number {
 
 export function hashCurto(texto: string): string {
   return semente(texto).toString(16).padStart(8, '0') + semente(`${texto}#`).toString(16).padStart(8, '0');
-}
-
-export function frescorPelaColeta(ultima: Date | null, agora: Date): Frescor {
-  if (!ultima) return 'desconhecido';
-  const horas = (agora.getTime() - ultima.getTime()) / HORA;
-  if (horas <= 36) return 'fresco';
-  if (horas <= 24 * 7) return 'atrasado';
-  return 'parado';
 }
 
 function serie(chave: string, frescor: Frescor, temHistorico: boolean): boolean[] {

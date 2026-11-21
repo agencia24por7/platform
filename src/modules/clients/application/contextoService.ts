@@ -51,6 +51,14 @@ import type {
 } from '@/modules/clients/domain/contexto/tipos';
 import { validarItem, validarValor } from '@/modules/clients/domain/contexto/valores';
 import type { PortaDoArmazenamento } from '@/modules/clients/application/portaDoArmazenamento';
+import {
+  ENVIOS_DO_LINK_POR_HORA,
+  ORCAMENTO_DO_LINK_BYTES_POR_HORA,
+  type PedidoDeEnvio,
+} from '@/modules/clients/domain/contexto/envio';
+import { prefixoDoExportDoContexto } from '@/modules/brain/domain/contexto';
+import { prefixoDoCatalogo } from '@/modules/brain/application/publicacao';
+import type { AlvoDoArmazenamento, ResultadoDaReserva } from '@/modules/clients/infrastructure/contextoRepository';
 import type {
   ContextoRepository,
   EscopoDoLink,
@@ -116,13 +124,28 @@ export type Escopo = {
 
 export type Comando = Escopo & { readonly papelDeQuemAge: MemberRole };
 
-export type NovoAnexo = {
-  readonly fieldKey: string;
-  readonly listKey?: string | null;
-  readonly itemId?: string | null;
-  readonly nome: string;
-  readonly mime: string;
-  readonly conteudo: Uint8Array;
+export type NovoAnexo = PedidoDeEnvio;
+
+export type LerConteudo = (tamanhoEsperado: number) => Promise<Result<Uint8Array, Failure>>;
+
+export type ArquivoEnviadoPeloLink = { readonly id: string; readonly mime: string };
+
+export type ModoDoExpurgoDoArmazenamento = 'tudo' | 'derivados';
+
+export type ResumoDoExpurgoDoArmazenamento = {
+  readonly apagados: number;
+  readonly modo: ModoDoExpurgoDoArmazenamento;
+  readonly alvo: AlvoDoArmazenamento;
+  readonly desativado: boolean;
+};
+
+export type ResumoDaVarredura = {
+  readonly reservasVarridas: number;
+  readonly orfaosApagados: number;
+  readonly clientesListados: number;
+  readonly brainsDespublicados: number;
+  readonly falhas: number;
+  readonly desativado: boolean;
 };
 
 export type SugestaoDeContexto =
@@ -243,7 +266,7 @@ export type ContextoService = {
   listarRevisoes(
     escopo: Escopo & { readonly limite?: number; readonly chave?: string | null },
   ): Promise<Result<readonly RevisaoDeContexto[], Failure>>;
-  anexarArquivo(comando: Comando & NovoAnexo, ator: Ator): Promise<Result<ArquivoDeContexto, Failure>>;
+  anexarArquivo(comando: Comando & NovoAnexo, ler: LerConteudo, ator: Ator): Promise<Result<ArquivoDeContexto, Failure>>;
   removerArquivo(comando: Comando & { readonly fileId: string }, ator: Ator): Promise<Result<null, Failure>>;
   criarLink(
     comando: Comando & {
@@ -259,7 +282,7 @@ export type ContextoService = {
   regenerarLink(comando: Comando & { readonly linkId: string }, ator: Ator): Promise<Result<LinkCriado, Failure>>;
   carregarPeloLink(acesso: AcessoPublico): Promise<Result<FormularioPublico, Failure>>;
   salvarPeloLink(acesso: AcessoPublico, alteracao: AlteracaoPeloLink): Promise<Result<SalvoPeloLink, Failure>>;
-  anexarArquivoPeloLink(acesso: AcessoPublico, anexo: NovoAnexo): Promise<Result<{ readonly id: string }, Failure>>;
+  anexarArquivoPeloLink(acesso: AcessoPublico, anexo: NovoAnexo, ler: LerConteudo): Promise<Result<ArquivoEnviadoPeloLink, Failure>>;
   concluirPeloLink(acesso: AcessoPublico): Promise<Result<{ readonly concluidoEm: Date }, Failure>>;
   publicarBrain(
     escopo: Escopo,
@@ -267,7 +290,12 @@ export type ContextoService = {
   ): Promise<Result<{ readonly situacao: SituacaoDoBrain; readonly contentHash: string | null }, Failure>>;
   publicarPendentes(limite?: number): Promise<ResumoDePublicacao>;
   reconstruirBrains(alvo: AlvoDaReconstrucao): Promise<Result<ResumoDePublicacao, Failure>>;
-  expurgarArmazenamento(escopo: Escopo): Promise<Result<{ readonly apagados: number }, Failure>>;
+  expurgarArmazenamento(
+    escopo: Escopo,
+    modo: ModoDoExpurgoDoArmazenamento,
+    executor?: { readonly requestId?: string; readonly callerFingerprint?: string },
+  ): Promise<Result<ResumoDoExpurgoDoArmazenamento, Failure>>;
+  varrerArquivos(opcoes?: { readonly limite?: number; readonly completa?: boolean }): Promise<ResumoDaVarredura>;
 };
 
 export type AgendadorDoBrain = { agendar(escopo: Escopo): void };
@@ -301,6 +329,12 @@ const TENTATIVAS_DE_GRAVACAO = 3;
 const ESPERA_DO_AGENDADOR_MS = 5_000;
 const ESPERA_DA_VARREDURA_S = 30;
 const MAX_REVISOES = 200;
+
+const LIMITE_DA_VARREDURA = 200;
+const IDADE_DO_ORFAO_MS = 60 * 60 * 1000;
+const PREFIXO_DOS_ARQUIVOS = 'arquivos/';
+const CONVITE_COM_LINK_VIVO = 'convite_com_link_vivo';
+const CONVITE_JA_TEM_LINK = failure('conflict', 'Este convite já tem um link de contexto válido. Revogue-o antes de criar outro.');
 
 const SEM_PERMISSAO = failure('forbidden', 'Seu papel não permite alterar o contexto do cliente.');
 const CLIENTE_NAO_ENCONTRADO = failure('not_found', 'Cliente não encontrado.');
@@ -609,35 +643,121 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
     return ok(gravado.valor);
   }
 
-  async function guardarAnexo(
-    escopo: Escopo,
+  function validarAnexo(
     anexo: NovoAnexo,
-    usoAtual: number,
-  ): Promise<Result<{ id: string; caminho: string; sha256: string; secao: Secao['key']; mime: string }, Failure>> {
+  ): Result<{ readonly definicao: DefinicaoDeArquivo }, Failure> {
     if (!armazenamento.configurado) return err(failure('unavailable', 'O envio de arquivos ainda não está disponível.'));
-
     const definicao = definicaoDeArquivo(anexo);
     if (!definicao) return err(failure('validation', 'Este campo não recebe arquivos.'));
     if (Boolean(anexo.listKey) !== Boolean(anexo.itemId)) {
       return err(failure('validation', 'Arquivo de item precisa da lista e do item.'));
     }
-    const secao = definicao.secao;
+    return ok({ definicao });
+  }
 
-    const avaliado = avaliarAnexo({
-      nome: anexo.nome,
-      mime: anexo.mime,
-      conteudo: anexo.conteudo,
-      categoriasAceitas: definicao.campo.categorias,
-      usoAtualDoClienteBytes: usoAtual,
-    });
-    if (!avaliado.ok) return err(failure('validation', avaliado.mensagem, { motivo: avaliado.motivo }));
+  type EtapasDoEnvio = {
+    readonly escopo: Escopo;
+    readonly anexo: NovoAnexo;
+    readonly definicao: DefinicaoDeArquivo;
+    readonly usoAtual: number;
+    readonly ler: LerConteudo;
+    readonly reservar: (reserva: { readonly id: string; readonly caminho: string }) => Promise<ResultadoDaReserva>;
+    readonly liberar: (id: string) => Promise<void>;
+  };
 
+  type Guardado = {
+    readonly id: string;
+    readonly caminho: string;
+    readonly sha256: string;
+    readonly secao: Secao['key'];
+    readonly mime: string;
+    readonly tamanhoBytes: number;
+  };
+
+  async function guardarAnexo(etapas: EtapasDoEnvio): Promise<Result<Guardado, Failure>> {
+    const { escopo, anexo, definicao } = etapas;
     const id = randomUUID();
     const caminho = caminhoDoArquivo(escopo.organizationId, escopo.clientId, id, anexo.nome);
-    const sha256 = createHash('sha256').update(anexo.conteudo).digest('hex');
-    const gravado = await armazenamento.put(caminho, anexo.conteudo, { contentType: avaliado.contentType, sha256 });
-    if (!gravado.ok) return err(failure('unavailable', 'Não foi possível guardar o arquivo agora. Tente de novo.'));
-    return ok({ id, caminho, sha256, secao, mime: avaliado.contentType });
+
+    const reservado = await etapas.reservar({ id, caminho });
+    if (reservado !== 'ok') return err(falhaDaReserva(reservado));
+
+    let gravado = false;
+    try {
+      const lido = await etapas.ler(anexo.tamanhoDeclarado);
+      if (!lido.ok) {
+        await etapas.liberar(id);
+        return lido;
+      }
+      const conteudo = lido.value;
+      const avaliado = avaliarAnexo({
+        nome: anexo.nome,
+        mime: anexo.mime,
+        conteudo,
+        categoriasAceitas: definicao.campo.categorias,
+        usoAtualDoClienteBytes: etapas.usoAtual,
+      });
+      if (!avaliado.ok) {
+        await etapas.liberar(id);
+        return err(failure('validation', avaliado.mensagem, { motivo: avaliado.motivo }));
+      }
+
+      const sha256 = createHash('sha256').update(conteudo).digest('hex');
+      const posto = await armazenamento.put(caminho, conteudo, { contentType: avaliado.contentType, sha256 });
+      if (!posto.ok) {
+        await armazenamento.delete(caminho, { todasAsVersoes: true });
+        await etapas.liberar(id);
+        return err(failure('unavailable', 'Não foi possível guardar o arquivo agora. Tente de novo.'));
+      }
+      gravado = true;
+      return ok({ id, caminho, sha256, secao: definicao.secao, mime: avaliado.contentType, tamanhoBytes: conteudo.byteLength });
+    } catch (erro) {
+      if (gravado) await armazenamento.delete(caminho, { todasAsVersoes: true }).catch(() => undefined);
+      await etapas.liberar(id).catch(() => undefined);
+      throw erro;
+    }
+  }
+
+  async function desfazerEnvio(caminho: string, liberar: () => Promise<void>): Promise<void> {
+    await armazenamento.delete(caminho, { todasAsVersoes: true }).catch(() => undefined);
+    await liberar().catch(() => undefined);
+  }
+
+  async function prepararLink(
+    comando: Comando & {
+      readonly secoes: readonly string[];
+      readonly expiraEmDias?: number | null;
+      readonly nota?: string | null;
+      readonly conviteDeIntegracaoId?: string | null;
+    },
+  ): Promise<
+    Result<
+      {
+        readonly token: string;
+        readonly pedido: { readonly secoes: readonly SecaoKey[]; readonly expiraEm: Date; readonly nota: string | null };
+        readonly conviteId: string | null;
+      },
+      Failure
+    >
+  > {
+    if (!canOperate(comando.papelDeQuemAge)) return err(SEM_PERMISSAO);
+    const instante = agora();
+    const pedido = validarPedidoDeLink(comando, instante);
+    if (!pedido.ok) return err(failure('validation', MOTIVO_DO_LINK[pedido.motivo], { motivo: pedido.motivo }));
+
+    const conviteId = comando.conviteDeIntegracaoId ?? null;
+    if (conviteId) {
+      const convite = await repositorio.conviteDoCliente(comando.organizationId, comando.clientId, conviteId);
+      if (!convite) return err(failure('not_found', 'Convite de integração não encontrado para este cliente.'));
+      if (
+        convite.status === 'revoked' ||
+        convite.status === 'expired' ||
+        (convite.expiraEm !== null && convite.expiraEm.getTime() <= instante.getTime())
+      ) {
+        return err(failure('validation', 'O convite de integração não vale mais. Crie um novo convite.'));
+      }
+    }
+    return ok({ token: gerarTokenDeContexto(), pedido, conviteId });
   }
 
   async function resolverHash(credencial: CredencialPublica): Promise<string | null> {
@@ -663,6 +783,42 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
     return ok({ hash, escopo });
   }
 
+  function falhaDaReserva(resultado: ResultadoDaReserva): Failure {
+    return resultado === 'recusado' ? failure('not_found', 'Cliente não encontrado.') : falhaPeloLink(resultado, null);
+  }
+
+  async function apagarArquivosOrfaosDoCliente(cliente: Escopo, instante: number): Promise<{ apagados: number; falhas: number }> {
+    const prefixo = `${prefixoDoCliente(cliente.organizationId, cliente.clientId)}${PREFIXO_DOS_ARQUIVOS}`;
+    const listados = await armazenamento.list(prefixo);
+    if (!listados.ok) return { apagados: 0, falhas: 1 };
+    const conhecidos = await repositorio.caminhosConhecidos(cliente.clientId);
+    let apagados = 0;
+    let falhas = 0;
+    for (const objeto of listados.value) {
+      if (conhecidos.has(objeto.caminho)) continue;
+      if (!objeto.atualizadoEm || instante - objeto.atualizadoEm.getTime() < IDADE_DO_ORFAO_MS) continue;
+      const apagado = await armazenamento.delete(objeto.caminho, { todasAsVersoes: true });
+      if (apagado.ok) apagados += 1;
+      else falhas += 1;
+    }
+    return { apagados, falhas };
+  }
+
+  async function despublicarBrainsDeExcluidos(limite: number): Promise<{ despublicados: number; falhas: number }> {
+    let despublicados = 0;
+    let falhas = 0;
+    for (const cliente of await repositorio.brainsDeExcluidos(limite)) {
+      const apagado = await armazenamento.deletePrefix(prefixoDoExportDoContexto(cliente.organizationId, cliente.clientId));
+      if (!apagado.ok) {
+        falhas += 1;
+        continue;
+      }
+      await repositorio.marcarBrainDespublicado(cliente.clientId);
+      despublicados += 1;
+    }
+    return { despublicados, falhas };
+  }
+
   function falhaPeloLink(resultado: ResultadoPeloLink, versao: number | null): Failure {
     switch (resultado) {
       case 'conflito':
@@ -673,6 +829,12 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
         return failure('validation', 'Esta lista chegou ao limite de itens.');
       case 'cota_excedida':
         return failure('validation', 'O cliente atingiu o limite de 500 MB de arquivos.', { motivo: 'cota_excedida' });
+      case 'orcamento_excedido':
+        return failure('rate_limited', 'Muitos envios por este link na última hora. Tente mais tarde.', { retryAfterSeconds: '600' });
+      case 'tamanho_invalido':
+        return failure('validation', 'Tamanho de arquivo inválido.');
+      case 'reserva_invalida':
+        return failure('unavailable', 'O envio demorou demais. Tente de novo.');
       case 'nao_encontrado':
         return failure('not_found', 'Item não encontrado.');
       default:
@@ -774,7 +936,9 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
           comando.marcacao,
         ),
         autorId: ator.userId,
+        maximo: achado.campo.maximo,
       });
+      if (!item) return err(failure('validation', `A lista aceita no máximo ${achado.campo.maximo} itens.`));
       await registrar(comando, ator, 'client.context.item_added', { secao: item.secao, lista: item.listKey }, { tipo: 'client_context_item', id: item.id });
       mudou(comando);
       return ok(item);
@@ -892,15 +1056,17 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
           ignoradas += 1;
           continue;
         }
-        await repositorio.inserirItem(comando.organizationId, {
+        const inserido = await repositorio.inserirItem(comando.organizationId, {
           clientId: comando.clientId,
           secao: achado.secao.key,
           listKey: sugestao.listKey,
           dados: validado.dados,
           marcacao,
           autorId: ator.userId,
+          maximo: achado.campo.maximo,
         });
-        aplicadas += 1;
+        if (inserido) aplicadas += 1;
+        else ignoradas += 1;
       }
 
       await registrar(comando, ator, 'client.context.suggestions_applied', { aplicadas, ignoradas });
@@ -923,13 +1089,30 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
       );
     },
 
-    async anexarArquivo(comando, ator) {
+    async anexarArquivo(comando, ler, ator) {
       if (!canOperate(comando.papelDeQuemAge)) return err(SEM_PERMISSAO);
+      const validado = validarAnexo(comando);
+      if (!validado.ok) return validado;
       if (comando.itemId && !(await repositorio.lerItem(comando.organizationId, comando.clientId, comando.itemId))) {
         return err(failure('not_found', 'Item não encontrado.'));
       }
-      const uso = await repositorio.usoDeArquivos(comando.organizationId, comando.clientId);
-      const guardado = await guardarAnexo(comando, comando, uso);
+      const liberar = (id: string) => repositorio.liberarReserva(comando.organizationId, comando.clientId, id);
+      const guardado = await guardarAnexo({
+        escopo: comando,
+        anexo: comando,
+        definicao: validado.value.definicao,
+        usoAtual: await repositorio.usoDeArquivos(comando.organizationId, comando.clientId),
+        ler,
+        reservar: ({ id, caminho }) =>
+          repositorio.reservarArquivo(comando.organizationId, {
+            clientId: comando.clientId,
+            id,
+            caminho,
+            tamanhoBytes: comando.tamanhoDeclarado,
+            cotaBytes: COTA_POR_CLIENTE,
+          }),
+        liberar,
+      });
       if (!guardado.ok) return guardado;
 
       try {
@@ -942,7 +1125,7 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
           caminho: guardado.value.caminho,
           nome: comando.nome.slice(0, 255),
           mime: guardado.value.mime,
-          tamanhoBytes: comando.conteudo.byteLength,
+          tamanhoBytes: guardado.value.tamanhoBytes,
           sha256: guardado.value.sha256,
           fonte: 'equipe',
           compartilhavel: false,
@@ -957,7 +1140,7 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
         mudou(comando);
         return ok(arquivo);
       } catch (erro) {
-        await armazenamento.delete(guardado.value.caminho);
+        await desfazerEnvio(guardado.value.caminho, () => liberar(guardado.value.id));
         throw erro;
       }
     },
@@ -973,21 +1156,9 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
     },
 
     async criarLink(comando, ator) {
-      if (!canOperate(comando.papelDeQuemAge)) return err(SEM_PERMISSAO);
-      const instante = agora();
-      const pedido = validarPedidoDeLink(comando, instante);
-      if (!pedido.ok) return err(failure('validation', MOTIVO_DO_LINK[pedido.motivo], { motivo: pedido.motivo }));
-
-      const conviteId = comando.conviteDeIntegracaoId ?? null;
-      if (conviteId) {
-        const convite = await repositorio.conviteDoCliente(comando.organizationId, comando.clientId, conviteId);
-        if (!convite) return err(failure('not_found', 'Convite de integração não encontrado para este cliente.'));
-        if (convite.status === 'revoked' || convite.status === 'expired') {
-          return err(failure('validation', 'O convite de integração não vale mais. Crie um novo convite.'));
-        }
-      }
-
-      const token = gerarTokenDeContexto();
+      const preparado = await prepararLink(comando);
+      if (!preparado.ok) return preparado;
+      const { token, pedido, conviteId } = preparado.value;
       const link = await repositorio.criarLink(comando.organizationId, {
         clientId: comando.clientId,
         tokenHash: hashDoToken(token),
@@ -997,12 +1168,13 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
         criadoPor: ator.userId,
         conviteDeIntegracaoId: conviteId,
       });
+      if (link === CONVITE_COM_LINK_VIVO) return err(CONVITE_JA_TEM_LINK);
       await registrar(comando, ator, 'client.context.link_created', {
         secoes: link.secoes,
         expiraEm: link.expiraEm.toISOString(),
         comConvite: conviteId !== null,
       }, { tipo: 'client_context_link', id: link.id });
-      return ok({ link: resumir(link, instante), token });
+      return ok({ link: resumir(link, agora()), token });
     },
 
     async listarLinks(escopo) {
@@ -1023,22 +1195,40 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
       if (!canOperate(comando.papelDeQuemAge)) return err(SEM_PERMISSAO);
       const anterior = await repositorio.lerLink(comando.organizationId, comando.clientId, comando.linkId);
       if (!anterior) return err(failure('not_found', 'Link não encontrado.'));
-      if (!anterior.revogadoEm) await repositorio.revogarLink(comando.organizationId, comando.clientId, comando.linkId);
 
       const prazoOriginal = Math.round((anterior.expiraEm.getTime() - anterior.criadoEm.getTime()) / 86_400_000);
-      const novo = await servico.criarLink(
-        {
-          ...comando,
-          secoes: anterior.secoes,
-          expiraEmDias: Math.min(Math.max(prazoOriginal, 1), 90),
-          nota: anterior.nota,
-          conviteDeIntegracaoId: anterior.conviteDeIntegracaoId,
-        },
-        ator,
-      );
-      if (!novo.ok) return novo;
-      await registrar(comando, ator, 'client.context.link_regenerated', { anterior: anterior.id }, { tipo: 'client_context_link', id: novo.value.link.id });
-      return novo;
+      const preparado = await prepararLink({
+        ...comando,
+        secoes: anterior.secoes,
+        expiraEmDias: Math.min(Math.max(prazoOriginal, 1), 90),
+        nota: anterior.nota,
+        conviteDeIntegracaoId: anterior.conviteDeIntegracaoId,
+      });
+      if (!preparado.ok) return preparado;
+      const { token, pedido, conviteId } = preparado.value;
+
+      const novo = await repositorio.regenerarLink(comando.organizationId, {
+        clientId: comando.clientId,
+        linkAnteriorId: anterior.id,
+        tokenHash: hashDoToken(token),
+        secoes: pedido.secoes,
+        expiraEm: pedido.expiraEm,
+        nota: pedido.nota,
+        criadoPor: ator.userId,
+        conviteDeIntegracaoId: conviteId,
+      });
+      if (novo === null) return err(failure('not_found', 'Link não encontrado.'));
+      if (novo === CONVITE_COM_LINK_VIVO) return err(CONVITE_JA_TEM_LINK);
+      if (!anterior.revogadoEm) {
+        await registrar(comando, ator, 'client.context.link_revoked', { motivo: 'regenerado' }, { tipo: 'client_context_link', id: anterior.id });
+      }
+      await registrar(comando, ator, 'client.context.link_created', {
+        secoes: novo.secoes,
+        expiraEm: novo.expiraEm.toISOString(),
+        comConvite: conviteId !== null,
+      }, { tipo: 'client_context_link', id: novo.id });
+      await registrar(comando, ator, 'client.context.link_regenerated', { anterior: anterior.id }, { tipo: 'client_context_link', id: novo.id });
+      return ok({ link: resumir(novo, agora()), token });
     },
 
     async carregarPeloLink(acesso) {
@@ -1049,7 +1239,9 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
       const visto = await repositorio.lerPeloLink(hash, chavesLegiveis(escopo.secoes));
       if (!visto) return err(LINK_INVALIDO);
 
-      await registrarPublico(escopo, acesso, 'client.context.link_opened', { secoes: escopo.secoes });
+      if (await repositorio.registrarAberturaPeloLink(hash)) {
+        await registrarPublico(escopo, acesso, 'client.context.link_opened', { secoes: escopo.secoes });
+      }
 
       const bruto: ContextoBruto = {
         campos: visto.campos.map((c) => ({
@@ -1154,6 +1346,7 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
           dados: validado.dados,
           epistemico: alteracao.epistemico ?? achado.campo.epistemicoPadrao,
           versaoEsperada: alteracao.versaoEsperada,
+          maximo: achado.campo.maximo,
         });
         await registrarPublico(escopo, acesso, 'client.context.link_saved', {
           alvo: 'item',
@@ -1174,7 +1367,7 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
       return ok({ versao: 0, itemId: alteracao.itemId });
     },
 
-    async anexarArquivoPeloLink(acesso, anexo) {
+    async anexarArquivoPeloLink(acesso, anexo, ler) {
       const aberto = await abrirPublico(acesso);
       if (!aberto.ok) return aberto;
       const { hash, escopo } = aberto.value;
@@ -1183,36 +1376,67 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
       if (!definicao || !chavesVisiveis(escopo.secoes).includes(definicao.chaveDoCatalogo)) {
         return err(failure('forbidden', 'Esta informação não faz parte do que foi pedido neste link.'));
       }
+      const validado = validarAnexo(anexo);
+      if (!validado.ok) return validado;
 
-      const guardado = await guardarAnexo(escopo, anexo, escopo.usoDeArquivosBytes);
-      if (!guardado.ok) return guardado;
-
-      const resultado = await repositorio.registrarArquivoPeloLink(hash, {
-        id: guardado.value.id,
-        clientId: escopo.clientId,
-        secao: guardado.value.secao,
-        fieldKey: anexo.fieldKey,
-        itemId: anexo.itemId ?? null,
-        caminho: guardado.value.caminho,
-        nome: anexo.nome.slice(0, 255),
-        mime: guardado.value.mime,
-        tamanhoBytes: anexo.conteudo.byteLength,
-        sha256: guardado.value.sha256,
-        cotaBytes: COTA_POR_CLIENTE,
+      const liberar = (id: string) => repositorio.liberarReservaPeloLink(hash, id);
+      const guardado = await guardarAnexo({
+        escopo,
+        anexo,
+        definicao,
+        usoAtual: escopo.usoDeArquivosBytes,
+        ler,
+        reservar: ({ id, caminho }) =>
+          repositorio.reservarArquivoPeloLink(hash, {
+            id,
+            secao: definicao.secao,
+            itemId: anexo.itemId ?? null,
+            caminho,
+            tamanhoBytes: anexo.tamanhoDeclarado,
+            cotaBytes: COTA_POR_CLIENTE,
+            orcamentoBytesPorHora: ORCAMENTO_DO_LINK_BYTES_POR_HORA,
+            enviosPorHora: ENVIOS_DO_LINK_POR_HORA,
+          }),
+        liberar,
       });
+      if (!guardado.ok) {
+        await registrarPublico(escopo, acesso, 'client.context.link_file_attached', {
+          secao: definicao.secao,
+          chave: anexo.fieldKey,
+          resultado: guardado.error.details?.['motivo'] ?? guardado.error.code,
+        });
+        return guardado;
+      }
+
+      let resultado: ResultadoPeloLink;
+      try {
+        resultado = await repositorio.confirmarArquivoPeloLink(hash, {
+          id: guardado.value.id,
+          secao: guardado.value.secao,
+          fieldKey: anexo.fieldKey,
+          itemId: anexo.itemId ?? null,
+          nome: anexo.nome.slice(0, 255),
+          mime: guardado.value.mime,
+          tamanhoBytes: guardado.value.tamanhoBytes,
+          sha256: guardado.value.sha256,
+        });
+      } catch (erro) {
+        await desfazerEnvio(guardado.value.caminho, () => liberar(guardado.value.id));
+        throw erro;
+      }
       await registrarPublico(escopo, acesso, 'client.context.link_file_attached', {
         secao: guardado.value.secao,
         chave: anexo.fieldKey,
         mime: guardado.value.mime,
-        tamanhoBytes: anexo.conteudo.byteLength,
+        tamanhoBytes: guardado.value.tamanhoBytes,
         resultado,
       });
       if (resultado !== 'ok') {
-        await armazenamento.delete(guardado.value.caminho);
+        await desfazerEnvio(guardado.value.caminho, () => liberar(guardado.value.id));
         return err(falhaPeloLink(resultado, null));
       }
       mudou(escopo);
-      return ok({ id: guardado.value.id });
+      return ok({ id: guardado.value.id, mime: guardado.value.mime });
     },
 
     async concluirPeloLink(acesso) {
@@ -1238,19 +1462,72 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
       return ok(await publicarVarios(clientes, true));
     },
 
-    async expurgarArmazenamento(escopo) {
-      const resultado = await armazenamento.deletePrefix(prefixoDoCliente(escopo.organizationId, escopo.clientId));
-      if (!resultado.ok) return resultado;
+    async expurgarArmazenamento(escopo, modo, executor = {}) {
+      const alvo = await repositorio.alvoDoArmazenamento(escopo.organizationId, escopo.clientId);
+      if (alvo !== 'excluido' && alvo !== 'expurgado') {
+        return err(failure('conflict', 'Só cliente excluído logicamente ou já expurgado tem o armazenamento apagado.', { alvo }));
+      }
+      if (!armazenamento.configurado) return ok({ apagados: 0, modo, alvo, desativado: true });
+
+      const prefixo = prefixoDoCliente(escopo.organizationId, escopo.clientId);
+      const prefixos =
+        modo === 'tudo'
+          ? [prefixo]
+          : [prefixoDoExportDoContexto(escopo.organizationId, escopo.clientId), prefixoDoCatalogo(escopo.organizationId, escopo.clientId)];
+      let apagados = 0;
+      for (const alvoDoPrefixo of prefixos) {
+        const resultado = await armazenamento.deletePrefix(alvoDoPrefixo);
+        if (!resultado.ok) return resultado;
+        apagados += resultado.value.apagados;
+      }
+      if (alvo === 'excluido') await repositorio.marcarBrainDespublicado(escopo.clientId);
+
       await audit.record({
         organizationId: escopo.organizationId,
-        actorType: 'system',
-        actorId: null,
+        actorType: 'worker',
+        actorId: executor.callerFingerprint ?? null,
         action: 'client.context.storage_purged',
         targetType: 'client',
         targetId: escopo.clientId,
-        metadata: { apagados: resultado.value.apagados },
+        ...(executor.requestId ? { requestId: executor.requestId } : {}),
+        metadata: { modo, apagados, alvo },
       });
-      return ok(resultado.value);
+      return ok({ apagados, modo, alvo, desativado: false });
+    },
+
+    async varrerArquivos(opcoes = {}) {
+      const vazio = { reservasVarridas: 0, orfaosApagados: 0, clientesListados: 0, brainsDespublicados: 0, falhas: 0 };
+      if (!armazenamento.configurado) return { ...vazio, desativado: true };
+      const limite = Math.min(Math.max(opcoes.limite ?? LIMITE_DA_VARREDURA, 1), 1000);
+      let { reservasVarridas, orfaosApagados, falhas } = vazio;
+
+      for (const reserva of await repositorio.reservasAVarrer(limite)) {
+        const apagado = await armazenamento.delete(reserva.caminho, { todasAsVersoes: true });
+        if (!apagado.ok) {
+          falhas += 1;
+          continue;
+        }
+        await repositorio.marcarReservaVarrida(reserva.id);
+        reservasVarridas += 1;
+      }
+
+      const instante = agora().getTime();
+      const clientes = await repositorio.clientesParaVarrerArquivos(limite, opcoes.completa ?? false);
+      for (const cliente of clientes) {
+        const resultado = await apagarArquivosOrfaosDoCliente(cliente, instante);
+        orfaosApagados += resultado.apagados;
+        falhas += resultado.falhas;
+      }
+
+      const brains = await despublicarBrainsDeExcluidos(limite);
+      return {
+        reservasVarridas,
+        orfaosApagados,
+        clientesListados: clientes.length,
+        brainsDespublicados: brains.despublicados,
+        falhas: falhas + brains.falhas,
+        desativado: false,
+      };
     },
   };
   return servico;

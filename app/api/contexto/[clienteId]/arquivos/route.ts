@@ -1,4 +1,13 @@
-import { lerAnexo, mesmaOrigem, responderErro, responderFalha, responderOk } from '@/../app/api/contexto/_upload';
+import {
+  comVagaDeEnvio,
+  descartarCorpo,
+  leitorDoCorpo,
+  lerPedido,
+  mesmaOrigem,
+  responderErro,
+  responderFalha,
+  responderOk,
+} from '@/../app/api/contexto/_upload';
 import { modules } from '@/composition';
 import { idValido } from '@/modules/clients/domain/painel/enderecos';
 import { atorAtual } from '@/shared/http/ator';
@@ -8,23 +17,39 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request, { params }: { params: Promise<{ clienteId: string }> }) {
   const { clienteId } = await params;
-  if (!mesmaOrigem(request)) return responderErro(403, 'Origem não permitida.');
+  if (!mesmaOrigem(request)) {
+    descartarCorpo(request);
+    return responderErro(403, 'Origem não permitida.');
+  }
   const ctx = await activeContext();
-  if (!ctx) return responderErro(401, 'Sua sessão expirou. Entre de novo.');
+  if (!ctx) {
+    descartarCorpo(request);
+    return responderErro(401, 'Sua sessão expirou. Entre de novo.');
+  }
   if (!idValido(clienteId) || (ctx.clientIds !== null && !ctx.clientIds.includes(clienteId))) {
+    descartarCorpo(request);
     return responderErro(404, 'Cliente não encontrado.');
   }
 
-  const lido = await lerAnexo(request);
-  if (!lido.ok) return lido.resposta;
+  const lido = lerPedido(request);
+  if (!lido.ok) {
+    descartarCorpo(request);
+    return lido.resposta;
+  }
 
-  const resultado = await modules().contexto.anexarArquivo(
-    { organizationId: ctx.organization.id, clientId: clienteId, papelDeQuemAge: ctx.role, ...lido.anexo },
-    await atorAtual(),
-  );
-  if (!resultado.ok) return responderFalha(resultado.error);
-  const a = resultado.value;
-  return responderOk({
-    arquivo: { id: a.id, fieldKey: a.fieldKey, itemId: a.itemId, nome: a.nome, mime: a.mime, tamanhoBytes: a.tamanhoBytes, criadoEm: a.criadoEm.toISOString() },
+  return comVagaDeEnvio(request, async () => {
+    const resultado = await modules().contexto.anexarArquivo(
+      { organizationId: ctx.organization.id, clientId: clienteId, papelDeQuemAge: ctx.role, ...lido.pedido },
+      leitorDoCorpo(request),
+      await atorAtual(),
+    );
+    if (!resultado.ok) {
+      descartarCorpo(request);
+      return responderFalha(resultado.error);
+    }
+    const a = resultado.value;
+    return responderOk({
+      arquivo: { id: a.id, fieldKey: a.fieldKey, itemId: a.itemId, nome: a.nome, mime: a.mime, tamanhoBytes: a.tamanhoBytes, criadoEm: a.criadoEm.toISOString() },
+    });
   });
 }
