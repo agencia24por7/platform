@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
@@ -24,13 +24,27 @@ const falhaDe = (acao) => {
   }
 };
 
-function migrar() {
+function tentarMigrar(extra = {}) {
   const r = spawnSync('sh', ['infra/compose/migrar.sh'], {
     encoding: 'utf8',
-    env: { ...process.env, PG_CONTAINER: CONTAINER, PG_USER: 'postgres', PG_DB: BANCO, MIGRACOES_DIR: pasta, SINCRONIZAR_SENHA_WORKER: '0' },
+    env: { ...process.env, PG_CONTAINER: CONTAINER, PG_USER: 'postgres', PG_DB: BANCO, MIGRACOES_DIR: pasta, SINCRONIZAR_SENHA_WORKER: '0', ...extra },
   });
-  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  return { status: r.status, saida: `${r.stdout}${r.stderr}` };
 }
+
+function migrar() {
+  const r = tentarMigrar();
+  assert.equal(r.status, 0, r.saida);
+}
+
+const RELEASE = 'release-0123-teste';
+const marcaDoPreflight = join(pasta, '.preflight-ok');
+const autorizado = () => {
+  writeFileSync(marcaDoPreflight, `${RELEASE}\n`);
+  return { CORTE_GATE_ARQUIVO: 'db/corte-gate.txt', PREFLIGHT_MARCA: marcaDoPreflight, RELEASE_ID: RELEASE, RELEASE_CORTE_AUTORIZADO: '1' };
+};
+const tabelaDoCorteExiste = () => psql(`SELECT to_regclass('integrations.corte_para_cofre_refs') IS NOT NULL`) === 't';
+const foiAplicada = (nome) => psql(`SELECT count(*) FROM public.schema_migrations WHERE nome = '${nome}'`) === '1';
 
 const criados = [];
 const ORG = '11111111-1111-4111-8111-111111111111';
@@ -122,13 +136,40 @@ describe('corte para o cofre sobre dados legados no Postgres real (0121/0122, AD
     psql(`UPDATE integrations.connections SET coletor_ref = NULL WHERE id = '${GA4}'`);
   });
 
-  it('a migração seguinte (db/pendentes/0123) só roda com a limpeza concluída e então remove o legado', () => {
-    const pendente = readFileSync('db/pendentes/0123_remover_legado_do_cofre.sql', 'utf8');
-    assert.match(falhaDe(() => psql(pendente)), /ainda tem conexões sem limpo_em/);
+  it('a 0123 sem RELEASE_CORTE_AUTORIZADO é recusada pelo portão num banco que já tem migrações', () => {
+    copyFileSync('db/migrations/0123_remover_legado_do_cofre.sql', join(pasta, '0123_remover_legado_do_cofre.sql'));
+    const r = tentarMigrar({ CORTE_GATE_ARQUIVO: 'db/corte-gate.txt', PREFLIGHT_MARCA: marcaDoPreflight, RELEASE_ID: RELEASE, RELEASE_CORTE_AUTORIZADO: '0' });
+    assert.equal(r.status, 3, r.saida);
+    assert.match(r.saida, /corte bloqueado: pendentes do corte: 0123_remover_legado_do_cofre\.sql/);
+    assert.equal(foiAplicada('0123_remover_legado_do_cofre.sql'), false);
+    assert.equal(tabelaDoCorteExiste(), true);
+  });
+
+  it('a 0123 autorizada recusa enquanto houver conexão sem limpo_em', () => {
+    const r = tentarMigrar(autorizado());
+    assert.notEqual(r.status, 0, r.saida);
+    assert.match(r.saida, /ainda tem conexões sem limpo_em/);
+    assert.equal(foiAplicada('0123_remover_legado_do_cofre.sql'), false);
+    assert.equal(tabelaDoCorteExiste(), true);
+  });
+
+  it('a 0123 autorizada recusa limpa mas com ponteiro do n8n voltando numa conexão', () => {
     psql('UPDATE integrations.corte_para_cofre_refs SET limpo_em = now()');
-    psql(pendente);
+    psql(`UPDATE integrations.connections SET credential_ref = 'n8n:credential:voltou' WHERE id = '${GOOGLE}'`);
+    const r = tentarMigrar(autorizado());
+    assert.notEqual(r.status, 0, r.saida);
+    assert.match(r.saida, /ainda há conexão com ponteiro do n8n/);
+    assert.equal(foiAplicada('0123_remover_legado_do_cofre.sql'), false);
+    assert.equal(tabelaDoCorteExiste(), true);
+  });
+
+  it('a 0123 autorizada, com a limpeza concluída e sem ponteiro, remove a tabela do corte e as colunas legadas', () => {
+    psql(`UPDATE integrations.connections SET credential_ref = NULL WHERE id = '${GOOGLE}'`);
+    const r = tentarMigrar(autorizado());
+    assert.equal(r.status, 0, r.saida);
+    assert.equal(foiAplicada('0123_remover_legado_do_cofre.sql'), true);
     assert.equal(psql(`SELECT count(*) FROM information_schema.columns WHERE table_schema = 'integrations' AND table_name = 'connections' AND column_name IN ('credential_ref', 'coletor_ref', 'executor_ref')`), '0');
-    assert.equal(psql(`SELECT to_regclass('integrations.corte_para_cofre_refs') IS NULL`), 't');
+    assert.equal(tabelaDoCorteExiste(), false);
     assert.equal(psql(`SELECT count(*) FROM automation.fontes_de_coleta(50)`), '1');
   });
 });

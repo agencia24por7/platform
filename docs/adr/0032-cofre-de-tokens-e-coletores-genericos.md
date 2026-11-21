@@ -222,8 +222,8 @@ imagem anterior tolera (as migrações rodam com ela no ar; o "subir a nova vers
 A imagem anterior **não** consegue autorizar durante a janela (o gatilho recusa conexão ativa sem token): é a
 única regressão tolerada do esquema intermediário, e dura só até "subir a nova versão".
 
-**Remoção das colunas e da tabela do corte: release seguinte.** `db/pendentes/0123_remover_legado_do_cofre.sql`
-(fora de `db/migrations/`, não roda no deploy do corte). Pré-condições, verificadas pela própria migração:
+**Remoção das colunas e da tabela do corte: release seguinte (concluída em 2026-11-21, ADR 0035).** `0123_remover_legado_do_cofre.sql`
+(esteve em `db/pendentes/`, fora do deploy do corte; hoje em `db/migrations/` e em `db/corte-gate.txt`). Pré-condições, verificadas pela própria migração:
 todas as linhas de `corte_para_cofre_refs` com `limpo_em` (limpeza do n8n concluída) e nenhuma conexão com
 ponteiro do n8n (a imagem anterior não voltou). Para aplicar: mover para `db/migrations/` com o próximo número
 livre num release **depois** de a nova imagem estar estável em produção.
@@ -325,10 +325,9 @@ Ordem estrita (revisão independente do PR #120); cada passo só começa com o a
    enviar `developer-token: {{ $('Obter token').first().json.body.cabecalhosExtras['developer-token'] }}`. Hoje não
    é necessário: a chamada real de produção de 2026-11-20 só com `Authorization` + `login-customer-id` voltou 200.
    Depois do piloto, reautorizar o resto.
-6. **Só então a limpeza do n8n**: `npm run n8n:limpar-legado` (simulação, com a chave de **dono** da instância;
-   sem ela o script aborta), revisão do relatório, `npm run n8n:limpar-legado -- --aplicar`; repetir até
-   `falhas = 0`.
-7. **Release seguinte**: mover `db/pendentes/0123_remover_legado_do_cofre.sql` para `db/migrations/` (apaga
+6. **Só então a limpeza do n8n** (concluída em 2026-11-21; script removido junto da 0123): simulação com a chave de
+   **dono** da instância, revisão do relatório, aplicação; repetido até `falhas = 0`.
+7. **Release seguinte** (feita, ADR 0035): `0123_remover_legado_do_cofre.sql` movida para `db/migrations/` (apaga
    `corte_para_cofre_refs` e as colunas legadas; recusa se a limpeza não terminou).
 
 Verificação da renovação proativa: executar `ORLA · tokens · renovação` à mão uma vez e conferir
@@ -352,7 +351,9 @@ credenciais e workflows antigos ainda existem no n8n). Depois do passo 6 não h�
 credenciais foram apagadas e cada conexão restaurada teria de ser autorizada de novo. Restaurar perde o que o
 banco registrou depois do backup. BigQuery não é afetado.
 
-## Script de limpeza do n8n (`scripts/n8n-limpar-legado.mjs`)
+## Script de limpeza do n8n (`scripts/n8n-limpar-legado.mjs`, removido)
+
+Concluído em 2026-11-21; script removido junto da 0123 (ADR 0035). Descrição preservada como registro do que ele fazia:
 
 - Fonte: `integrations.corte_para_cofre_refs` com `limpo_em IS NULL`, lida por psql na VM (IAP), ou no docker
   local com `--local`. n8n pela API (`N8N_API_URL`/`N8N_API_KEY`, túnel IAP).

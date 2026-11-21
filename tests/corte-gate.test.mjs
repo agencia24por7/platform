@@ -104,7 +104,7 @@ describe('portão do corte no migrar.sh (release 2026-11)', { concurrency: false
 
   it('o portão do repositório lista exatamente as migrações do corte, que existem', () => {
     const listadas = readFileSync('db/corte-gate.txt', 'utf8').split('\n').map((l) => l.replace(/#.*/, '').trim()).filter(Boolean);
-    assert.deepEqual(listadas, ['0121_corte_para_cofre.sql', '0122_cofre_modo_unico.sql']);
+    assert.deepEqual(listadas, ['0121_corte_para_cofre.sql', '0122_cofre_modo_unico.sql', '0123_remover_legado_do_cofre.sql']);
     for (const nome of listadas) assert.ok(readFileSync(join('db/migrations', nome), 'utf8').length > 0);
   });
 });
