@@ -33,9 +33,13 @@ import {
 } from '@/modules/clients/domain/contexto/catalogo';
 import { calcularCompletude } from '@/modules/clients/domain/contexto/completude';
 import type { ArquivoDeContexto, EntradaDeCampo, ItemDeLista, Marcacao } from '@/modules/clients/domain/contexto/tipos';
+import type { OrganizationType } from '@/modules/organizations/domain/organization';
+import { vocabularioDe, type Vocabulario } from '@/modules/organizations/domain/vocabulario';
+import { traduzirCatalogo } from '@/modules/clients/domain/contexto/vocabulario';
 import { barrasDaSecao } from '@/modules/clients/domain/painel/resumo';
 
 type Props = {
+  readonly tipo: OrganizationType;
   readonly clienteId: string;
   readonly dados: DadosDoEditor;
   readonly podeEditar: boolean;
@@ -44,7 +48,7 @@ type Props = {
 };
 
 const DESTAQUES = [
-  { secao: 'empresa', campo: 'descricao_do_cliente', rotulo: 'Descrição do cliente' },
+  { secao: 'empresa', campo: 'descricao_do_cliente', rotulo: '' },
   { secao: 'presenca_digital', campo: 'redes_sociais', rotulo: 'Redes sociais' },
   { secao: 'produtos', campo: 'produtos', rotulo: 'Catálogo de produtos' },
 ] as const;
@@ -63,11 +67,13 @@ function itemDaUi(item: ItemDeLista): ItemDaLista {
 }
 
 function Selos({
+  vocabulario,
   marcacao,
   podeEditar,
   aoMarcar,
   aoConfirmar,
 }: {
+  readonly vocabulario: Vocabulario;
   readonly marcacao: Marcacao | null;
   readonly podeEditar: boolean;
   readonly aoMarcar: (epistemico: Epistemico) => void;
@@ -101,16 +107,18 @@ function Selos({
         <span className={`selo selo--${marcacao.epistemico}`}>{ROTULO_EPISTEMICO[marcacao.epistemico]}</span>
       )}
       <span className="selo selo--fonte" title="Fonte da informação">{ROTULO_FONTE[marcacao.fonte]}</span>
-      {marcacao.compartilhavel ? <span className="selo selo--cliente" title="O cliente vê esta informação no formulário">cliente vê</span> : null}
+      {marcacao.compartilhavel ? <span className="selo selo--cliente" title={vocabulario.dicaDoSelo}>{vocabulario.seloDoCompartilhado}</span> : null}
     </span>
   );
 }
 
-export function EditorDeContexto({ clienteId, dados, podeEditar, secaoInicial, campoInicial }: Props) {
+export function EditorDeContexto({ tipo, clienteId, dados, podeEditar, secaoInicial, campoInicial }: Props) {
+  const vocabulario = vocabularioDe(tipo);
+  const catalogo = useMemo(() => traduzirCatalogo(CATALOGO, tipo), [tipo]);
   const [entradas, setEntradas] = useState<Record<string, EntradaDeCampo>>({ ...dados.campos });
   const [listas, setListas] = useState<Record<string, readonly ItemDeLista[]>>({ ...dados.listas });
   const [arquivos, setArquivos] = useState<readonly ArquivoDeContexto[]>(dados.arquivos);
-  const [ativa, setAtiva] = useState<string>(CATALOGO.some((s) => s.key === secaoInicial) ? secaoInicial! : 'empresa');
+  const [ativa, setAtiva] = useState<string>(catalogo.some((s) => s.key === secaoInicial) ? secaoInicial! : 'empresa');
   const [realce, setRealce] = useState<string | null>(campoInicial);
   const [estados, setEstados] = useState<Record<string, EstadoDoSalvar>>({});
   const [ultimoSalvo, setUltimoSalvo] = useState<Date | null>(null);
@@ -130,8 +138,8 @@ export function EditorDeContexto({ clienteId, dados, podeEditar, secaoInicial, c
     [entradas, listas, arquivos],
   );
 
-  const secao = CATALOGO.find((s) => s.key === ativa) ?? CATALOGO[0]!;
-  const indice = CATALOGO.indexOf(secao);
+  const secao = catalogo.find((s) => s.key === ativa) ?? catalogo[0]!;
+  const indice = catalogo.indexOf(secao);
 
   const aoEstado = useCallback((chave: string, estado: EstadoDoSalvar) => {
     setEstados((atual) => (atual[chave] === estado ? atual : { ...atual, [chave]: estado }));
@@ -224,7 +232,7 @@ export function EditorDeContexto({ clienteId, dados, podeEditar, secaoInicial, c
     }
     setEntradas({ ...r.valor.campos });
     setListas({ ...r.valor.listas });
-    setAviso(valor ? 'O que já está preenchido nesta seção passa a aparecer para o cliente.' : 'Esta seção deixa de mostrar as respostas da equipe ao cliente.');
+    setAviso(valor ? vocabulario.avisoDeCompartilhou : vocabulario.avisoDeDescompartilhou);
   }
 
   async function abrirHistorico() {
@@ -334,6 +342,7 @@ export function EditorDeContexto({ clienteId, dados, podeEditar, secaoInicial, c
             const item = itens.find((i) => i.id === ui.id);
             return item ? (
               <Selos
+                vocabulario={vocabulario}
                 marcacao={item}
                 podeEditar={podeEditar}
                 aoMarcar={(ep) => void marcarItem(campo.key, item, { epistemico: ep })}
@@ -376,8 +385,9 @@ export function EditorDeContexto({ clienteId, dados, podeEditar, secaoInicial, c
         realce={realce === campo.key}
         selos={
           <>
-            {!campo.visivelAoCliente ? <span className="selo selo--interno">só a equipe vê</span> : null}
+            {!campo.visivelAoCliente ? <span className="selo selo--interno">{vocabulario.seloInterno}</span> : null}
             <Selos
+              vocabulario={vocabulario}
               marcacao={entrada ?? null}
               podeEditar={podeEditar}
               aoMarcar={(ep) => void marcarCampo(campo.key, ep)}
@@ -405,7 +415,7 @@ export function EditorDeContexto({ clienteId, dados, podeEditar, secaoInicial, c
         <div className="editor__destaques" aria-label="Atalhos">
           {DESTAQUES.map((d) => (
             <button key={d.campo} type="button" className="chip" onClick={() => irPara(d.secao, d.campo)}>
-              {d.rotulo}
+              {d.campo === 'descricao_do_cliente' ? vocabulario.descricaoDoCliente : d.rotulo}
             </button>
           ))}
         </div>
@@ -441,14 +451,14 @@ export function EditorDeContexto({ clienteId, dados, podeEditar, secaoInicial, c
           <label className="passos__seletor">
             <span className="visualmente-oculto">Ir para a seção</span>
             <select className="select" value={ativa} onChange={(e) => irPara(e.target.value)}>
-              {CATALOGO.map((s) => {
+              {catalogo.map((s) => {
                 const c = completude.secoes.find((x) => x.secao === s.key);
                 return <option key={s.key} value={s.key}>{s.letra} · {s.titulo} — {c?.percentual ?? 0}%</option>;
               })}
             </select>
           </label>
           <ol className="passos__lista">
-            {CATALOGO.map((s: Secao) => {
+            {catalogo.map((s: Secao) => {
               const c = completude.secoes.find((x) => x.secao === s.key);
               const b = c ? barrasDaSecao(c) : null;
               return (
@@ -486,7 +496,7 @@ export function EditorDeContexto({ clienteId, dados, podeEditar, secaoInicial, c
               <p className="subtle small">{secao.descricao}</p>
             </div>
             {podeEditar ? (
-              <label className="interruptor" title="Mostra ao cliente, no formulário enviado por link, o que a equipe já preencheu nesta seção">
+              <label className="interruptor" title={vocabulario.dicaDeCompartilhar}>
                 <input
                   type="checkbox"
                   role="switch"
@@ -495,7 +505,7 @@ export function EditorDeContexto({ clienteId, dados, podeEditar, secaoInicial, c
                   onChange={(e) => void compartilhar(e.target.checked)}
                 />
                 <span className="interruptor__trilho" aria-hidden="true" />
-                <span className="small">Compartilhável com o cliente</span>
+                <span className="small">{vocabulario.rotuloDeCompartilhar}</span>
               </label>
             ) : null}
           </header>
@@ -516,11 +526,11 @@ export function EditorDeContexto({ clienteId, dados, podeEditar, secaoInicial, c
           </div>
 
           <footer className="secao-editor__rodape">
-            <button type="button" className="btn" disabled={indice === 0} onClick={() => irPara(CATALOGO[indice - 1]!.key)}>
-              ← {indice > 0 ? CATALOGO[indice - 1]!.titulo : 'Anterior'}
+            <button type="button" className="btn" disabled={indice === 0} onClick={() => irPara(catalogo[indice - 1]!.key)}>
+              ← {indice > 0 ? catalogo[indice - 1]!.titulo : 'Anterior'}
             </button>
-            <button type="button" className="btn btn--primary" disabled={indice === CATALOGO.length - 1} onClick={() => irPara(CATALOGO[indice + 1]!.key)}>
-              {indice < CATALOGO.length - 1 ? CATALOGO[indice + 1]!.titulo : 'Próxima'} →
+            <button type="button" className="btn btn--primary" disabled={indice === catalogo.length - 1} onClick={() => irPara(catalogo[indice + 1]!.key)}>
+              {indice < catalogo.length - 1 ? catalogo[indice + 1]!.titulo : 'Próxima'} →
             </button>
           </footer>
         </section>
@@ -545,7 +555,7 @@ export function EditorDeContexto({ clienteId, dados, podeEditar, secaoInicial, c
               {revisoes.map((r) => (
                 <li key={r.id} className="revisao">
                   <div className="revisao__topo">
-                    <span className="strong small">{CATALOGO.find((s) => s.key === r.secao)?.letra ?? ''} · {r.chave}</span>
+                    <span className="strong small">{catalogo.find((s) => s.key === r.secao)?.letra ?? ''} · {r.chave}</span>
                     <span className="pill">{r.viaLink ? 'cliente' : 'equipe'}</span>
                     <time className="subtle xsmall" dateTime={new Date(r.em).toISOString()}>{new Date(r.em).toLocaleString('pt-BR')}</time>
                   </div>

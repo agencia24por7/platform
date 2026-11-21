@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { CopyButton } from '@/../app/_components/CopyButton';
-import { regenerarLinkDeContexto, type LinkGerado } from '@/../app/clientes/[id]/(painel)/acessos/acoes';
+import { regenerarLinkDeContexto, type LinkGerado } from '@/../app/clientes/[id]/(painel)/conexoes/pedir/acoes';
 
 export function RegenerarLink({ clienteId, linkId }: { readonly clienteId: string; readonly linkId: string }) {
   const [resultado, setResultado] = useState<LinkGerado | null>(null);

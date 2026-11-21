@@ -111,14 +111,10 @@ async function completarViaConvite(input: {
 
   if (!outcome.ok) {
     logger.warn('convite.oauth.callback.authorization_failed', { platform, code: outcome.error.code });
-    return clear(
-      NextResponse.redirect(
-        new URL(
-          `${destino}?erro=${outcome.error.code === 'forbidden' ? 'autorizacao_recusada' : 'falha_autorizacao'}`,
-          env().TRIA_APP_BASE_URL,
-        ),
-      ),
-    );
+    const volta = new URL(destino, env().TRIA_APP_BASE_URL);
+    volta.searchParams.set('erro', outcome.error.code === 'forbidden' ? 'autorizacao_recusada' : 'falha_autorizacao');
+    volta.searchParams.set('plataforma', platform);
+    return clear(NextResponse.redirect(volta));
   }
 
   await concluirItemDoConvite(itemId, plataforma, outcome.value, pendente.clientId);

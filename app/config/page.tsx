@@ -4,6 +4,8 @@ import { Shell } from '@/../app/_components/Shell';
 import { modules } from '@/composition';
 import { PAPEIS_CONVIDAVEIS, conviteVivo } from '@/modules/team/domain/convite';
 import { podeMexerNaEquipe } from '@/modules/team/domain/membro';
+import type { Organization } from '@/modules/organizations/domain/organization';
+import { vocabularioDe } from '@/modules/organizations/domain/vocabulario';
 import type { MemberRole } from '@/modules/identity/domain/user';
 import { canAdminister } from '@/modules/identity/domain/user';
 import { atorAtual } from '@/shared/http/ator';
@@ -18,6 +20,13 @@ const ROTULO_DO_PAPEL: Record<MemberRole, string> = {
   operator: 'Opera',
   viewer: 'Enxerga',
 };
+
+function efeitoDoPapel(papel: MemberRole, tipo: Organization['type']): string {
+  const vocabulario = vocabularioDe(tipo);
+  if (papel === 'admin') return vocabulario.descricaoDoCicloDeVida;
+  if (papel === 'viewer') return vocabulario.descricaoDoPapelLeitor;
+  return EFEITO_DO_PAPEL[papel];
+}
 
 const EFEITO_DO_PAPEL: Record<MemberRole, string> = {
   owner: 'Decide tudo, inclusive quem mais responde pela organização.',
@@ -136,7 +145,9 @@ async function mudarTipo(formData: FormData): Promise<void> {
 
   const ctx = await requireContext();
   if (ctx.clientIds !== null) redirect('/clientes');
-  if (!canAdminister(ctx.role)) redirect('/config');
+  if (ctx.role !== 'owner') {
+    redirect(`/config?erro=${encodeURIComponent('Só o dono da organização pode mudar o tipo dela.')}#organizacao`);
+  }
 
   const pedido = text(formData, 'tipo');
   if (pedido !== 'agency' && pedido !== 'advertiser') {
@@ -249,13 +260,13 @@ export default async function ConfiguracoesPage({
                 </tr>
                 <tr>
                   <td className="strong">Papel</td>
-                  <td className="muted">{EFEITO_DO_PAPEL[ctx.role]}</td>
+                  <td className="muted">{efeitoDoPapel(ctx.role, organization.type)}</td>
                 </tr>
                 <tr>
                   <td className="strong">Enxerga</td>
                   <td className="muted">
                     {recortado
-                      ? `${ctx.clientIds!.length} cliente(s), por recorte de acesso`
+                      ? `${ctx.clientIds!.length} ${vocabularioDe(organization.type).cliente}(s), por recorte de acesso`
                       : 'A organização inteira'}
                   </td>
                 </tr>
@@ -285,12 +296,13 @@ export default async function ConfiguracoesPage({
       {recortado ? null : (
         <>
         <div id="organizacao" />
+        {organization.type === 'advertiser' ? null : (
         <div className="card">
           <div className="card__head">
             <span className="card__title">Como esta organização trabalha</span>
             <span className="card__sub">{EFEITO_DO_TIPO[organization.type]}</span>
           </div>
-          {podeAdministrar ? (
+          {ctx.role === 'owner' ? (
             <form className="form form--linha" action={mudarTipo}>
               <label className="field">
                 <span className="field__label">Tipo</span>
@@ -308,10 +320,12 @@ export default async function ConfiguracoesPage({
               </button>
             </form>
           ) : (
-            <div className="empty">Só quem administra a organização pode mudar isso.</div>
+            <div className="empty">Só o dono da organização pode mudar isso.</div>
           )}
         </div>
+        )}
 
+        {organization.type === 'advertiser' ? null : (
         <div className="card">
           <div className="card__head">
             <span className="card__title">Identificadores</span>
@@ -383,6 +397,7 @@ export default async function ConfiguracoesPage({
             </div>
           )}
         </div>
+        )}
         </>
       )}
 
