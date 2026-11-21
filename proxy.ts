@@ -20,6 +20,8 @@ const ROTAS_ABERTAS = [
   '/api/meta/exclusao',
   '/convite',
   '/api/convite',
+  '/contexto',
+  '/api/contexto',
   '/api/oauth',
   '/sobre',
   '/privacidade',

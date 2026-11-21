@@ -68,6 +68,7 @@ export type ResumoDaMedicao = { readonly clientes: number; readonly tabelas: num
 
 export type BrainService = {
   montar(clienteId: string): Promise<Result<Snapshot, Failure>>;
+  montarNaOrganizacao(organizationId: string, clienteId: string): Promise<Result<Snapshot, Failure>>;
   catalogo(
     clienteId: string,
     consulta: FiltrosDoCatalogo & { readonly limite: number; readonly cursor: string | null },
@@ -138,6 +139,12 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
     if (!cliente) return err(NAO_ENCONTRADO);
     const snapshot = await montarResolvido(cliente);
     return snapshot ? ok(snapshot) : err(NAO_ENCONTRADO);
+  }
+
+  async function montarNaOrganizacao(organizationId: string, clienteId: string): Promise<Result<Snapshot, Failure>> {
+    if (!UUID.test(clienteId) || !UUID.test(organizationId)) return err(NAO_ENCONTRADO);
+    const snapshot = await montarResolvido({ organizationId, clienteId });
+    return snapshot && snapshot.organizationId === organizationId ? ok(snapshot) : err(NAO_ENCONTRADO);
   }
 
   async function auditar(worker: IdentidadeDoWorker, snapshot: Snapshot, rota: string, devolvidas: number): Promise<void> {
@@ -228,6 +235,7 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
 
   return {
     montar,
+    montarNaOrganizacao,
 
     catalogo(clienteId, consulta, worker) {
       return consultar(clienteId, worker, 'catalogo', (snapshot) => {

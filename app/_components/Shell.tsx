@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Suspense, type ComponentType, type ReactNode } from 'react';
 import { ErroDeAutorizacao } from '@/../app/_components/ErroDeAutorizacao';
 import { IconeAuditoria, IconeClientes, IconeColetas, IconeConexoes } from '@/../app/_components/Icones';
+import { NavegacaoMovel } from '@/../app/_components/NavegacaoMovel';
 import { ThemeToggle } from '@/../app/_components/ThemeToggle';
 import type { Organization } from '@/modules/organizations/domain/organization';
 import { modules } from '@/composition';
@@ -41,22 +42,14 @@ export async function Shell({ title, organization, active, children }: Props) {
   const organizacoes = vinculos.length > 1 ? await modules().organizations.ofUser(session!.user.id) : [];
   const recortado = organization ? (await escopoDeCliente(organization.id)) !== ORGANIZACAO_INTEIRA : false;
 
-  return (
-    <div className="shell">
-      <a className="pular-link" href="#conteudo">
-        Pular para o conteúdo
-      </a>
-      <aside className="side">
-        <div className="side__brand">
-          <img className="side__logo" src="/orla/logo.png" alt="orla" />
-          {organization ? (
-            <span className="side__modo">
-              {organization.type === 'agency' ? 'Modo agência' : 'Modo anunciante'}
-            </span>
-          ) : null}
-        </div>
-        <nav className="side__nav">
-          {navFor(organization, recortado).map((entry) => (
+  const entradas = navFor(organization, recortado);
+  const modo = organization ? (organization.type === 'agency' ? 'Modo agência' : 'Modo anunciante') : null;
+
+  function navegacao(sufixo: string) {
+    return (
+      <>
+        <nav className="side__nav" aria-label="Principal">
+          {entradas.map((entry) => (
             <Link
               key={entry.href}
               href={entry.href}
@@ -72,12 +65,12 @@ export async function Shell({ title, organization, active, children }: Props) {
           {organization && organizacoes.length > 1 ? (
             <form className="trocador" action="/api/organizacao" method="post">
               <input type="hidden" name="voltarPara" value={active} />
-              <label className="trocador__rotulo" htmlFor="trocador-organizacao">
+              <label className="trocador__rotulo" htmlFor={`trocador-organizacao-${sufixo}`}>
                 Organização
               </label>
               <select
                 className="select select--compacto"
-                id="trocador-organizacao"
+                id={`trocador-organizacao-${sufixo}`}
                 name="organizationId"
                 defaultValue={organization.id}
               >
@@ -121,10 +114,30 @@ export async function Shell({ title, organization, active, children }: Props) {
             </a>
           </nav>
         </div>
+      </>
+    );
+  }
+
+  return (
+    <div className="shell">
+      <a className="pular-link" href="#conteudo">
+        Pular para o conteúdo
+      </a>
+      <aside className="side">
+        <div className="side__brand">
+          <img className="side__logo" src="/orla/logo.png" alt="orla" />
+          {modo ? <span className="side__modo">{modo}</span> : null}
+        </div>
+        {navegacao('lateral')}
       </aside>
       <main className="main">
         <header className="topbar">
-          <span className="strong">{title}</span>
+          <NavegacaoMovel>
+            {modo ? <div className="gaveta__modo side__modo">{modo}</div> : null}
+            {navegacao('gaveta')}
+          </NavegacaoMovel>
+          <img className="topbar__marca" src="/orla/logo.png" alt="" aria-hidden="true" />
+          <span className="strong topbar__titulo">{title}</span>
           <div className="sessao">
             <ThemeToggle />
           </div>

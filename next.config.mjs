@@ -1,3 +1,9 @@
+const cabecalhosDoFormularioPublico = [
+  { key: 'Referrer-Policy', value: 'no-referrer' },
+  { key: 'Cache-Control', value: 'no-store, max-age=0' },
+  { key: 'X-Robots-Tag', value: 'noindex, nofollow, noarchive' },
+];
+
 const securityHeaders = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'X-Frame-Options', value: 'DENY' },
@@ -13,9 +19,14 @@ export default {
   poweredByHeader: false,
   serverExternalPackages: ['postgres', '@google-cloud/kms'],
   experimental: {
-    proxyClientMaxBodySize: '16mb',
+    proxyClientMaxBodySize: '26mb',
   },
   async headers() {
-    return [{ source: '/:path*', headers: securityHeaders }];
+    return [
+      { source: '/:path*', headers: securityHeaders },
+      { source: '/contexto/:path*', headers: cabecalhosDoFormularioPublico },
+      { source: '/convite/:path*', headers: cabecalhosDoFormularioPublico },
+      { source: '/api/contexto/:path*', headers: cabecalhosDoFormularioPublico },
+    ];
   },
 };
