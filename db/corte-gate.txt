@@ -1,0 +1,6 @@
+# Migrações destrutivas do corte para o cofre de tokens (ADR 0032).
+# infra/compose/migrar.sh recusa aplicá-las num banco que já tem migrações sem
+# RELEASE_CORTE_AUTORIZADO=1 e a marca do pre-flight da mesma release.
+# Procedimento: docs/release/2026-11-release-cofre-e-contexto.md
+0121_corte_para_cofre.sql
+0122_cofre_modo_unico.sql

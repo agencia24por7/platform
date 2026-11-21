@@ -5,10 +5,20 @@ on:
     branches: [main]
     paths-ignore: ["infra/terraform/**", "**.md", "prototipo/**"]
   workflow_dispatch:
+    inputs:
+      autorizar_corte:
+        description: "Autoriza as migrações do corte (db/corte-gate.txt). Só depois do runbook docs/release/2026-11-release-cofre-e-contexto.md"
+        type: boolean
+        default: false
+      bq_ddl_aplicado:
+        description: "Atestado da DDL do BigQuery (nome da release, ex.: 2026-11-cofre-e-contexto) quando a VM não consegue conferir"
+        type: string
+        default: ""
 
 permissions:
   contents: read
   id-token: write
+  actions: read
 
 concurrency:
   group: deploy
@@ -25,8 +35,30 @@ jobs:
     timeout-minutes: 25
     environment: producao
 
+    env:
+      VM: tria-${{ vars.ENVIRONMENT }}-vm
+      ZONE: ${{ vars.GCP_ZONE }}
+      IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/orla/app
+      RELEASE_ID: ${{ github.sha }}
+      RELEASE_CORTE_AUTORIZADO: ${{ (inputs.autorizar_corte || vars.RELEASE_CORTE_AUTORIZADO == 'true') && '1' || '0' }}
+      BQ_DDL_APLICADO: ${{ inputs.bq_ddl_aplicado || vars.BQ_DDL_APLICADO }}
+
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Esperar o Terraform do mesmo commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          ANTES: ${{ github.event.before }}
+        run: |
+          esperado=auto
+          if [ -n "$ANTES" ] && git cat-file -e "$ANTES^{commit}" 2>/dev/null; then
+            if git diff --name-only "$ANTES" "$SHA" -- infra/terraform .github/workflows/infra.yml | grep -q .; then esperado=1; else esperado=0; fi
+          fi
+          INFRA_ESPERADO=$esperado sh scripts/release/aguardar-infra.sh
 
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
@@ -39,17 +71,12 @@ jobs:
         run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
 
       - name: Construir e publicar a imagem
-        env:
-          IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/orla/app
         run: |
           docker build -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" .
           docker push "$IMAGE:${{ github.sha }}"
           docker push "$IMAGE:latest"
 
       - name: Enviar configuração da pilha
-        env:
-          VM: tria-${{ vars.ENVIRONMENT }}-vm
-          ZONE: ${{ vars.GCP_ZONE }}
         run: |
           tentar() {
             for n in 1 2 3 4 5; do
@@ -59,16 +86,18 @@ jobs:
             done
             return 1
           }
-          mkdir -p /tmp/pilha && cp -a infra/compose/. /tmp/pilha/ && cp -a db/migrations /tmp/pilha/migrations
+          mkdir -p /tmp/pilha && cp -a infra/compose/. /tmp/pilha/ && cp -a db/migrations /tmp/pilha/migrations && cp db/corte-gate.txt /tmp/pilha/corte-gate.txt
           tentar gcloud compute scp --recurse /tmp/pilha/* "$VM:/tmp/compose" \
             --zone "$ZONE" --tunnel-through-iap --quiet
           tentar gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet \
             --command "sudo sh -c 'find /opt/tria -mindepth 1 -maxdepth 1 ! -name .env -exec rm -rf {} +' && sudo cp -a /tmp/compose/. /opt/tria/ && rm -rf /tmp/compose"
 
-      - name: Migrar volumes de tria para orla (uma vez)
+      - name: Pre-flight da release (antes de qualquer migração)
         env:
-          VM: tria-${{ vars.ENVIRONMENT }}-vm
-          ZONE: ${{ vars.GCP_ZONE }}
+          IMAGEM: ${{ env.IMAGE }}:${{ github.sha }}
+        run: sh scripts/preflight-release.sh
+
+      - name: Migrar volumes de tria para orla (uma vez)
         run: |
           tentar() {
             for n in 1 2 3 4 5; do
@@ -96,10 +125,6 @@ jobs:
           "
 
       - name: Aplicar migrações pendentes
-        env:
-          VM: tria-${{ vars.ENVIRONMENT }}-vm
-          ZONE: ${{ vars.GCP_ZONE }}
-          IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/orla/app
         run: |
           tentar() {
             for n in 1 2 3 4 5; do
@@ -117,14 +142,10 @@ jobs:
             sudo docker pull '$IMAGE:${{ github.sha }}'
             sudo env APP_IMAGE='$IMAGE:${{ github.sha }}' docker compose -f /opt/tria/docker-compose.prod.yml --project-directory /opt/tria up -d postgres
             until sudo docker exec orla-postgres pg_isready -U postgres -d tria > /dev/null 2>&1; do sleep 2; done
-            sudo sh /opt/tria/migrar.sh
+            sudo env RELEASE_ID='$RELEASE_ID' RELEASE_CORTE_AUTORIZADO='$RELEASE_CORTE_AUTORIZADO' CORTE_GATE_ARQUIVO=/opt/tria/corte-gate.txt sh /opt/tria/migrar.sh
           "
 
       - name: Subir a nova versão
-        env:
-          VM: tria-${{ vars.ENVIRONMENT }}-vm
-          ZONE: ${{ vars.GCP_ZONE }}
-          IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/orla/app
         run: |
           tentar() {
             for n in 1 2 3 4 5; do
@@ -146,16 +167,8 @@ jobs:
             sudo docker image prune -af
           "
 
-      - name: Conferir saúde
+      - name: Smoke pós-deploy (saúde, worker 401, cofre 404 pelo proxy)
         env:
           HOST: ${{ vars.APP_HOSTNAME }}
-        run: |
-          for tentativa in $(seq 1 20); do
-            if curl -sf "https://$HOST/api/health" > /dev/null; then
-              echo "aplicação respondendo"
-              exit 0
-            fi
-            sleep 10
-          done
-          echo "a aplicação não respondeu depois do deploy"
-          exit 1
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+        run: sh scripts/release/smoke-pos-deploy.sh "https://$HOST"

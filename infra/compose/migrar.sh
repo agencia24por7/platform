@@ -8,6 +8,11 @@ MIGRACOES_DIR="${MIGRACOES_DIR:-/opt/tria/migrations}"
 SINCRONIZAR_SENHA_WORKER="${SINCRONIZAR_SENHA_WORKER:-1}"
 TRAVA="hashtext('orla:migracoes')"
 NOME_VALIDO='^[0-9]{4}_[a-z0-9_]+(\.sem_transacao)?\.sql$'
+MIGRAR_MODO="${MIGRAR_MODO:-aplicar}"
+CORTE_GATE_ARQUIVO="${CORTE_GATE_ARQUIVO:-/opt/tria/corte-gate.txt}"
+PREFLIGHT_MARCA="${PREFLIGHT_MARCA:-/opt/tria/.preflight-ok}"
+RELEASE_CORTE_AUTORIZADO="${RELEASE_CORTE_AUTORIZADO:-0}"
+RELEASE_ID="${RELEASE_ID:-}"
 
 LEDGER="CREATE TABLE IF NOT EXISTS public.schema_migrations (
   nome        text PRIMARY KEY,
@@ -82,9 +87,20 @@ SELECT format('ALTER ROLE orla_worker WITH LOGIN PASSWORD %L', :'senha')
 SQL
 }
 
+na_lista_do_corte() {
+  [ -f "$CORTE_GATE_ARQUIVO" ] || return 1
+  sed -e 's/#.*//' -e 's/[[:space:]]//g' "$CORTE_GATE_ARQUIVO" | grep -qxF "$1"
+}
+
+marca_do_preflight_confere() {
+  [ -n "$RELEASE_ID" ] && [ -f "$PREFLIGHT_MARCA" ] && [ "$(head -n 1 "$PREFLIGHT_MARCA")" = "$RELEASE_ID" ]
+}
+
 psql_admin -q -c "$LEDGER" > /dev/null
 
-aplicadas=0
+ja_tinha_migracoes=$(psql_admin -At -c "SELECT count(*) FROM public.schema_migrations")
+pendentes=""
+pendentes_do_corte=""
 for arquivo in "$MIGRACOES_DIR"/*.sql; do
   [ -e "$arquivo" ] || continue
   nome=$(basename "$arquivo")
@@ -96,10 +112,44 @@ for arquivo in "$MIGRACOES_DIR"/*.sql; do
 
   ja_aplicada=$(psql_admin -At -c "SELECT 1 FROM public.schema_migrations WHERE nome = '$nome'")
   if [ -n "$ja_aplicada" ]; then
-    echo "pulando $nome"
+    [ "$MIGRAR_MODO" = "listar" ] || echo "pulando $nome"
     continue
   fi
+  pendentes="$pendentes $nome"
+  if na_lista_do_corte "$nome"; then pendentes_do_corte="$pendentes_do_corte $nome"; fi
+done
 
+corte_exige_autorizacao=0
+if [ -n "$pendentes_do_corte" ] && [ "$ja_tinha_migracoes" != "0" ]; then corte_exige_autorizacao=1; fi
+
+if [ "$MIGRAR_MODO" = "listar" ]; then
+  total=0
+  for nome in $pendentes; do
+    total=$((total + 1))
+    if na_lista_do_corte "$nome"; then echo "pendente (corte) $nome"; else echo "pendente $nome"; fi
+  done
+  echo "$total migração(ões) pendente(s)."
+  if [ "$corte_exige_autorizacao" = "1" ]; then echo "corte pendente:$pendentes_do_corte"; fi
+  exit 0
+fi
+
+if [ "$corte_exige_autorizacao" = "1" ]; then
+  if [ "$RELEASE_CORTE_AUTORIZADO" != "1" ]; then
+    echo "corte bloqueado: pendentes do corte:$pendentes_do_corte" >&2
+    echo "Falta RELEASE_CORTE_AUTORIZADO=1 (input autorizar_corte do deploy). Nenhuma migração foi aplicada." >&2
+    exit 3
+  fi
+  if ! marca_do_preflight_confere; then
+    echo "corte bloqueado: a marca do pre-flight ($PREFLIGHT_MARCA) não é da release '$RELEASE_ID'." >&2
+    echo "Rode o pre-flight desta release antes (scripts/preflight-release.sh). Nenhuma migração foi aplicada." >&2
+    exit 3
+  fi
+  echo "corte autorizado para a release $RELEASE_ID:$pendentes_do_corte"
+fi
+
+aplicadas=0
+for nome in $pendentes; do
+  arquivo="$MIGRACOES_DIR/$nome"
   printf 'aplicando %s ... ' "$nome"
   if roda_sem_transacao "$nome"; then
     aplicar_sem_transacao "$arquivo" "$nome"

@@ -84,12 +84,18 @@ export function urlDoBancoDoWorker(config: Pick<Env, 'DATABASE_URL' | 'DATABASE_
   return config.DATABASE_URL_WORKER ?? config.DATABASE_URL;
 }
 
+export function problemasDoAmbiente(fonte: Record<string, string | undefined>): string[] {
+  const parsed = schema.safeParse(fonte);
+  if (parsed.success) return [];
+  return parsed.error.issues.map((issue) => `${issue.path.join('.') || '(raiz)'}: ${issue.message}`);
+}
+
 export function lerAmbiente(fonte: Record<string, string | undefined>): Env {
   const parsed = schema.safeParse(fonte);
 
   if (!parsed.success) {
-    const problems = parsed.error.issues
-      .map((issue) => `  ${issue.path.join('.') || '(raiz)'}: ${issue.message}`)
+    const problems = problemasDoAmbiente(fonte)
+      .map((problema) => `  ${problema}`)
       .join('\n');
     throw new Error(`Configuração inválida. O app não sobe sem isto:\n${problems}`);
   }

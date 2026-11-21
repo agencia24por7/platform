@@ -62,6 +62,7 @@ umask 077
   echo "WHATSAPP_LOGIN_CONFIG_ID=$(read_optional_secret whatsapp-login-config-id)"
   echo "LEADADS_LOGIN_CONFIG_ID=$(read_optional_secret leadads-login-config-id)"
   echo "WHATSAPP_WEBHOOK_VERIFY_TOKEN=$(read_optional_secret whatsapp-webhook-verify-token)"
+  echo "ALERT_WEBHOOK_URL=$(read_optional_secret alert-webhook-url)"
 } > .env
 if [ -n "$IMAGEM_ATUAL" ]; then echo "$IMAGEM_ATUAL" >> .env; fi
 chmod 600 .env
