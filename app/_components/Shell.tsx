@@ -4,6 +4,7 @@ import { ErroDeAutorizacao } from '@/../app/_components/ErroDeAutorizacao';
 import { IconeAuditoria, IconeClientes, IconeColetas, IconeConexoes } from '@/../app/_components/Icones';
 import { NavegacaoMovel } from '@/../app/_components/NavegacaoMovel';
 import { ThemeToggle } from '@/../app/_components/ThemeToggle';
+import { vocabularioDe } from '@/modules/organizations/domain/vocabulario';
 import type { Organization } from '@/modules/organizations/domain/organization';
 import { modules } from '@/composition';
 import { ORGANIZACAO_INTEIRA, escopoDeCliente } from '@/shared/db/escopo';
@@ -11,8 +12,8 @@ import { currentUser } from '@/shared/http/currentUser';
 
 type NavEntry = { href: string; label: string; icone?: ComponentType<{ className?: string }> };
 
-function navFor(organization: Organization | null, recortado: boolean): readonly NavEntry[] {
-  const clientsLabel = organization?.type === 'advertiser' ? 'Negócios' : 'Clientes';
+function navFor(organization: Organization | null, recortado: boolean, negocioUnico: boolean): readonly NavEntry[] {
+  const clientsLabel = organization ? vocabularioDe(organization.type).clientes : 'Clientes';
 
   if (recortado) {
     return [
@@ -23,7 +24,7 @@ function navFor(organization: Organization | null, recortado: boolean): readonly
 
   return [
     { href: '/clientes', label: clientsLabel, icone: IconeClientes },
-    { href: '/integracoes', label: 'Conexões', icone: IconeConexoes },
+    ...(negocioUnico ? [] : [{ href: '/integracoes', label: 'Conexões', icone: IconeConexoes }]),
     { href: '/automacoes', label: 'Coletas', icone: IconeColetas },
     { href: '/auditoria', label: 'Auditoria', icone: IconeAuditoria },
   ];
@@ -42,7 +43,11 @@ export async function Shell({ title, organization, active, children }: Props) {
   const organizacoes = vinculos.length > 1 ? await modules().organizations.ofUser(session!.user.id) : [];
   const recortado = organization ? (await escopoDeCliente(organization.id)) !== ORGANIZACAO_INTEIRA : false;
 
-  const entradas = navFor(organization, recortado);
+  const negocioUnico =
+    organization?.type === 'advertiser' && !recortado
+      ? (await modules().clients.list(organization.id)).filter((c) => c.status === 'active').length === 1
+      : false;
+  const entradas = navFor(organization, recortado, negocioUnico);
   const modo = organization ? (organization.type === 'agency' ? 'Modo agência' : 'Modo anunciante') : null;
 
   function navegacao(sufixo: string) {

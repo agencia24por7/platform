@@ -76,8 +76,8 @@ export function createOrganizationService(
 
     async changeType(input, ator) {
       const { id, type } = input;
-      if (!canAdminister(input.papelDeQuemAge)) {
-        return err(failure('forbidden', 'Só quem administra a organização pode mudar o tipo dela.'));
+      if (input.papelDeQuemAge !== 'owner') {
+        return err(failure('forbidden', 'Só o dono da organização pode mudar o tipo dela.'));
       }
 
       const atual = await repository.findById(id);

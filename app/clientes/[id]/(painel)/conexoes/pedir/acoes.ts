@@ -8,6 +8,7 @@ import { text } from '@/shared/http/actions';
 import { atorAtual } from '@/shared/http/ator';
 import { requireContext } from '@/shared/http/currentOrganization';
 import { canAdminister } from '@/modules/identity/domain/user';
+import { MOTIVO_DO_CONVITE_DE_INTEGRACAO, validarPlataformasEscolhidas } from '@/modules/connections/domain/integrationInvite';
 
 export type LinkGerado =
   | {
@@ -63,6 +64,70 @@ export async function criarLinkDeContexto(
   };
 }
 
+export type PedidoAoCliente = {
+  readonly plataformas: readonly string[];
+  readonly incluirMapa: boolean;
+  readonly secoes: readonly string[];
+  readonly expiraEmDias: number;
+  readonly nota: string;
+  readonly conviteDeIntegracaoId: string | null;
+};
+
+async function criarConviteParaOPedido(escopo: NonNullable<Awaited<ReturnType<typeof escopoDoCliente>>>, clientId: string, plataformas: readonly string[]) {
+  if (!escopo.admin || escopo.ctx.clientIds !== null) {
+    return { ok: false as const, erro: 'Só quem administra a organização pode criar convite de integração.' };
+  }
+  const decisao = validarPlataformasEscolhidas([...plataformas]);
+  if (!decisao.ok) return { ok: false as const, erro: MOTIVO_DO_CONVITE_DE_INTEGRACAO[decisao.motivo] };
+  const ator = await atorAtual();
+  const convite = await modules().connectionInvites.create({
+    organizationId: escopo.comando.organizationId,
+    clientId,
+    platforms: decisao.platforms,
+    createdBy: ator.userId,
+  });
+  await modules().audit.record({
+    organizationId: escopo.comando.organizationId,
+    actorType: 'user',
+    actorId: ator.userId,
+    action: 'integration_invite.created',
+    targetType: 'client',
+    targetId: clientId,
+    requestId: ator.requestId,
+    sourceIp: ator.sourceIp,
+    metadata: { inviteId: convite.id, platforms: decisao.platforms },
+  });
+  return { ok: true as const, conviteId: convite.id, expiraEm: convite.expiresAt };
+}
+
+export async function criarPedidoAoCliente(clientId: string, pedido: PedidoAoCliente): Promise<LinkGerado> {
+  const escopo = await escopoDoCliente(clientId);
+  if (!escopo) return { ok: false, erro: 'Cliente não encontrado.' };
+  let conviteId = pedido.conviteDeIntegracaoId;
+  let expiraEm: Date | null = null;
+  if (pedido.plataformas.length > 0) {
+    const criado = await criarConviteParaOPedido(escopo, clientId, pedido.plataformas);
+    if (!criado.ok) return criado;
+    conviteId = criado.conviteId;
+    expiraEm = criado.expiraEm;
+  }
+  if (!pedido.incluirMapa) {
+    const url = await urlDoConvite(escopo.comando.organizationId, clientId, conviteId);
+    if (!url || !expiraEm) return { ok: false, erro: 'Escolha ao menos uma plataforma ou inclua o contexto.' };
+    return { ok: true, url, conviteUrl: url, expiraEm: expiraEm.toISOString(), secoes: [] };
+  }
+  const gerado = await criarLinkDeContexto(clientId, {
+    secoes: pedido.secoes,
+    expiraEmDias: pedido.expiraEmDias,
+    nota: pedido.nota,
+    conviteDeIntegracaoId: conviteId,
+  });
+  if (!gerado.ok && pedido.plataformas.length > 0 && conviteId) {
+    await modules().connectionInvites.revoke(escopo.comando.organizationId, conviteId);
+  }
+  return gerado;
+}
+
 export async function regenerarLinkDeContexto(clientId: string, linkId: string): Promise<LinkGerado> {
   const escopo = await escopoDoCliente(clientId);
   if (!escopo || !idValido(linkId)) return { ok: false, erro: 'Link não encontrado.' };
@@ -80,7 +145,7 @@ export async function regenerarLinkDeContexto(clientId: string, linkId: string):
 
 export async function revogarLinkDeContexto(formData: FormData): Promise<void> {
   const clientId = text(formData, 'clientId');
-  const destino = rotaDoCliente(clientId, 'acessos');
+  const destino = rotaDoCliente(clientId, 'conexoes', { secao: 'pedir' });
   const escopo = await escopoDoCliente(clientId);
   const linkId = text(formData, 'linkId');
   if (!escopo || !idValido(linkId)) redirect(comAviso(destino, 'erro', 'Link não encontrado.'));

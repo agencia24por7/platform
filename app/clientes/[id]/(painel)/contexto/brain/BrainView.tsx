@@ -5,12 +5,10 @@ import { CopyButton } from '@/../app/_components/CopyButton';
 import { Anel } from '@/../app/clientes/[id]/_componentes/Anel';
 import { buscarBrainDoCliente } from '@/../app/clientes/[id]/_brain/fonte';
 import { carregarPainel } from '@/../app/clientes/[id]/_dados';
-import { ExploradorDoBrain } from '@/../app/clientes/[id]/(painel)/brain/ExploradorDoBrain';
+import { ExploradorDoBrain } from '@/../app/clientes/[id]/(painel)/contexto/brain/ExploradorDoBrain';
 import { montarMapa } from '@/modules/clients/domain/painel/brain/mapa';
 import { ROTULO_DO_FRESCOR, type Capacidade } from '@/modules/clients/domain/painel/brain/tipos';
 import { tempoRelativo } from '@/modules/clients/domain/painel/resumo';
-
-export const dynamic = 'force-dynamic';
 
 const ESTADO: Record<Capacidade['estado'], { readonly rotulo: string; readonly classe: string }> = {
   disponivel: { rotulo: 'Disponível', classe: 'pill--ok' },
@@ -61,9 +59,8 @@ function MarkdownDoCatalogo({ texto }: { readonly texto: string }) {
   return <div className="markdown">{blocos}</div>;
 }
 
-export default async function BrainDoCliente({ params }: { readonly params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const { ctx, cliente } = await carregarPainel(id);
+export async function BrainView({ clienteId }: { readonly clienteId: string }) {
+  const { ctx, cliente } = await carregarPainel(clienteId);
   const buscado = await buscarBrainDoCliente({ organizationId: ctx.organization.id, clientId: cliente.id });
   if (!buscado.ok && buscado.motivo === 'nao_encontrado') notFound();
   if (!buscado.ok) {
@@ -81,6 +78,7 @@ export default async function BrainDoCliente({ params }: { readonly params: Prom
 
   return (
     <div className="brain pilha">
+      <p className="subtle small">Só leitura: o que o motor enxerga. Para editar, use o Perfil.</p>
       {brain.origem === 'exemplo' ? (
         <p className="faixa-de-exemplo" role="note">
           <strong>Prévia.</strong> Conexões e contexto são reais; cobertura, frescor das tabelas e esquemas são de exemplo até o

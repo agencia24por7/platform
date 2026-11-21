@@ -105,3 +105,55 @@ não compartilhável nem anotação interna (verificado no servidor).
 - Nenhum dado novo nem mudança de banco: reorganização de telas, rotas e textos sobre serviços atuais.
 - Reaproveitar `.abas`, `.pill`, `.chip` e `Anel`; nenhuma segunda linguagem visual.
 - Sem comentários no código; o porquê fica aqui.
+
+## Implementação (feito)
+
+| Tela antiga | Onde está agora |
+| --- | --- |
+| Visão geral: descrição, redes, catálogo | Contexto › Perfil (editor atual, sem cópia) |
+| Visão geral: completude por seção, atividade recente | Contexto › Perfil (completude no editor; atividade recente recolhida) |
+| Visão geral: próximos passos e saúde dos dados | faixa de prontidão (abas) e ação principal do cabeçalho; frescor em Conexões › Fontes |
+| Dados | Conexões › Fontes (lista com problema primeiro; um só "Conectar conta"; "Reautorizar" próprio) |
+| Cobertura (frescor, atraso) | atributo de cada linha de Fontes |
+| Acessos: convite, mapa, links, outros jeitos | Conexões › Pedir ao cliente (um fluxo: plataformas e contexto no mesmo link; pendentes recolhidos) |
+| Contexto | Contexto › Perfil |
+| Brain | Contexto › Brain (rotulado como leitura) |
+| Configurações: situação, arquivos, Brain publicado | menu `⋯` do cabeçalho |
+| `/clientes/[id]` e rotas antigas | redirecionam (`destinoDaRotaLegada`), com a busca preservada; `?enviar=contexto` vai para Pedir |
+
+Decisões de implementação:
+
+- **Veredito** (`prontidao.ts`): sim quando todas as capacidades estão disponíveis; não quando nenhuma está disponível
+  nem parcial; parcial no resto. Lacunas: até 3 ações de `diagnostico.acoes` por impacto. Estado de cada bloco vem do
+  `diagnostico` (reautorizar, vazio, atenção, ok; contexto: vazio, parcial, completo).
+- **Ação principal**: primeira de `diagnostico.acoes`. Contexto vazio vira "Enviar mapa" na agência. Conectar vira o
+  rótulo específico da ação ("Conectar Meta Ads"); o botão "Conectar conta" único mora em Fontes. Quem só consulta não
+  recebe ação.
+- **`?secao=` em Contexto**: `brain` abre o Brain; qualquer outro valor abre o Perfil, e chaves do catálogo (`empresa`,
+  `produtos`...) continuam rolando o editor até a seção. Os links antigos seguem válidos.
+- **Estados da fonte** (`fontes.ts`): reautorizar, erro, atenção, vazia, pausada, ok. Ordem de problema primeiro.
+- **Lista /clientes**: veredito por cliente com consulta ao Brain de até 30 clientes não arquivados por página (sem
+  consulta agregada nova: o limite evita N+1 ilimitado).
+- **Pedir ao cliente**: `criarPedidoAoCliente` cria o convite de integração (mesma validação, auditoria e permissão da
+  ação anterior) e o link do mapa com `conviteDeIntegracaoId`; se o link falha, o convite criado é revogado.
+- **Anunciante convidado** (`/convite/[token]`): vocabulário Conectar contas / Contexto, estados com ícone e rótulo,
+  volta do OAuth com foco na conta, "Não uso esta plataforma" (guardado só na URL, sem banco: a agência não é avisada),
+  mensagens para autorização negada, sem permissão, expirada e convite inválido, e tela final. O servidor já filtra
+  campo não compartilhável e nota interna em `core.contexto_link_ler`; há teste de integração.
+- **Fora desta entrega**: percentual de cobertura por tabela dentro de Fontes (fica no Brain), autoria por campo,
+  Metas e limites.
+
+## Anunciante direto
+
+Organização `type='advertiser'` gerencia os próprios anúncios, sem agência. Vocabulário em um lugar só
+(`organizations/domain/vocabulario.ts`).
+
+- Negócio no lugar de cliente em cabeçalho, lista, mensagens, papéis e menu. Rotas `/clientes/*` ficam.
+- Pedir ao cliente vira **Convidar** (colega ou consultor, secundário). A ação principal usa "Conectar conta" ou
+  "Preencher contexto", nunca "Enviar mapa" nem "Pedir ao cliente"; o Perfil não oferece envio.
+- Com exatamente um negócio ativo, `/clientes` redireciona para o negócio e o menu lateral esconde a entrada
+  "Conexões" da organização (a rota `/integracoes` continua). Com dois ou mais, lista normal.
+- Em `/config` o anunciante não vê "Como esta organização trabalha" nem Conta administradora e Business Manager.
+  `changeType` agora exige papel `owner` no serviço (vale para a ação do servidor, não só para a tela).
+- Fora de escopo, para a revisão de segurança: `any_organization_exists()` global, inferência de tipo por contagem em
+  `authorizationService.ts`, multi-negócio agregado, papéis e convite de colega.

@@ -9,8 +9,8 @@ import { requireContext } from '@/shared/http/currentOrganization';
 import type { Failure } from '@/shared/result/failure';
 import type { Result } from '@/shared/result/result';
 
-function concluir(clientId: string, resultado: Result<unknown, Failure>, sucesso: string, aba: 'dados' | 'configuracoes' = 'dados'): never {
-  const destino = rotaDoCliente(clientId, aba);
+function concluir(clientId: string, resultado: Result<unknown, Failure>, sucesso: string, secao: 'fontes' | null = 'fontes'): never {
+  const destino = rotaDoCliente(clientId, 'conexoes', secao ? { secao } : {});
   if (!resultado.ok) redirect(comAviso(destino, 'erro', toActionState(resultado.error).error ?? 'Não foi possível concluir.'));
   redirect(comAviso(destino, 'feito', sucesso));
 }
@@ -22,7 +22,7 @@ export async function mudarSituacao(formData: FormData): Promise<void> {
     { organizationId: ctx.organization.id, papelDeQuemAge: ctx.role, clientId, situacao: text(formData, 'situacao') },
     await atorAtual(),
   );
-  concluir(clientId, resultado, 'Situação atualizada.', 'configuracoes');
+  concluir(clientId, resultado, 'Situação atualizada.', null);
 }
 
 export async function moverConta(formData: FormData): Promise<void> {

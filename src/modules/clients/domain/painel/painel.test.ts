@@ -9,18 +9,19 @@ const ID = '95ec64b4-c5b9-43ff-909d-d258d91e8b7c';
 
 describe('endereços do painel do cliente', () => {
   it('monta a rota de cada aba com busca opcional', () => {
-    assert.equal(rotaDoCliente(ID), `/clientes/${ID}`);
+    assert.equal(rotaDoCliente(ID), `/clientes/${ID}/conexoes`);
+    assert.equal(rotaDoCliente(ID, 'conexoes', { secao: 'pedir', enviar: 'contexto' }), `/clientes/${ID}/conexoes?secao=pedir&enviar=contexto`);
     assert.equal(rotaDoCliente(ID, 'contexto', { secao: 'publico', vazio: '' }), `/clientes/${ID}/contexto?secao=publico`);
-    assert.equal(comAviso(`/clientes/${ID}/dados`, 'feito', 'Conta movida.'), `/clientes/${ID}/dados?feito=Conta%20movida.`);
+    assert.equal(comAviso(`/clientes/${ID}/conexoes`, 'feito', 'Conta movida.'), `/clientes/${ID}/conexoes?feito=Conta%20movida.`);
     assert.equal(comAviso(`/x?a=1`, 'erro', 'e'), '/x?a=1&erro=e');
   });
 
   it('só aceita destino dentro do próprio cliente', () => {
-    assert.equal(destinoSeguro(`/clientes/${ID}/acessos`, ID), `/clientes/${ID}/acessos`);
-    assert.equal(destinoSeguro('https://evil.example', ID), `/clientes/${ID}`);
-    assert.equal(destinoSeguro(`/clientes/${ID}//evil.example`, ID), `/clientes/${ID}`);
-    assert.equal(destinoSeguro(`/clientes/${ID}x`, ID), `/clientes/${ID}`);
-    assert.equal(destinoSeguro(null, ID), `/clientes/${ID}`);
+    assert.equal(destinoSeguro(`/clientes/${ID}/conexoes?secao=pedir`, ID), `/clientes/${ID}/conexoes?secao=pedir`);
+    assert.equal(destinoSeguro('https://evil.example', ID), `/clientes/${ID}/conexoes`);
+    assert.equal(destinoSeguro(`/clientes/${ID}//evil.example`, ID), `/clientes/${ID}/conexoes`);
+    assert.equal(destinoSeguro(`/clientes/${ID}x`, ID), `/clientes/${ID}/conexoes`);
+    assert.equal(destinoSeguro(null, ID), `/clientes/${ID}/conexoes`);
   });
 
   it('valida id e monta o link público sem barra dupla', () => {

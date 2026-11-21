@@ -28,6 +28,8 @@ alternativa — e, por ordem de cascata, nem sumia: ocupava a tela inteira antes
 
 ### Arquitetura de informação
 
+> Superada em parte pelo ADR 0036: as seis abas viraram dois blocos, Conexões e Contexto.
+
 Rotas aninhadas num grupo `app/clientes/[id]/(painel)/` com um layout comum (cabeçalho com situação, modelo, segmento e
 anel de completude; abas fixas no topo ao rolar). As abas são rotas, não estado: `Visão geral`, `Contexto`, `Brain`,
 `Dados`, `Acessos` e uma `Configurações` discreta. Cada aba carrega só o que mostra (o editor de contexto e o Brain são

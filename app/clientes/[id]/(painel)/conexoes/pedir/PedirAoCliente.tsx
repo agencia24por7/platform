@@ -2,8 +2,10 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useId, useRef, useState, useTransition, type FormEvent } from 'react';
+import { noVocabularioDe } from '@/modules/organizations/domain/vocabulario';
+import type { OrganizationType } from '@/modules/organizations/domain/organization';
 import { CopyButton } from '@/../app/_components/CopyButton';
-import { criarLinkDeContexto, type LinkGerado } from '@/../app/clientes/[id]/(painel)/acessos/acoes';
+import { criarPedidoAoCliente, type LinkGerado } from '@/../app/clientes/[id]/(painel)/conexoes/pedir/acoes';
 import {
   mensagemProntaDoLink,
   minutosEstimados,
@@ -13,13 +15,17 @@ import {
 
 type SecaoResumida = { readonly key: string; readonly letra: string; readonly titulo: string; readonly descricao: string };
 type ConvitePendente = { readonly id: string; readonly rotulo: string };
+type PlataformaConvidavel = { readonly platform: string; readonly rotulo: string };
 
 type Props = {
+  readonly rotulo: string;
+  readonly tipo: OrganizationType;
   readonly clienteId: string;
   readonly clienteNome: string;
   readonly organizacao: string;
   readonly secoes: readonly SecaoResumida[];
   readonly convites: readonly ConvitePendente[];
+  readonly plataformas: readonly PlataformaConvidavel[];
   readonly abrirAoCarregar: boolean;
 };
 
@@ -30,7 +36,7 @@ const ROTULO_DO_PRESET: Record<PresetDeSecoes, { readonly titulo: string; readon
   personalizado: { titulo: 'Personalizado', texto: 'Você escolhe as seções' },
 };
 
-export function EnviarMapaDeContexto({ clienteId, clienteNome, organizacao, secoes, convites, abrirAoCarregar }: Props) {
+export function PedirAoCliente({ rotulo, tipo, clienteId, clienteNome, organizacao, secoes, convites, plataformas, abrirAoCarregar }: Props) {
   const dialogo = useRef<HTMLDialogElement>(null);
   const router = useRouter();
   const idBase = useId();
@@ -40,6 +46,8 @@ export function EnviarMapaDeContexto({ clienteId, clienteNome, organizacao, seco
   const [prazo, setPrazo] = useState(30);
   const [nota, setNota] = useState('');
   const [convite, setConvite] = useState('');
+  const [plataformasEscolhidas, setPlataformasEscolhidas] = useState<string[]>([]);
+  const [incluirMapa, setIncluirMapa] = useState(true);
   const [resultado, setResultado] = useState<LinkGerado | null>(null);
   const [pendente, iniciar] = useTransition();
 
@@ -71,11 +79,13 @@ export function EnviarMapaDeContexto({ clienteId, clienteNome, organizacao, seco
     evento.preventDefault();
     iniciar(async () => {
       setResultado(
-        await criarLinkDeContexto(clienteId, {
+        await criarPedidoAoCliente(clienteId, {
+          plataformas: plataformasEscolhidas,
+          incluirMapa,
           secoes: escolhidas,
           expiraEmDias: prazo,
           nota,
-          conviteDeIntegracaoId: convite || null,
+          conviteDeIntegracaoId: plataformasEscolhidas.length === 0 ? convite || null : null,
         }),
       );
     });
@@ -83,7 +93,7 @@ export function EnviarMapaDeContexto({ clienteId, clienteNome, organizacao, seco
 
   const titulosEscolhidos = secoes.filter((s) => escolhidas.includes(s.key)).map((s) => `${s.letra} · ${s.titulo}`);
   const mensagem =
-    resultado?.ok
+    resultado?.ok && resultado.secoes.length > 0
       ? mensagemProntaDoLink({
           cliente: clienteNome,
           organizacao,
@@ -92,18 +102,19 @@ export function EnviarMapaDeContexto({ clienteId, clienteNome, organizacao, seco
           secoes: secoes.filter((s) => resultado.secoes.includes(s.key)).map((s) => s.titulo),
           minutosEstimados: minutosEstimados(resultado.secoes.length),
           conviteDeIntegracao: resultado.conviteUrl,
+          tipo,
         })
       : '';
 
   return (
     <>
       <button type="button" className="btn btn--primary" onClick={abrir}>
-        Enviar mapa de contexto
+        {rotulo}
       </button>
       <dialog ref={dialogo} className="painel-lateral" aria-labelledby={`${idBase}-t`} onClose={() => resultado?.ok && router.refresh()}>
         <div className="painel-lateral__topo">
           <h2 className="modal__titulo" id={`${idBase}-t`}>
-            {resultado?.ok ? 'Link pronto' : 'Enviar mapa de contexto'}
+            {resultado?.ok ? 'Link pronto' : rotulo}
           </h2>
           <button type="button" className="menu-botao painel-lateral__fechar" aria-label="Fechar" onClick={fechar}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
@@ -121,17 +132,18 @@ export function EnviarMapaDeContexto({ clienteId, clienteNome, organizacao, seco
               <code className="link-unico__url">{resultado.conviteUrl ?? resultado.url}</code>
               <CopyButton texto={resultado.conviteUrl ?? resultado.url} className="btn btn--primary" />
             </div>
-            {resultado.conviteUrl ? (
+            {resultado.conviteUrl && resultado.secoes.length > 0 ? (
               <p className="subtle small">
-                Enviamos o convite de integração: ele abre os dois passos, conectar contas e preencher o mapa. O link direto do
-                mapa também funciona: <span className="mono">{resultado.url}</span>
+                Um link só: o cliente conecta as contas e depois preenche o contexto.
               </p>
             ) : null}
-            <div className="field">
-              <span className="field__label">Mensagem pronta</span>
-              <pre className="mensagem-pronta">{mensagem}</pre>
-              <CopyButton texto={mensagem} rotulo="Copiar mensagem pronta" />
-            </div>
+            {mensagem ? (
+              <div className="field">
+                <span className="field__label">Mensagem pronta</span>
+                <pre className="mensagem-pronta">{mensagem}</pre>
+                <CopyButton texto={mensagem} rotulo="Copiar mensagem pronta" />
+              </div>
+            ) : null}
             <div className="modal__acoes">
               <button type="button" className="btn" onClick={fechar}>
                 Concluir
@@ -140,6 +152,35 @@ export function EnviarMapaDeContexto({ clienteId, clienteNome, organizacao, seco
           </div>
         ) : (
           <form className="painel-lateral__corpo" onSubmit={enviar}>
+            {plataformas.length > 0 ? (
+              <fieldset className="grupo">
+                <legend className="field__label">Conectar contas</legend>
+                <div className="secoes-escolha">
+                  {plataformas.map((p) => (
+                    <label key={p.platform} className="checkline secao-escolha">
+                      <input
+                        type="checkbox"
+                        checked={plataformasEscolhidas.includes(p.platform)}
+                        onChange={() =>
+                          setPlataformasEscolhidas((atual) => (atual.includes(p.platform) ? atual.filter((x) => x !== p.platform) : [...atual, p.platform]))
+                        }
+                      />
+                      <span>
+                        <strong>{p.rotulo}</strong>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            ) : null}
+            <label className="checkline">
+              <input type="checkbox" checked={incluirMapa} onChange={(e) => setIncluirMapa(e.target.checked)} />
+              <span>
+                <strong>Contexto</strong>
+                <span className="subtle xsmall"> Incluir o mapa de contexto no mesmo link</span>
+              </span>
+            </label>
+            {incluirMapa ? (
             <fieldset className="grupo">
               <legend className="field__label">O que o cliente vai preencher</legend>
               <div className="presets" role="radiogroup">
@@ -166,6 +207,7 @@ export function EnviarMapaDeContexto({ clienteId, clienteNome, organizacao, seco
                 </div>
               </details>
             </fieldset>
+            ) : null}
 
             <div className="grade-auto grade-auto--estreita">
               <label className="field">
@@ -176,7 +218,7 @@ export function EnviarMapaDeContexto({ clienteId, clienteNome, organizacao, seco
                   ))}
                 </select>
               </label>
-              {convites.length > 0 ? (
+              {convites.length > 0 && plataformasEscolhidas.length === 0 && incluirMapa ? (
                 <label className="field">
                   <span className="field__label">Enviar junto com o convite de integração</span>
                   <select className="select" value={convite} onChange={(e) => setConvite(e.target.value)}>
@@ -190,7 +232,7 @@ export function EnviarMapaDeContexto({ clienteId, clienteNome, organizacao, seco
             </div>
 
             <label className="field">
-              <span className="field__label">Recado para o cliente (opcional)</span>
+              <span className="field__label">{noVocabularioDe(tipo, 'Recado para o cliente (opcional)')}</span>
               <textarea className="input textarea" rows={3} maxLength={500} value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Ex.: comece pelos produtos, é o que mais nos ajuda agora." />
               <span className="field__hint">{nota.length}/500 · aparece no topo do formulário</span>
             </label>
@@ -199,13 +241,15 @@ export function EnviarMapaDeContexto({ clienteId, clienteNome, organizacao, seco
               <p className="alert alert--error" role="alert">{resultado.erro}</p>
             ) : null}
 
-            <p className="subtle small">
-              O cliente vê só: {titulosEscolhidos.length ? titulosEscolhidos.join(', ') : 'nenhuma seção'}. Notas internas e hipóteses da equipe nunca aparecem.
-            </p>
+            {incluirMapa ? (
+              <p className="subtle small">
+                {noVocabularioDe(tipo, 'Quem recebe vê só')}: {titulosEscolhidos.length ? titulosEscolhidos.join(', ') : 'nenhuma seção'}. Notas internas e hipóteses da equipe nunca aparecem.
+              </p>
+            ) : null}
 
             <div className="modal__acoes">
               <button type="button" className="btn" onClick={fechar}>Cancelar</button>
-              <button type="submit" className="btn btn--primary" disabled={pendente || escolhidas.length === 0} aria-busy={pendente}>
+              <button type="submit" className="btn btn--primary" disabled={pendente || (incluirMapa ? escolhidas.length === 0 : plataformasEscolhidas.length === 0)} aria-busy={pendente}>
                 {pendente ? 'Gerando…' : 'Gerar link'}
               </button>
             </div>
