@@ -55,23 +55,56 @@ if [ -z "$chave_do_kms" ]; then
   fi
 fi
 
-pimenta_da_meta=$(valor META_EXCLUSAO_PEPPER)
-if [ -z "$pimenta_da_meta" ] && [ -z "${METADADOS_URL:-}" ] && command -v gcloud > /dev/null 2>&1; then
-  projeto_da_pimenta=$(metadado project/project-id)
-  instancia_da_pimenta=$(metadado instance/name)
-  prefixo_da_pimenta=${instancia_da_pimenta%-vm}
-  if [ -n "$projeto_da_pimenta" ] && [ -n "$instancia_da_pimenta" ] && [ "$prefixo_da_pimenta" != "$instancia_da_pimenta" ]; then
-    pimenta_da_meta=$(gcloud secrets versions access latest --secret="$prefixo_da_pimenta-meta-exclusao-pepper" \
-      --project="$projeto_da_pimenta" 2>/dev/null || true)
-  fi
+projeto_da_vm=""
+instancia_da_vm=""
+prefixo_da_vm=""
+if [ -z "${METADADOS_URL:-}" ] && command -v gcloud > /dev/null 2>&1; then
+  projeto_da_vm=$(metadado project/project-id)
+  instancia_da_vm=$(metadado instance/name)
+  prefixo_da_vm=${instancia_da_vm%-vm}
 fi
+
+vm_identificada() {
+  [ -n "$projeto_da_vm" ] && [ -n "$instancia_da_vm" ] && [ "$prefixo_da_vm" != "$instancia_da_vm" ]
+}
+
+segredo_opcional() {
+  vm_identificada || return 0
+  gcloud secrets versions access latest --secret="$prefixo_da_vm-$1" --project="$projeto_da_vm" 2>/dev/null || true
+}
+
+pimenta_da_meta=$(valor META_EXCLUSAO_PEPPER)
+[ -n "$pimenta_da_meta" ] || pimenta_da_meta=$(segredo_opcional meta-exclusao-pepper)
 [ -n "$pimenta_da_meta" ] || echo "META_EXCLUSAO_PEPPER ausente: com META_APP_SECRET definido o app não sobe em produção (ADR 0033)." >&2
 
+config_do_leadads=$(valor LEADADS_LOGIN_CONFIG_ID)
+[ -n "$config_do_leadads" ] || config_do_leadads=$(segredo_opcional leadads-login-config-id)
+
+webhook_de_alerta=$(valor ALERT_WEBHOOK_URL)
+[ -n "$webhook_de_alerta" ] || webhook_de_alerta=$(segredo_opcional alert-webhook-url)
+
+bucket_do_contexto=$(valor CONTEXT_BUCKET)
+if [ -z "$bucket_do_contexto" ]; then
+  projeto_do_bucket=$(metadado project/project-id)
+  instancia_do_bucket=$(metadado instance/name)
+  prefixo_do_bucket=${instancia_do_bucket%-vm}
+  if [ -n "$projeto_do_bucket" ] && [ -n "$instancia_do_bucket" ] && [ "$prefixo_do_bucket" != "$instancia_do_bucket" ]; then
+    bucket_do_contexto="$projeto_do_bucket-$prefixo_do_bucket-contexto"
+    echo "CONTEXT_BUCKET derivado dos metadados da VM (convenção do contexto.tf): $bucket_do_contexto"
+  else
+    echo "CONTEXT_BUCKET ausente e os metadados da VM não responderam: o pre-flight da release vai barrar." >&2
+  fi
+fi
+
 temporario=$(mktemp "$ARQUIVO.XXXXXX")
-grep -v -e '^DATABASE_URL_WORKER=' -e '^TOKENS_KMS_KEY=' -e '^META_EXCLUSAO_PEPPER=' "$ARQUIVO" > "$temporario" || true
+grep -v -e '^DATABASE_URL_WORKER=' -e '^TOKENS_KMS_KEY=' -e '^META_EXCLUSAO_PEPPER=' \
+  -e '^LEADADS_LOGIN_CONFIG_ID=' -e '^ALERT_WEBHOOK_URL=' -e '^CONTEXT_BUCKET=' "$ARQUIVO" > "$temporario" || true
 printf 'DATABASE_URL_WORKER=%s\n' "$url_do_worker" >> "$temporario"
 printf 'TOKENS_KMS_KEY=%s\n' "$chave_do_kms" >> "$temporario"
 printf 'META_EXCLUSAO_PEPPER=%s\n' "$pimenta_da_meta" >> "$temporario"
+printf 'LEADADS_LOGIN_CONFIG_ID=%s\n' "$config_do_leadads" >> "$temporario"
+printf 'ALERT_WEBHOOK_URL=%s\n' "$webhook_de_alerta" >> "$temporario"
+printf 'CONTEXT_BUCKET=%s\n' "$bucket_do_contexto" >> "$temporario"
 chmod 600 "$temporario"
 mv "$temporario" "$ARQUIVO"
 echo "DATABASE_URL_WORKER derivada de DATABASE_URL (papel orla_worker, destino $destino)"

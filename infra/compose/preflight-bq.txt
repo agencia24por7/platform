@@ -1,0 +1,9 @@
+# Objetos do BigQuery que o app desta release já usa (DDL em scripts/bq, aplicada por
+# `node scripts/bq-ddl.mjs --prod --confirmar` ANTES do deploy). Uma linha por tabela/visão,
+# ou tabela.coluna para coluna nova em tabela existente. O pre-flight confere com `bq show`.
+release: 2026-11-cofre-e-contexto
+gov_snapshot_fontes.execucao_id
+fato_search_console_tipo_diario
+stg_search_console_tipo_diario
+vw_search_console_tipo_diario
+gov_cobertura_cliente

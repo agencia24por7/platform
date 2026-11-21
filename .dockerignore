@@ -7,6 +7,10 @@ prototipo
 infra
 db
 tests
+**/*.test.ts
 scripts
+!scripts/bq/expurgo.mjs
+!scripts/bq/expurgo.d.mts
+!scripts/bq/manifesto
 docs
 *.md

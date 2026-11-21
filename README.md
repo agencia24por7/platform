@@ -104,3 +104,10 @@ npm run build
 node scripts/smoke.mjs              # autenticação, validação e cabeçalhos
 ACCOUNT_ID=<uuid> node scripts/verify-ingestion.mjs   # idempotência, reafirmação, janela
 ```
+
+## Release para produção
+
+Push em `main` dispara `infra.yml` e `deploy.yml`. O deploy espera o Terraform do mesmo commit, faz o pre-flight
+(segredos, KMS, bucket, BigQuery, ambiente validado na imagem nova, snapshot < 24 h, backup lógico) antes de
+qualquer migração e só aplica o corte do cofre com `autorizar_corte=true` no `workflow_dispatch` (ADR 0034).
+Procedimento passo a passo, verificação e rollback: [`docs/release/2026-11-release-cofre-e-contexto.md`](docs/release/2026-11-release-cofre-e-contexto.md).

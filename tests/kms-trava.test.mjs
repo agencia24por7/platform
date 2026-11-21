@@ -128,7 +128,7 @@ describe('trava do KMS antes das migrações do corte (ADR 0032)', () => {
     const deploy = readFileSync('.github/workflows/deploy.yml', 'utf8');
     const verificar = deploy.indexOf('tokens-verificar-kms.sh');
     const baixar = deploy.indexOf("docker pull '$IMAGE");
-    const migrar = deploy.indexOf('sudo sh /opt/tria/migrar.sh');
+    const migrar = deploy.indexOf('sh /opt/tria/migrar.sh');
     assert.ok(verificar > 0 && baixar > verificar && migrar > baixar);
   });
 });
