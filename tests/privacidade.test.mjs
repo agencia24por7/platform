@@ -188,31 +188,22 @@ describe('privacidade: revogação, expurgo do YouTube e pedidos da Meta (ADR 00
       'revogada não conta como autorização');
   });
 
-  it('corte do cofre (todas as conexões em reauth_pending de uma vez) nunca enfileira nem executa expurgo', () => {
-    const cortada = conexao(org, 'youtube', `yt-corte-${marca}`, 'active');
-    canal(org, cortada, `UCcorte${marca}`);
+  it('depois da 0123 não há corte em andamento: reauth_pending vencida entra na fila e o expurgo segue normal', () => {
+    assert.equal(umaLinha(dono(`SELECT to_regclass('integrations.corte_para_cofre_refs') IS NULL`)), 't');
+    const vencida = conexao(org, 'youtube', `yt-corte-${marca}`, 'active');
+    canal(org, vencida, `UCcorte${marca}`);
     const jaNaFila = conexao(org, 'youtube', `yt-fila-${marca}`, 'revoked');
     canal(org, jaNaFila, `UCfila${marca}`);
     comoWorker('SELECT privacidade.preparar_conformidade_youtube()');
     dono(`UPDATE privacidade.expurgos_de_fonte SET apos = now() - interval '1 minute' WHERE external_id = 'UCfila${marca}'`);
+    dono(`UPDATE integrations.connections SET status = 'reauth_pending' WHERE id = '${vencida}'`);
+    dono(`UPDATE integrations.connections SET status_desde = now() - interval '60 days' WHERE id = '${vencida}'`);
 
-    try {
-      dono(`INSERT INTO integrations.corte_para_cofre_refs (connection_id, organization_id, platform, status_anterior)
-            VALUES ('${cortada}', '${org}', 'youtube', 'active')`);
-      dono(`UPDATE integrations.connections SET status = 'reauth_pending' WHERE id = '${cortada}'`);
-      dono(`UPDATE integrations.connections SET status_desde = now() - interval '60 days' WHERE id = '${cortada}'`);
-
-      const resumo = JSON.parse(comoWorker('SELECT privacidade.preparar_conformidade_youtube()'));
-      assert.equal(resumo.pausadoPeloCorte, true);
-      assert.equal(resumo.enfileirados, 0);
-      assert.equal(umaLinha(dono(`SELECT count(*) FROM privacidade.expurgos_de_fonte WHERE external_id = 'UCcorte${marca}'`)), '0');
-      assert.ok(!comoWorker('SELECT external_id FROM privacidade.expurgos_de_fonte_vencidos(500)').includes(`UCfila${marca}`),
-        'durante o corte nenhum expurgo por falta de autorização é executado');
-    } finally {
-      dono(`DELETE FROM integrations.corte_para_cofre_refs WHERE connection_id = '${cortada}'`);
-    }
+    const resumo = JSON.parse(comoWorker('SELECT privacidade.preparar_conformidade_youtube()'));
+    assert.equal(resumo.pausadoPeloCorte, false);
+    assert.equal(umaLinha(dono(`SELECT count(*) FROM privacidade.expurgos_de_fonte WHERE external_id = 'UCcorte${marca}'`)), '1');
     assert.ok(comoWorker('SELECT external_id FROM privacidade.expurgos_de_fonte_vencidos(500)').includes(`UCfila${marca}`),
-      'terminado o corte, o expurgo da conexão revogada volta à fila');
+      'sem corte, o expurgo da conexão revogada é executado');
   });
 
   it('pedido de exclusão da Meta com a pimenta dedicada migra o pseudônimo antigo e mantém o código', () => {
