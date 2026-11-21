@@ -48,7 +48,7 @@ function semearConexao(org, plataforma) {
     platform: plataforma,
     grantType: POR_CHAVE.includes(plataforma) ? 'api_key' : 'oauth_user',
     label: `Conexão ${plataforma}`,
-    externalId: `id-${plataforma}`,
+    externalId: `id-${plataforma}-${org.slice(0, 8)}`,
     scopes: ESCOPO_MINIMO[plataforma] ? [ESCOPO_MINIMO[plataforma]] : [],
     accountEmail: `dono-${plataforma}@cliente.test`,
   }).sql));

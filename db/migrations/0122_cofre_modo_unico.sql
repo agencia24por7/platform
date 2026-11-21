@@ -188,6 +188,11 @@ ALTER TABLE integrations.connections DROP COLUMN IF EXISTS executor_ref;
 
 ALTER TABLE integrations.corte_para_cofre_refs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE integrations.corte_para_cofre_refs FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS corte_para_cofre_refs_so_o_dono_do_banco ON integrations.corte_para_cofre_refs;
+CREATE POLICY corte_para_cofre_refs_so_o_dono_do_banco ON integrations.corte_para_cofre_refs
+  FOR ALL USING (false) WITH CHECK (false);
+COMMENT ON POLICY corte_para_cofre_refs_so_o_dono_do_banco ON integrations.corte_para_cofre_refs IS
+  'Nenhum papel da aplicação lê ou grava o estado do corte: só o superusuário (scripts/n8n-limpar-legado.mjs por psql), que ignora RLS.';
 
 REVOKE ALL ON FUNCTION integrations.conexao_ativa_exige_token() FROM PUBLIC;
 
