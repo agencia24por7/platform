@@ -140,31 +140,37 @@ export type Connection = {
   readonly externalId: string;
   readonly accountEmail: string | null;
   readonly scopes: readonly string[];
-  readonly credentialRef: string;
   readonly status: ConnectionStatus;
   readonly expiresAt: Date | null;
   readonly authorizedAt: Date;
   readonly webhookToken: string | null;
   readonly authorizedVia: AuthorizedVia;
+  readonly versaoDoToken: number | null;
 };
 
-export type NewConnection = Omit<Connection, 'id' | 'status' | 'authorizedAt' | 'webhookToken'> & {
+export type NewConnection = Omit<Connection, 'id' | 'status' | 'authorizedAt' | 'webhookToken' | 'versaoDoToken'> & {
   readonly expiresAt: Date | null;
   readonly status?: Connection['status'];
   readonly webhookToken?: string | null;
 };
 
-export const CREDENCIAL_SEM_COFRE = 'pendente:cofre-indisponivel';
+export const MENSAGEM_DE_CONEXAO_ALTERADA =
+  'Esta conexão foi alterada por outra requisição ao mesmo tempo. Nada foi perdido: recarregue a página e confira o estado antes de tentar de novo.';
 
-export function readinessOf(connection: Pick<Connection, 'status' | 'credentialRef'>): {
+export function precisaReautorizar(connection: Pick<Connection, 'status' | 'versaoDoToken'>): boolean {
+  if (connection.status === 'revoked') return false;
+  return connection.status === 'reauth_pending' || connection.status === 'degraded' || connection.versaoDoToken === null;
+}
+
+export function readinessOf(connection: Pick<Connection, 'status' | 'versaoDoToken'>): {
   readonly collectable: boolean;
   readonly reason: string | null;
 } {
-  if (connection.credentialRef.startsWith('pendente:')) {
-    return { collectable: false, reason: 'A credencial não foi guardada: o cofre do n8n não respondeu.' };
-  }
   if (connection.status === 'revoked') {
     return { collectable: false, reason: 'Autorização revogada na plataforma.' };
+  }
+  if (connection.versaoDoToken === null) {
+    return { collectable: false, reason: 'Não há credencial guardada no cofre para esta conexão. Reautorize para voltar a coletar.' };
   }
   if (connection.status === 'reauth_pending') {
     return { collectable: false, reason: 'A plataforma pediu nova autorização.' };

@@ -1,5 +1,5 @@
 {
-  "name": "Coletor · Meta conjunto de dados (modelo)",
+  "name": "ORLA · Meta Pixel · coletor",
   "nodes": [
     {
       "id": "entrada",
@@ -21,9 +21,110 @@
             },
             {
               "name": "modo"
+            },
+            {
+              "name": "coletaId"
             }
           ]
         }
+      }
+    },
+    {
+      "id": "obter-token",
+      "name": "Obter token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        20,
+        -200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=http://app:3000/api/v0/coleta/token",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ coletaId: $('Entrada').first().json.coletaId }) }}",
+        "options": {
+          "timeout": 20000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "ORLA · worker token"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "token-obtido",
+      "name": "Token obtido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        240,
+        -200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "token-obtido-c",
+              "leftValue": "={{ $json.statusCode === 200 && typeof $json.body?.token === 'string' && $json.body.token.length > 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "retomar-entrada",
+      "name": "Retomar entrada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        -300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return $('Entrada').all().map((item) => ({ json: item.json }));\n"
+      }
+    },
+    {
+      "id": "sem-token",
+      "name": "Sem token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        -100
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const resposta = $('Obter token').first().json ?? {};\nconst status = Number(resposta.statusCode ?? 0);\nconst motivo = String(resposta.body?.errors?.motivo ?? '');\nconst PEDE_REAUTORIZACAO = new Set(['reauth_pending', 'sem_token', 'conexao_revogada']);\n\nlet falha;\nif (status === 409 && PEDE_REAUTORIZACAO.has(motivo)) {\n  falha = { causa: 'reauth_pending', detalhe: `cofre de tokens: ${motivo}; reautorize a conexão` };\n} else if (status === 429) {\n  falha = { causa: 'limite_de_uso', detalhe: 'cofre de tokens: pedidos de token demais para esta execução', pausa: 'limite_temporario', minutos: 5 };\n} else if (status === 0 || status >= 500) {\n  falha = { causa: 'api_recusou', detalhe: `cofre de tokens indisponível (HTTP ${status || 'sem resposta'})` };\n} else {\n  falha = { causa: 'falha_coletor', detalhe: `cofre de tokens recusou o pedido (HTTP ${status}${motivo ? `, ${motivo}` : ''})` };\n}\n\nreturn [{ json: { linhas: [], volumetria: { linhas: 0, bytes: 0, requests: 0, duracaoMs: 0 }, falhas: [falha], avisos: [], requests: 0 } }];\n"
       }
     },
     {
@@ -37,7 +138,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const { fonte, janela } = $json;\nconst versaoApi = 'v23.0';\nconst FUSO = 'America/Sao_Paulo';\nconst datasetId = String(fonte?.externalId ?? '');\n\nfunction deslocamento(instante) {\n  const partes = new Intl.DateTimeFormat('en-US', {\n    timeZone: FUSO, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',\n    hour: '2-digit', minute: '2-digit', second: '2-digit',\n  }).formatToParts(instante);\n  const valor = (tipo) => Number(partes.find((parte) => parte.type === tipo)?.value);\n  const comoUtc = Date.UTC(valor('year'), valor('month') - 1, valor('day'), valor('hour'), valor('minute'), valor('second'));\n  return comoUtc - Math.floor(instante.getTime() / 1000) * 1000;\n}\n\nfunction meiaNoite(dia) {\n  const [ano, mes, diaDoMes] = dia.split('-').map(Number);\n  const ingenuo = Date.UTC(ano, mes - 1, diaDoMes);\n  const primeira = ingenuo - deslocamento(new Date(ingenuo));\n  return Math.floor((ingenuo - deslocamento(new Date(primeira))) / 1000);\n}\n\nconst [ano, mes, dia] = janela.end.split('-').map(Number);\nconst diaSeguinte = new Date(Date.UTC(ano, mes - 1, dia + 1)).toISOString().slice(0, 10);\nconst startTime = meiaNoite(janela.start);\nconst endTime = meiaNoite(diaSeguinte);\nconst raiz = `https://graph.facebook.com/${versaoApi}/${encodeURIComponent(datasetId)}`;\nconst intervalo = `start_time=${startTime}&end_time=${endTime}`;\nconst base = `${raiz}/stats?aggregation=event&${intervalo}`;\nconst RECORTES = {\"dispositivo\":\"device_type\",\"sistema_operacional\":\"device_os\",\"navegador_do_visitante\":\"browser_type\",\"host\":\"host\",\"chave_de_correspondencia\":\"match_keys\",\"resultado_do_processamento\":\"event_processing_results\"};\nconst recortes = Object.fromEntries(Object.entries(RECORTES).map(([nome, agregacao]) => [nome, `${raiz}/stats?aggregation=${agregacao}&${intervalo}`]));\nconst urlDoDataset = `${raiz}?fields=id,name,is_unavailable,enable_automatic_matching,first_party_cookie_status,data_use_setting`;\n\nreturn [{\n  json: {\n    inicio: Date.now(),\n    versaoApi,\n    janela,\n    datasetIdValido: /^\\d{5,25}$/.test(datasetId),\n    startTime,\n    endTime,\n    urls: {\n      total: base,\n      navegador: `${base}&event_source=WEB_ONLY`,\n      servidor: `${base}&event_source=SERVER_ONLY`,\n    },\n    recortes,\n    urlDoDataset,\n  },\n}];\n"
+        "jsCode": "const { fonte, janela } = $json;\nconst VERSAO_DA_API_META = 'v27.0';\nconst versaoApi = VERSAO_DA_API_META;\nconst FUSO = 'America/Sao_Paulo';\nconst datasetId = String(fonte?.externalId ?? '');\n\nfunction deslocamento(instante) {\n  const partes = new Intl.DateTimeFormat('en-US', {\n    timeZone: FUSO, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',\n    hour: '2-digit', minute: '2-digit', second: '2-digit',\n  }).formatToParts(instante);\n  const valor = (tipo) => Number(partes.find((parte) => parte.type === tipo)?.value);\n  const comoUtc = Date.UTC(valor('year'), valor('month') - 1, valor('day'), valor('hour'), valor('minute'), valor('second'));\n  return comoUtc - Math.floor(instante.getTime() / 1000) * 1000;\n}\n\nfunction meiaNoite(dia) {\n  const [ano, mes, diaDoMes] = dia.split('-').map(Number);\n  const ingenuo = Date.UTC(ano, mes - 1, diaDoMes);\n  const primeira = ingenuo - deslocamento(new Date(ingenuo));\n  return Math.floor((ingenuo - deslocamento(new Date(primeira))) / 1000);\n}\n\nconst [ano, mes, dia] = janela.end.split('-').map(Number);\nconst diaSeguinte = new Date(Date.UTC(ano, mes - 1, dia + 1)).toISOString().slice(0, 10);\nconst startTime = meiaNoite(janela.start);\nconst endTime = meiaNoite(diaSeguinte);\nconst raiz = `https://graph.facebook.com/${versaoApi}/${encodeURIComponent(datasetId)}`;\nconst intervalo = `start_time=${startTime}&end_time=${endTime}`;\nconst base = `${raiz}/stats?aggregation=event&${intervalo}`;\nconst RECORTES = {\"dispositivo\":\"device_type\",\"sistema_operacional\":\"device_os\",\"navegador_do_visitante\":\"browser_type\",\"host\":\"host\",\"chave_de_correspondencia\":\"match_keys\",\"resultado_do_processamento\":\"event_processing_results\"};\nconst recortes = Object.fromEntries(Object.entries(RECORTES).map(([nome, agregacao]) => [nome, `${raiz}/stats?aggregation=${agregacao}&${intervalo}`]));\nconst urlDoDataset = `${raiz}?fields=id,name,is_unavailable,enable_automatic_matching,first_party_cookie_status,data_use_setting`;\n\nreturn [{\n  json: {\n    inicio: Date.now(),\n    versaoApi,\n    janela,\n    datasetIdValido: /^\\d{5,25}$/.test(datasetId),\n    startTime,\n    endTime,\n    urls: {\n      total: base,\n      navegador: `${base}&event_source=WEB_ONLY`,\n      servidor: `${base}&event_source=SERVER_ONLY`,\n    },\n    recortes,\n    urlDoDataset,\n  },\n}];\n"
       }
     },
     {
@@ -53,8 +154,7 @@
       "parameters": {
         "method": "GET",
         "url": "={{ $('Montar requisição').first().json.urls.total }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "facebookGraphApi",
+        "authentication": "none",
         "options": {
           "response": {
             "response": {
@@ -73,12 +173,24 @@
               "maxRequests": 300
             }
           }
-        }
-      },
-      "credentials": {
-        "facebookGraphApi": {
-          "id": "a-definir-pelo-provisioner",
-          "name": "a-definir-pelo-provisioner"
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Obter token').first().json.body.token }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "appsecret_proof",
+              "value": "={{ $('Obter token').first().json.body.appsecretProof }}"
+            }
+          ]
         }
       },
       "onError": "continueRegularOutput",
@@ -97,8 +209,7 @@
       "parameters": {
         "method": "GET",
         "url": "={{ $('Montar requisição').first().json.urls.navegador }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "facebookGraphApi",
+        "authentication": "none",
         "options": {
           "response": {
             "response": {
@@ -117,12 +228,24 @@
               "maxRequests": 300
             }
           }
-        }
-      },
-      "credentials": {
-        "facebookGraphApi": {
-          "id": "a-definir-pelo-provisioner",
-          "name": "a-definir-pelo-provisioner"
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Obter token').first().json.body.token }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "appsecret_proof",
+              "value": "={{ $('Obter token').first().json.body.appsecretProof }}"
+            }
+          ]
         }
       },
       "onError": "continueRegularOutput",
@@ -141,8 +264,7 @@
       "parameters": {
         "method": "GET",
         "url": "={{ $('Montar requisição').first().json.urls.servidor }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "facebookGraphApi",
+        "authentication": "none",
         "options": {
           "response": {
             "response": {
@@ -161,12 +283,24 @@
               "maxRequests": 300
             }
           }
-        }
-      },
-      "credentials": {
-        "facebookGraphApi": {
-          "id": "a-definir-pelo-provisioner",
-          "name": "a-definir-pelo-provisioner"
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Obter token').first().json.body.token }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "appsecret_proof",
+              "value": "={{ $('Obter token').first().json.body.appsecretProof }}"
+            }
+          ]
         }
       },
       "onError": "continueRegularOutput",
@@ -183,7 +317,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const contexto = $('Montar requisição').first().json;\nconst FUSO = 'America/Sao_Paulo';\nconst ORIGENS = ['total', 'navegador', 'servidor'];\nconst NO_DA_ORIGEM = { total: 'Eventos (total)', navegador: 'Eventos (navegador)', servidor: 'Eventos (servidor)' };\nconst TAMANHO_MAXIMO_DO_EVENTO = 200;\n\nconst respostasPorOrigem = {};\nfor (const origem of ORIGENS) {\n  respostasPorOrigem[origem] = $(NO_DA_ORIGEM[origem]).all()\n    .map((item) => item.json)\n    .filter((json) => json && (json.statusCode !== undefined || json.error));\n}\nconst RECORTES = {\"dispositivo\":\"Recorte (dispositivo)\",\"sistema_operacional\":\"Recorte (sistema operacional)\",\"navegador_do_visitante\":\"Recorte (navegador do visitante)\",\"host\":\"Recorte (host)\",\"chave_de_correspondencia\":\"Recorte (chaves de correspondência)\",\"resultado_do_processamento\":\"Recorte (resultado do processamento)\"};\nfunction respostasDe(nome) {\n  try {\n    return $(nome).all().map((item) => item.json).filter((json) => json && (json.statusCode !== undefined || json.error));\n  } catch {\n    return [];\n  }\n}\nconst respostasDosRecortes = Object.fromEntries(Object.entries(RECORTES).map(([recorte, no]) => [recorte, respostasDe(no)]));\nconst respostasDoDataset = respostasDe('Dataset');\nconst todas = [\n  ...ORIGENS.flatMap((origem) => respostasPorOrigem[origem]),\n  ...Object.values(respostasDosRecortes).flat(),\n  ...respostasDoDataset,\n];\nconst requests = todas.length;\nconst bytes = todas.reduce((total, resposta) => total + JSON.stringify(resposta.body ?? {}).length, 0);\n\nfunction devolver(linhas, falhas) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - contexto.inicio },\n      falhas,\n      requests,\n      versaoApi: contexto.versaoApi,\n    },\n  }];\n}\n\nfunction falhaDe(respostas) {\n  if (respostas.length === 0) return { causa: 'api_recusou', detalhe: 'a Meta não respondeu' };\n  const deRede = respostas.find((resposta) => resposta.error);\n  if (deRede) {\n    const detalhe = deRede.error?.message ?? String(deRede.error);\n    return { causa: 'api_recusou', detalhe: `falha de rede: ${detalhe}`.replace(/access_token=[^&\\s\"']+/g, 'access_token=[removido]').slice(0, 500) };\n  }\n  const recusada = respostas.find((resposta) => !(resposta.statusCode >= 200 && resposta.statusCode < 300));\n  if (!recusada) return null;\n  const erro = recusada.body?.error;\n  const detalhe = String(erro?.message || `HTTP ${recusada.statusCode}`).slice(0, 500);\n  const semAcesso = recusada.statusCode === 401 || recusada.statusCode === 403 || [190, 10, 200].includes(erro?.code);\n  return { causa: semAcesso ? 'reauth_pending' : 'api_recusou', detalhe };\n}\n\nif (!contexto.datasetIdValido) return devolver([], [{ causa: 'api_recusou', detalhe: 'id do conjunto de dados inválido' }]);\n\nconst falhaDoTotal = falhaDe(respostasPorOrigem.total);\nif (falhaDoTotal) return devolver([], [falhaDoTotal]);\n\nconst formatoDoDia = new Intl.DateTimeFormat('en-CA', { timeZone: FUSO, year: 'numeric', month: '2-digit', day: '2-digit' });\n\nfunction instanteDoBalde(valor) {\n  if (typeof valor === 'number' && Number.isFinite(valor)) return new Date(valor * 1000);\n  if (typeof valor !== 'string' || !valor) return null;\n  if (/^\\d+$/.test(valor)) return new Date(Number(valor) * 1000);\n  const data = new Date(valor.replace(/([+-]\\d{2})(\\d{2})$/, '$1:$2'));\n  return Number.isNaN(data.getTime()) ? null : data;\n}\n\nfunction nomeDoEvento(valor) {\n  if (typeof valor !== 'string') return null;\n  const limpo = valor.trim();\n  return limpo ? limpo.slice(0, TAMANHO_MAXIMO_DO_EVENTO) : null;\n}\n\nfunction contagem(valor) {\n  const numero = typeof valor === 'string' && valor.trim() !== '' ? Number(valor) : valor;\n  return typeof numero === 'number' && Number.isFinite(numero) && numero >= 0 ? Math.trunc(numero) : null;\n}\n\nfunction agregar(respostas, origem) {\n  const somas = new Map();\n  for (const resposta of respostas) {\n    const baldes = Array.isArray(resposta.body?.data) ? resposta.body.data : [];\n    for (const balde of baldes) {\n      const instante = instanteDoBalde(balde?.start_time);\n      if (!instante || !Array.isArray(balde.data)) continue;\n      const dataDia = formatoDoDia.format(instante);\n      if (dataDia < contexto.janela.start || dataDia > contexto.janela.end) continue;\n      for (const item of balde.data) {\n        const evento = nomeDoEvento(item?.value);\n        const quantidade = contagem(item?.count);\n        if (!evento || quantidade === null) continue;\n        const chave = `${dataDia}|${evento}`;\n        const anterior = somas.get(chave);\n        somas.set(chave, { dataDia, evento, origem, quantidade: (anterior?.quantidade ?? 0) + quantidade });\n      }\n    }\n  }\n  return [...somas.values()];\n}\n\nconst HOST = /^[a-z0-9]([a-z0-9.-]{0,198}[a-z0-9])?$/;\nconst VALOR_ENUMERADO = /^[A-Za-z0-9_ .+-]{1,60}$/;\nfunction valorDoRecorte(recorte, valor) {\n  if (typeof valor !== 'string') return null;\n  const limpo = valor.trim();\n  if (recorte === 'host') {\n    const host = limpo.toLowerCase().replace(/^[a-z]+:\\/\\//, '').split(/[/?#:]/)[0];\n    return HOST.test(host) ? host : null;\n  }\n  return VALOR_ENUMERADO.test(limpo) ? limpo : null;\n}\n\nfunction agregarRecorte(respostas, recorte) {\n  const somas = new Map();\n  for (const resposta of respostas) {\n    const baldes = Array.isArray(resposta.body?.data) ? resposta.body.data : [];\n    for (const balde of baldes) {\n      const instante = instanteDoBalde(balde?.start_time);\n      if (!instante || !Array.isArray(balde.data)) continue;\n      const dataDia = formatoDoDia.format(instante);\n      if (dataDia < contexto.janela.start || dataDia > contexto.janela.end) continue;\n      for (const item of balde.data) {\n        const valor = valorDoRecorte(recorte, item?.value);\n        const quantidade = contagem(item?.count);\n        if (!valor || quantidade === null) continue;\n        const chave = `${dataDia}|${valor}`;\n        const anterior = somas.get(chave);\n        somas.set(chave, { _tabela: 'recortes', dataDia, recorte, valor, quantidade: (anterior?.quantidade ?? 0) + quantidade });\n      }\n    }\n  }\n  return [...somas.values()];\n}\n\nfunction textoCurto(valor) {\n  return typeof valor === 'string' && valor.trim() ? valor.trim().slice(0, TAMANHO_MAXIMO_DO_EVENTO) : null;\n}\nfunction booleano(valor) {\n  return typeof valor === 'boolean' ? valor : null;\n}\n\nconst linhas = [];\nconst origensIncompletas = [];\nfor (const origem of ORIGENS) {\n  const falha = origem === 'total' ? null : falhaDe(respostasPorOrigem[origem]);\n  if (falha) {\n    origensIncompletas.push(`${origem}: ${falha.detalhe}`);\n    continue;\n  }\n  linhas.push(...agregar(respostasPorOrigem[origem], origem));\n}\n\nfor (const recorte of Object.keys(RECORTES)) {\n  const falha = falhaDe(respostasDosRecortes[recorte]);\n  if (falha) {\n    origensIncompletas.push(`${recorte}: ${falha.detalhe}`);\n    continue;\n  }\n  linhas.push(...agregarRecorte(respostasDosRecortes[recorte], recorte));\n}\n\nconst falhaDoDataset = falhaDe(respostasDoDataset);\nif (falhaDoDataset) {\n  origensIncompletas.push(`dataset: ${falhaDoDataset.detalhe}`);\n} else {\n  const ficha = respostasDoDataset[0]?.body ?? {};\n  const cookie = typeof ficha.first_party_cookie_status === 'string' && /^[A-Z_]{1,60}$/.test(ficha.first_party_cookie_status) ? ficha.first_party_cookie_status : null;\n  const usoDeDados = typeof ficha.data_use_setting === 'string' && /^[A-Z_]{1,60}$/.test(ficha.data_use_setting) ? ficha.data_use_setting : null;\n  linhas.push({\n    _tabela: 'dim_dataset',\n    nome: textoCurto(ficha.name),\n    indisponivel: booleano(ficha.is_unavailable),\n    correspondenciaAutomatica: booleano(ficha.enable_automatic_matching),\n    cookiePrimeiraParte: cookie,\n    usoDeDados,\n  });\n}\n\nif (!linhas.some((linha) => linha.origem === 'total')) return devolver([], [{ causa: 'sem_dados_no_periodo', detalhe: null }]);\nif (origensIncompletas.length > 0) {\n  return devolver(linhas, origensIncompletas.map((detalhe) => ({ causa: 'coleta_incompleta', detalhe: detalhe.slice(0, 500) })));\n}\nreturn devolver(linhas, []);\n"
+        "jsCode": "const contexto = $('Montar requisição').first().json;\nconst FUSO = 'America/Sao_Paulo';\nconst ORIGENS = ['total', 'navegador', 'servidor'];\nconst NO_DA_ORIGEM = { total: 'Eventos (total)', navegador: 'Eventos (navegador)', servidor: 'Eventos (servidor)' };\nconst TAMANHO_MAXIMO_DO_EVENTO = 200;\n\nconst respostasPorOrigem = {};\nfor (const origem of ORIGENS) {\n  respostasPorOrigem[origem] = $(NO_DA_ORIGEM[origem]).all()\n    .map((item) => item.json)\n    .filter((json) => json && (json.statusCode !== undefined || json.error));\n}\nconst RECORTES = {\"dispositivo\":\"Recorte (dispositivo)\",\"sistema_operacional\":\"Recorte (sistema operacional)\",\"navegador_do_visitante\":\"Recorte (navegador do visitante)\",\"host\":\"Recorte (host)\",\"chave_de_correspondencia\":\"Recorte (chaves de correspondência)\",\"resultado_do_processamento\":\"Recorte (resultado do processamento)\"};\nfunction respostasDe(nome) {\n  try {\n    return $(nome).all().map((item) => item.json).filter((json) => json && (json.statusCode !== undefined || json.error));\n  } catch {\n    return [];\n  }\n}\nconst respostasDosRecortes = Object.fromEntries(Object.entries(RECORTES).map(([recorte, no]) => [recorte, respostasDe(no)]));\nconst respostasDoDataset = respostasDe('Dataset');\nconst todas = [\n  ...ORIGENS.flatMap((origem) => respostasPorOrigem[origem]),\n  ...Object.values(respostasDosRecortes).flat(),\n  ...respostasDoDataset,\n];\nconst requests = todas.length;\nconst bytes = todas.reduce((total, resposta) => total + JSON.stringify(resposta.body ?? {}).length, 0);\n\nconst PAUSA_DO_USO_META = 75;\nconst CODIGOS_DE_LIMITE_META = [4, 17, 32, 341, 613];\nfunction limiteDaMeta(statusCode, erro) {\n  const codigo = Number(erro?.code);\n  return statusCode === 429 || CODIGOS_DE_LIMITE_META.includes(codigo) || (codigo >= 80000 && codigo <= 80014)\n    || /request limit reached|too many calls|rate limit/i.test(String(erro?.message ?? ''));\n}\nfunction lerJson(valor) {\n  if (valor && typeof valor === 'object') return valor;\n  try {\n    return typeof valor === 'string' ? JSON.parse(valor) : null;\n  } catch {\n    return null;\n  }\n}\nfunction cabecalho(resposta, nome) {\n  const cabecalhos = resposta?.headers ?? {};\n  return cabecalhos[nome] ?? cabecalhos[nome.toLowerCase()] ?? null;\n}\nfunction usoDaMeta(respostas) {\n  let percentual = null;\n  let minutosParaRecuperar = 0;\n  for (const resposta of respostas) {\n    const throttle = lerJson(cabecalho(resposta, 'x-fb-ads-insights-throttle'));\n    const negocio = lerJson(cabecalho(resposta, 'x-business-use-case-usage'));\n    const aplicativo = lerJson(cabecalho(resposta, 'x-app-usage'));\n    const entradas = negocio ? Object.values(negocio).flat() : [];\n    const valores = [\n      throttle?.acc_id_util_pct, throttle?.app_id_util_pct,\n      aplicativo?.call_count, aplicativo?.total_cputime, aplicativo?.total_time,\n      ...entradas.flatMap((entrada) => [entrada?.call_count, entrada?.total_cputime, entrada?.total_time]),\n    ].map(Number).filter(Number.isFinite);\n    if (valores.length > 0) percentual = Math.max(percentual ?? 0, ...valores);\n    for (const entrada of entradas) {\n      const minutos = Number(entrada?.estimated_time_to_regain_access);\n      if (Number.isFinite(minutos)) minutosParaRecuperar = Math.max(minutosParaRecuperar, minutos);\n    }\n  }\n  return { percentual, minutosParaRecuperar };\n}\nfunction avisosDaMeta(respostas, versaoApi) {\n  const avisos = [];\n  const servidas = new Set(respostas.map((resposta) => cabecalho(resposta, 'facebook-api-version')).filter(Boolean).map(String));\n  for (const servida of servidas) {\n    if (servida !== versaoApi) avisos.push({ tipo: 'versao_da_api', detalhe: `pedida ${versaoApi}, servida ${servida}` });\n  }\n  const alerta = respostas.map((resposta) => cabecalho(resposta, 'x-ad-api-version-warning')).find(Boolean);\n  if (alerta) avisos.push({ tipo: 'versao_da_api', detalhe: String(alerta).slice(0, 500) });\n  const niveis = new Set(respostas.flatMap((resposta) => {\n    const negocio = lerJson(cabecalho(resposta, 'x-business-use-case-usage'));\n    return negocio ? Object.values(negocio).flat().map((entrada) => entrada?.ads_api_access_tier).filter(Boolean) : [];\n  }));\n  if (niveis.has('development_access')) avisos.push({ tipo: 'nivel_de_acesso', detalhe: 'app Meta em development_access: limites de uso baixos; o Standard Access exige App Review (verificação de empresa)' });\n  const uso = usoDaMeta(respostas);\n  if (uso.percentual !== null && uso.percentual > PAUSA_DO_USO_META) {\n    avisos.push({ tipo: 'uso_de_cota', detalhe: `uso da Meta em ${uso.percentual}%${uso.minutosParaRecuperar ? `, recupera em ${uso.minutosParaRecuperar} min` : ''}` });\n  }\n  return avisos;\n}\n\nconst avisos = avisosDaMeta(todas, contexto.versaoApi);\n\nfunction devolver(linhas, falhas) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - contexto.inicio },\n      falhas,\n      avisos,\n      requests,\n      versaoApi: contexto.versaoApi,\n    },\n  }];\n}\n\nfunction falhaDe(respostas) {\n  if (respostas.length === 0) return { causa: 'api_recusou', detalhe: 'a Meta não respondeu' };\n  const deRede = respostas.find((resposta) => resposta.error);\n  if (deRede) {\n    const detalhe = deRede.error?.message ?? String(deRede.error);\n    return { causa: 'api_recusou', detalhe: `falha de rede: ${detalhe}`.replace(/access_token=[^&\\s\"']+/g, 'access_token=[removido]').slice(0, 500) };\n  }\n  const recusada = respostas.find((resposta) => !(resposta.statusCode >= 200 && resposta.statusCode < 300));\n  if (!recusada) return null;\n  const erro = recusada.body?.error;\n  const detalhe = String(erro?.message || `HTTP ${recusada.statusCode}`).replace(/access_token=[^&\\s\"']+/g, 'access_token=[removido]').slice(0, 500);\n  if (limiteDaMeta(recusada.statusCode, erro)) return { causa: 'limite_de_uso', detalhe };\n  const semAcesso = recusada.statusCode === 401 || recusada.statusCode === 403 || [190, 10, 200].includes(erro?.code);\n  return { causa: semAcesso ? 'reauth_pending' : 'api_recusou', detalhe };\n}\n\nif (!contexto.datasetIdValido) return devolver([], [{ causa: 'api_recusou', detalhe: 'id do conjunto de dados inválido' }]);\n\nconst falhaDoTotal = falhaDe(respostasPorOrigem.total);\nif (falhaDoTotal) return devolver([], [falhaDoTotal]);\n\nconst formatoDoDia = new Intl.DateTimeFormat('en-CA', { timeZone: FUSO, year: 'numeric', month: '2-digit', day: '2-digit' });\n\nfunction instanteDoBalde(valor) {\n  if (typeof valor === 'number' && Number.isFinite(valor)) return new Date(valor * 1000);\n  if (typeof valor !== 'string' || !valor) return null;\n  if (/^\\d+$/.test(valor)) return new Date(Number(valor) * 1000);\n  const data = new Date(valor.replace(/([+-]\\d{2})(\\d{2})$/, '$1:$2'));\n  return Number.isNaN(data.getTime()) ? null : data;\n}\n\nfunction nomeDoEvento(valor) {\n  if (typeof valor !== 'string') return null;\n  const limpo = valor.trim();\n  return limpo ? limpo.slice(0, TAMANHO_MAXIMO_DO_EVENTO) : null;\n}\n\nfunction contagem(valor) {\n  const numero = typeof valor === 'string' && valor.trim() !== '' ? Number(valor) : valor;\n  return typeof numero === 'number' && Number.isFinite(numero) && numero >= 0 ? Math.trunc(numero) : null;\n}\n\nfunction agregar(respostas, origem) {\n  const somas = new Map();\n  for (const resposta of respostas) {\n    const baldes = Array.isArray(resposta.body?.data) ? resposta.body.data : [];\n    for (const balde of baldes) {\n      const instante = instanteDoBalde(balde?.start_time);\n      if (!instante || !Array.isArray(balde.data)) continue;\n      const dataDia = formatoDoDia.format(instante);\n      if (dataDia < contexto.janela.start || dataDia > contexto.janela.end) continue;\n      for (const item of balde.data) {\n        const evento = nomeDoEvento(item?.value);\n        const quantidade = contagem(item?.count);\n        if (!evento || quantidade === null) continue;\n        const chave = `${dataDia}|${evento}`;\n        const anterior = somas.get(chave);\n        somas.set(chave, { dataDia, evento, origem, quantidade: (anterior?.quantidade ?? 0) + quantidade });\n      }\n    }\n  }\n  return [...somas.values()];\n}\n\nconst HOST = /^[a-z0-9]([a-z0-9.-]{0,198}[a-z0-9])?$/;\nconst VALOR_ENUMERADO = /^[A-Za-z0-9_ .+-]{1,60}$/;\nfunction valorDoRecorte(recorte, valor) {\n  if (typeof valor !== 'string') return null;\n  const limpo = valor.trim();\n  if (recorte === 'host') {\n    const host = limpo.toLowerCase().replace(/^[a-z]+:\\/\\//, '').split(/[/?#:]/)[0];\n    return HOST.test(host) ? host : null;\n  }\n  return VALOR_ENUMERADO.test(limpo) ? limpo : null;\n}\n\nfunction agregarRecorte(respostas, recorte) {\n  const somas = new Map();\n  for (const resposta of respostas) {\n    const baldes = Array.isArray(resposta.body?.data) ? resposta.body.data : [];\n    for (const balde of baldes) {\n      const instante = instanteDoBalde(balde?.start_time);\n      if (!instante || !Array.isArray(balde.data)) continue;\n      const dataDia = formatoDoDia.format(instante);\n      if (dataDia < contexto.janela.start || dataDia > contexto.janela.end) continue;\n      for (const item of balde.data) {\n        const valor = valorDoRecorte(recorte, item?.value);\n        const quantidade = contagem(item?.count);\n        if (!valor || quantidade === null) continue;\n        const chave = `${dataDia}|${valor}`;\n        const anterior = somas.get(chave);\n        somas.set(chave, { _tabela: 'recortes', dataDia, recorte, valor, quantidade: (anterior?.quantidade ?? 0) + quantidade });\n      }\n    }\n  }\n  return [...somas.values()];\n}\n\nfunction textoCurto(valor) {\n  return typeof valor === 'string' && valor.trim() ? valor.trim().slice(0, TAMANHO_MAXIMO_DO_EVENTO) : null;\n}\nfunction booleano(valor) {\n  return typeof valor === 'boolean' ? valor : null;\n}\n\nconst linhas = [];\nconst origensIncompletas = [];\nfor (const origem of ORIGENS) {\n  const falha = origem === 'total' ? null : falhaDe(respostasPorOrigem[origem]);\n  if (falha) {\n    origensIncompletas.push(`${origem}: ${falha.detalhe}`);\n    continue;\n  }\n  linhas.push(...agregar(respostasPorOrigem[origem], origem));\n}\n\nfor (const recorte of Object.keys(RECORTES)) {\n  const falha = falhaDe(respostasDosRecortes[recorte]);\n  if (falha) {\n    origensIncompletas.push(`${recorte}: ${falha.detalhe}`);\n    continue;\n  }\n  linhas.push(...agregarRecorte(respostasDosRecortes[recorte], recorte));\n}\n\nconst limiteNosOpcionais = [\n  ...ORIGENS.filter((origem) => origem !== 'total').map((origem) => falhaDe(respostasPorOrigem[origem])),\n  ...Object.keys(RECORTES).map((recorte) => falhaDe(respostasDosRecortes[recorte])),\n  falhaDe(respostasDoDataset),\n].find((falha) => falha?.causa === 'limite_de_uso');\n\nconst falhaDoDataset = falhaDe(respostasDoDataset);\nif (falhaDoDataset) {\n  origensIncompletas.push(`dataset: ${falhaDoDataset.detalhe}`);\n} else {\n  const ficha = respostasDoDataset[0]?.body ?? {};\n  const cookie = typeof ficha.first_party_cookie_status === 'string' && /^[A-Z_]{1,60}$/.test(ficha.first_party_cookie_status) ? ficha.first_party_cookie_status : null;\n  const usoDeDados = typeof ficha.data_use_setting === 'string' && /^[A-Z_]{1,60}$/.test(ficha.data_use_setting) ? ficha.data_use_setting : null;\n  linhas.push({\n    _tabela: 'dim_dataset',\n    nome: textoCurto(ficha.name),\n    indisponivel: booleano(ficha.is_unavailable),\n    correspondenciaAutomatica: booleano(ficha.enable_automatic_matching),\n    cookiePrimeiraParte: cookie,\n    usoDeDados,\n  });\n}\n\nconst interrompida = (respostas) => Boolean(respostas[respostas.length - 1]?.body?.paging?.next);\nconst consultasLidas = [\n  ...ORIGENS.map((origem) => [origem, respostasPorOrigem[origem]]),\n  ...Object.entries(respostasDosRecortes),\n  ['dataset', respostasDoDataset],\n];\nfor (const [nome, respostas] of consultasLidas) {\n  if (interrompida(respostas)) origensIncompletas.push(`${nome}: paginação interrompida no limite de requisições`);\n}\n\nif (limiteNosOpcionais) return devolver(linhas, [limiteNosOpcionais]);\nif (!linhas.some((linha) => linha.origem === 'total')) return devolver([], [{ causa: 'sem_dados_no_periodo', detalhe: null }]);\nif (origensIncompletas.length > 0) {\n  return devolver(linhas, origensIncompletas.map((detalhe) => ({ causa: 'coleta_incompleta', detalhe: detalhe.slice(0, 500) })));\n}\nreturn devolver(linhas, []);\n"
       }
     },
     {
@@ -199,8 +333,7 @@
       "parameters": {
         "method": "GET",
         "url": "={{ $('Montar requisição').first().json.urlDoDataset }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "facebookGraphApi",
+        "authentication": "none",
         "options": {
           "response": {
             "response": {
@@ -209,12 +342,24 @@
               "responseFormat": "json"
             }
           }
-        }
-      },
-      "credentials": {
-        "facebookGraphApi": {
-          "id": "a-definir-pelo-provisioner",
-          "name": "a-definir-pelo-provisioner"
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Obter token').first().json.body.token }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "appsecret_proof",
+              "value": "={{ $('Obter token').first().json.body.appsecretProof }}"
+            }
+          ]
         }
       },
       "onError": "continueRegularOutput",
@@ -233,8 +378,7 @@
       "parameters": {
         "method": "GET",
         "url": "={{ $('Montar requisição').first().json.recortes.dispositivo }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "facebookGraphApi",
+        "authentication": "none",
         "options": {
           "response": {
             "response": {
@@ -253,12 +397,24 @@
               "maxRequests": 300
             }
           }
-        }
-      },
-      "credentials": {
-        "facebookGraphApi": {
-          "id": "a-definir-pelo-provisioner",
-          "name": "a-definir-pelo-provisioner"
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Obter token').first().json.body.token }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "appsecret_proof",
+              "value": "={{ $('Obter token').first().json.body.appsecretProof }}"
+            }
+          ]
         }
       },
       "onError": "continueRegularOutput",
@@ -277,8 +433,7 @@
       "parameters": {
         "method": "GET",
         "url": "={{ $('Montar requisição').first().json.recortes.sistema_operacional }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "facebookGraphApi",
+        "authentication": "none",
         "options": {
           "response": {
             "response": {
@@ -297,12 +452,24 @@
               "maxRequests": 300
             }
           }
-        }
-      },
-      "credentials": {
-        "facebookGraphApi": {
-          "id": "a-definir-pelo-provisioner",
-          "name": "a-definir-pelo-provisioner"
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Obter token').first().json.body.token }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "appsecret_proof",
+              "value": "={{ $('Obter token').first().json.body.appsecretProof }}"
+            }
+          ]
         }
       },
       "onError": "continueRegularOutput",
@@ -321,8 +488,7 @@
       "parameters": {
         "method": "GET",
         "url": "={{ $('Montar requisição').first().json.recortes.navegador_do_visitante }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "facebookGraphApi",
+        "authentication": "none",
         "options": {
           "response": {
             "response": {
@@ -341,12 +507,24 @@
               "maxRequests": 300
             }
           }
-        }
-      },
-      "credentials": {
-        "facebookGraphApi": {
-          "id": "a-definir-pelo-provisioner",
-          "name": "a-definir-pelo-provisioner"
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Obter token').first().json.body.token }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "appsecret_proof",
+              "value": "={{ $('Obter token').first().json.body.appsecretProof }}"
+            }
+          ]
         }
       },
       "onError": "continueRegularOutput",
@@ -365,8 +543,7 @@
       "parameters": {
         "method": "GET",
         "url": "={{ $('Montar requisição').first().json.recortes.host }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "facebookGraphApi",
+        "authentication": "none",
         "options": {
           "response": {
             "response": {
@@ -385,12 +562,24 @@
               "maxRequests": 300
             }
           }
-        }
-      },
-      "credentials": {
-        "facebookGraphApi": {
-          "id": "a-definir-pelo-provisioner",
-          "name": "a-definir-pelo-provisioner"
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Obter token').first().json.body.token }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "appsecret_proof",
+              "value": "={{ $('Obter token').first().json.body.appsecretProof }}"
+            }
+          ]
         }
       },
       "onError": "continueRegularOutput",
@@ -409,8 +598,7 @@
       "parameters": {
         "method": "GET",
         "url": "={{ $('Montar requisição').first().json.recortes.chave_de_correspondencia }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "facebookGraphApi",
+        "authentication": "none",
         "options": {
           "response": {
             "response": {
@@ -429,12 +617,24 @@
               "maxRequests": 300
             }
           }
-        }
-      },
-      "credentials": {
-        "facebookGraphApi": {
-          "id": "a-definir-pelo-provisioner",
-          "name": "a-definir-pelo-provisioner"
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Obter token').first().json.body.token }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "appsecret_proof",
+              "value": "={{ $('Obter token').first().json.body.appsecretProof }}"
+            }
+          ]
         }
       },
       "onError": "continueRegularOutput",
@@ -453,8 +653,7 @@
       "parameters": {
         "method": "GET",
         "url": "={{ $('Montar requisição').first().json.recortes.resultado_do_processamento }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "facebookGraphApi",
+        "authentication": "none",
         "options": {
           "response": {
             "response": {
@@ -473,12 +672,24 @@
               "maxRequests": 300
             }
           }
-        }
-      },
-      "credentials": {
-        "facebookGraphApi": {
-          "id": "a-definir-pelo-provisioner",
-          "name": "a-definir-pelo-provisioner"
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Obter token').first().json.body.token }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "appsecret_proof",
+              "value": "={{ $('Obter token').first().json.body.appsecretProof }}"
+            }
+          ]
         }
       },
       "onError": "continueRegularOutput",
@@ -490,7 +701,7 @@
       "main": [
         [
           {
-            "node": "Montar requisição",
+            "node": "Obter token",
             "type": "main",
             "index": 0
           }
@@ -617,12 +828,54 @@
           }
         ]
       ]
+    },
+    "Obter token": {
+      "main": [
+        [
+          {
+            "node": "Token obtido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token obtido?": {
+      "main": [
+        [
+          {
+            "node": "Retomar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sem token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retomar entrada": {
+      "main": [
+        [
+          {
+            "node": "Montar requisição",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
     "executionOrder": "v1",
     "saveDataErrorExecution": "none",
     "saveDataSuccessExecution": "none",
-    "timezone": "America/Sao_Paulo"
+    "timezone": "America/Sao_Paulo",
+    "saveManualExecutions": false,
+    "callerPolicy": "workflowsFromSameOwner"
   }
 }

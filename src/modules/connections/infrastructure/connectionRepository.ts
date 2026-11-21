@@ -1,10 +1,11 @@
-import { withTenant } from '@/shared/db/tenant';
+import { withTenant, type TenantSession } from '@/shared/db/tenant';
 import type { Connection, NewConnection } from '@/modules/connections/domain/connection';
-
-export type WorkflowsDaConexao = {
-  readonly coletorRef: string | null;
-  readonly executorRef: string | null;
-};
+import type { NovoSegredo } from '@/modules/tokens/application/portas';
+import {
+  apagarTokenNaTransacao,
+  gravarSegredoNaTransacao,
+  versaoDoTokenNaTransacao,
+} from '@/modules/tokens/infrastructure/tokenRepository';
 
 type Row = {
   id: string;
@@ -15,12 +16,12 @@ type Row = {
   external_id: string;
   account_email: string | null;
   scopes: string[];
-  credential_ref: string;
   status: Connection['status'];
   expires_at: Date | null;
   authorized_at: Date;
   webhook_token: string | null;
   authorized_via: Connection['authorizedVia'];
+  versao_do_token: number | null;
 };
 
 const toConnection = (row: Row): Connection => ({
@@ -32,68 +33,86 @@ const toConnection = (row: Row): Connection => ({
   externalId: row.external_id,
   accountEmail: row.account_email,
   scopes: row.scopes,
-  credentialRef: row.credential_ref,
   status: row.status,
   expiresAt: row.expires_at,
   authorizedAt: row.authorized_at,
   webhookToken: row.webhook_token,
   authorizedVia: row.authorized_via,
+  versaoDoToken: row.versao_do_token,
 });
 
+export type NovaConexaoComId = NewConnection & { readonly id: string };
+
 export type ConnectionRepository = {
-  insert(input: NewConnection): Promise<Connection>;
+  insert(input: NovaConexaoComId, segredo: NovoSegredo): Promise<Connection>;
   findById(organizationId: string, id: string): Promise<Connection | null>;
   findByExternalId(organizationId: string, platform: string, externalId: string): Promise<Connection | null>;
-  renew(input: NewConnection & { readonly id: string }): Promise<Connection>;
+  renew(input: NovaConexaoComId, segredo: NovoSegredo, versaoDoTokenEsperada: number | null): Promise<Connection | null>;
   list(organizationId: string): Promise<readonly Connection[]>;
-  revogar(organizationId: string, id: string): Promise<WorkflowsDaConexao | null>;
-  trocarColetorRef(organizationId: string, id: string, coletorRef: string): Promise<string | null>;
-  trocarExecutorRef(organizationId: string, id: string, executorRef: string): Promise<string | null>;
+  revogar(organizationId: string, id: string, versaoDoTokenEsperada: number | null): Promise<boolean>;
 };
+
+async function lerConexao(tx: TenantSession, id: string): Promise<Connection | null> {
+  const rows = (await tx`
+    SELECT c.*, t.versao AS versao_do_token
+    FROM integrations.connections c
+    LEFT JOIN integrations.connection_tokens t ON t.connection_id = c.id
+    WHERE c.id = ${id}`) as unknown as Row[];
+  return rows[0] ? toConnection(rows[0]) : null;
+}
+
+async function travarConexao(tx: TenantSession, id: string, condicao: 'qualquer' | 'nao_revogada'): Promise<boolean> {
+  const rows = (condicao === 'nao_revogada'
+    ? await tx`SELECT id FROM integrations.connections WHERE id = ${id} AND status <> 'revoked' FOR UPDATE`
+    : await tx`SELECT id FROM integrations.connections WHERE id = ${id} FOR UPDATE`) as unknown as unknown[];
+  return rows.length > 0;
+}
 
 export function createConnectionRepository(): ConnectionRepository {
   return {
-    async insert(input) {
+    async insert(input, segredo) {
       return withTenant(input.organizationId, async (tx) => {
-        const rows = (await tx`
+        await tx`
           INSERT INTO integrations.connections
-            (organization_id, platform, grant_type, label, external_id, account_email, scopes, credential_ref, expires_at, status, webhook_token, authorized_via)
-          VALUES (${input.organizationId}, ${input.platform}, ${input.grantType}, ${input.label},
-                  ${input.externalId}, ${input.accountEmail ?? null}, ${input.scopes as string[]}::text[], ${input.credentialRef}, ${input.expiresAt}, ${input.status ?? 'active'}, ${input.webhookToken ?? null}, ${input.authorizedVia})
-          RETURNING *`) as unknown as Row[];
-        return toConnection(rows[0]!);
+            (id, organization_id, platform, grant_type, label, external_id, account_email, scopes, expires_at, status, webhook_token, authorized_via)
+          VALUES (${input.id}, ${input.organizationId}, ${input.platform}, ${input.grantType}, ${input.label},
+                  ${input.externalId}, ${input.accountEmail ?? null}, ${input.scopes as string[]}::text[], ${input.expiresAt},
+                  ${input.status ?? 'active'}, ${input.webhookToken ?? null}, ${input.authorizedVia})`;
+        await gravarSegredoNaTransacao(tx, { organizationId: input.organizationId, connectionId: input.id }, segredo);
+        return (await lerConexao(tx, input.id))!;
       });
     },
 
-    async renew(input) {
+    async renew(input, segredo, versaoDoTokenEsperada) {
       return withTenant(input.organizationId, async (tx) => {
-        const rows = (await tx`
+        if (!(await travarConexao(tx, input.id, 'qualquer'))) return null;
+        if ((await versaoDoTokenNaTransacao(tx, input.id)) !== versaoDoTokenEsperada) return null;
+
+        await tx`
           UPDATE integrations.connections
           SET label          = ${input.label},
               account_email  = ${input.accountEmail ?? null},
               scopes         = ${input.scopes as string[]}::text[],
-              credential_ref = ${input.credentialRef},
               status         = ${input.status ?? 'active'},
               expires_at     = ${input.expiresAt},
               authorized_at  = now()
-          WHERE id = ${input.id}
-          RETURNING *`) as unknown as Row[];
-        return toConnection(rows[0]!);
+          WHERE id = ${input.id}`;
+        await gravarSegredoNaTransacao(tx, { organizationId: input.organizationId, connectionId: input.id }, segredo);
+        return lerConexao(tx, input.id);
       });
     },
 
     async findById(organizationId, id) {
-      return withTenant(organizationId, async (tx) => {
-        const rows = (await tx`SELECT * FROM integrations.connections WHERE id = ${id}`) as unknown as Row[];
-        return rows[0] ? toConnection(rows[0]) : null;
-      });
+      return withTenant(organizationId, (tx) => lerConexao(tx, id));
     },
 
     async findByExternalId(organizationId, platform, externalId) {
       return withTenant(organizationId, async (tx) => {
         const rows = (await tx`
-          SELECT * FROM integrations.connections
-          WHERE platform = ${platform}::integrations.platform AND external_id = ${externalId}`) as unknown as Row[];
+          SELECT c.*, t.versao AS versao_do_token
+          FROM integrations.connections c
+          LEFT JOIN integrations.connection_tokens t ON t.connection_id = c.id
+          WHERE c.platform = ${platform}::integrations.platform AND c.external_id = ${externalId}`) as unknown as Row[];
         return rows[0] ? toConnection(rows[0]) : null;
       });
     },
@@ -101,58 +120,27 @@ export function createConnectionRepository(): ConnectionRepository {
     async list(organizationId) {
       return withTenant(organizationId, async (tx) => {
         const rows = (await tx`
-          SELECT * FROM integrations.connections ORDER BY authorized_at DESC`) as unknown as Row[];
+          SELECT c.*, t.versao AS versao_do_token
+          FROM integrations.connections c
+          LEFT JOIN integrations.connection_tokens t ON t.connection_id = c.id
+          ORDER BY c.authorized_at DESC`) as unknown as Row[];
         return rows.map(toConnection);
       });
     },
 
-    async revogar(organizationId, id) {
+    async revogar(organizationId, id, versaoDoTokenEsperada) {
       return withTenant(organizationId, async (tx) => {
-        const rows = (await tx`
-          WITH antes AS (
-            SELECT id, coletor_ref, executor_ref FROM integrations.connections
-            WHERE id = ${id} AND status <> 'revoked'
-            FOR UPDATE
-          )
-          UPDATE integrations.connections c
-          SET status         = 'revoked',
-              credential_ref = 'descartada',
-              account_email  = NULL,
-              webhook_token  = NULL,
-              coletor_ref    = NULL,
-              executor_ref   = NULL
-          FROM antes
-          WHERE c.id = antes.id
-          RETURNING antes.coletor_ref, antes.executor_ref`) as unknown as {
-          coletor_ref: string | null;
-          executor_ref: string | null;
-        }[];
-        const linha = rows[0];
-        return linha ? { coletorRef: linha.coletor_ref, executorRef: linha.executor_ref } : null;
-      });
-    },
+        if (!(await travarConexao(tx, id, 'nao_revogada'))) return false;
+        if ((await versaoDoTokenNaTransacao(tx, id)) !== versaoDoTokenEsperada) return false;
 
-    async trocarColetorRef(organizationId, id, coletorRef) {
-      return withTenant(organizationId, async (tx) => {
-        const rows = (await tx`
-          UPDATE integrations.connections novo
-          SET coletor_ref = ${coletorRef}
-          FROM (SELECT coletor_ref FROM integrations.connections WHERE id = ${id} FOR UPDATE) anterior
-          WHERE novo.id = ${id}
-          RETURNING anterior.coletor_ref AS anterior`) as unknown as { anterior: string | null }[];
-        return rows[0]?.anterior ?? null;
-      });
-    },
-
-    async trocarExecutorRef(organizationId, id, executorRef) {
-      return withTenant(organizationId, async (tx) => {
-        const rows = (await tx`
-          UPDATE integrations.connections novo
-          SET executor_ref = ${executorRef}
-          FROM (SELECT executor_ref FROM integrations.connections WHERE id = ${id} FOR UPDATE) anterior
-          WHERE novo.id = ${id}
-          RETURNING anterior.executor_ref AS anterior`) as unknown as { anterior: string | null }[];
-        return rows[0]?.anterior ?? null;
+        await apagarTokenNaTransacao(tx, id);
+        await tx`
+          UPDATE integrations.connections
+          SET status        = 'revoked',
+              account_email = NULL,
+              webhook_token = NULL
+          WHERE id = ${id}`;
+        return true;
       });
     },
   };

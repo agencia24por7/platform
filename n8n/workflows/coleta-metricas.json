@@ -3,9 +3,11 @@
   "name": "ORLA · coleta de métricas",
   "settings": {
     "executionOrder": "v1",
-    "saveDataErrorExecution": "all",
-    "saveDataSuccessExecution": "all",
-    "timezone": "America/Sao_Paulo"
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "timezone": "America/Sao_Paulo",
+    "saveManualExecutions": false,
+    "errorWorkflow": "origem:n8n/workflows/plataforma/alertas-de-falha.json"
   },
   "nodes": [
     {
@@ -146,7 +148,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const account = $('Processar em série').item.json;\nconst run = $json;\nconst start = new Date(`${account.window.start}T00:00:00Z`);\nconst end = new Date(`${account.window.end}T00:00:00Z`);\n\nconst hasCredential = typeof account.credentialRef === 'string' && account.credentialRef.length > 0;\nconst rows = [];\n\nif (hasCredential) {\n  const campaigns = [\n    { id: `${account.externalId}-c1`, name: 'Aquisição' },\n    { id: `${account.externalId}-c2`, name: 'Remarketing' },\n  ];\n  for (let day = new Date(start); day <= end; day.setUTCDate(day.getUTCDate() + 1)) {\n    const metricDate = day.toISOString().slice(0, 10);\n    const seed = Number(metricDate.replaceAll('-', '')) % 97;\n    campaigns.forEach((campaign, index) => {\n      const impressions = 4200 + seed * 37 + index * 510;\n      const clicks = Math.round(impressions * (0.012 + index * 0.004));\n      const conversions = Math.round(clicks * (0.03 + index * 0.02));\n      rows.push({\n        externalCampaignId: campaign.id,\n        campaignName: campaign.name,\n        metricDate,\n        spend: Number((impressions / 1000 * (22 + index * 4)).toFixed(2)),\n        impressions,\n        clicks,\n        conversions,\n        revenue: Number((conversions * 180).toFixed(2)),\n        currency: account.currency || 'BRL',\n      });\n    });\n  }\n}\n\nreturn { json: { runId: run.id, adAccountId: account.adAccountId, platform: account.platform, hasCredential, requestCount: hasCredential ? rows.length / 2 : 0, rows } };"
+        "jsCode": "const account = $('Processar em série').item.json;\nconst run = $json;\nconst start = new Date(`${account.window.start}T00:00:00Z`);\nconst end = new Date(`${account.window.end}T00:00:00Z`);\n\nconst hasCredential = account.temToken === true;\nconst rows = [];\n\nif (hasCredential) {\n  const campaigns = [\n    { id: `${account.externalId}-c1`, name: 'Aquisição' },\n    { id: `${account.externalId}-c2`, name: 'Remarketing' },\n  ];\n  for (let day = new Date(start); day <= end; day.setUTCDate(day.getUTCDate() + 1)) {\n    const metricDate = day.toISOString().slice(0, 10);\n    const seed = Number(metricDate.replaceAll('-', '')) % 97;\n    campaigns.forEach((campaign, index) => {\n      const impressions = 4200 + seed * 37 + index * 510;\n      const clicks = Math.round(impressions * (0.012 + index * 0.004));\n      const conversions = Math.round(clicks * (0.03 + index * 0.02));\n      rows.push({\n        externalCampaignId: campaign.id,\n        campaignName: campaign.name,\n        metricDate,\n        spend: Number((impressions / 1000 * (22 + index * 4)).toFixed(2)),\n        impressions,\n        clicks,\n        conversions,\n        revenue: Number((conversions * 180).toFixed(2)),\n        currency: account.currency || 'BRL',\n      });\n    });\n  }\n}\n\nreturn { json: { runId: run.id, adAccountId: account.adAccountId, platform: account.platform, hasCredential, requestCount: hasCredential ? rows.length / 2 : 0, rows } };"
       },
       "id": "a1000000-0000-4000-8000-000000000007",
       "name": "Coletar métricas",

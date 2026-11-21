@@ -2,6 +2,17 @@
 	import seguranca
 	encode zstd gzip
 
+	@corpo_de_webhook path /api/portaria/receber* /webhook/*
+	@corpo_do_editor not path /api/portaria/receber* /webhook/*
+
+	request_body @corpo_de_webhook {
+		max_size 1MB
+	}
+
+	request_body @corpo_do_editor {
+		max_size 16MB
+	}
+
 	@portaria path /api/portaria/receber*
 
 	handle @portaria {

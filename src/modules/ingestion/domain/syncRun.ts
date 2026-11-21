@@ -13,8 +13,8 @@ export type QueueEntry = {
   readonly accountName: string;
   readonly currency: string;
   readonly timezone: string;
-  readonly credentialRef: string;
   readonly connectionId: string;
+  readonly temToken: boolean;
   readonly window: SyncWindow;
   readonly lastSyncAt: Date | null;
 };

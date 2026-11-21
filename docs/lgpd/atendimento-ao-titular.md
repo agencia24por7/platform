@@ -20,7 +20,9 @@ Canal: contato@agencia24por7.com. Prazo prometido na política: 15 dias.
 | Desfazer a exclusão de um cliente | `node scripts/titular.mjs restaurar-cliente <client_id> --por <quem pediu>` (simula) e depois com `--confirmar` |
 | Eliminação definitiva de um cliente por obrigação legal | `node scripts/titular.mjs expurgar-cliente <client_id>` (simula) e depois com `--confirmar` |
 | Correção | pela tela do app (nome e foto vêm do Google; o titular corrige na conta Google e o próximo login atualiza) |
-| Revogar consentimento de conexão | remover a conexão na tela de conectores; o titular também revoga no Google ou na Meta |
+| Revogar consentimento de conexão | remover a conexão na tela de conectores: a orla revoga no Google ou na Meta e apaga o token cifrado do cofre; se a tela avisar que não revogou, o titular revoga em myaccount.google.com/permissions (Google) ou facebook.com/settings?tab=business_tools (Meta) |
+| Pedido de exclusão recebido da Meta (callback) | ver "Pedidos de exclusão da Meta" abaixo |
+| Apagar do BigQuery os dados de uma fonte (fim de autorização, YouTube) | `node scripts/titular.mjs expurgar-fonte <organization_id> <plataforma> <external_id>` (simula) e depois com `--confirmar` |
 
 `anonimizar` revoga os vínculos da pessoa, troca e-mail e nome por marcadores, apaga a foto e retira e-mail e IP
 dela da trilha de auditoria. Os registros de auditoria continuam (sem identificar a pessoa) até o prazo de 2 anos.
@@ -37,10 +39,71 @@ Fica um `client.excluded` na auditoria. `restaurar-cliente` desfaz: o cliente vo
 coleta é decisão de quem opera) e fica um `client.restored`.
 
 `expurgar-cliente` é o **expurgo**: apaga de vez no Postgres contas, métricas, coletas, convites e acessos do
-cliente, e no BigQuery as linhas do período de posse (manifesto) e as linhas com aquele `client_id`. Não tem
-volta. Use só quando houver obrigação legal de eliminar (pedido do titular sem base legal para manter os dados,
-art. 16 e 18, VI), registrando o motivo no pedido. Fica um `client.purged` na auditoria, sem dado pessoal. Os
-backups expiram sozinhos em até 30 dias.
+cliente, e no BigQuery as linhas do período de posse (manifesto), as das fontes que só foram dele e as linhas com
+aquele `client_id`. Não tem volta. Use só quando houver obrigação legal de eliminar (pedido do titular sem base
+legal para manter os dados, art. 16 e 18, VI), registrando o motivo no pedido. Fica um `client.purged` na
+auditoria, sem dado pessoal; o nome do cliente sai das linhas antigas da trilha (`de`, `para`, `cliente`, `name`
+viram `[cliente expurgado]`) e os recursos que eram dele voltam a `discovered`, sem cliente. Os backups expiram
+sozinhos em até 30 dias; o time travel do BigQuery, em até 7 (mais 7 de fail-safe do Google).
+
+Ordem e retomada (ADR 0023):
+
+1. O cliente precisa estar **excluído logicamente** antes (`excluir-cliente`): assim ele já saiu da coleta e
+   nenhuma gravação nova entra no meio do expurgo (`/coleta/gravar` recusa cliente excluído).
+2. O script sincroniza as dimensões do BigQuery e **aborta sem apagar nada** se a sincronização falhar: o
+   expurgo dos fatos depende do período de posse em `dim_fonte_scd2`.
+3. Apaga no **BigQuery primeiro** (período de posse, sobras das fontes só do cliente, `client_id`) e só depois
+   chama `core.expurgar_cliente` no Postgres, que é irreversível. Por fim repete a limpeza por `client_id` e
+   sincroniza de novo.
+4. Se um passo do BigQuery falhar, o script mostra o passo e a lista dos pendentes e sai com erro. Todo passo é
+   idempotente: **rode o mesmo comando de novo**. Se a falha foi depois do Postgres (o cliente já não existe
+   lá), o mesmo comando só repete a limpeza por `client_id`.
+
+O expurgo apaga também as `stg_*` das fontes do cliente (por organização + chave da fonte), que de todo modo
+expiram em 7 dias. Período de posse de dono desconhecido (linha antiga da trilha com nome ambíguo) não é
+apagado: não se sabe se era deste cliente ou de um homônimo (ADR 0029).
+
+### Bucket do contexto na exclusão e no expurgo (ADR 0033)
+
+- `excluir-cliente` despublica do bucket o brain derivado (`contexto/brain/` e `brain/`). Os arquivos
+  enviados (`arquivos/`) ficam, sem nenhuma rota de leitura no app, até o expurgo ou a restauração. Se a
+  despublicação falhar, a varredura de `publicar-pendentes` despublica na próxima rodada.
+- `expurgar-cliente --confirmar` apaga, nesta ordem: BigQuery, o prefixo inteiro do cliente no bucket
+  (todas as gerações, pela rota `POST /api/v0/manutencao/expurgar-armazenamento`, que só aceita cliente
+  excluído ou já expurgado), Postgres e a limpeza final por `client_id`. Falhou no bucket: o Postgres não
+  foi tocado; rode o mesmo comando de novo.
+- `expurgar-cliente <id> --somente-armazenamento --confirmar` repete só o bucket, inclusive depois de o
+  cliente sumir do Postgres (a organização vem da linha `client.purged`).
+- O objeto apagado fica recuperável por 7 dias (soft delete do bucket): é o prazo efetivo do apagamento
+  físico a informar ao titular (docs/lgpd/retencao.md).
+
+### Pedidos de exclusão da Meta (ADR 0029)
+
+Quem remove o app *Agencia24/7 Ads* no Facebook dispara o callback `POST /api/meta/exclusao`. A orla grava o
+pedido (sem o id da Meta) e responde à Meta com o código e a página `/exclusao-de-dados/status/<código>`, onde a
+pessoa acompanha. A tela do conector da Meta mostra o pedido ao admin da organização.
+
+1. `node scripts/titular.mjs pedidos-de-exclusao listar`: pedidos abertos e as conexões ligadas (organização,
+   plataforma, estado).
+2. `node scripts/titular.mjs pedidos-de-exclusao andamento <código> --confirmar --por <quem>`.
+3. Em cada organização listada, remova as conexões ligadas na tela do conector (a revogação no provedor
+   provavelmente já caiu, porque a pessoa removeu o app). Remover apaga o token cifrado do cofre, para a coleta e solta as
+   contas e recursos.
+4. Se a pessoa é titular de dados guardados (usuário da orla), siga também "Exclusão ou anonimização" acima. Se
+   o pedido é de um cliente da agência, avalie `excluir-cliente`/`expurgar-cliente`. Métricas de campanha de um
+   cliente com contrato ativo não são dado pessoal de quem autorizou: registre a base legal na evidência.
+5. `node scripts/titular.mjs pedidos-de-exclusao concluir <código> --evidencia "<conexões removidas, expurgos>" --confirmar --por <quem>`.
+   A página de situação passa a mostrar "Concluído".
+
+Prazo: 15 dias, como os outros pedidos.
+
+### YouTube (ADR 0029)
+
+Remover a conexão de um canal do YouTube apaga do BigQuery, na hora ou em até 7 dias pelo job diário, todos os
+dados do YouTube daquele canal na organização (salvo se outra conexão ativa da organização ainda alcança o
+canal). Canal que fica sem conexão ativa (revogado no Google) é apagado depois de 7 dias de carência, dentro
+dos 30 que a política permite. Para conferir a fila: `SELECT * FROM privacidade.expurgos_de_fonte WHERE
+concluido_em IS NULL AND cancelado_em IS NULL`; `ultimo_erro` mostra por que um expurgo não concluiu.
 
 `anonimizar` não muda: trata dado pessoal de um usuário, não exclusão de cliente.
 

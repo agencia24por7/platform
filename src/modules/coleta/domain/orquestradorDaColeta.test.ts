@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { fecharColetaBody, GRAVAR_COLETA_MAX_LINHAS } from '../../../shared/config/contracts.ts';
 
-type No = { id: string; name: string; parameters: { jsCode?: string } };
+type No = { id: string; name: string; onError?: string; parameters: { jsCode?: string } };
 type Modelo = { nodes: No[]; connections: Record<string, { main: { node: string }[][] }> };
 type Item = { json: Record<string, any> };
 
@@ -25,7 +25,7 @@ for (const arquivo of FLUXOS) {
   describe(`gravação em lotes: ${arquivo}`, () => {
     const modelo = carregar(arquivo);
     const qualidade = (falhas: unknown[], linhas: unknown[] = [{ a: 1 }]) =>
-      rodar(modelo, 'calcular-qualidade-ok', [{ json: { linhas, falhas, requests: 2 } }], contexto)[0]!.json;
+      rodar(modelo, 'calcular-qualidade-ok', [{ json: { linhas, falhas, requests: 2, volumetria: { linhas: linhas.length, bytes: 10, requests: 2, duracaoMs: 5 } } }], contexto)[0]!.json;
 
     it('coleta_incompleta vira partial e sem_dados continua success', () => {
       const parcial = qualidade([{ causa: 'coleta_incompleta', detalhe: 'pais: HTTP 400' }]);
@@ -37,6 +37,33 @@ for (const arquivo of FLUXOS) {
       const falha = qualidade([{ causa: 'coleta_incompleta', detalhe: 'x' }, { causa: 'reauth_pending', detalhe: 'token' }]);
       assert.equal(falha.status, 'failed');
       assert.equal(falha.errorCode, 'reauth_pending');
+    });
+
+    it('coletor que quebrou ou devolveu resposta incompleta falha com falha_coletor, sem segredo', () => {
+      const calcular = (json: Record<string, unknown>) => rodar(modelo, 'calcular-qualidade-ok', [{ json }], contexto)[0]!.json;
+      const quebrado = calcular({ error: { message: 'timeout em https://graph.facebook.com/x?access_token=EAAsegredo123&fields=id' } });
+      assert.equal(quebrado.status, 'failed');
+      assert.equal(quebrado.errorCode, 'falha_coletor');
+      assert.equal(quebrado.qualidadeResumo.fontesColetadas, 0);
+      assert.ok(!JSON.stringify(quebrado).includes('EAAsegredo123'));
+      assert.equal(fecharColetaBody.safeParse({ coletaId: '00000000-0000-4000-8000-000000000001', status: quebrado.status, requestCount: 0, qualidadeResumo: quebrado.qualidadeResumo, errorCode: quebrado.errorCode, errorMessage: quebrado.errorMessage }).success, true);
+      assert.equal(calcular({ error: 'falha de execução' }).errorCode, 'falha_coletor');
+      assert.equal(calcular({ falhas: [] }).errorCode, 'falha_coletor');
+      assert.equal(calcular({ linhas: 'x', volumetria: {} }).status, 'failed');
+      assert.equal(calcular({ linhas: [] }).status, 'failed');
+      assert.equal(calcular({ linhas: [], volumetria: { linhas: 0, bytes: 0, requests: 0, duracaoMs: 0 }, falhas: [] }).status, 'success');
+    });
+
+    it('rede caindo ao gravar fecha a coleta como gravacao_bq e o laço continua', () => {
+      const calculada = { json: { coletaId: 'c1', status: 'success', linhas: new Array(3), requestCount: 1, qualidadeResumo: {}, errorCode: null, errorMessage: null } };
+      const conferida = rodar(modelo, 'conferir-gravacao', [{ json: { error: { message: 'connect ECONNREFUSED app:3000?access_token=EAAsegredo123' } } }], { 'Calcular qualidade': [calculada] })[0]!.json;
+      assert.equal(conferida.status, 'failed');
+      assert.equal(conferida.errorCode, 'gravacao_bq');
+      assert.match(conferida.errorMessage, /ECONNREFUSED/);
+      assert.ok(!conferida.errorMessage.includes('EAAsegredo123'));
+      for (const nome of ['Gravar métricas', 'Fechar execução', 'Fechar execução (sem token)']) {
+        assert.equal((modelo.nodes.find((no) => no.name === nome) as { onError?: string }).onError, 'continueRegularOutput', nome);
+      }
     });
 
     it('coleta parcial fecha com um corpo aceito pela API', () => {

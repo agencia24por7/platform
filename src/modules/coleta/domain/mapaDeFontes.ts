@@ -13,6 +13,7 @@ export type Grao = (typeof Grao)[keyof typeof Grao];
 
 export const ModoColeta = {
   Amostra: 'amostra',
+  Incremental: 'incremental',
   Completa: 'completa',
 } as const;
 export type ModoColeta = (typeof ModoColeta)[keyof typeof ModoColeta];
@@ -27,8 +28,11 @@ export type FonteDeColeta = {
   readonly dimensoes: readonly string[];
   readonly metricas: readonly string[];
   readonly janelaAmostraDias: number;
-  readonly limiteLinhasAmostra: number | null;
   readonly janelaCompletaDias: number;
+  readonly lookbackDias: number;
+  readonly atrasoDias: number;
+  readonly historicoMaximoDias: number;
+  readonly janelaInicialDias: number;
   readonly rotulosEsperados: readonly string[];
   readonly preRequisitos: readonly string[];
 };
@@ -44,10 +48,13 @@ export const MAPA_DE_FONTES: Record<Platform, FonteDeColeta> = {
     dimensoes: ['campaign.id', 'campaign.name', 'segments.date'],
     metricas: ['metrics.cost_micros', 'metrics.impressions', 'metrics.clicks', 'metrics.conversions', 'metrics.conversions_value'],
     janelaAmostraDias: 7,
-    limiteLinhasAmostra: 500,
     janelaCompletaDias: 28,
+    lookbackDias: 7,
+    atrasoDias: 1,
+    historicoMaximoDias: 1095,
+    janelaInicialDias: 7,
     rotulosEsperados: ['campaign.name'],
-    preRequisitos: ['Nível de acesso do Google Ads API habilitado para contas de produção (hoje: Exploração, 2.880 op/dia)'],
+    preRequisitos: ['Google Ads API no nível Básico (15.000 operações/dia por developer token; ADR 0025 tem o custo da rotina).'],
   },
   meta: {
     platform: 'meta',
@@ -59,8 +66,11 @@ export const MAPA_DE_FONTES: Record<Platform, FonteDeColeta> = {
     dimensoes: ['campaign_id', 'campaign_name', 'date_start'],
     metricas: ['spend', 'impressions', 'clicks', 'actions', 'action_values'],
     janelaAmostraDias: 7,
-    limiteLinhasAmostra: 500,
     janelaCompletaDias: 28,
+    lookbackDias: 7,
+    atrasoDias: 1,
+    historicoMaximoDias: 1095,
+    janelaInicialDias: 7,
     rotulosEsperados: ['campaign_name'],
     preRequisitos: [],
   },
@@ -74,8 +84,11 @@ export const MAPA_DE_FONTES: Record<Platform, FonteDeColeta> = {
     dimensoes: ['date', 'sessionDefaultChannelGroup'],
     metricas: ['sessions', 'totalUsers', 'newUsers', 'keyEvents', 'totalRevenue'],
     janelaAmostraDias: 7,
-    limiteLinhasAmostra: 500,
     janelaCompletaDias: 28,
+    lookbackDias: 3,
+    atrasoDias: 1,
+    historicoMaximoDias: 1095,
+    janelaInicialDias: 7,
     rotulosEsperados: ['propertyName'],
     preRequisitos: [],
   },
@@ -85,14 +98,17 @@ export const MAPA_DE_FONTES: Record<Platform, FonteDeColeta> = {
     motivoForaDoV1: null,
     tabelaFato: 'fato_search_console_diario',
     grao: Grao.SiteDia,
-    endpoint: 'searchanalytics.query (dataState=all, 25k linhas/página)',
+    endpoint: 'searchanalytics.query (dataState=final, 25k linhas/página)',
     dimensoes: ['date', 'device'],
     metricas: ['clicks', 'impressions', 'ctr', 'position'],
     janelaAmostraDias: 7,
-    limiteLinhasAmostra: 500,
     janelaCompletaDias: 28,
+    lookbackDias: 3,
+    atrasoDias: 3,
+    historicoMaximoDias: 480,
+    janelaInicialDias: 7,
     rotulosEsperados: ['siteUrl'],
-    preRequisitos: ['Dados têm ~2 dias de atraso: a janela completa nunca inclui os últimos 2 dias.'],
+    preRequisitos: ['dataState=final só fecha o dia com ~2-3 dias de atraso: a janela termina 3 dias antes de hoje (atrasoDias = 3).'],
   },
   youtube: {
     platform: 'youtube',
@@ -104,8 +120,11 @@ export const MAPA_DE_FONTES: Record<Platform, FonteDeColeta> = {
     dimensoes: ['day'],
     metricas: ['views', 'estimatedMinutesWatched', 'subscribersGained', 'subscribersLost', 'estimatedRevenue'],
     janelaAmostraDias: 7,
-    limiteLinhasAmostra: 500,
     janelaCompletaDias: 28,
+    lookbackDias: 3,
+    atrasoDias: 1,
+    historicoMaximoDias: 1095,
+    janelaInicialDias: 7,
     rotulosEsperados: ['channelName'],
     preRequisitos: [],
   },
@@ -119,8 +138,11 @@ export const MAPA_DE_FONTES: Record<Platform, FonteDeColeta> = {
     dimensoes: ['date', 'metric'],
     metricas: ['value'],
     janelaAmostraDias: 7,
-    limiteLinhasAmostra: 500,
     janelaCompletaDias: 28,
+    lookbackDias: 3,
+    atrasoDias: 3,
+    historicoMaximoDias: 540,
+    janelaInicialDias: 7,
     rotulosEsperados: ['locationName'],
     preRequisitos: ['businessprofileperformance.googleapis.com habilitada no projeto (✅ confirmado na Fase 0)'],
   },
@@ -134,8 +156,11 @@ export const MAPA_DE_FONTES: Record<Platform, FonteDeColeta> = {
     dimensoes: [],
     metricas: [],
     janelaAmostraDias: 0,
-    limiteLinhasAmostra: null,
     janelaCompletaDias: 0,
+    lookbackDias: 0,
+    atrasoDias: 1,
+    historicoMaximoDias: 0,
+    janelaInicialDias: 1,
     rotulosEsperados: ['containerName'],
     preRequisitos: ['GTM não é série temporal: só alimenta gov_snapshot_fontes, nunca um fato diário.'],
   },
@@ -149,8 +174,11 @@ export const MAPA_DE_FONTES: Record<Platform, FonteDeColeta> = {
     dimensoes: ['start_time', 'data.value', 'event_source'],
     metricas: ['data.count'],
     janelaAmostraDias: 7,
-    limiteLinhasAmostra: null,
     janelaCompletaDias: 28,
+    lookbackDias: 3,
+    atrasoDias: 1,
+    historicoMaximoDias: 28,
+    janelaInicialDias: 7,
     rotulosEsperados: ['data.value'],
     preRequisitos: [
       'O conjunto de dados (pixel) precisa ser descoberto por uma conexão Meta Pixel e vinculado a um cliente.',
@@ -168,8 +196,11 @@ export const MAPA_DE_FONTES: Record<Platform, FonteDeColeta> = {
     dimensoes: ['id', 'name', 'status', 'created_time'],
     metricas: ['leads_count', 'expired_leads_count'],
     janelaAmostraDias: 0,
-    limiteLinhasAmostra: null,
     janelaCompletaDias: 0,
+    lookbackDias: 3,
+    atrasoDias: 1,
+    historicoMaximoDias: 28,
+    janelaInicialDias: 28,
     rotulosEsperados: ['name'],
     preRequisitos: [
       'Snapshot diário de cada formulário: a janela é ignorada e a data é o dia da coleta em America/Sao_Paulo.',
@@ -188,8 +219,11 @@ export const MAPA_DE_FONTES: Record<Platform, FonteDeColeta> = {
     dimensoes: [],
     metricas: [],
     janelaAmostraDias: 0,
-    limiteLinhasAmostra: null,
     janelaCompletaDias: 0,
+    lookbackDias: 0,
+    atrasoDias: 1,
+    historicoMaximoDias: 0,
+    janelaInicialDias: 1,
     rotulosEsperados: [],
     preRequisitos: [],
   },
@@ -203,8 +237,11 @@ export const MAPA_DE_FONTES: Record<Platform, FonteDeColeta> = {
     dimensoes: ['deal_pipeline.id', 'deal_pipeline.name', 'deal_stage.id', 'deal_stage.name', 'deal_stage.order', 'deal_source.name', 'campaign.name'],
     metricas: ['win', 'hold', 'amount_total', 'amount_montly', 'amount_unique', 'created_at', 'updated_at', 'closed_at'],
     janelaAmostraDias: 0,
-    limiteLinhasAmostra: null,
     janelaCompletaDias: 0,
+    lookbackDias: 0,
+    atrasoDias: 1,
+    historicoMaximoDias: 0,
+    janelaInicialDias: 1,
     rotulosEsperados: ['deal_pipeline.name', 'deal_stage.name'],
     preRequisitos: [
       'Snapshot diário do estado de cada negociação: a janela é ignorada e a data é o dia da coleta em America/Sao_Paulo.',
@@ -222,8 +259,11 @@ export const MAPA_DE_FONTES: Record<Platform, FonteDeColeta> = {
     dimensoes: [],
     metricas: [],
     janelaAmostraDias: 0,
-    limiteLinhasAmostra: null,
     janelaCompletaDias: 0,
+    lookbackDias: 0,
+    atrasoDias: 1,
+    historicoMaximoDias: 0,
+    janelaInicialDias: 1,
     rotulosEsperados: [],
     preRequisitos: [],
   },
@@ -237,8 +277,11 @@ export const MAPA_DE_FONTES: Record<Platform, FonteDeColeta> = {
     dimensoes: [],
     metricas: [],
     janelaAmostraDias: 0,
-    limiteLinhasAmostra: null,
     janelaCompletaDias: 0,
+    lookbackDias: 0,
+    atrasoDias: 1,
+    historicoMaximoDias: 0,
+    janelaInicialDias: 1,
     rotulosEsperados: [],
     preRequisitos: [],
   },
@@ -261,13 +304,13 @@ export function janelaDias(platform: Platform, modo: ModoColeta): number {
   return modo === ModoColeta.Amostra ? fonte.janelaAmostraDias : fonte.janelaCompletaDias;
 }
 
-export function limiteLinhas(platform: Platform, modo: ModoColeta): number | null {
-  return modo === ModoColeta.Amostra ? fonteDe(platform).limiteLinhasAmostra : null;
-}
+const FUSO_DO_DIA_DA_COLETA = 'America/Sao_Paulo';
 
-export function janelaAteOntem(platform: Platform, modo: ModoColeta, hoje: Date = new Date()): { readonly start: string; readonly end: string } {
+export function janelaAteOntem(platform: Platform, modo: ModoColeta, agora: Date = new Date()): { readonly start: string; readonly end: string } {
   const dias = janelaDias(platform, modo) || 1;
-  const fim = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), hoje.getUTCDate() - 1));
+  const [ano, mes, dia] = new Intl.DateTimeFormat('en-CA', { timeZone: FUSO_DO_DIA_DA_COLETA, year: 'numeric', month: '2-digit', day: '2-digit' })
+    .format(agora).split('-').map(Number) as [number, number, number];
+  const fim = new Date(Date.UTC(ano, mes - 1, dia - 1));
   const inicio = new Date(fim);
   inicio.setUTCDate(inicio.getUTCDate() - (dias - 1));
 

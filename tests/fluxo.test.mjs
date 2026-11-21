@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
-import { BASE, appIsUp, browse, ensureUser, get, makeOwner, post, signIn, submitForm } from './helpers.mjs';
+import { appIsUp, BASE, browse, ensureUser, get, makeOwner, post, signIn, sqlDeConexao, submitForm } from './helpers.mjs';
 
 const query = (sql) =>
   execFileSync('docker', ['exec', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
@@ -140,11 +140,13 @@ describe('cadastro de cliente e contas', { concurrency: false }, () => {
 
   it('oferece apenas as contas que a plataforma liberou', async () => {
     const conexao = query(
-      `INSERT INTO integrations.connections
-         (organization_id, platform, grant_type, label, external_id, scopes, credential_ref)
-       VALUES ((select id from core.organizations limit 1), 'meta', 'oauth_user', 'Meta de teste', 'grant-teste',
-               ARRAY['ads_read'], 'n8n:credential:meta')
-       RETURNING id`,
+      sqlDeConexao({
+        organizationId: query('select id from core.organizations limit 1'),
+        platform: 'meta',
+        label: 'Meta de teste',
+        externalId: 'grant-teste',
+        scopes: ['ads_read'],
+      }).sql,
     );
 
     query(
@@ -206,7 +208,8 @@ describe('cadastro de cliente e contas', { concurrency: false }, () => {
 
     const entry = queue.accounts[0];
     assert.equal(entry.adAccountId, accountId);
-    assert.ok(entry.credentialRef.startsWith('n8n:'));
+    assert.equal(entry.temToken, true);
+    assert.equal('credentialRef' in entry, false, 'a fila não carrega ponteiro de credencial (ADR 0032)');
 
     const serialized = JSON.stringify(entry).toLowerCase();
     for (const forbidden of ['"token"', 'secret', 'password', 'bearer']) {
@@ -226,6 +229,6 @@ describe('cadastro de cliente e contas', { concurrency: false }, () => {
 
   it('não grava segredo na auditoria', async () => {
     const metadata = query('select string_agg(metadata::text, Chr(10)) from audit.audit_log');
-    assert.ok(!metadata.includes('n8n:credential:meta'), 'credentialRef não deve aparecer em claro');
+    assert.ok(!metadata.includes('orla-teste:'), 'o segredo não aparece em claro na auditoria');
   });
 });

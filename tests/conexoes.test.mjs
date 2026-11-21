@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { before, describe, it } from 'node:test';
-import { BASE, acaoComCampo, appIsUp, browse, ensureUser, get, makeOwner, signIn, signOut, submitAction } from './helpers.mjs';
+import { BASE, acaoComCampo, appIsUp, browse, ensureUser, get, makeOwner, signIn, signOut, sqlDeConexao, submitAction } from './helpers.mjs';
 
 const dono = (sql) =>
   execFileSync('docker', ['exec', '-i', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
@@ -31,14 +31,14 @@ describe('remover uma conexão', { concurrency: false }, () => {
     const pessoa = ensureUser('remove@tria.local');
     dono(`UPDATE core.members SET revoked_at = now() WHERE user_id = '${pessoa}' AND organization_id <> '${org}'`);
     makeOwner(pessoa, org);
-    conexao = umaLinha(dono(
-      `INSERT INTO integrations.connections
-         (organization_id, platform, grant_type, label, external_id, scopes, credential_ref, account_email, coletor_ref)
-       VALUES ('${org}', 'ga4', 'oauth_user', 'GA4 para remover', 'ga4-remover',
-               ARRAY['https://www.googleapis.com/auth/analytics.readonly'], 'n8n:credential:remover',
-               'dono@cliente.test', 'wfColetorRemover')
-       RETURNING id`,
-    ));
+    conexao = umaLinha(dono(sqlDeConexao({
+      organizationId: org,
+      platform: 'ga4',
+      label: 'GA4 para remover',
+      externalId: 'ga4-remover',
+      scopes: ['https://www.googleapis.com/auth/analytics.readonly'],
+      accountEmail: 'dono@cliente.test',
+    }).sql));
     signIn(pessoa);
   });
 
@@ -51,10 +51,11 @@ describe('remover uma conexão', { concurrency: false }, () => {
     assert.ok([200, 303].includes(resultado.status), `status inesperado: ${resultado.status}`);
 
     const linha = umaLinha(dono(
-      `SELECT status || '|' || credential_ref || '|' || coalesce(account_email, '-') || '|' || coalesce(coletor_ref, '-')
+      `SELECT status || '|' || coalesce(account_email, '-') || '|' ||
+              (SELECT count(*) FROM integrations.connection_tokens WHERE connection_id = '${conexao}')
          FROM integrations.connections WHERE id = '${conexao}'`,
     ));
-    assert.equal(linha, 'revoked|descartada|-|-');
+    assert.equal(linha, 'revoked|-|0');
 
     const auditado = umaLinha(dono(
       `SELECT count(*) FROM audit.audit_log WHERE action = 'connection.removed' AND target_id = '${conexao}'`,
@@ -116,13 +117,13 @@ describe('conta do RD Station guardada por chave ganha cliente dono', { concurre
     cliente = umaLinha(dono(
       `INSERT INTO core.clients (organization_id, name, business_model) VALUES ('${org}', 'Credaz', 'leads') RETURNING id`,
     ));
-    conexao = umaLinha(dono(
-      `INSERT INTO integrations.connections
-         (organization_id, platform, grant_type, label, external_id, scopes, credential_ref)
-       VALUES ('${org}', 'rdstation', 'api_key', 'RD Station CRM · abcd••••wxyz', 'principal',
-               ARRAY[]::text[], 'n8n:credential:rd-teste')
-       RETURNING id`,
-    ));
+    conexao = umaLinha(dono(sqlDeConexao({
+      organizationId: org,
+      platform: 'rdstation',
+      grantType: 'api_key',
+      label: 'RD Station CRM · abcd••••wxyz',
+      externalId: 'principal',
+    }).sql));
     signIn(pessoa);
   });
 
@@ -180,8 +181,11 @@ describe('conta do RD Station guardada por chave ganha cliente dono', { concurre
     assert.ok([200, 303].includes(resultado.status), `status inesperado: ${resultado.status}`);
 
     assert.equal(
-      umaLinha(dono(`SELECT status || '|' || credential_ref FROM integrations.connections WHERE id = '${conexao}'`)),
-      'revoked|descartada',
+      umaLinha(dono(
+        `SELECT status || '|' || (SELECT count(*) FROM integrations.connection_tokens WHERE connection_id = '${conexao}')
+           FROM integrations.connections WHERE id = '${conexao}'`,
+      )),
+      'revoked|0',
     );
     assert.equal(
       umaLinha(dono(

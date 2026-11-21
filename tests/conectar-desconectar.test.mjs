@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
-import { BASE, acaoComCampo, appIsUp, browse, ensureUser, get, makeOwner, signIn, signOut, submitAction } from './helpers.mjs';
+import { BASE, acaoComCampo, appIsUp, browse, ensureUser, get, makeOwner, signIn, signOut, sqlDeConexao, submitAction } from './helpers.mjs';
 
 const dono = (sql) =>
   execFileSync('docker', ['exec', '-i', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
@@ -43,17 +43,25 @@ const novoCliente = (org, nome) =>
   ));
 
 function semearConexao(org, plataforma) {
-  const grant = POR_CHAVE.includes(plataforma) ? 'api_key' : 'oauth_user';
-  const escopos = ESCOPO_MINIMO[plataforma] ? `ARRAY['${ESCOPO_MINIMO[plataforma]}']` : 'ARRAY[]::text[]';
-  return umaLinha(dono(
-    `INSERT INTO integrations.connections
-       (organization_id, platform, grant_type, label, external_id, scopes, credential_ref, account_email, coletor_ref, executor_ref)
-     VALUES ('${org}', '${plataforma}', '${grant}', 'Conexão ${plataforma}', 'id-${plataforma}', ${escopos},
-             'n8n:credential:cred${plataforma}', 'dono-${plataforma}@cliente.test',
-             'wfColetor-${plataforma}', 'wfExecutor-${plataforma}')
-     RETURNING id`,
-  ));
+  return umaLinha(dono(sqlDeConexao({
+    organizationId: org,
+    platform: plataforma,
+    grantType: POR_CHAVE.includes(plataforma) ? 'api_key' : 'oauth_user',
+    label: `Conexão ${plataforma}`,
+    externalId: `id-${plataforma}-${org.slice(0, 8)}`,
+    scopes: ESCOPO_MINIMO[plataforma] ? [ESCOPO_MINIMO[plataforma]] : [],
+    accountEmail: `dono-${plataforma}@cliente.test`,
+  }).sql));
 }
+
+const estadoDoCofre = (conexao) =>
+  umaLinha(dono(
+    `SELECT c.status || '|' || coalesce(c.account_email, '-') || '|' ||
+            (SELECT count(*) FROM integrations.connection_tokens t WHERE t.connection_id = c.id)
+       FROM integrations.connections c WHERE c.id = '${conexao}'`,
+  ));
+
+const REVOGA_NO_PROVEDOR = ['google', 'ga4', 'gtm', 'searchconsole', 'youtube', 'gbp', 'meta', 'pixel', 'leadads', 'whatsapp'];
 
 const semearRecurso = (org, conexao, plataforma) =>
   umaLinha(dono(
@@ -156,7 +164,7 @@ describe('recurso descoberto: vincular, mover e desvincular, em toda plataforma 
           clienteA,
         );
 
-        const origem = `/clientes/${clienteA}`;
+        const origem = `/clientes/${clienteA}/dados`;
         const mover = await acaoComCampo(origem, 'destinoId');
         aprovado(await submitAction(origem, mover, { clientId: clienteA, recursoId: recurso, destinoId: clienteB }));
         assert.equal(estadoDoRecurso(recurso), `linked|${clienteB}`);
@@ -191,7 +199,7 @@ describe('desconectar: remover a conexão libera tudo que dependia dela, em toda
   const todas = [...new Set([...PLATAFORMAS_OAUTH, 'apify', 'zapi'])];
 
   for (const plataforma of todas) {
-    it(`${plataforma}: revoga, apaga a credencial e os workflows, solta o recurso e tira da coleta e da tela`, async () => {
+    it(`${plataforma}: revoga no provedor, apaga o token do cofre, solta o recurso e tira da coleta e da tela`, async () => {
       const org = novaOrganizacao(`Remoção ${plataforma}`);
       const pessoa = ensureUser(`remocao-${plataforma}@tria.local`);
       dono(`UPDATE core.members SET revoked_at = now() WHERE user_id = '${pessoa}' AND organization_id <> '${org}'`);
@@ -225,15 +233,13 @@ describe('desconectar: remover a conexão libera tudo que dependia dela, em toda
         const remover = await acaoComCampo(tela, 'connectionId');
         aprovado(await submitAction(tela, remover, { connectionId: conexao, voltarPara: tela }));
 
-        assert.equal(
-          umaLinha(dono(
-            `SELECT status || '|' || credential_ref || '|' || coalesce(account_email, '-') || '|' ||
-                    coalesce(coletor_ref, '-') || '|' || coalesce(executor_ref, '-')
-               FROM integrations.connections WHERE id = '${conexao}'`,
-          )),
-          'revoked|descartada|-|-|-',
-        );
+        assert.equal(estadoDoCofre(conexao), 'revoked|-|0', 'o ciphertext some junto com a revogação');
         assert.equal(auditorias('connection.removed', conexao), '1');
+        assert.equal(
+          metadadoDaAuditoria('connection.removed', conexao, 'revogadoNoProvedor'),
+          REVOGA_NO_PROVEDOR.includes(plataforma) ? 'true' : 'nao_suportado',
+        );
+        assert.equal(metadadoDaAuditoria('connection.removed', conexao, 'cofreApagado'), 'true');
 
         if (recurso) {
           assert.equal(estadoDoRecurso(recurso), 'discovered|-');
@@ -277,10 +283,7 @@ describe('desconectar: remover a conexão libera tudo que dependia dela, em toda
 
     const resultado = await submitAction(tela, remover, { connectionId: conexao, voltarPara: tela });
     aprovado(resultado);
-    assert.equal(
-      umaLinha(dono(`SELECT status || '|' || credential_ref FROM integrations.connections WHERE id = '${conexao}'`)),
-      'active|n8n:credential:credga4',
-    );
+    assert.equal(estadoDoCofre(conexao), 'active|dono-ga4@cliente.test|1');
     assert.equal(auditorias('connection.removed', conexao), '0');
     signOut();
   });

@@ -2,9 +2,11 @@
   "name": "ORLA · tarefas de conta",
   "settings": {
     "executionOrder": "v1",
-    "saveDataErrorExecution": "all",
-    "saveDataSuccessExecution": "all",
-    "timezone": "America/Sao_Paulo"
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "timezone": "America/Sao_Paulo",
+    "saveManualExecutions": false,
+    "errorWorkflow": "origem:n8n/workflows/plataforma/alertas-de-falha.json"
   },
   "nodes": [
     {
@@ -92,7 +94,7 @@
     },
     {
       "id": "tem-executor",
-      "name": "Tem executor?",
+      "name": "Tem token?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
@@ -108,8 +110,8 @@
           },
           "conditions": [
             {
-              "id": "tem-executor-c",
-              "leftValue": "={{ Boolean($json.executorRef) }}",
+              "id": "tem-token-c",
+              "leftValue": "={{ $json.temToken === true && ['google', 'meta'].includes($json.platform) }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",
@@ -135,14 +137,15 @@
       "parameters": {
         "workflowId": {
           "__rl": true,
-          "value": "={{ $json.executorRef }}",
+          "value": "={{ ({ google: 'origem:n8n/workflows/executores/executor-mcc.json', meta: 'origem:n8n/workflows/executores/executor-meta-partner.json' })[$json.platform] ?? '' }}",
           "mode": "id"
         },
         "workflowInputs": {
           "mappingMode": "defineBelow",
           "value": {
             "tarefa": "={{ $json }}",
-            "validarSomente": "={{ false }}"
+            "validarSomente": "={{ false }}",
+            "tarefaId": "={{ $json.taskId }}"
           }
         },
         "options": {
@@ -167,7 +170,7 @@
     },
     {
       "id": "sem-executor",
-      "name": "Sem executor",
+      "name": "Sem token",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -176,7 +179,7 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "return {\n  json: {\n    taskId: $json.taskId,\n    sucesso: false,\n    outcome: 'conexão sem executor provisionado: reautorize a conexão para criar o executor',\n  },\n};\n"
+        "jsCode": "const motivo = $json.temToken === true\n  ? `plataforma ${$json.platform} sem executor genérico`\n  : 'reauth_pending: a conexão não tem token no cofre; reautorize a conexão e peça de novo';\nreturn {\n  json: {\n    taskId: $json.taskId,\n    sucesso: false,\n    outcome: motivo,\n  },\n};\n"
       }
     },
     {
@@ -258,25 +261,7 @@
         [],
         [
           {
-            "node": "Tem executor?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Tem executor?": {
-      "main": [
-        [
-          {
-            "node": "Executar tarefa",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Sem executor",
+            "node": "Tem token?",
             "type": "main",
             "index": 0
           }
@@ -305,22 +290,40 @@
         ]
       ]
     },
-    "Sem executor": {
+    "Reportar resultado": {
       "main": [
         [
           {
-            "node": "Reportar resultado",
+            "node": "Processar em série",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Reportar resultado": {
+    "Tem token?": {
       "main": [
         [
           {
-            "node": "Processar em série",
+            "node": "Executar tarefa",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sem token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sem token": {
+      "main": [
+        [
+          {
+            "node": "Reportar resultado",
             "type": "main",
             "index": 0
           }

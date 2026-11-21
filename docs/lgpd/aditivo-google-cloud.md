@@ -15,6 +15,12 @@ de LGPD** e pelas **cláusulas-padrão aprovadas pela ANPD**.
 4. Na mesma seção, preencha os contatos de privacidade: encarregado (Filipe Jones, contato@agencia24por7.com).
 5. Anote aqui a data do aceite: [•].
 
+## Cloud KMS (cofre de tokens, ADR 0032)
+
+O Cloud KMS entra pelo mesmo CDPA, sem aceite separado: ele só embrulha as chaves de dados que cifram os tokens
+das conexões no Postgres e registra cada uso no log de Data Access. Nenhum dado pessoal nem token em claro é
+enviado ao KMS.
+
 ## Referências
 
 - Cloud Data Processing Addendum: https://cloud.google.com/terms/data-processing-terms

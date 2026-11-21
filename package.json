@@ -9,6 +9,7 @@
   "scripts": {
     "bootstrap": "node scripts/bootstrap.mjs",
     "n8n:sincronizar": "node --experimental-strip-types scripts/n8n-sincronizar.mjs",
+    "n8n:limpar-legado": "node --experimental-strip-types scripts/n8n-limpar-legado.mjs",
     "bq:verificar": "node scripts/bq/verificar-integridade.mjs",
     "infra:up": "docker compose -f infra/docker-compose.yml --project-directory . up -d",
     "infra:down": "docker compose -f infra/docker-compose.yml --project-directory . down",
@@ -24,6 +25,8 @@
   },
   "dependencies": {
     "@google-cloud/bigquery": "^9.6.1",
+    "@google-cloud/kms": "6.3.0",
+    "@google-cloud/storage": "8.4.0",
     "next": "16.4.5",
     "postgres": "4.1.0",
     "react": "19.3.1",

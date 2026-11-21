@@ -1,11 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { failure, type Failure } from '@/shared/result/failure';
-import { executarComCompensacao } from '@/shared/result/compensacao';
 import { err, ok, type Result } from '@/shared/result/result';
 import { logger } from '@/shared/logging/logger';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
-import type { CredentialVault } from '@/modules/connections/application/credentialVault';
 import {
-  CREDENCIAL_SEM_COFRE,
+  MENSAGEM_DE_CONEXAO_ALTERADA,
+  precisaReautorizar,
   veiculaAnuncio,
   type Connection,
   type GrantType,
@@ -21,9 +21,9 @@ import {
   usaOauthDaMeta,
   type PlataformaOauth,
 } from '@/modules/connections/domain/oauth';
+import { MENSAGEM_DA_RECUSA_DO_SEGREDO, segredoDaAutorizacao } from '@/modules/connections/domain/segredoDaAutorizacao';
 import type { ConnectionRepository } from '@/modules/connections/infrastructure/connectionRepository';
-import type { ColetorProvisioner } from '@/modules/coleta/infrastructure/coletorProvisioner';
-import type { ExecutorProvisioner } from '@/modules/connections/infrastructure/executorProvisioner';
+import type { CofreDeTokens } from '@/modules/tokens/application/cofreDeTokens';
 import type { DiscoveredAccount } from '@/modules/connections/domain/discovery';
 import type { DiscoveredAccountRepository } from '@/modules/connections/infrastructure/discoveredAccountRepository';
 import type { PlatformDiscovery } from '@/modules/connections/application/platformDiscoveryPort';
@@ -53,6 +53,7 @@ export type AuthorizationOutcome = {
   readonly connectionId: string;
   readonly discovered: number;
   readonly organizationCreated: boolean;
+  readonly pendentesDeOutraConta: number;
 };
 
 function administradoraDe(accounts: readonly DiscoveredAccount[]): string | null {
@@ -89,6 +90,10 @@ async function atualizarAdministradoraDescoberta(
       ator,
     );
   }
+}
+
+function violouUnicidade(erro: unknown): boolean {
+  return typeof erro === 'object' && erro !== null && (erro as { code?: unknown }).code === '23505';
 }
 
 export type AuthorizationService = {
@@ -143,10 +148,9 @@ export function createAuthorizationService(
   connections: ConnectionRepository,
   discovered: DiscoveredAccountRepository,
   discovery: PlatformDiscovery,
-  vault: CredentialVault,
+  cofre: Pick<CofreDeTokens, 'selar' | 'esquecer'>,
   audit: AuditRecorder,
-  coletorProvisioner: ColetorProvisioner,
-  executorProvisioner: ExecutorProvisioner,
+  relogio: () => Date = () => new Date(),
 ): AuthorizationService {
   return {
     async complete(input) {
@@ -222,10 +226,14 @@ export function createAuthorizationService(
           signal: AbortSignal.timeout(15_000),
         });
 
-        if (longLived.ok) {
-          const upgraded = parseTokenResponse('meta', await longLived.json());
-          if (upgraded) granted = { ...upgraded, grantedScopes: granted.grantedScopes };
+        const upgraded = longLived.ok ? parseTokenResponse('meta', await longLived.json().catch(() => null)) : null;
+        if (!upgraded) {
+          logger.warn('oauth.exchange.longo_falhou', { platform: input.platform, status: longLived.status });
+          return err(
+            failure('unavailable', 'A Meta não trocou o acesso por um token de longa duração. Nada foi guardado; autorize de novo.'),
+          );
         }
+        granted = { ...upgraded, grantedScopes: granted.grantedScopes };
       }
 
       const accounts = await descobrirRecursos(discovery, input.platform, granted.accessToken);
@@ -275,37 +283,24 @@ export function createAuthorizationService(
         );
       }
 
-      let credentialRef: string = CREDENCIAL_SEM_COFRE;
-      if (vault.available) {
-        credentialRef = await vault.store({
-          label: `ORLA · ${provider.label} · ${organization.value.slug}`,
-          platform: input.platform,
-          accessToken: granted.accessToken,
-          refreshToken: granted.refreshToken,
-          clientId: input.clientId,
-          clientSecret: input.clientSecret,
-        });
+      const segredo = segredoDaAutorizacao(input.platform, granted, relogio());
+      if (!segredo.ok) {
+        logger.warn('oauth.authorize.sem_segredo_guardavel', { platform: input.platform, motivo: segredo.error });
+        return err(failure('unavailable', MENSAGEM_DA_RECUSA_DO_SEGREDO[segredo.error]));
       }
 
       const externalId = identidade.id;
-      const descartarCredencialNova = async (): Promise<void> => {
-        if (credentialRef === CREDENCIAL_SEM_COFRE) return;
-        try {
-          await vault.discard(credentialRef);
-        } catch (erro) {
-          logger.error('oauth.authorize.credencial_orfa', {
-            platform: input.platform,
-            error: erro instanceof Error ? erro.message : 'desconhecido',
-          });
-        }
-      };
+      const already = await connections.findByExternalId(organizationId, input.platform, externalId);
+      const connectionId = already?.id ?? randomUUID();
 
-      const already = await executarComCompensacao(
-        () => connections.findByExternalId(organizationId, input.platform, externalId),
-        descartarCredencialNova,
-      );
+      const selado = await cofre.selar({ connectionId, platform: input.platform }, segredo.value);
+      if (!selado.ok) {
+        logger.error('oauth.authorize.cofre_falhou', { platform: input.platform, motivo: selado.error });
+        return err(failure('unavailable', 'O cofre de tokens não respondeu. Nada foi guardado; tente autorizar de novo.'));
+      }
 
       const proposta = {
+        id: connectionId,
         organizationId,
         platform: input.platform,
         grantType: GRANT_BY_PLATFORM[input.platform],
@@ -313,62 +308,40 @@ export function createAuthorizationService(
         externalId,
         accountEmail: identidade.email,
         scopes: granted.grantedScopes,
-        credentialRef,
-        status: (vault.available ? 'active' : 'degraded') as Connection['status'],
-        expiresAt: granted.expiresInSeconds
-          ? new Date(Date.now() + granted.expiresInSeconds * 1000)
-          : null,
+        status: 'active' as Connection['status'],
+        expiresAt: segredo.value.expiraEm,
         authorizedVia: input.autorizadoPor.via === 'invite' ? ('invite' as const) : ('staff' as const),
       };
 
-      const connection = await executarComCompensacao(
-        () => (already ? connections.renew({ ...proposta, id: already.id }) : connections.insert(proposta)),
-        descartarCredencialNova,
-      );
+      let connection: Connection | null;
+      try {
+        connection = already
+          ? await connections.renew(proposta, selado.value, already.versaoDoToken)
+          : await connections.insert(proposta, selado.value);
+      } catch (erro) {
+        if (!violouUnicidade(erro)) throw erro;
+        connection = null;
+      }
+      cofre.esquecer(connectionId);
 
-      const credencialTrocada =
-        already && already.credentialRef !== credentialRef ? already.credentialRef : null;
-      const descarte = credencialTrocada ? await vault.discard(credencialTrocada) : null;
-
-      if (vault.available && connection.credentialRef !== CREDENCIAL_SEM_COFRE) {
-        try {
-          const coletorRef = await coletorProvisioner.provisionar({
-            platform: input.platform,
-            credentialRef: connection.credentialRef,
-            label: connection.label,
-          });
-          if (coletorRef) {
-            const anterior = await connections.trocarColetorRef(organizationId, connection.id, coletorRef);
-            if (anterior && anterior !== coletorRef) await coletorProvisioner.remover(anterior);
-          }
-        } catch (error) {
-          logger.warn('coletor.provisionar.ignorado', {
-            platform: input.platform,
-            connectionId: connection.id,
-            error: error instanceof Error ? error.message : 'desconhecido',
-          });
-        }
-
-        try {
-          const executorRef = await executorProvisioner.provisionar({
-            platform: input.platform,
-            credentialRef: connection.credentialRef,
-            label: connection.label,
-          });
-          if (executorRef) {
-            const anterior = await connections.trocarExecutorRef(organizationId, connection.id, executorRef);
-            if (anterior && anterior !== executorRef) await executorProvisioner.remover(anterior);
-          }
-        } catch (error) {
-          logger.warn('executor.provisionar.ignorado', {
-            platform: input.platform,
-            connectionId: connection.id,
-            error: error instanceof Error ? error.message : 'desconhecido',
-          });
-        }
+      if (!connection) {
+        logger.warn('oauth.authorize.conexao_alterada', { platform: input.platform, renovacao: Boolean(already) });
+        return err(failure('conflict', MENSAGEM_DE_CONEXAO_ALTERADA));
       }
 
       const stored = await discovered.replace(organizationId, connection.id, accounts);
+      const autorizada = connection;
+      const pendentesDeOutraConta = (await connections.list(organizationId)).filter(
+        (outra) =>
+          outra.platform === input.platform &&
+          outra.id !== autorizada.id &&
+          outra.externalId !== autorizada.externalId &&
+          outra.status !== 'revoked' &&
+          precisaReautorizar(outra),
+      ).length;
+      if (pendentesDeOutraConta > 0) {
+        logger.warn('oauth.authorize.outra_conta', { platform: input.platform, pendentes: pendentesDeOutraConta });
+      }
 
       await audit.record({
         organizationId,
@@ -386,8 +359,9 @@ export function createAuthorizationService(
           discoveredAccounts: stored,
           discoveryFailure: discovery.lastFailure(),
           varredura: discovery.lastSweep(),
-          credencialAnterior: descarte,
-          vaultAvailable: vault.available,
+          renovouConexao: Boolean(already),
+          pendentesDeOutraConta,
+          tipoNoCofre: segredo.value.tipo,
           organizationCreated,
           refreshTokenReceived: granted.refreshToken !== null,
           ...(input.autorizadoPor.via === 'invite'
@@ -396,7 +370,7 @@ export function createAuthorizationService(
         },
       });
 
-      return ok({ organizationId, connectionId: connection.id, discovered: stored, organizationCreated });
+      return ok({ organizationId, connectionId: connection.id, discovered: stored, organizationCreated, pendentesDeOutraConta });
     },
   };
 }

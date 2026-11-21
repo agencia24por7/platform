@@ -31,7 +31,14 @@ export default function ExclusaoDeDados() {
         </ul>
         <p>
           Quando o acesso é revogado, a orla deixa de conseguir coletar dados dessa conta. A equipe da agência também pode
-          remover a conexão na tela de conectores, o que apaga o token guardado.
+          remover a conexão na tela de conectores: a orla pede ao Google ou à Meta que revogue o acesso e depois apaga o
+          token guardado. Se a mesma conta autoriza outra conexão ainda em uso, ou se o provedor não responder, a tela
+          avisa a equipe, e o acesso deve ser revogado pelos caminhos acima.
+        </p>
+        <p>
+          Ao remover o app <em>Agencia24/7 Ads</em> no Facebook, a Meta nos avisa automaticamente e mostra um código de
+          confirmação. Com ele você acompanha o pedido em <span className="mono">/exclusao-de-dados/status/&lt;código&gt;</span>.
+          Dados do YouTube de um canal cuja conexão foi removida são apagados do nosso data warehouse em até 7 dias.
         </p>
       </section>
 

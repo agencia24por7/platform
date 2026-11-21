@@ -15,7 +15,7 @@ export const MOTIVO_DA_CHAVE = {
   chave_com_espaco: 'A chave não pode conter espaço nem quebra de linha.',
   chave_zapi_incompleta: 'Informe o ID da instância e o token do Z-API.',
   chave_recusada: 'A plataforma recusou essa credencial. Confira se está correta.',
-  cofre_indisponivel: 'O cofre do n8n não respondeu. Sem ele a chave não tem onde morar em segurança.',
+  cofre_indisponivel: 'O cofre de tokens não respondeu. Sem ele a chave não tem onde morar em segurança.',
 } as const;
 
 export type MotivoDaChave = keyof typeof MOTIVO_DA_CHAVE;

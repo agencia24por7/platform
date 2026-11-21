@@ -10,6 +10,7 @@ import {
 } from '@/modules/coleta/domain/esquemasMeta';
 
 const CHAVE_DA_FONTE = ['organization_id', 'ad_account_id'] as const;
+const METRICAS_OPCIONAIS_DA_META: readonly string[] = ['alcance', 'frequencia'];
 
 function fatoMeta(esquema: EsquemaMeta): ConfiguracaoFato {
   return {
@@ -19,6 +20,7 @@ function fatoMeta(esquema: EsquemaMeta): ConfiguracaoFato {
     chave: [...CHAVE_DA_FONTE, ...esquema.chave],
     colunas: [...CHAVE_DA_FONTE, ...colunasDoEsquema(esquema), 'versao_api', 'execucao_id', 'inserido_em'],
     tipos: tiposDoEsquema(esquema),
+    preservarSeNulo: colunasDoEsquema(esquema).filter((coluna) => METRICAS_OPCIONAIS_DA_META.includes(coluna)),
     mapear: (linha, ctx) => ({
       organization_id: ctx.organizationId,
       ad_account_id: ctx.externalId,

@@ -58,22 +58,27 @@ services:
       NODE_ENV: production
       NODE_OPTIONS: --max-old-space-size=256
       DATABASE_URL: ${DATABASE_URL:?required}
+      DATABASE_URL_WORKER: ${DATABASE_URL_WORKER:?required}
       TRIA_WORKER_TOKEN: ${TRIA_WORKER_TOKEN:?required}
       TRIA_APP_BASE_URL: ${TRIA_APP_BASE_URL:?required}
       BQ_PROJECT_ID: ${BQ_PROJECT_ID:-}
       BQ_DATASET: ${BQ_DATASET:-tria_dw}
+      CONTEXT_BUCKET: ${CONTEXT_BUCKET:-}
+      TOKENS_KMS_KEY: ${TOKENS_KMS_KEY:-}
       TRIA_SESSION_SECRET: ${TRIA_SESSION_SECRET:?required}
       LOG_LEVEL: info
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
       META_APP_ID: ${META_APP_ID:-}
       META_APP_SECRET: ${META_APP_SECRET:-}
+      META_EXCLUSAO_PEPPER: ${META_EXCLUSAO_PEPPER:-}
       META_LOGIN_CONFIG_ID: ${META_LOGIN_CONFIG_ID:-}
       RDSTATION_CLIENT_ID: ${RDSTATION_CLIENT_ID:-}
       RDSTATION_CLIENT_SECRET: ${RDSTATION_CLIENT_SECRET:-}
       WHATSAPP_LOGIN_CONFIG_ID: ${WHATSAPP_LOGIN_CONFIG_ID:-}
       LEADADS_LOGIN_CONFIG_ID: ${LEADADS_LOGIN_CONFIG_ID:-}
       WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
       N8N_API_URL: ${N8N_API_URL:-}
       N8N_API_KEY: ${N8N_API_KEY:-}
       N8N_PUBLIC_URL: ${N8N_PUBLIC_URL:-}
@@ -116,6 +121,7 @@ services:
       EXECUTIONS_DATA_PRUNE: "true"
       EXECUTIONS_DATA_MAX_AGE: "336"
       EXECUTIONS_DATA_SAVE_ON_SUCCESS: "all"
+      EXECUTIONS_TIMEOUT_MAX: "86400"
       GENERIC_TIMEZONE: America/Sao_Paulo
       TZ: America/Sao_Paulo
     volumes:
@@ -125,7 +131,7 @@ services:
     cap_drop: [ALL]
 
   proxy:
-    image: caddy:2.10-alpine
+    image: caddy:2.10-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
     container_name: orla-proxy
     <<: *hardening
     depends_on: [app, n8n]

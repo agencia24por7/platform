@@ -1,13 +1,48 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { TAG_DA_PLATAFORMA, criarClienteN8n } from '../src/shared/n8n/clienteN8n.ts';
-import { MODELO_DE_COLETOR, MODELO_DE_EXECUTOR, PASTA_DOS_WORKFLOWS, ehDaPlataforma, ehModelo } from '../src/shared/n8n/modelos.ts';
-import { localizarImplantado, mesclar, versaoDoModelo, versaoImplantada } from '../src/shared/n8n/sincronizacao.ts';
+import { PASTA_DOS_WORKFLOWS, ehDaPlataforma, ehSubWorkflowGenerico, ordemDeImplantacao } from '../src/shared/n8n/modelos.ts';
+import { ehNomeDoLegadoPorConexao } from '../src/shared/n8n/limpezaDoLegado.ts';
+import {
+  avaliarAlvo,
+  credenciaisPorNome,
+  localizarImplantado,
+  mesclar,
+  modeloComCredenciaisPorNome,
+  resolverFluxoDeErro,
+  resolverSubWorkflows,
+  versaoDoModelo,
+  versaoImplantada,
+} from '../src/shared/n8n/sincronizacao.ts';
+
+const USO = `uso: npm run n8n:sincronizar -- [--aplicar] [--criar] [--adotar]
+
+Publica no n8n só os workflows da plataforma versionados em n8n/workflows (fora de clientes/ e agencia/):
+orquestrador, backfill, tarefas de conta, jobs da plataforma e os coletores/executores genéricos
+"ORLA · {Plataforma} · coletor|executor" (ADR 0032). Não existe mais cópia por conexão.
+
+  --aplicar  grava (sem ele, só simula)
+  --criar    cria o que ainda não está implantado (credenciais ligadas pelo nome, como "ORLA · worker token")
+  --adotar   assume workflow sem nota de origem nem tag platform que tenha o mesmo nome
+
+Nunca altera workflow com tag credaz/agencia. Ordem: alertas, genéricos, backfill · janela, demais
+(os ids dos sub-workflows e do fluxo de erro são resolvidos pela nota de origem já implantada).
+Workflows antigos por conexão ("Coletor · ORLA · coletor · …") são ignorados: remova com scripts/n8n-limpar-legado.mjs.`;
 
 const argumentos = process.argv.slice(2);
+if (argumentos.some((a) => ['--help', '-h', '--ajuda'].includes(a))) {
+  console.log(USO);
+  process.exit(0);
+}
+const conhecidos = new Set(['--aplicar', '--adotar', '--criar']);
+const desconhecido = argumentos.find((a) => !conhecidos.has(a));
+if (desconhecido) {
+  console.error(`opção desconhecida: ${desconhecido}${desconhecido === '--conexoes' ? ' (não há mais workflow por conexão; ADR 0032)' : ''}\n\n${USO}`);
+  process.exit(2);
+}
 const aplicar = argumentos.includes('--aplicar');
-const indiceDasConexoes = argumentos.indexOf('--conexoes');
-const arquivoDeConexoes = indiceDasConexoes >= 0 ? argumentos[indiceDasConexoes + 1] : null;
+const adotar = argumentos.includes('--adotar');
+const criarAusentes = argumentos.includes('--criar');
 
 const { N8N_API_URL, N8N_API_KEY } = process.env;
 if (!N8N_API_URL || !N8N_API_KEY) {
@@ -24,23 +59,30 @@ function arquivosDaPlataforma(pasta) {
   return readdirSync(pasta, { withFileTypes: true }).flatMap((entrada) => {
     const caminho = join(pasta, entrada.name);
     if (entrada.isDirectory()) return ehDaPlataforma(`${caminho}/`) ? arquivosDaPlataforma(caminho) : [];
-    return entrada.name.endsWith('.json') && !ehModelo(caminho) ? [caminho] : [];
+    return entrada.name.endsWith('.json') ? [caminho] : [];
   });
-}
-
-function alvosDasConexoes() {
-  if (!arquivoDeConexoes) return [];
-
-  return lerJson(arquivoDeConexoes).flatMap((conexao) => [
-    conexao.coletorRef && MODELO_DE_COLETOR[conexao.platform] ? { arquivo: MODELO_DE_COLETOR[conexao.platform], id: conexao.coletorRef } : null,
-    conexao.executorRef && MODELO_DE_EXECUTOR[conexao.platform] ? { arquivo: MODELO_DE_EXECUTOR[conexao.platform], id: conexao.executorRef } : null,
-  ]).filter(Boolean);
 }
 
 const temTagDaPlataforma = (implantado) => (implantado.tags ?? []).some((tag) => tag.name === TAG_DA_PLATAFORMA);
 
-async function sincronizar(arquivo, implantado) {
-  const modelo = lerJson(arquivo);
+async function listarDaPlataforma() {
+  const todos = await n8n.listar();
+  return todos.filter((workflow) => !ehNomeDoLegadoPorConexao(workflow.name));
+}
+
+function modeloResolvido(arquivo, implantados) {
+  const { modelo: comFluxo, aviso } = resolverFluxoDeErro(lerJson(arquivo), implantados);
+  const { modelo, pendencias } = resolverSubWorkflows(comFluxo, implantados);
+  return { modelo, aviso, pendencias };
+}
+
+async function sincronizar(arquivo, implantado, implantados) {
+  const avaliacao = avaliarAlvo(implantado, { adotar, tagDaPlataforma: TAG_DA_PLATAFORMA });
+  if (!avaliacao.permitido) return { acao: 'bloqueado', detalhe: avaliacao.motivo };
+
+  const { modelo, aviso, pendencias: semSubWorkflow } = modeloResolvido(arquivo, implantados);
+  if (aviso) console.warn(`aviso: ${implantado.name}: ${aviso}`);
+  if (semSubWorkflow.length > 0) return { acao: 'bloqueado', detalhe: semSubWorkflow.join('; ') };
   if (versaoImplantada(implantado) === versaoDoModelo(modelo)) {
     if (temTagDaPlataforma(implantado)) return { acao: 'igual' };
     if (!aplicar) return { acao: 'marcaria', detalhe: `sem a tag ${TAG_DA_PLATAFORMA}` };
@@ -52,7 +94,7 @@ async function sincronizar(arquivo, implantado) {
   if (!aplicar) return { acao: 'atualizaria' };
 
   if (!(await n8n.atualizar(implantado.id, corpo))) return { acao: 'falhou', detalhe: 'atualização recusada' };
-  const deveFicarPublicado = implantado.active || ehModelo(arquivo);
+  const deveFicarPublicado = implantado.active || ehSubWorkflowGenerico(arquivo);
   if (deveFicarPublicado && !(await n8n.publicar(implantado.id))) return { acao: 'falhou', detalhe: 'atualizado, mas não publicado' };
   if (!temTagDaPlataforma(implantado) && !(await n8n.marcarDaPlataforma(implantado.id))) {
     return { acao: 'falhou', detalhe: 'atualizado, mas sem a tag' };
@@ -60,38 +102,50 @@ async function sincronizar(arquivo, implantado) {
   return { acao: 'atualizado' };
 }
 
+async function criar(arquivo, implantados) {
+  const { modelo, aviso, pendencias: semSubWorkflow } = modeloResolvido(arquivo, implantados);
+  if (aviso) console.warn(`aviso: ${modelo.name}: ${aviso}`);
+  if (semSubWorkflow.length > 0) return { acao: 'bloqueado', detalhe: `${semSubWorkflow.join('; ')} (rode de novo depois de criar os genéricos)` };
+  const ligado = modeloComCredenciaisPorNome(modelo, credenciaisPorNome(implantados));
+  const { corpo, pendencias } = mesclar(ligado, null, modelo.name, arquivo);
+  if (pendencias.length > 0) return { acao: 'bloqueado', detalhe: `${pendencias.join('; ')} (crie a credencial no n8n ou implante à mão)` };
+  if (!aplicar) return { acao: 'criaria' };
+  const id = await n8n.criar(corpo, { arquivo });
+  return id ? { acao: 'criado', detalhe: id } : { acao: 'falhou', detalhe: 'criação recusada' };
+}
+
 async function main() {
-  const implantados = await n8n.listar();
-  const porId = new Map(implantados.map((w) => [w.id, w]));
+  const legados = (await n8n.listar()).filter((workflow) => ehNomeDoLegadoPorConexao(workflow.name));
+  let implantados = await listarDaPlataforma();
   const resultados = [];
 
-  for (const arquivo of arquivosDaPlataforma(PASTA_DOS_WORKFLOWS)) {
+  const arquivos = arquivosDaPlataforma(PASTA_DOS_WORKFLOWS).sort((a, b) => ordemDeImplantacao(a) - ordemDeImplantacao(b) || a.localeCompare(b));
+  for (const arquivo of arquivos) {
     const nome = lerJson(arquivo).name;
     const achado = localizarImplantado(arquivo, nome, implantados);
     if (!achado) {
-      resultados.push({ arquivo, alvo: nome, acao: 'não implantado', detalhe: 'a primeira implantação é manual (ver docs/adr/0009)' });
+      const resultado = criarAusentes
+        ? { arquivo, alvo: nome, ...(await criar(arquivo, implantados)) }
+        : { arquivo, alvo: nome, acao: 'não implantado', detalhe: 'use --criar (credenciais ligadas pelo nome) ou implante à mão (docs/adr/0009)' };
+      resultados.push(resultado);
+      if (resultado.acao === 'criado') implantados = await listarDaPlataforma();
       continue;
     }
     const alvo = `${achado.workflow.name} (${achado.workflow.id})${achado.por === 'nome' ? ' [adotado pelo nome]' : ''}`;
-    resultados.push({ arquivo, alvo, ...(await sincronizar(arquivo, achado.workflow)) });
-  }
-
-  for (const { arquivo, id } of alvosDasConexoes()) {
-    const implantado = porId.get(id);
-    if (!implantado) {
-      resultados.push({ arquivo, alvo: id, acao: 'ausente', detalhe: 'a conexão aponta para um workflow que não existe' });
-      continue;
-    }
-    resultados.push({ arquivo, alvo: `${implantado.name} (${id})`, ...(await sincronizar(arquivo, implantado)) });
+    const resultado = { arquivo, alvo, ...(await sincronizar(arquivo, achado.workflow, implantados)) };
+    resultados.push(resultado);
+    if (resultado.acao === 'atualizado' || resultado.acao === 'marcado') implantados = await listarDaPlataforma();
   }
 
   for (const r of resultados) console.log(`${r.acao.padEnd(15)} ${r.alvo}${r.detalhe ? ` — ${r.detalhe}` : ''}`);
 
   const contagem = resultados.reduce((acc, r) => ({ ...acc, [r.acao]: (acc[r.acao] ?? 0) + 1 }), {});
   console.log(`\n${aplicar ? 'Aplicado' : 'Simulação (use --aplicar para gravar)'}:`, contagem);
-  if (!arquivoDeConexoes) console.log('Coletores e executores por conexão não verificados: passe --conexoes <arquivo.json>.');
+  if (legados.length > 0) {
+    console.log(`${legados.length} workflow(s) por conexão do modelo antigo ignorado(s): rode scripts/n8n-limpar-legado.mjs (ADR 0032).`);
+  }
 
-  if (resultados.some((r) => ['falhou', 'ausente', 'bloqueado'].includes(r.acao))) process.exitCode = 1;
+  if (resultados.some((r) => ['falhou', 'bloqueado'].includes(r.acao))) process.exitCode = 1;
 }
 
 main().catch((erro) => {

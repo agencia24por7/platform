@@ -57,14 +57,17 @@ test('cada plataforma aponta para o próprio host', () => {
   assert.ok(!blocoDe('rdstation').includes('graph.facebook'), 'token do RD não pode ir para a Meta');
 });
 
-test('a credencial só é guardada depois de saber quem autorizou', () => {
+test('o segredo só é cifrado e guardado depois de saber quem autorizou', () => {
   const servico = readFileSync(
     'src/modules/connections/application/authorizationService.ts',
     'utf8',
   );
 
+  const identificar = servico.indexOf('discovery.identify(');
+  assert.ok(identificar > 0);
   assert.ok(
-    servico.indexOf('discovery.identify(') < servico.indexOf('vault.store({'),
-    'guardar antes de identificar deixa credencial órfã no cofre quando a identificação falha',
+    identificar < servico.indexOf('cofre.selar(') && identificar < servico.indexOf('connections.insert('),
+    'guardar antes de identificar criaria conexão sem identidade estável',
   );
+  assert.ok(!servico.includes('vault.'), 'o cofre do n8n não existe mais (ADR 0032)');
 });

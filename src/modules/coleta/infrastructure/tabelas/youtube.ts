@@ -33,6 +33,7 @@ const DIM_VIDEO: ConfiguracaoScd2 = {
   tipo: 'scd2',
   staging: 'stg_youtube_video',
   dimensao: 'dim_youtube_video_scd2',
+  renovaCarregadoEm: true,
   chave: ['organization_id', 'channel_id', 'video_id'],
   atributos: ['titulo', 'duracao_segundos', 'publicado_em', 'privacidade', 'categoria_id'],
   tipos: {
@@ -55,6 +56,7 @@ const DIM_PLAYLIST: ConfiguracaoScd2 = {
   tipo: 'scd2',
   staging: 'stg_youtube_playlist',
   dimensao: 'dim_youtube_playlist_scd2',
+  renovaCarregadoEm: true,
   chave: ['organization_id', 'channel_id', 'playlist_id'],
   atributos: ['titulo', 'privacidade', 'qtd_videos'],
   tipos: {
@@ -133,6 +135,7 @@ export const TABELAS_YOUTUBE: TabelasDaPlataforma = {
       minutos_assistidos: 'NUMERIC', inscritos_ganhos: 'INT64', inscritos_perdidos: 'INT64', receita_estimada: 'NUMERIC',
       execucao_id: 'STRING', inserido_em: 'TIMESTAMP',
     },
+    preservarSeNulo: ['receita_estimada'],
     mapear: (linha, ctx) => ({
       organization_id: ctx.organizationId,
       channel_id: ctx.externalId,
@@ -141,7 +144,7 @@ export const TABELAS_YOUTUBE: TabelasDaPlataforma = {
       minutos_assistidos: Number(linha.minutesWatched ?? 0),
       inscritos_ganhos: Number(linha.subscribersGained ?? 0),
       inscritos_perdidos: Number(linha.subscribersLost ?? 0),
-      receita_estimada: Number(linha.estimatedRevenue ?? 0),
+      receita_estimada: linha.estimatedRevenue === null || linha.estimatedRevenue === undefined ? null : Number(linha.estimatedRevenue),
       execucao_id: ctx.execucaoId,
       inserido_em: agora(),
     }),

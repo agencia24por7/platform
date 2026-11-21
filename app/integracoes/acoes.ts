@@ -3,12 +3,14 @@
 import { redirect } from 'next/navigation';
 import { modules } from '@/composition';
 import { montarChaveZapi, usaChaveDeApi } from '@/modules/connections/domain/chaveDeApi';
+import { destinoComAviso } from '@/modules/connections/domain/destinoComAviso';
 import { isSafeReturnPath } from '@/modules/connections/domain/oauth';
 import { concordaComRecurso, temRecursoParaVincular, type Platform } from '@/modules/connections/domain/connection';
 import { checkbox, text, toActionState } from '@/shared/http/actions';
 import { atorAtual } from '@/shared/http/ator';
 import { requireContext } from '@/shared/http/currentOrganization';
 import { canAdminister, canOperate } from '@/modules/identity/domain/user';
+import { mensagemDaRemocao } from '@/modules/privacidade/domain/revogacao';
 
 async function contextoDeConexoes() {
   const contexto = await requireContext();
@@ -31,7 +33,7 @@ export async function aceitarConvite(formData: FormData): Promise<void> {
   const ator = await atorAtual();
   const destino = destinoDoRetorno(formData);
   const voltar = (aviso: string): never =>
-    redirect(`${destino}?aviso=${encodeURIComponent(aviso)}`);
+    redirect(destinoComAviso(destino, aviso));
 
   if (!canAdminister(contexto.role)) {
     voltar('Só quem administra a organização pode alterar vínculos de conta.');
@@ -90,7 +92,7 @@ export async function convidarParaMcc(formData: FormData): Promise<void> {
   const ator = await atorAtual();
   const destino = destinoDoRetorno(formData);
   const voltar = (aviso: string): never =>
-    redirect(`${destino}?aviso=${encodeURIComponent(aviso)}`);
+    redirect(destinoComAviso(destino, aviso));
 
   if (!canAdminister(contexto.role)) {
     voltar('Só quem administra a organização pode convidar contas para a MCC.');
@@ -145,7 +147,7 @@ export async function vincularAlcancavel(formData: FormData): Promise<void> {
   const ator = await atorAtual();
   const destino = destinoDoRetorno(formData);
   const voltar = (aviso: string): never =>
-    redirect(`${destino}?aviso=${encodeURIComponent(aviso)}`);
+    redirect(destinoComAviso(destino, aviso));
 
   if (!canOperate(contexto.role)) {
     voltar('Seu papel não permite vincular contas.');
@@ -210,7 +212,7 @@ export async function vincularRecurso(formData: FormData): Promise<void> {
   const aviso = resultado.ok
     ? `${resultado.value.name} ${concordar(resultado.value.platform, 'vinculado', 'vinculada')}.`
     : toActionState(resultado.error).error ?? 'Falha ao vincular.';
-  redirect(`${destino}?aviso=${encodeURIComponent(aviso)}`);
+  redirect(destinoComAviso(destino, aviso));
 }
 
 export async function desvincularConta(formData: FormData): Promise<void> {
@@ -229,7 +231,7 @@ export async function desvincularConta(formData: FormData): Promise<void> {
   const aviso = resultado.ok
     ? `${resultado.value.name} desvinculada. Sai da coleta e volta para "Conectar conta"; o histórico coletado continua no BigQuery.`
     : toActionState(resultado.error).error ?? 'Falha ao desvincular.';
-  redirect(`${destino}?aviso=${encodeURIComponent(aviso)}`);
+  redirect(destinoComAviso(destino, aviso));
 }
 
 export async function desvincularRecurso(formData: FormData): Promise<void> {
@@ -248,7 +250,7 @@ export async function desvincularRecurso(formData: FormData): Promise<void> {
   const aviso = resultado.ok
     ? `${resultado.value.name} ${concordar(resultado.value.platform, 'desvinculado', 'desvinculada')}. Volta para a lista de recursos sem dono.`
     : toActionState(resultado.error).error ?? 'Falha ao desvincular.';
-  redirect(`${destino}?aviso=${encodeURIComponent(aviso)}`);
+  redirect(destinoComAviso(destino, aviso));
 }
 
 export async function guardarChave(formData: FormData): Promise<void> {
@@ -256,7 +258,7 @@ export async function guardarChave(formData: FormData): Promise<void> {
   const ator = await atorAtual();
   const destino = destinoDoRetorno(formData);
   const voltar = (aviso: string): never =>
-    redirect(`${destino}?aviso=${encodeURIComponent(aviso)}`);
+    redirect(destinoComAviso(destino, aviso));
 
   const pedida = text(formData, 'plataforma');
   if (!usaChaveDeApi(pedida as Platform)) {
@@ -284,7 +286,7 @@ export async function guardarChave(formData: FormData): Promise<void> {
     voltar(toActionState(resultado.error).error ?? 'Não deu para guardar a chave.');
     return;
   }
-  voltar('Chave testada com sucesso e guardada no cofre. O banco ficou só com a referência. Agora escolha logo abaixo o cliente dono dela.');
+  voltar('Chave testada com sucesso e guardada cifrada no cofre de tokens. Agora escolha logo abaixo o cliente dono dela.');
 }
 
 export async function removerConexao(formData: FormData): Promise<void> {
@@ -292,7 +294,7 @@ export async function removerConexao(formData: FormData): Promise<void> {
   const ator = await atorAtual();
   const destino = destinoDoRetorno(formData);
   const voltar = (aviso: string): never =>
-    redirect(`${destino}?aviso=${encodeURIComponent(aviso)}`);
+    redirect(destinoComAviso(destino, aviso));
 
   if (!canAdminister(contexto.role)) {
     voltar('Só quem administra a organização pode remover uma conexão.');
@@ -312,5 +314,5 @@ export async function removerConexao(formData: FormData): Promise<void> {
     voltar(toActionState(resultado.error).error ?? 'Não deu para remover a conexão.');
     return;
   }
-  voltar('Conexão removida. A credencial foi apagada do cofre e a coleta dessa conta parou.');
+  voltar(mensagemDaRemocao(resultado.value));
 }

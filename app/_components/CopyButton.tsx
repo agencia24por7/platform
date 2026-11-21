@@ -2,7 +2,15 @@
 
 import { useState } from 'react';
 
-export function CopyButton({ texto }: { readonly texto: string }) {
+export function CopyButton({
+  texto,
+  rotulo = 'Copiar link',
+  className = 'btn btn--compacto',
+}: {
+  readonly texto: string;
+  readonly rotulo?: string;
+  readonly className?: string;
+}) {
   const [copiado, setCopiado] = useState(false);
 
   async function copiar() {
@@ -16,8 +24,8 @@ export function CopyButton({ texto }: { readonly texto: string }) {
   }
 
   return (
-    <button type="button" className="btn btn--compacto" onClick={copiar}>
-      {copiado ? 'Copiado ✓' : 'Copiar link'}
+    <button type="button" className={className} onClick={copiar} aria-live="polite">
+      {copiado ? 'Copiado ✓' : rotulo}
     </button>
   );
 }

@@ -84,7 +84,7 @@ describe('coletor de formulários: dimensões e leads por dia', () => {
         lead({ id: '779', created_time: '2026-11-20T01:30:00+0000' }),
         lead({ id: '780', ad_id: undefined, campaign_id: undefined }),
       ],
-      paging: { next: `https://graph.facebook.com/v23.0/x?access_token=${TOKEN}` },
+      paging: {},
     });
     const saida = rodar([paginaDeFormularios], [leads]);
     assert.deepEqual(saida.falhas, []);
@@ -95,6 +95,30 @@ describe('coletor de formulários: dimensões e leads por dia', () => {
     assert.equal(porDia('2026-11-19', SEM_ANUNCIO).campanha_id, SEM_CAMPANHA);
     const serializado = JSON.stringify(saida);
     for (const dado of [...DADOS_PESSOAIS, TOKEN, '"777"']) assert.ok(!serializado.includes(dado), `vazou: ${dado}`);
+  });
+
+  it('a janela de leads começa à meia-noite de São Paulo, então o dia mais antigo vem inteiro', () => {
+    const montar = new Function('$json', String(no('Montar requisição').parameters.jsCode)) as (entrada: unknown) => { json: { leadsDesde: number } }[];
+    const { leadsDesde } = montar({ fonte: { externalId: '999888777' } })[0]!.json;
+    const primeiroInstante = new Date((leadsDesde + 1) * 1000);
+    const hora = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(primeiroInstante);
+    assert.equal(hora, '00:00:00');
+  });
+
+  it('página cortada pelo teto descarta o dia mais antigo e marca a coleta como incompleta', () => {
+    const cortada = resposta({
+      data: [
+        lead({ created_time: '2026-11-19T12:00:00+0000' }),
+        lead({ id: '778', created_time: '2026-11-18T12:00:00+0000' }),
+        lead({ id: '779', created_time: '2026-11-18T13:00:00+0000' }),
+      ],
+      paging: { next: `https://graph.facebook.com/v27.0/x?access_token=${TOKEN}` },
+    });
+    const saida = rodar([paginaDeFormularios], [cortada]);
+    const dias = daTabela(saida, TabelaLeadAds.LeadsDiarios).map((linha) => leadsDoDiaDaLinha(linha)!.data_dia);
+    assert.deepEqual(dias, ['2026-11-19']);
+    assert.equal(saida.falhas[0]!.causa, 'coleta_incompleta');
+    assert.ok(!JSON.stringify(saida).includes(TOKEN));
   });
 
   it('falha ao ler leads entrega formulários e marca a coleta como incompleta, sem o token', () => {

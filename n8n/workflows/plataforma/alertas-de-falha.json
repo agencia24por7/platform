@@ -1,0 +1,89 @@
+{
+  "name": "ORLA · plataforma · alertas de falha",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Falha em algum fluxo",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const execucao = $json.execution ?? {};\nconst fluxo = $json.workflow ?? {};\nconst erro = execucao.error ?? $json.trigger?.error ?? {};\nconst LIMITE_DA_MENSAGEM = 1000;\nreturn {\n  json: {\n    workflowId: fluxo.id == null ? null : String(fluxo.id).slice(0, 64),\n    workflowNome: String(fluxo.name ?? fluxo.id ?? 'desconhecido').slice(0, 200),\n    no: execucao.lastNodeExecuted == null ? null : String(execucao.lastNodeExecuted).slice(0, 200),\n    mensagem: String(erro.message ?? 'sem mensagem').slice(0, LIMITE_DA_MENSAGEM),\n  },\n};\n"
+      },
+      "name": "Montar alerta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://app:3000/api/v0/manutencao/alerta",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "name": "Registrar alerta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "ORLA · worker token"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Falha em algum fluxo": {
+      "main": [
+        [
+          {
+            "node": "Montar alerta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar alerta": {
+      "main": [
+        [
+          {
+            "node": "Registrar alerta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "timezone": "America/Sao_Paulo",
+    "saveManualExecutions": false
+  }
+}

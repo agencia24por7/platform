@@ -79,11 +79,12 @@ resource "google_compute_instance" "app" {
     block-project-ssh-keys = "TRUE"
 
     startup-script = templatefile("${path.module}/files/startup.sh.tftpl", {
-      project_id   = var.project_id
-      prefix       = local.prefix
-      app_hostname = var.app_hostname
-      n8n_hostname = var.n8n_hostname
-      acme_email   = var.acme_email
+      project_id      = var.project_id
+      prefix          = local.prefix
+      app_hostname    = var.app_hostname
+      n8n_hostname    = var.n8n_hostname
+      acme_email      = var.acme_email
+      contexto_bucket = google_storage_bucket.contexto.name
     })
   }
 

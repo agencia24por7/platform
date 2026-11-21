@@ -81,6 +81,26 @@ jobs:
       - name: Migrações
         run: node scripts/migrate.mjs
 
+      - name: Migrações de novo (nada a aplicar)
+        run: |
+          node scripts/migrate.mjs | tee migrar-2.log
+          grep -q '^0 migração(ões) aplicada(s).$' migrar-2.log
+
+      - name: Imagem de produção constrói e traz o validador do ambiente (pre-flight da release)
+        run: |
+          docker build -t orla-ci .
+          docker run --rm orla-ci node --experimental-strip-types --no-warnings /app/release/validarAmbienteCli.ts --help > /dev/null
+          set +e
+          docker run --rm orla-ci node --experimental-strip-types --no-warnings /app/release/validarAmbienteCli.ts > validar.log 2>&1
+          codigo=$?
+          set -e
+          cat validar.log
+          test "$codigo" -eq 1
+          grep -q 'DATABASE_URL_WORKER:' validar.log
+
+      - name: Limites de corpo do proxy (Caddy da produção, imagem fixada)
+        run: sh scripts/smoke-limite-de-corpo.sh
+
       - name: App
         run: |
           npx next dev --port 3000 > app.log 2>&1 &

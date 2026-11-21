@@ -15,9 +15,9 @@ O protótipo navegável de telas fica em [`prototipo/`](prototipo/); a visão de
 | --- | --- |
 | Nasce sem credencial | Nenhum segredo no repositório. `npm run bootstrap` gera `.env` local com 600. O app recusa subir com segredo curto, ausente ou de exemplo |
 | Onboarding sem pré-requisito | O cliente clica em conectar, autoriza na própria plataforma e escolhe as contas. Não precisa de MCC, developer token nem Business Manager |
-| O segredo não passa pela aplicação | O token vai direto para o cofre do n8n; o banco guarda só `credential_ref` |
+| O segredo fica cifrado, nunca em claro | O token de longa duração vive no cofre de tokens do app (`integrations.connection_tokens`), cifrado por envelope com Cloud KMS e AAD por conexão; o n8n só recebe, na hora de coletar, um access token de curta duração (ADR 0032) |
 | Agnóstico de usuário e agência | Banco vazio. A primeira organização é criada pela UI, e ela define o próprio MCC e developer token |
-| Guarda só o estritamente necessário | A conexão armazena metadado e um `credential_ref`. O token vive cifrado no n8n e **nunca** trafega pela aplicação |
+| Guarda só o estritamente necessário | A conexão armazena metadado; o segredo só existe como ciphertext no cofre, nunca em log, auditoria ou resposta. Remover a conexão revoga no provedor e apaga o ciphertext |
 | Isolamento por tenant | Row Level Security nas 8 tabelas. Sem contexto de organização, consultas voltam vazias |
 | Auditoria imutável | `tria_app` tem `INSERT` e `SELECT` em `audit.audit_log`, nunca `UPDATE` nem `DELETE` |
 
@@ -25,12 +25,12 @@ O protótipo navegável de telas fica em [`prototipo/`](prototipo/); a visão de
 
 ```bash
 npm install
-npm run bootstrap        # gera .env com segredos aleatórios
+npm run bootstrap        # gera .env com segredos aleatórios (DATABASE_URL = orla_app, web; DATABASE_URL_WORKER = orla_worker, /api/v0; ADR 0028)
 npm run infra:up         # postgres + n8n
-npm run db:migrate
+npm run db:migrate       # infra/compose/migrar.sh: uma transação por arquivo, livro-razão em public.schema_migrations
 node scripts/n8n-credential.mjs                                   # token do worker como credencial cifrada
 docker exec tria-n8n n8n import:workflow --input=/workflows/coleta-metricas.json
-npm run n8n:sincronizar  # confere os workflows da instância contra o repositório (docs/adr/0009)
+npm run n8n:sincronizar  # confere os workflows da plataforma (inclui os coletores/executores genéricos) contra o repositório (ADR 0009, 0032)
 ./scripts/dev.sh         # app em http://localhost:3000
 ```
 
@@ -72,7 +72,7 @@ por chamador, corpo validado por schema, resposta de erro em `application/proble
 
 | Rota | Função |
 | --- | --- |
-| `GET /api/v0/sync/queue` | Contas devidas, com janela de rejanela e `credential_ref` — nunca o segredo |
+| `GET /api/v0/sync/queue` | Contas devidas, com janela de rejanela e `temToken` — nunca o segredo nem ponteiro de credencial |
 | `POST /api/v0/sync/runs` | Abre execução. Idempotente por `idempotencyKey` |
 | `POST /api/v0/sync/metrics` | Upsert idempotente, rejeita linha fora da janela ou incoerente, registra reafirmação |
 | `POST /api/v0/sync/runs/close` | Encerra com status, duração, contagem de chamadas e versão da API |
@@ -104,3 +104,10 @@ npm run build
 node scripts/smoke.mjs              # autenticação, validação e cabeçalhos
 ACCOUNT_ID=<uuid> node scripts/verify-ingestion.mjs   # idempotência, reafirmação, janela
 ```
+
+## Release para produção
+
+Push em `main` dispara `infra.yml` e `deploy.yml`. O deploy espera o Terraform do mesmo commit, faz o pre-flight
+(segredos, KMS, bucket, BigQuery, ambiente validado na imagem nova, snapshot < 24 h, backup lógico) antes de
+qualquer migração e só aplica o corte do cofre com `autorizar_corte=true` no `workflow_dispatch` (ADR 0034).
+Procedimento passo a passo, verificação e rollback: [`docs/release/2026-11-release-cofre-e-contexto.md`](docs/release/2026-11-release-cofre-e-contexto.md).

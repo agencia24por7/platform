@@ -105,13 +105,14 @@ function rodarNormalizar(respostaDosFunis: unknown, paginas: readonly unknown[])
 }
 
 describe('coletor do RD Station (modelo do n8n)', () => {
-  it('toda chamada HTTP usa a credencial httpQueryAuth que o provisioner substitui', () => {
-    const chamadas = modelo.nodes.filter((candidato) => candidato.type === 'n8n-nodes-base.httpRequest');
+  it('toda chamada ao RD leva o token do cofre na query, sem credencial por conexão no nó', () => {
+    const chamadas = modelo.nodes.filter((candidato) => candidato.type === 'n8n-nodes-base.httpRequest' && candidato.name !== 'Obter token');
     assert.equal(chamadas.length, 7);
     for (const chamada of chamadas) {
-      assert.equal(chamada.parameters.authentication, 'genericCredentialType');
-      assert.equal(chamada.parameters.genericAuthType, 'httpQueryAuth');
-      assert.ok(chamada.credentials && 'httpQueryAuth' in chamada.credentials);
+      assert.equal(chamada.parameters.authentication, 'none');
+      assert.equal(chamada.credentials, undefined);
+      const query = (chamada.parameters.queryParameters as { parameters: { name: string; value: string }[] }).parameters;
+      assert.ok(query.find((parametro) => parametro.name === 'token')!.value.includes("$('Obter token')"), chamada.name);
       assert.ok(String(chamada.parameters.url).startsWith(BASE_DA_API));
     }
   });
@@ -268,5 +269,45 @@ describe('linhaDoFatoRd', () => {
     assert.equal(linha.deal_id, 'd1');
     assert.equal(linha.data_snapshot, '2026-11-20');
     assert.equal(linha.situacao, Situacao.Perdida);
+  });
+});
+
+describe('coletor do RD Station: 429 espera 60 s, repete uma vez e depois fecha como limite_de_uso', () => {
+  const verificar = (respostasDoCrm: unknown[], paginas: unknown[], tentativa: number) => {
+    const $ = (nome: string) => ({ all: () => (nome === 'Listar fontes' ? respostasDoCrm.map((json) => ({ json })) : []) });
+    const executar = new Function('$input', '$', '$runIndex', String(no('Verificar limite').parameters.jsCode)) as (
+      entrada: { all: () => { json: Record<string, unknown> }[] },
+      seletor: typeof $,
+      rodada: number,
+    ) => { json: Record<string, unknown> }[];
+    return executar({ all: () => paginas.map((json) => ({ json: json as Record<string, unknown> })) }, $, tentativa);
+  };
+
+  it('429 na primeira rodada pede repetição e preserva as páginas para o Normalizar', () => {
+    const pagina = resposta({ deals: [], has_more: false, total: 0 });
+    const saida = verificar([resposta({ error: 'limite' }, 429)], [pagina], 0);
+    assert.equal(saida[0]!.json._repetir, true);
+    assert.equal(saida[0]!.json.statusCode, 200);
+  });
+
+  it('429 na segunda rodada não repete de novo', () => {
+    assert.equal(verificar([resposta({ error: 'limite' }, 429)], [resposta({ deals: [] })], 1)[0]!.json._repetir, false);
+  });
+
+  it('sem 429 não repete', () => {
+    assert.equal(verificar([resposta([])], [resposta({ deals: [] })], 0)[0]!.json._repetir, false);
+  });
+
+  it('o fluxo espera 60 s e volta ao início da coleta', () => {
+    assert.deepEqual(no('Esperar limite').parameters, { resume: 'timeInterval', amount: 60, unit: 'seconds' });
+    const conexoes = modelo.connections as Record<string, { main: { node: string }[][] }>;
+    assert.equal(conexoes['Esperar limite']!.main[0]![0]!.node, 'Listar fontes');
+    assert.equal(conexoes['Repetir?']!.main[1]![0]!.node, 'Normalizar');
+  });
+
+  it('429 que persiste fecha como limite_de_uso com pausa temporária', () => {
+    const saida = rodarNormalizar(resposta({ error: 'limite' }, 429), []);
+    assert.equal(saida.falhas[0]!.causa, 'limite_de_uso');
+    assert.equal((saida.falhas[0] as { pausa?: string }).pausa, 'limite_temporario');
   });
 });

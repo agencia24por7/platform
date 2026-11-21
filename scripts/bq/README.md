@@ -37,7 +37,7 @@ atualiza este arquivo no mesmo PR. Decisões de fundo: ADR
 | `dim_` | Dimensão. Entidade versionada leva sufixo `_scd2` | `tipo: 'scd2'` ou carga própria (`dim_fonte_scd2`, `dim_cliente_scd2`) |
 | `stg_` | Staging de uma execução, efêmera | INSERT do gravador, uma por tabela de destino |
 | `vw_` | View de consumo: dedupe + dono via `dim_fonte_scd2` | `CREATE OR REPLACE VIEW` no DDL |
-| `gov_` | Governança (inventário, paridade) | `tipo: 'snapshot'` (append) ou carga própria |
+| `gov_` | Governança (inventário, paridade) | `tipo: 'snapshot'` (MERGE só-insere por `chave`) ou carga própria |
 | `qc_` | Qualidade das execuções | `registrarQc` do gravador |
 
 Identificadores em português no padrão do código ao redor (`data_dia`,
@@ -82,7 +82,16 @@ BY` do `QUALIFY` da view. Sem granularidade declarada a tabela não entra.
   `dim_*` vê também o histórico de clientes excluídos e precisa juntar
   `dim_cliente_scd2` com o mesmo filtro.
 - `DELETE` só no **expurgo** (`scripts/titular.mjs expurgar-cliente`), por
-  obrigação legal de eliminação, pelo manifesto abaixo.
+  obrigação legal de eliminação, pelo manifesto abaixo, e nas duas regras do
+  YouTube (ADR 0029): `expurgarFonte` (fatos, dimensões e staging de um canal
+  numa organização quando a autorização acaba, também em
+  `titular.mjs expurgar-fonte`) e o prazo de 30 dias das dimensões
+  `dim_youtube_*_scd2` (`POST /api/v0/manutencao/youtube`, diário).
+- Período de dono **desconhecido** (mudança de posse antiga cujo dono a trilha
+  não identifica) é gravado em `dim_fonte_scd2` com `client_id NULL` e
+  `status = 'desconhecido'`. O expurgo de cliente nunca apaga esse período e
+  não trata como "só do cliente" uma fonte que tem período desconhecido
+  (ADR 0029).
 
 ### Partição e cluster
 
@@ -102,7 +111,10 @@ BY` do `QUALIFY` da view. Sem granularidade declarada a tabela não entra.
   mais `valido_de TIMESTAMP NOT NULL`, `valido_ate TIMESTAMP NOT NULL`
   (`9999-12-31` na versão aberta), `atual BOOL NOT NULL`, `hash_versao STRING
   NOT NULL` (`TO_HEX(SHA256(TO_JSON_STRING(STRUCT(<atributos>))))`),
-  `execucao_id STRING`, `carregado_em TIMESTAMP NOT NULL`. Intervalo
+  `execucao_id STRING`, `carregado_em TIMESTAMP NOT NULL` (gravação da versão;
+  nas dimensões com `renovaCarregadoEm`, hoje as do YouTube, a última vez que a
+  coleta trouxe a entidade sem mudança, que é o "renovado em" do prazo de 30
+  dias). Intervalo
   semiaberto `[valido_de, valido_ate)`; a primeira versão de cada chave vale
   desde `1970-01-01`. A staging dela tem chave + atributos + `execucao_id` +
   `inserido_em`.
@@ -121,7 +133,9 @@ gravação inteira (`tabela_desconhecida:<nome>`).
    destino, staging e, se tiver chave de fonte, a view `vw_*` no molde de
    `06_meta_dataset_formularios.sql`. Sempre `CREATE TABLE IF NOT EXISTS` /
    `CREATE OR REPLACE VIEW` com `{{DATASET}}`. `node scripts/bq-ddl.mjs`
-   aplica todos os `*.sql` desta pasta em ordem de nome.
+   aplica todos os `*.sql` desta pasta em ordem de nome, sempre com alvo
+   explícito (ADR 0028): `--projeto <p> --dataset <d>` ou `--prod --confirmar`;
+   `--dry-run` só valida (`bq query --dry_run`); `--help` não toca em nada.
 2. **Configuração** em `src/modules/coleta/infrastructure/tabelas/<plataforma>.ts`:
    uma entrada nova no `Record<string, ConfiguracaoTabela>` da plataforma (o
    nome da chave é o valor de `_tabela`). Não mexa no gravador nem em
@@ -130,10 +144,24 @@ gravação inteira (`tabela_desconhecida:<nome>`).
    com `_tabela`.
 4. **Manifesto** em `scripts/bq/manifesto/<plataforma>.json` (expurgo de
    cliente, `scripts/titular.mjs expurgar-cliente`), com `grao` igual à `chave` da
-   configuração e, se o fato aponta para uma dimensão de entidade,
-   `entidades` (`registro.test.ts` confere).
+   configuração, `staging` igual à staging da configuração (o expurgo apaga
+   também a staging, por organização + chave da fonte) e, se o fato aponta para
+   uma dimensão de entidade, `entidades` (`registro.test.ts` confere os três).
+   Manifesto novo entra também em
+   `src/modules/privacidade/infrastructure/manifestoDoBigQuery.ts` (há teste).
 5. **Esta página**: seção da plataforma, com granularidade.
 6. **ADR** quando houver decisão de modelagem (granularidade, semântica).
+7. **Catálogo do company brain** (ADR 0030): descrição da tabela (título,
+   uma ou duas frases para o agente, view, coluna de data, relacionadas,
+   sensibilidade) em `src/modules/brain/dados/descricoes.ts` e significado de
+   toda coluna nova em `src/modules/brain/dados/glossario.ts` (ou específico
+   da tabela). `dados.test.ts` falha se faltar. Com isso a tabela aparece
+   sozinha no catálogo de todo cliente que tem a plataforma vinculada; se ela
+   habilita uma pergunta nova, acrescente a capacidade em
+   `src/modules/brain/dados/capacidades.ts`. Fonte que não sai do registro da
+   coleta (planilha, CRM próprio, outro sistema) entra como provedor: um
+   arquivo em `src/modules/brain/infrastructure/provedores/` e uma linha em
+   `provedores/index.ts`.
 
 ### Manifesto de expurgo
 
@@ -161,6 +189,22 @@ exatamente um de "data" | "momento" | "todoPeriodo": true, "grao",
   de entidade do fato à dimensão SCD2 dela (`coluna` e `chaveDim` podem ser
   listas). O `bq:verificar` conta ids do fato sem versão na dimensão.
 
+Ordem do expurgo (`scripts/bq/expurgo.mjs`, ADR 0023): exige o cliente já
+excluído logicamente (fora da coleta); sincroniza as dimensões e **aborta** se
+falhar; apaga cada entrada pelo período de posse; apaga as **sobras** das
+fontes que o Postgres ainda liga ao cliente (`ad_accounts` e recursos fora de
+Google/Meta), por `organization_id` + chave da fonte, se a fonte nunca foi de
+outro cliente em `dim_fonte_scd2` (a mesma regra de `todoPeriodo`); apaga as
+linhas com `client_id` (`dim_fonte_scd2` por último, porque os passos
+anteriores dependem dela); só então expurga o Postgres e repete a limpeza por
+`client_id`. Todo passo é idempotente: se um falhar, o script lista os
+pendentes e basta rodar o mesmo comando de novo.
+
+As tabelas `stg_*` não entram no expurgo: não têm `client_id`, guardam só a
+chamada de gravação e expiram a partição em 7 dias. O time travel do dataset
+(7 dias) também guarda as linhas apagadas por esse prazo
+(`docs/lgpd/retencao.md`).
+
 ## Numeração dos arquivos de DDL
 
 | Faixa | Dono |
@@ -175,6 +219,7 @@ exatamente um de "data" | "momento" | "todoPeriodo": true, "grao",
 | `26` | RD Station |
 | `27` | Meta Pixel e Lead Ads |
 | `28` | Google Tag Manager |
+| `29` | Company brain (catálogo e cobertura por cliente, ADR 0030) |
 
 Precisa de mais de um arquivo? Use sufixo (`20_meta.sql`, `20b_meta_criativos.sql`).
 
@@ -202,7 +247,7 @@ do `ad_account_id` (o `externalId`), com dono pela `dim_fonte_scd2`
 (`platform = 'meta'`) nas views `vw_*`: `cliente_na_epoca_*` e
 `cliente_atual_*`. Nas dimensões a "época" é o início da versão (`valido_de`).
 
-Origem na API (Marketing API v23.0): relatórios assíncronos
+Origem na API (Marketing API v27.0, fixada; ADR 0025): relatórios assíncronos
 `POST /{act}/insights` + `GET /{report_run_id}/insights` (insights) e `GET
 /{act}/campaigns|adsets|ads` (dimensões), paginados. Janelas de 28 dias do
 backfill. Valores monetários com a moeda da conta em `moeda`.
@@ -314,11 +359,15 @@ backfill. Valores monetários com a moeda da conta em `moeda`.
 ### Coleta e cotas
 
 O coletor cria quatro relatórios assíncronos (anúncio, idade × gênero,
-posicionamento, região), consulta a cada 20 s (até 30 vezes) e baixa páginas de
-500 linhas. Chamadas por fonte e janela: 4 criações, até 120 consultas, 3 listas
-paginadas (200 por página) e os downloads. Limite de uso da Meta
-(códigos 4, 17, 32, 613, 80000-80014) vira `api_recusou`; autorização
-(401/403/190) vira `reauth_pending`.
+posicionamento, região), consulta a cada 20 s (até 30 vezes; 60-300 s quando o
+uso informado em `X-Business-Use-Case-Usage`/`X-FB-Ads-Insights-Throttle` passa de
+75%) e baixa páginas de 500 linhas. Chamadas por fonte e janela: 4 criações, até
+120 consultas, 3 listas paginadas (200 por página, só na primeira incremental do
+dia) e os downloads. Limite de uso da Meta (429, códigos 4, 17, 32, 341, 613,
+80000-80014) vira `limite_de_uso`: a coleta fecha como `failed`, não avança a
+marca d'água e a próxima rodada de 6h tenta de novo (ADR 0025); autorização
+(401/403/190) vira `reauth_pending`. Nos recortes com início há mais de 13 meses
+o coletor não pede `reach` e grava `alcance` nulo.
 
 <!-- Meta Ads: novas tabelas acima desta linha -->
 
@@ -348,6 +397,14 @@ Colunas de métrica (fatos, exceto onde dito): `investimento`
 (`conversions_value`), `todas_conversoes` (`all_conversions`),
 `todas_conversoes_receita` (`all_conversions_value`), `interacoes`,
 `visualizacoes_video` (`video_trueview_views`; o antigo `video_views` não existe mais na v26).
+
+Limites de completude dos termos de pesquisa: `search_term_view` só devolve
+termos que passam o limite de privacidade do Google e não cobre campanhas
+Performance Max. A soma de `fato_google_termo_pesquisa_diario` pode ser menor
+que o investimento da campanha (`fato_google_campanha_diario`); compare com a
+campanha, não com a soma dos termos. O mesmo vale para o GA4 sob limiar de
+privacidade (aviso `limiar_de_privacidade`). Ver o adendo de 20/11/2026 no ADR
+[0025](../../docs/adr/0025-coleta-incremental.md).
 
 ### Fatos (DDL: `21_google_ads.sql`)
 
@@ -403,6 +460,10 @@ Configuração: `tabelas/ga4.ts`. Manifesto: `manifesto/ga4.json`. DDL: `22_ga4*
   `data_dia`.
 - Colunas: `sessoes`, `usuarios`, `novos_usuarios`, `conversoes`, `receita`,
   `execucao_id`, `inserido_em`.
+- `canal` ausente é gravado como `(not set)` (`textoDaDimensao`), nunca
+  `NULL`: `NULL` na chave nunca casa no MERGE e o reprocesso duplicava a
+  linha (ADR 0023). Linhas antigas com `canal IS NULL`: ver "Limpeza única
+  de chave nula" abaixo.
 - Partição `data_dia`; cluster `organization_id, property_id`.
 - Staging `stg_ga4_diario`; view `vw_ga4_diario`.
 
@@ -443,6 +504,8 @@ Configuração: `tabelas/searchconsole.ts`. Manifesto: `manifesto/searchconsole.
   `data_dia`.
 - Colunas: `cliques`, `impressoes`, `ctr`, `posicao_media`, `execucao_id`,
   `inserido_em`.
+- `device` ausente é gravado como `(not set)`, como `canal` em
+  `fato_ga4_diario` (ADR 0023).
 - Partição `data_dia`; cluster `organization_id, site`.
 - Staging `stg_search_console_diario`; view `vw_search_console_diario`.
 
@@ -462,6 +525,7 @@ Decisões: ADR [0018](../../docs/adr/0018-ga4-searchconsole-modelagem.md). DDL:
 | `pagina` | `fato_search_console_pagina_diario` | `pagina` | page |
 | `pais_dispositivo` | `fato_search_console_pais_dispositivo_diario` | `pais` (ISO 3166-1 alfa-3, minúsculo), `dispositivo` | country, device |
 | `aparencia` | `fato_search_console_aparencia_diario` | `aparencia` | searchAppearance (ex.: AMP, rich results; recorte opcional: 400 não falha a coleta) |
+| `tipo` | `fato_search_console_tipo_diario` | `tipo` (`image`, `video`, `news`, `discover`, `googleNews`) | date, com `type=<tipo>`; `web` fica nas tabelas acima |
 
 Consultas são termos agregados; a API omite as anonimizadas (raras), então
 `consulta_pagina` soma menos que `pagina`, e `pagina` (agregação por página)
@@ -469,6 +533,13 @@ não bate exatamente com `fato_search_console_diario` (por propriedade). A
 API devolve só as linhas de maior tráfego por dia; não há garantia de
 completude da cauda. `fato_search_console_diario` (acima) continua como
 total por dispositivo.
+
+`fato_search_console_tipo_diario` só guarda dados reais: a API devolve uma linha
+por data com zero impressões para tipos sem tráfego, e o coletor descarta essas
+linhas antes de gravar. Ausência de linha para um tipo/dia significa zero
+impressões naquele tipo (não falha de coleta). O tipo `web` não entra aqui.
+`searchAppearance` só pode ser consultado sozinho (sem `date`), por isso a
+tabela `aparencia` é coletada um dia por pedido.
 
 <!-- Search Console: novas tabelas acima desta linha -->
 
@@ -503,6 +574,9 @@ dono `cliente_na_epoca_*` e `cliente_atual_*`; as `vw_dim_*` dão só
   `snippet.categoryId`, `contentDetails.duration` ISO 8601 convertida em
   segundos, `status.privacyStatus`), só dos vídeos mais vistos da janela (até 25).
 - Staging `stg_youtube_video`; view `vw_dim_youtube_video_scd2`.
+- Prazo de 30 dias (Políticas do YouTube API Services III.E.4, ADR 0029): a
+  coleta renova `carregado_em` da versão aberta inalterada; o job diário apaga
+  toda versão com `carregado_em` de mais de 30 dias.
 
 ### `dim_youtube_playlist_scd2` (`dim_playlist`)
 
@@ -512,6 +586,7 @@ dono `cliente_na_epoca_*` e `cliente_atual_*`; as `vw_dim_*` dão só
 - Cluster `organization_id, channel_id, playlist_id`.
 - Origem: `playlists.list` (primeira página, 50 playlists).
 - Staging `stg_youtube_playlist`; view `vw_dim_youtube_playlist_scd2`.
+- Mesmo prazo de 30 dias de `dim_youtube_video_scd2`.
 
 ### `fato_youtube_video_diario` (`video_diario`)
 
@@ -839,9 +914,13 @@ Todas com chave `organization_id` e `conteiner_id` (o ID público `GTM-XXXX`). D
 ### `gov_snapshot_fontes`
 
 - Granularidade: uma linha por observação (`organization_id`, `platform`,
-  `fonte_id`, `visto_em`); append.
+  `fonte_id`, `visto_em`). A gravação é um MERGE que só insere, pela chave
+  `organization_id`, `fonte_id`, `execucao_id` (janela de 7 dias em
+  `visto_em`): repetir a mesma chamada de `/coleta/gravar` não duplica a
+  observação (ADR 0023). Linhas anteriores à coluna têm `execucao_id NULL`.
 - Colunas: `fonte_tipo`, `nome`, `estado`, `inactive`, `rotulo_esperado`,
-  `rotulo_observado`.
+  `rotulo_observado`, `execucao_id` (`ALTER TABLE ... ADD COLUMN IF NOT
+  EXISTS` em `03_governanca.sql`; aplicar o DDL antes do deploy do app).
 - Partição `DATE(visto_em)`; cluster `organization_id, platform, fonte_id`.
 - DDL: `03_governanca.sql`.
 
@@ -861,6 +940,31 @@ Todas com chave `organization_id` e `conteiner_id` (o ID público `GTM-XXXX`). D
   `requests`, `duracao_ms`, `status`, `qualidade_resumo` (JSON), `criado_em`.
 - Partição `DATE(criado_em)`; cluster `organization_id, client_id`.
   Escrita: `registrarQc` em `bigQueryGravador.ts`.
+
+### `gov_cobertura_cliente`
+
+- Granularidade: uma linha por `organization_id`, `client_id` e `tabela`
+  (o nome da tabela-base medida, ex.: `fato_ads_diario`). MERGE por essa
+  chave: cada medida substitui a anterior.
+- Colunas: `desde`, `ate` (menor e maior data com dado do cliente na janela
+  medida de 400 dias; na dimensão SCD2, a data da primeira e da última
+  versão), `linhas` (no fato, linhas na janela; na dimensão, versões
+  atuais), `dias_com_dado` (dias distintos com dado; `NULL` na dimensão),
+  `medido_em`.
+- Como é medida: `POST /api/v0/brain/cobertura/medir` (workflow
+  `plataforma/brain-cobertura-diaria`) roda, por cliente com fonte vinculada
+  e no máximo uma vez a cada 20 horas, uma consulta só (`UNION ALL`) sobre
+  as `vw_*` das plataformas do cliente, filtrada por `cliente_atual_id` e
+  pela coluna de partição, com `maximumBytesBilled`. A mesma medida é
+  copiada em `core.client_brain_coverage` no Postgres, que é o que o
+  catálogo lê (vale por 36 horas; depois cai para a cobertura derivada de
+  `automation.coletas`).
+- Tem `client_id` por desenho, como `gov_paridade` e `qc_execucoes`: o
+  expurgo apaga por `client_id` (o `titular.mjs` descobre toda tabela com a
+  coluna `client_id`). Não entra no manifesto de fatos porque não tem chave
+  de fonte. A medida segue o dono atual, então cliente excluído (some das
+  `vw_*`) não é medido.
+- Cluster `organization_id, client_id, tabela`. DDL: `29_brain.sql`.
 
 <!-- Transversais: novas tabelas acima desta linha -->
 
@@ -913,6 +1017,7 @@ Cada view lê uma única tabela-base, deduplica pelo grão quando a base é fato
 | `vw_search_console_pagina_diario` | `fato_search_console_pagina_diario` | `23_searchconsole.sql` |
 | `vw_search_console_pais_dispositivo_diario` | `fato_search_console_pais_dispositivo_diario` | `23_searchconsole.sql` |
 | `vw_search_console_aparencia_diario` | `fato_search_console_aparencia_diario` | `23_searchconsole.sql` |
+| `vw_search_console_tipo_diario` | `fato_search_console_tipo_diario` | `23_searchconsole.sql` |
 | `vw_dim_youtube_video_scd2` | `dim_youtube_video_scd2` | `24_youtube.sql` |
 | `vw_dim_youtube_playlist_scd2` | `dim_youtube_playlist_scd2` | `24_youtube.sql` |
 | `vw_youtube_video_diario` | `fato_youtube_video_diario` | `24_youtube.sql` |
@@ -965,23 +1070,71 @@ Decisões: ADR [0021](../../docs/adr/0021-gravacao-em-lotes-coleta-parcial-e-int
   do coletor. Teto de 20 contas Google por disparo
   (`MAX_FONTES_POR_PLATAFORMA`; ≈ 456 operações por conta no nível Básico).
   Para as demais, dispare de novo com `"fontes": ["<fonteId>", ...]`.
+- **Filtro constante no MERGE (ADR 0023).** O `ON` do MERGE de fato leva
+  `alvo.organization_id = @organizationId` e `alvo.<data da chave> BETWEEN
+  data_minima AND data_maxima`, com os limites declarados (`DECLARE`) a
+  partir das linhas do próprio lote na staging. A coluna de data é a única
+  `DATE`/`TIMESTAMP` da `chave` (`registro.test.ts` exige exatamente uma em
+  todo fato). Sem `WHEN NOT MATCHED BY SOURCE`, filtrar o alvo não apaga
+  nada; só poda partição e cluster. O SCD2 filtra `d.organization_id` no
+  `UPDATE` e nos dois `EXISTS`. Todo job do gravador e da sincronização de
+  dimensões leva `maximumBytesBilled` (`BQ_MAXIMO_BYTES_FATURADOS`, padrão
+  10 GB).
+- **Retentativa.** Cada job do gravador (INSERT na staging, MERGE, transação
+  SCD2) e a transação da sincronização de dimensões são repetidos até 4 vezes
+  com espera exponencial e jitter (0,5 s a 8 s) quando o BigQuery recusa por
+  concorrência (`could not serialize access`, `transaction is aborted`,
+  `concurrent update`, `too many DML statements`, limite de taxa,
+  `backendError`, HTTP 429/503). Erro de SQL, de esquema ou de custo não é
+  repetido. Como MERGE, SCD2 e snapshot são idempotentes, o n8n pode repetir
+  a chamada inteira depois de uma falha no meio do laço de tabelas.
+- **Chave inválida.** Depois do `mapear`, linha com coluna da `chave` nula,
+  `DATE` que não é `AAAA-MM-DD` válida, `TIMESTAMP` ilegível, `INT64` não
+  inteiro ou `BOOL` não booleano é descartada antes da staging e somada em
+  `linhasDescartadas` (texto vazio continua valendo como chave). A soma
+  `linhasGravadas + linhasDescartadas` da chamada continua igual ao número de
+  linhas enviadas.
+
+### Limpeza única de chave nula (não rodar sem revisar)
+
+Antes do ADR 0023, `fato_ga4_diario.canal` e `fato_search_console_diario.device`
+podiam ser gravados `NULL`, e cada reprocesso inseria de novo. Depois do
+deploy, o mesmo dia regravado vai como `(not set)`. Para alinhar o histórico,
+revisar e rodar uma vez (exemplo para GA4; o Search Console é igual com
+`site`/`device`):
+
+```sql
+DELETE FROM `tria_dw.fato_ga4_diario` f
+WHERE f.canal IS NULL AND EXISTS (
+  SELECT 1 FROM `tria_dw.fato_ga4_diario` o
+  WHERE o.organization_id = f.organization_id AND o.property_id = f.property_id
+    AND o.data_dia = f.data_dia
+    AND (o.canal = '(not set)' OR (o.canal IS NULL AND o.inserido_em > f.inserido_em)));
+
+UPDATE `tria_dw.fato_ga4_diario` SET canal = '(not set)' WHERE canal IS NULL;
+```
+
+O primeiro comando deixa, por dia, só a linha `NULL` mais recente (ou nenhuma,
+se já existe `(not set)`); o segundo a renomeia. As views `vw_*` já
+deduplicavam pela chave, mas tratavam cada `NULL` como linha distinta.
 
 ## Qualidade e integridade
 
-`npm run bq:verificar` (`scripts/bq/verificar-integridade.mjs`) confere o
-dataset em produção. Só lê (SELECT e dry run, pelo `bq` CLI autenticado no
-gcloud) e sai com código 1 se houver falha grave.
+`npm run bq:verificar` (`scripts/bq/verificar-integridade.mjs`) confere um
+dataset. Só lê (SELECT e dry run, pelo `bq` CLI autenticado no gcloud) e sai
+com código 1 se houver falha grave. Não há alvo padrão (ADR 0028): passe
+`--prod` ou `--projeto` e `--dataset`; opção desconhecida sai 2 sem consultar.
 
 ```bash
-npm run bq:verificar
+npm run bq:verificar -- --prod
 npm run bq:verificar -- --projeto tria-platform --dataset tria_dw --desde 2026-10-01
-npm run bq:verificar -- --estrito        # avisos também falham
-npm run bq:verificar -- --imprimir-sql   # só mostra as consultas
+npm run bq:verificar -- --prod --estrito        # avisos também falham
+npm run bq:verificar -- --prod --imprimir-sql   # só mostra as consultas
 ```
 
 | Verificação | Grave? |
 |---|---|
-| Tabelas do manifesto, `dim_fonte_scd2`, `dim_cliente_scd2`, `gov_*` e `qc_execucoes` existem | sim |
+| Tabelas do manifesto, `dim_fonte_scd2`, `dim_cliente_scd2`, `gov_*` (inclusive `gov_cobertura_cliente`) e `qc_execucoes` existem | sim |
 | Toda tabela/view do dataset (fora `stg_*`) está neste README, e todo nome de tabela citado aqui existe | sim |
 | Fato sem duplicata no `grao` do manifesto | sim |
 | SCD2 (`dim_*_scd2`): uma versão atual por chave, sem sobreposição nem lacuna entre versões, `valido_de < valido_ate`, `atual` ⇔ `valido_ate = 9999-12-31` | sim |

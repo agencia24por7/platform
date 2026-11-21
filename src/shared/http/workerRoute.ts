@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { env } from '@/shared/config/env';
+import { comoWorker } from '@/shared/db/client';
 import { logger } from '@/shared/logging/logger';
 import { failure, type Failure } from '@/shared/result/failure';
 import type { Result } from '@/shared/result/result';
 import { consume } from '@/shared/security/rateLimit';
 import { fingerprint, newRequestId, secureCompare } from '@/shared/security/tokens';
 import { problem, success } from '@/shared/http/problem';
+import { CorpoAcimaDoLimite, declaradoAcimaDoLimite, lerCorpoLimitado } from '@/shared/http/corpoLimitado';
 
 const MAX_BODY_BYTES = 1_000_000;
 
@@ -38,8 +40,8 @@ export function workerRoute<I, O>(schema: z.ZodType<I>, handler: Handler<I, O>, 
   const maxBodyBytes = options.maxBodyBytes ?? MAX_BODY_BYTES;
   return (request: NextRequest): Promise<NextResponse> =>
     handle(request, schema, handler, successStatus, async () => {
-      const raw = await request.text();
-      if (Buffer.byteLength(raw) > maxBodyBytes) throw new PayloadTooLarge();
+      if (declaradoAcimaDoLimite(request.headers.get('content-length'), maxBodyBytes)) throw new CorpoAcimaDoLimite();
+      const raw = await lerCorpoLimitado(request.body, maxBodyBytes);
       if (raw.length === 0) return {};
       try {
         return JSON.parse(raw) as unknown;
@@ -49,7 +51,6 @@ export function workerRoute<I, O>(schema: z.ZodType<I>, handler: Handler<I, O>, 
     });
 }
 
-class PayloadTooLarge extends Error {}
 class MalformedJson extends Error {}
 
 function handle<I, O>(
@@ -82,11 +83,13 @@ function handle<I, O>(
     try {
       payload = await readPayload();
     } catch (error) {
-      const message =
-        error instanceof PayloadTooLarge
-          ? 'Corpo da requisição acima do limite.'
-          : 'Corpo não é JSON válido.';
-      return problem(failure('validation', message), requestId);
+      if (error instanceof CorpoAcimaDoLimite) {
+        return NextResponse.json(
+          { type: 'https://orla.app/problems/payload_too_large', title: 'Corpo da requisição acima do limite.', status: 413, requestId },
+          { status: 413, headers: { 'Content-Type': 'application/problem+json', 'X-Request-Id': requestId } },
+        );
+      }
+      return problem(failure('validation', 'Corpo não é JSON válido.'), requestId);
     }
 
     const parsed = schema.safeParse(payload);
@@ -100,7 +103,7 @@ function handle<I, O>(
     const context: WorkerContext = { requestId, callerFingerprint: caller, sourceIp };
 
     try {
-      const result = await handler(parsed.data, context);
+      const result = await comoWorker(() => handler(parsed.data, context));
       if (!result.ok) return problem(result.error, requestId);
       return success(result.value, requestId, successStatus);
     } catch (error) {

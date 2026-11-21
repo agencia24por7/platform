@@ -1,6 +1,7 @@
 import { agora, type TabelasDaPlataforma } from '@/modules/coleta/infrastructure/tabelas/tipos';
 import { configuracoesDosRecortes } from '@/modules/coleta/infrastructure/tabelas/recortes';
 import { RECORTES_SEARCH_CONSOLE } from '@/modules/coleta/domain/recortesSearchConsole';
+import { textoDaDimensao } from '@/modules/coleta/domain/fatosDiarios';
 
 export const TABELAS_SEARCHCONSOLE: TabelasDaPlataforma = {
   padrao: {
@@ -17,7 +18,7 @@ export const TABELAS_SEARCHCONSOLE: TabelasDaPlataforma = {
     mapear: (linha, ctx) => ({
       organization_id: ctx.organizationId,
       site: ctx.externalId,
-      device: linha.device ?? null,
+      device: textoDaDimensao(linha.device),
       data_dia: linha.metricDate,
       cliques: Number(linha.clicks ?? 0),
       impressoes: Number(linha.impressions ?? 0),

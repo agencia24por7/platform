@@ -24,6 +24,8 @@ RUN addgroup --system --gid 1001 tria && adduser --system --uid 1001 --ingroup t
 COPY --from=build --chown=tria:tria /app/.next/standalone ./
 COPY --from=build --chown=tria:tria /app/.next/static ./.next/static
 COPY --from=build --chown=tria:tria /app/public ./public
+COPY --from=deps --chown=tria:tria /app/node_modules/zod ./node_modules/zod
+COPY --from=build --chown=tria:tria /app/src/shared/config/env.ts /app/src/shared/config/validarAmbiente.ts /app/src/shared/config/validarAmbienteCli.ts ./release/
 
 USER tria
 EXPOSE 3000

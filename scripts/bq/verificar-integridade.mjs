@@ -2,12 +2,14 @@ import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { lerArgumentos, resolverAlvo } from '../lib/alvoDoBigQuery.mjs';
 
 const USO = `uso:
-  node scripts/bq/verificar-integridade.mjs [--projeto tria-platform] [--dataset tria_dw]
+  node scripts/bq/verificar-integridade.mjs (--projeto <projeto> --dataset <dataset> | --prod)
                                             [--desde AAAA-MM-DD] [--tolerancia 0.005] [--estrito] [--imprimir-sql]
 
-Só leitura (SELECT e dry run). Sai com código 1 se houver falha grave.
+Só leitura (SELECT e dry run). Sai com código 1 se houver falha grave. Não há alvo padrão.
+--prod        atalho para tria-platform.tria_dw (produção)
 --desde       início da janela das somas de consistência (padrão: 35 dias atrás)
 --tolerancia  diferença relativa aceita nas somas (padrão 0,5%)
 --estrito     avisos (órfãos) também falham
@@ -20,7 +22,7 @@ const TRANSVERSAIS = {
   dim_fonte_scd2: ['organization_id', 'platform', 'external_id'],
   dim_cliente_scd2: ['organization_id', 'client_id'],
 };
-const OPERACIONAIS = ['gov_snapshot_fontes', 'gov_paridade', 'qc_execucoes'];
+const OPERACIONAIS = ['gov_snapshot_fontes', 'gov_paridade', 'qc_execucoes', 'gov_cobertura_cliente'];
 
 const CONSISTENCIAS = [
   {
@@ -38,24 +40,26 @@ const CONSISTENCIAS = [
 ];
 
 function opcoes(argv) {
-  const valor = (nome, padrao) => {
-    const indice = argv.indexOf(nome);
-    return indice >= 0 && argv[indice + 1] ? argv[indice + 1] : padrao;
-  };
-  if (argv.includes('--ajuda') || argv.includes('-h')) {
-    console.log(USO);
-    process.exit(0);
-  }
+  const valores = lerArgumentos(
+    argv,
+    {
+      desde: { type: 'string' },
+      tolerancia: { type: 'string', default: '0.005' },
+      estrito: { type: 'boolean', default: false },
+      'imprimir-sql': { type: 'boolean', default: false },
+    },
+    USO,
+  );
+  const alvo = resolverAlvo(valores, USO);
   const trintaECincoDias = new Date(Date.now() - 35 * 86_400_000).toISOString().slice(0, 10);
   const resultado = {
-    projeto: valor('--projeto', process.env.PROJETO ?? 'tria-platform'),
-    dataset: valor('--dataset', process.env.DATASET ?? 'tria_dw'),
-    desde: valor('--desde', trintaECincoDias),
-    tolerancia: Number(valor('--tolerancia', '0.005')),
-    estrito: argv.includes('--estrito'),
-    imprimirSql: argv.includes('--imprimir-sql'),
+    projeto: alvo.projeto,
+    dataset: alvo.dataset,
+    desde: valores.desde ?? trintaECincoDias,
+    tolerancia: Number(valores.tolerancia),
+    estrito: valores.estrito,
+    imprimirSql: valores['imprimir-sql'],
   };
-  if (!/^[a-z][a-z0-9-]*$/.test(resultado.projeto) || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(resultado.dataset)) sair(`projeto ou dataset inválido.\n\n${USO}`);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(resultado.desde)) sair(`--desde inválido.\n\n${USO}`);
   if (!(resultado.tolerancia >= 0)) sair(`--tolerancia inválida.\n\n${USO}`);
   return resultado;

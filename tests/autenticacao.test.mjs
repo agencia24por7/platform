@@ -1,20 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
-import {
-  BASE,
-  acaoComCampo,
-  appIsUp,
-  browse,
-  ensureUser,
-  handoffToken,
-  makeOwner,
-  sessionCookie,
-  signIn,
-  submitAction,
-  submitForm,
-  signOut,
-} from './helpers.mjs';
+import { acaoComCampo, appIsUp, BASE, browse, ensureUser, handoffToken, makeOwner, sessionCookie, signIn, signOut, sqlDeConexao, submitAction, submitForm } from './helpers.mjs';
 
 const query = (sql) =>
   execFileSync('docker', ['exec', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
@@ -232,14 +219,9 @@ describe('vínculos de conta exigem papel e não confiam no formulário', { conc
        RETURNING id`,
     );
 
-    conexao = query(
-      `INSERT INTO integrations.connections
-         (organization_id, platform, grant_type, label, external_id, scopes, credential_ref)
-       VALUES ('${organizacao}', 'google', 'oauth_user', 'Teste de papel', 'papel-teste',
-               ARRAY['adwords'], 'n8n:credential:teste')
-       ON CONFLICT (organization_id, platform, external_id) DO UPDATE SET label = EXCLUDED.label
-       RETURNING id`,
-    );
+    conexao =
+      query(`SELECT id FROM integrations.connections WHERE organization_id = '${organizacao}' AND platform = 'google' AND external_id = 'papel-teste'`) ||
+      query(sqlDeConexao({ organizationId: organizacao, platform: 'google', label: 'Teste de papel', externalId: 'papel-teste', scopes: ['adwords'] }).sql);
 
     query(
       `INSERT INTO integrations.connection_accounts

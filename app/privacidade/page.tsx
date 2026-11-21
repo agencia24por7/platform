@@ -170,7 +170,15 @@ export default function Privacidade() {
       <section>
         <h2>8. Por quanto tempo guardamos</h2>
         <ul>
-          <li>Tokens de acesso: enquanto a conexão existir; são apagados quando ela é removida.</li>
+          <li>
+            Tokens de acesso: enquanto a conexão existir. Ao remover a conexão, pedimos ao Google ou à Meta que revogue
+            o acesso e apagamos o token.
+          </li>
+          <li>
+            Dados da API do YouTube: títulos e detalhes de vídeos e playlists, e o nome do canal, são renovados ou
+            apagados a cada 30 dias. Quando a conexão de um canal é removida, os dados do YouTube desse canal são
+            apagados em até 7 dias; quando o acesso é revogado direto no Google, em até 30 dias.
+          </li>
           <li>Métricas: enquanto o cliente usar a orla; apagadas em até 30 dias depois de um pedido de exclusão.</li>
           <li>Registros de execução das automações: 14 dias. Os fluxos de leads não guardam o conteúdo dos leads.</li>
           <li>Avisos de mensagens do WhatsApp: 90 dias.</li>
@@ -194,7 +202,8 @@ export default function Privacidade() {
             <a href="https://myaccount.google.com/permissions" rel="noopener noreferrer">
               myaccount.google.com/permissions
             </a>
-            , ou na Meta, em Configurações → Integrações comerciais.
+            , ou na Meta, em Configurações → Integrações comerciais. Ao remover o app na Meta, ela nos avisa
+            automaticamente e você recebe um código para acompanhar o pedido de exclusão.
           </li>
           <li>
             Você pode pedir confirmação do tratamento, acesso, correção, portabilidade, anonimização ou exclusão dos

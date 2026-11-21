@@ -24,6 +24,21 @@ const comoApp = (sql) =>
     { encoding: 'utf8' },
   ).trim();
 
+function senhaDoWorker() {
+  return readFileSync('.env', 'utf8')
+    .split('\n')
+    .find((linha) => linha.startsWith('WORKER_DB_PASSWORD='))
+    .slice('WORKER_DB_PASSWORD='.length);
+}
+
+const comoWorker = (sql) =>
+  execFileSync(
+    'docker',
+    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoWorker()}`, 'orla-postgres',
+     'psql', '-U', 'orla_worker', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
+    { encoding: 'utf8' },
+  ).trim();
+
 const naSessao = (org, clientIds, userId, sql) =>
   comoApp(
     `SET app.organization_id = '${org}'; SET app.client_ids = '${clientIds}'; ` +
@@ -190,11 +205,48 @@ describe('fronteiras entre inquilinos', { concurrency: false }, () => {
     );
   });
 
-  it('o papel do worker continua sem nenhum privilégio de objeto', () => {
+  it('o papel do worker não tem privilégio de tabela próprio: herda o do app, sob as mesmas políticas', () => {
     assert.equal(
       umaLinha(dono(`SELECT count(*) FROM information_schema.table_privileges WHERE grantee = 'orla_worker'`)),
       '0',
     );
+    assert.equal(umaLinha(dono(`SELECT pg_has_role('orla_worker', 'orla_app', 'USAGE')::text`)), 'true');
+    assert.equal(umaLinha(dono(`SELECT pg_has_role('orla_app', 'orla_worker', 'USAGE')::text`)), 'false');
+    assert.equal(
+      umaLinha(dono(`SELECT rolsuper::text || rolbypassrls::text || rolcreaterole::text FROM pg_roles WHERE rolname = 'orla_worker'`)),
+      'falsefalsefalse',
+    );
+  });
+
+  it('a web não executa função SECURITY DEFINER que atravessa inquilinos; o worker executa', () => {
+    const daWeb = dono(
+      `SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE p.prosecdef AND (n.nspname = 'automation' OR (n.nspname = 'core' AND p.proname IN ('aplicar_retencao', 'contexto_brains_pendentes', 'contexto_clientes_para_reconstruir')))
+          AND has_function_privilege('orla_app', p.oid, 'EXECUTE')`,
+    );
+    assert.equal(umaLinha(daWeb), '0', 'função de worker voltou a ser executável pela web (ADR 0028)');
+
+    const doWorker = dono(
+      `SELECT bool_and(has_function_privilege('orla_worker', p.oid, 'EXECUTE'))::text FROM pg_proc p
+         JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE p.prosecdef AND p.prorettype <> 'trigger'::regtype
+          AND (n.nspname = 'automation' OR (n.nspname = 'core' AND p.proname IN ('aplicar_retencao', 'contexto_brains_pendentes', 'contexto_clientes_para_reconstruir')))`,
+    );
+    assert.equal(umaLinha(doWorker), 'true');
+
+    for (const chamada of [
+      'SELECT count(*) FROM automation.dimensao_clientes()',
+      'SELECT count(*) FROM automation.dimensao_fontes()',
+      'SELECT count(*) FROM automation.dimensao_mudancas_de_posse()',
+      'SELECT count(*) FROM automation.fontes_de_coleta(1)',
+      'SELECT count(*) FROM automation.sync_queue(1, 1, interval \'1 hour\')',
+      'SELECT core.aplicar_retencao()',
+      "SELECT count(*) FROM core.contexto_brains_pendentes(1, interval '1 second')",
+      'SELECT count(*) FROM core.contexto_clientes_para_reconstruir(NULL)',
+    ]) {
+      assert.match(recusa(() => comoApp(chamada)) ?? '', /permission denied/, chamada);
+    }
+    assert.match(comoWorker('SELECT count(*) FROM automation.dimensao_clientes()'), /^\d+$/);
   });
 
   it('toda tabela de negócio tem RLS ligada e forçada', () => {
@@ -202,12 +254,12 @@ describe('fronteiras entre inquilinos', { concurrency: false }, () => {
       SELECT coalesce(string_agg(n.nspname||'.'||c.relname, ', '), '')
       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE c.relkind = 'r'
-        AND n.nspname IN ('core','integrations','metrics','automation','audit')
+        AND n.nspname IN ('core','integrations','metrics','automation','audit','privacidade')
         AND NOT (c.relrowsecurity AND c.relforcerowsecurity)`);
     assert.equal(umaLinha(frouxas), '', `tabelas sem RLS forçada: ${frouxas}`);
   });
 
-  const SEM_POLITICA_POR_DESENHO = "ARRAY['integrations.whatsapp_inbound_events']";
+  const SEM_POLITICA_POR_DESENHO = "ARRAY['integrations.whatsapp_inbound_events','privacidade.expurgos_de_fonte']";
 
   it('tabelas sem política por desenho só são tocadas por funções SECURITY DEFINER', () => {
     const acessoDireto = dono(`
@@ -224,7 +276,7 @@ describe('fronteiras entre inquilinos', { concurrency: false }, () => {
       SELECT coalesce(string_agg(n.nspname||'.'||c.relname, ', '), '')
       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE c.relkind = 'r'
-        AND n.nspname IN ('core','integrations','metrics','automation','audit')
+        AND n.nspname IN ('core','integrations','metrics','automation','audit','privacidade')
         AND c.relrowsecurity
         AND NOT EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid)
         AND (n.nspname||'.'||c.relname) <> ALL (${SEM_POLITICA_POR_DESENHO})`);
@@ -235,7 +287,7 @@ describe('fronteiras entre inquilinos', { concurrency: false }, () => {
     const soltas = dono(`
       SELECT coalesce(string_agg(p.proname, ', '), '')
       FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-      WHERE n.nspname IN ('core','integrations','metrics','automation','audit')
+      WHERE n.nspname IN ('core','integrations','metrics','automation','audit','privacidade')
         AND p.prosecdef
         AND NOT EXISTS (
           SELECT 1 FROM unnest(coalesce(p.proconfig, ARRAY[]::text[])) c
@@ -247,7 +299,7 @@ describe('fronteiras entre inquilinos', { concurrency: false }, () => {
     const abertas = dono(`
       SELECT coalesce(string_agg(p.proname, ', '), '')
       FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-      WHERE n.nspname IN ('core','integrations','metrics','automation','audit')
+      WHERE n.nspname IN ('core','integrations','metrics','automation','audit','privacidade')
         AND p.prosecdef
         AND has_function_privilege('public', p.oid, 'EXECUTE')`);
     assert.equal(umaLinha(abertas), '', `definer aberta ao público: ${abertas}`);

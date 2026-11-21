@@ -1,10 +1,12 @@
 {
-  "name": "Coletor · YouTube Analytics (modelo)",
+  "name": "ORLA · YouTube · coletor",
   "settings": {
     "executionOrder": "v1",
-    "saveDataErrorExecution": "all",
-    "saveDataSuccessExecution": "all",
-    "timezone": "America/Sao_Paulo"
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "timezone": "America/Sao_Paulo",
+    "saveManualExecutions": false,
+    "callerPolicy": "workflowsFromSameOwner"
   },
   "nodes": [
     {
@@ -27,9 +29,110 @@
             },
             {
               "name": "modo"
+            },
+            {
+              "name": "coletaId"
             }
           ]
         }
+      }
+    },
+    {
+      "id": "obter-token",
+      "name": "Obter token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        20,
+        -200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=http://app:3000/api/v0/coleta/token",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ coletaId: $('Entrada').first().json.coletaId }) }}",
+        "options": {
+          "timeout": 20000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "ORLA · worker token"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "token-obtido",
+      "name": "Token obtido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        240,
+        -200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "token-obtido-c",
+              "leftValue": "={{ $json.statusCode === 200 && typeof $json.body?.token === 'string' && $json.body.token.length > 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "retomar-entrada",
+      "name": "Retomar entrada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        -300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return $('Entrada').all().map((item) => ({ json: item.json }));\n"
+      }
+    },
+    {
+      "id": "sem-token",
+      "name": "Sem token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        -100
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const resposta = $('Obter token').first().json ?? {};\nconst status = Number(resposta.statusCode ?? 0);\nconst motivo = String(resposta.body?.errors?.motivo ?? '');\nconst PEDE_REAUTORIZACAO = new Set(['reauth_pending', 'sem_token', 'conexao_revogada']);\n\nlet falha;\nif (status === 409 && PEDE_REAUTORIZACAO.has(motivo)) {\n  falha = { causa: 'reauth_pending', detalhe: `cofre de tokens: ${motivo}; reautorize a conexão` };\n} else if (status === 429) {\n  falha = { causa: 'limite_de_uso', detalhe: 'cofre de tokens: pedidos de token demais para esta execução', pausa: 'limite_temporario', minutos: 5 };\n} else if (status === 0 || status >= 500) {\n  falha = { causa: 'api_recusou', detalhe: `cofre de tokens indisponível (HTTP ${status || 'sem resposta'})` };\n} else {\n  falha = { causa: 'falha_coletor', detalhe: `cofre de tokens recusou o pedido (HTTP ${status}${motivo ? `, ${motivo}` : ''})` };\n}\n\nreturn [{ json: { linhas: [], volumetria: { linhas: 0, bytes: 0, requests: 0, duracaoMs: 0 }, falhas: [falha], avisos: [], requests: 0 } }];\n"
       }
     },
     {
@@ -43,7 +146,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const { fonte, janela } = $json;\nconst versaoApi = 'v2';\nconst canal = String(fonte.externalId).trim();\nconst base = `https://youtubeanalytics.googleapis.com/${versaoApi}/reports`;\nconst MAXIMO_DE_DIAS_POR_RECORTE = 31;\nconst MAXIMO_DE_VIDEOS = 25;\n\nconst consulta = (parametros) => `${base}?${Object.entries({ ids: `channel==${canal}`, ...parametros })\n  .map(([chave, valor]) => `${chave}=${encodeURIComponent(valor)}`).join('&')}`;\nconst periodo = { startDate: janela.start, endDate: janela.end };\nconst metricasDeAudiencia = 'views,estimatedMinutesWatched';\n\nconst dias = [];\nconst inicioDaJanela = new Date(`${janela.start}T00:00:00Z`).getTime();\nfor (let instante = new Date(`${janela.end}T00:00:00Z`).getTime(); instante >= inicioDaJanela && dias.length < MAXIMO_DE_DIAS_POR_RECORTE; instante -= 86400000) {\n  dias.push(new Date(instante).toISOString().slice(0, 10));\n}\n\nconst requisicoes = [\n  { rotulo: 'canal_dia', url: consulta({ ...periodo, metrics: 'views,estimatedMinutesWatched,subscribersGained,subscribersLost,estimatedRevenue', dimensions: 'day', sort: 'day' }) },\n  { rotulo: 'origem_trafego', url: consulta({ ...periodo, metrics: metricasDeAudiencia, dimensions: 'day,insightTrafficSourceType', sort: 'day' }) },\n  { rotulo: 'dispositivo', url: consulta({ ...periodo, metrics: metricasDeAudiencia, dimensions: 'day,deviceType', sort: 'day' }) },\n  { rotulo: 'local_reproducao', url: consulta({ ...periodo, metrics: metricasDeAudiencia, dimensions: 'day,insightPlaybackLocationType', sort: 'day' }) },\n  { rotulo: 'top_videos', url: consulta({ ...periodo, metrics: 'views', dimensions: 'video', sort: '-views', maxResults: String(MAXIMO_DE_VIDEOS) }) },\n  ...dias.map((dia) => ({ rotulo: 'pais', dia, url: consulta({ startDate: dia, endDate: dia, metrics: metricasDeAudiencia, dimensions: 'country', sort: '-views' }) })),\n  ...dias.map((dia) => ({ rotulo: 'audiencia', dia, url: consulta({ startDate: dia, endDate: dia, metrics: 'viewerPercentage', dimensions: 'ageGroup,gender' }) })),\n];\n\nconst inicio = Date.now();\nreturn requisicoes.map((requisicao) => ({ json: { inicio, versaoApi, fonte, canal, ...requisicao } }));\n"
+        "jsCode": "const { fonte, janela } = $json;\nconst versaoApi = 'v2';\nconst canal = String(fonte.externalId).trim();\nconst base = `https://youtubeanalytics.googleapis.com/${versaoApi}/reports`;\nconst MAXIMO_DE_DIAS_POR_RECORTE = 31;\nconst MAXIMO_DE_VIDEOS = 25;\n\nconst consulta = (parametros) => `${base}?${Object.entries({ ids: `channel==${canal}`, ...parametros })\n  .map(([chave, valor]) => `${chave}=${encodeURIComponent(valor)}`).join('&')}`;\nconst periodo = { startDate: janela.start, endDate: janela.end };\nconst metricasDeAudiencia = 'views,estimatedMinutesWatched';\n\nconst dias = [];\nconst inicioDaJanela = new Date(`${janela.start}T00:00:00Z`).getTime();\nfor (let instante = new Date(`${janela.end}T00:00:00Z`).getTime(); instante >= inicioDaJanela && dias.length < MAXIMO_DE_DIAS_POR_RECORTE; instante -= 86400000) {\n  dias.push(new Date(instante).toISOString().slice(0, 10));\n}\n\nconst requisicoes = [\n  { rotulo: 'canal_dia', url: consulta({ ...periodo, metrics: 'views,estimatedMinutesWatched,subscribersGained,subscribersLost', dimensions: 'day', sort: 'day' }) },\n  { rotulo: 'receita', url: consulta({ ...periodo, metrics: 'estimatedRevenue', dimensions: 'day', sort: 'day' }) },\n  { rotulo: 'origem_trafego', url: consulta({ ...periodo, metrics: metricasDeAudiencia, dimensions: 'day,insightTrafficSourceType', sort: 'day' }) },\n  { rotulo: 'dispositivo', url: consulta({ ...periodo, metrics: metricasDeAudiencia, dimensions: 'day,deviceType', sort: 'day' }) },\n  { rotulo: 'local_reproducao', url: consulta({ ...periodo, metrics: metricasDeAudiencia, dimensions: 'day,insightPlaybackLocationType', sort: 'day' }) },\n  { rotulo: 'top_videos', url: consulta({ ...periodo, metrics: 'views', dimensions: 'video', sort: '-views', maxResults: String(MAXIMO_DE_VIDEOS) }) },\n  ...dias.map((dia) => ({ rotulo: 'pais', dia, url: consulta({ startDate: dia, endDate: dia, metrics: metricasDeAudiencia, dimensions: 'country', sort: '-views' }) })),\n  ...dias.map((dia) => ({ rotulo: 'audiencia', dia, url: consulta({ startDate: dia, endDate: dia, metrics: 'viewerPercentage', dimensions: 'ageGroup,gender' }) })),\n];\n\nconst inicio = Date.now();\nreturn requisicoes.map((requisicao) => ({ json: { inicio, versaoApi, fonte, canal, ...requisicao } }));\n"
       }
     },
     {
@@ -58,8 +161,7 @@
       "parameters": {
         "method": "GET",
         "url": "={{ $json.url }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "googleOAuth2Api",
+        "authentication": "none",
         "options": {
           "response": {
             "response": {
@@ -74,12 +176,15 @@
               "batchInterval": 250
             }
           }
-        }
-      },
-      "credentials": {
-        "googleOAuth2Api": {
-          "id": "a-definir-pelo-provisioner",
-          "name": "a-definir-pelo-provisioner"
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Obter token').first().json.body.token }}"
+            }
+          ]
         }
       },
       "onError": "continueRegularOutput",
@@ -96,7 +201,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const etapa1 = $('Montar requisição').all().map((item) => item.json);\nconst respostas = $input.all().map((item) => item.json);\nconst contexto = etapa1[0];\nconst canal = contexto.canal;\nconst janela = $('Entrada').first().json.janela;\nconst base = `https://youtubeanalytics.googleapis.com/${contexto.versaoApi}/reports`;\nconst dataApi = 'https://www.googleapis.com/youtube/v3';\n\nconst indiceDoTopo = etapa1.findIndex((requisicao) => requisicao.rotulo === 'top_videos');\nconst respostaDoTopo = respostas[indiceDoTopo];\nconst topoOk = respostaDoTopo && !respostaDoTopo.error && respostaDoTopo.statusCode >= 200 && respostaDoTopo.statusCode < 300;\nconst idsDosVideos = topoOk ? (respostaDoTopo.body?.rows ?? []).map((linha) => String(linha[0])).filter(Boolean) : [];\n\nconst consulta = (parametros) => `${base}?${Object.entries({ ids: `channel==${canal}`, ...parametros })\n  .map(([chave, valor]) => `${chave}=${encodeURIComponent(valor)}`).join('&')}`;\nconst metricasDoVideo = 'views,estimatedMinutesWatched,averageViewDuration,likes,comments,shares,subscribersGained,subscribersLost';\n\nconst requisicoes = [\n  ...idsDosVideos.map((videoId) => ({\n    rotulo: 'video_dia',\n    videoId,\n    url: consulta({ startDate: janela.start, endDate: janela.end, metrics: metricasDoVideo, dimensions: 'day', filters: `video==${videoId}`, sort: 'day' }),\n  })),\n  ...(idsDosVideos.length > 0 ? [{\n    rotulo: 'videos',\n    url: `${dataApi}/videos?part=${encodeURIComponent('snippet,contentDetails,status')}&maxResults=50&id=${encodeURIComponent(idsDosVideos.join(','))}`,\n  }] : []),\n  { rotulo: 'playlists', url: `${dataApi}/playlists?part=${encodeURIComponent('snippet,contentDetails,status')}&maxResults=50&channelId=${encodeURIComponent(canal)}` },\n];\n\nreturn requisicoes.map((requisicao) => ({ json: { ...requisicao } }));\n"
+        "jsCode": "const etapa1 = $('Montar requisição').all().map((item) => item.json);\nconst respostas = $input.all().map((item) => item.json);\nconst contexto = etapa1[0];\nconst canal = contexto.canal;\nconst { janela, fonte } = $('Entrada').first().json;\nconst comDimensoes = fonte?.comDimensoes !== false;\nconst base = `https://youtubeanalytics.googleapis.com/${contexto.versaoApi}/reports`;\nconst dataApi = 'https://www.googleapis.com/youtube/v3';\n\nconst indiceDoTopo = etapa1.findIndex((requisicao) => requisicao.rotulo === 'top_videos');\nconst respostaDoTopo = respostas[indiceDoTopo];\nconst topoOk = respostaDoTopo && !respostaDoTopo.error && respostaDoTopo.statusCode >= 200 && respostaDoTopo.statusCode < 300;\nconst idsDosVideos = topoOk ? (respostaDoTopo.body?.rows ?? []).map((linha) => String(linha[0])).filter(Boolean) : [];\n\nconst consulta = (parametros) => `${base}?${Object.entries({ ids: `channel==${canal}`, ...parametros })\n  .map(([chave, valor]) => `${chave}=${encodeURIComponent(valor)}`).join('&')}`;\nconst metricasDoVideo = 'views,estimatedMinutesWatched,averageViewDuration,likes,comments,shares,subscribersGained,subscribersLost';\n\nconst requisicoes = [\n  ...idsDosVideos.map((videoId) => ({\n    rotulo: 'video_dia',\n    videoId,\n    url: consulta({ startDate: janela.start, endDate: janela.end, metrics: metricasDoVideo, dimensions: 'day', filters: `video==${videoId}`, sort: 'day' }),\n  })),\n  ...(comDimensoes && idsDosVideos.length > 0 ? [{\n    rotulo: 'videos',\n    url: `${dataApi}/videos?part=${encodeURIComponent('snippet,contentDetails,status')}&maxResults=50&id=${encodeURIComponent(idsDosVideos.join(','))}`,\n  }] : []),\n  ...(comDimensoes ? [{ rotulo: 'playlists', url: `${dataApi}/playlists?part=${encodeURIComponent('snippet,contentDetails,status')}&maxResults=50&channelId=${encodeURIComponent(canal)}` }] : []),\n];\n\nreturn requisicoes.map((requisicao) => ({ json: { ...requisicao } }));\n"
       }
     },
     {
@@ -111,8 +216,7 @@
       "parameters": {
         "method": "GET",
         "url": "={{ $json.url }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "googleOAuth2Api",
+        "authentication": "none",
         "options": {
           "response": {
             "response": {
@@ -127,12 +231,15 @@
               "batchInterval": 250
             }
           }
-        }
-      },
-      "credentials": {
-        "googleOAuth2Api": {
-          "id": "a-definir-pelo-provisioner",
-          "name": "a-definir-pelo-provisioner"
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Obter token').first().json.body.token }}"
+            }
+          ]
         }
       },
       "onError": "continueRegularOutput",
@@ -149,7 +256,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const etapa1 = $('Montar requisição').all().map((item) => item.json);\nconst respostas1 = $('Chamar API (analytics)').all().map((item) => item.json);\nconst etapa2 = $('Planejar etapa 2').all().map((item) => item.json);\nconst respostas2 = $input.all().map((item) => item.json);\nconst contexto = etapa1[0];\nconst todas = [\n  ...respostas1.map((resposta, indice) => ({ requisicao: etapa1[indice], resposta })),\n  ...respostas2.map((resposta, indice) => ({ requisicao: etapa2[indice], resposta })),\n];\nconst requests = todas.length;\nconst bytes = todas.reduce((total, { resposta }) => total + JSON.stringify(resposta?.body ?? {}).length, 0);\n\nfunction devolver(linhas, falhas) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - contexto.inicio },\n      falhas,\n      requests,\n      versaoApi: contexto.versaoApi,\n    },\n  }];\n}\n\nconst respostaOk = (resposta) => !resposta?.error && resposta?.statusCode >= 200 && resposta?.statusCode < 300;\nconst essencial = todas.find(({ requisicao }) => requisicao?.rotulo === 'canal_dia');\n\nif (essencial?.resposta?.error) {\n  const detalhe = essencial.resposta.error?.message ?? String(essencial.resposta.error);\n  return devolver([], [{ causa: 'api_recusou', detalhe: `falha de rede: ${detalhe}`.slice(0, 500) }]);\n}\n\nif (essencial && !respostaOk(essencial.resposta)) {\n  const recusada = essencial.resposta;\n  const erro = Array.isArray(recusada.body) ? recusada.body[0]?.error : recusada.body?.error;\n  const detalhe = String(erro?.message || `HTTP ${recusada.statusCode}`).slice(0, 500);\n  const configuracaoDoProjeto = recusada.statusCode === 429 || /SERVICE_DISABLED|accessNotConfigured|has not been used in project|RESOURCE_EXHAUSTED|RATE_LIMIT/.test(JSON.stringify(erro ?? {}));\n  const semAcesso = !configuracaoDoProjeto && (recusada.statusCode === 401 || recusada.statusCode === 403 || erro?.code === 190);\n  return devolver([], [{ causa: semAcesso ? 'reauth_pending' : 'api_recusou', detalhe }]);\n}\n\nconst motivoDaRecusa = (resposta) => {\n  if (resposta?.error) return `falha de rede: ${resposta.error?.message ?? String(resposta.error)}`;\n  const erro = Array.isArray(resposta?.body) ? resposta.body[0]?.error : resposta?.body?.error;\n  return String(erro?.message || `HTTP ${resposta?.statusCode}`);\n};\n\nfunction coletaIncompleta(recusas) {\n  const porTabela = new Map();\n  for (const { tabela, resposta } of recusas) {\n    const atual = porTabela.get(tabela) ?? { total: 0, motivo: motivoDaRecusa(resposta) };\n    porTabela.set(tabela, { ...atual, total: atual.total + 1 });\n  }\n  return [...porTabela].map(([tabela, { total, motivo }]) => ({\n    causa: 'coleta_incompleta',\n    detalhe: `${tabela}: ${total > 1 ? `${total} pedidos recusados, ` : ''}${motivo}`.slice(0, 500),\n  }));\n}\n\nconst lerTabela = (corpo) => {\n  const nomes = (corpo?.columnHeaders ?? []).map((coluna) => coluna.name);\n  return (corpo?.rows ?? []).map((linha) => Object.fromEntries(nomes.map((nome, indice) => [nome, linha[indice]])));\n};\n\nconst duracaoEmSegundos = (iso) => {\n  const partes = /^P(?:(\\d+)D)?(?:T(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+)S)?)?$/.exec(String(iso ?? ''));\n  if (!partes) return null;\n  const [, dias, horas, minutos, segundos] = partes.map((valor) => Number(valor ?? 0));\n  return dias * 86400 + horas * 3600 + minutos * 60 + segundos;\n};\n\nconst linhasDoRecorte = (tabela, coluna) => ({ resposta }) => lerTabela(resposta.body).map((linha) => ({\n  _tabela: tabela,\n  metricDate: linha.day,\n  categoria: linha[coluna],\n  views: Number(linha.views ?? 0),\n  minutesWatched: Number(linha.estimatedMinutesWatched ?? 0),\n}));\n\nconst tradutores = {\n  canal_dia: ({ resposta }) => lerTabela(resposta.body).map((linha) => ({\n    metricDate: linha.day ?? null,\n    views: Number(linha.views ?? 0),\n    minutesWatched: Number(linha.estimatedMinutesWatched ?? 0),\n    subscribersGained: Number(linha.subscribersGained ?? 0),\n    subscribersLost: Number(linha.subscribersLost ?? 0),\n    estimatedRevenue: Number(linha.estimatedRevenue ?? 0),\n  })),\n  origem_trafego: linhasDoRecorte('origem_trafego', 'insightTrafficSourceType'),\n  dispositivo: linhasDoRecorte('dispositivo', 'deviceType'),\n  local_reproducao: linhasDoRecorte('local_reproducao', 'insightPlaybackLocationType'),\n  pais: ({ requisicao, resposta }) => lerTabela(resposta.body).map((linha) => ({\n    _tabela: 'pais',\n    metricDate: requisicao.dia,\n    categoria: linha.country,\n    views: Number(linha.views ?? 0),\n    minutesWatched: Number(linha.estimatedMinutesWatched ?? 0),\n  })),\n  audiencia: ({ requisicao, resposta }) => lerTabela(resposta.body).map((linha) => ({\n    _tabela: 'audiencia',\n    metricDate: requisicao.dia,\n    faixaEtaria: linha.ageGroup,\n    genero: linha.gender,\n    percentualEspectadores: Number(linha.viewerPercentage ?? 0),\n  })),\n  video_dia: ({ requisicao, resposta }) => lerTabela(resposta.body).map((linha) => ({\n    _tabela: 'video_diario',\n    videoId: requisicao.videoId,\n    metricDate: linha.day,\n    views: Number(linha.views ?? 0),\n    minutesWatched: Number(linha.estimatedMinutesWatched ?? 0),\n    averageViewDuration: Number(linha.averageViewDuration ?? 0),\n    likes: Number(linha.likes ?? 0),\n    comments: Number(linha.comments ?? 0),\n    shares: Number(linha.shares ?? 0),\n    subscribersGained: Number(linha.subscribersGained ?? 0),\n    subscribersLost: Number(linha.subscribersLost ?? 0),\n  })),\n  videos: ({ resposta }) => (resposta.body?.items ?? []).map((video) => ({\n    _tabela: 'dim_video',\n    videoId: video.id,\n    titulo: video.snippet?.title ?? null,\n    duracaoSegundos: duracaoEmSegundos(video.contentDetails?.duration),\n    publicadoEm: video.snippet?.publishedAt ?? null,\n    privacidade: video.status?.privacyStatus ?? null,\n    categoriaId: video.snippet?.categoryId ?? null,\n  })),\n  playlists: ({ resposta }) => (resposta.body?.items ?? []).map((playlist) => ({\n    _tabela: 'dim_playlist',\n    playlistId: playlist.id,\n    titulo: playlist.snippet?.title ?? null,\n    privacidade: playlist.status?.privacyStatus ?? null,\n    qtdVideos: playlist.contentDetails?.itemCount ?? null,\n  })),\n};\n\nconst linhas = todas\n  .filter(({ requisicao, resposta }) => requisicao && tradutores[requisicao.rotulo] && respostaOk(resposta))\n  .flatMap((entrada) => tradutores[entrada.requisicao.rotulo](entrada));\n\nconst TABELA_DO_ROTULO = { 'video_dia': 'video_diario', 'videos': 'dim_video', 'playlists': 'dim_playlist' };\n\nconst incompletas = coletaIncompleta(todas\n  .filter(({ requisicao, resposta }) => requisicao && tradutores[requisicao.rotulo] && requisicao.rotulo !== 'canal_dia' && !respostaOk(resposta))\n  .map(({ requisicao, resposta }) => ({ tabela: TABELA_DO_ROTULO[requisicao.rotulo] ?? requisicao.rotulo, resposta })));\n\nif (linhas.length === 0) return devolver([], incompletas.length > 0 ? incompletas : [{ causa: 'sem_dados_no_periodo', detalhe: null }]);\nreturn devolver(linhas.map((linha) => ({ ...linha, versaoApi: contexto.versaoApi })), incompletas);\n"
+        "jsCode": "const etapa1 = $('Montar requisição').all().map((item) => item.json);\nconst respostas1 = $('Chamar API (analytics)').all().map((item) => item.json);\nconst etapa2 = $('Planejar etapa 2').all().map((item) => item.json);\nconst respostas2 = $input.all().map((item) => item.json);\nconst contexto = etapa1[0];\nconst todas = [\n  ...respostas1.map((resposta, indice) => ({ requisicao: etapa1[indice], resposta })),\n  ...respostas2.map((resposta, indice) => ({ requisicao: etapa2[indice], resposta })),\n];\nconst requests = todas.length;\nconst bytes = todas.reduce((total, { resposta }) => total + JSON.stringify(resposta?.body ?? {}).length, 0);\n\nconst avisos = [];\n\nfunction devolver(linhas, falhas) {\n  return [{\n    json: {\n      linhas,\n      volumetria: { linhas: linhas.length, bytes, requests, duracaoMs: Date.now() - contexto.inicio },\n      falhas,\n      avisos,\n      requests,\n      versaoApi: contexto.versaoApi,\n    },\n  }];\n}\n\nconst CONFIGURACAO_DO_PROJETO = /SERVICE_DISABLED|accessNotConfigured|has not been used in project/;\nconst SINAIS_DE_LIMITE = /RESOURCE_EXHAUSTED|RATE_LIMIT|rateLimitExceeded|userRateLimitExceeded|quotaExceeded|dailyLimitExceeded|Quota exceeded|Exhausted|Too many requests/i;\nconst SINAIS_DE_COTA_DIARIA = /dailyLimitExceeded|quotaExceeded|per day|PerDay|daily|Number of operations/i;\nconst ESCOPO_INSUFICIENTE = /ACCESS_TOKEN_SCOPE_INSUFFICIENT|insufficient authentication scopes/i;\nconst PERMISSAO_NEGADA = /PERMISSION_DENIED|caller does not have permission|does not have (sufficient )?permission|insufficientPermissions/i;\nfunction semPermissaoNoRecurso(statusCode, texto) {\n  return statusCode === 403 && PERMISSAO_NEGADA.test(texto) && !ESCOPO_INSUFICIENTE.test(texto) && !/DEVELOPER_TOKEN/.test(texto);\n}\nfunction mensagemSemAcesso() {\n  const alvo = typeof contexto === 'undefined' ? '' : String(contexto?.fonte?.externalId ?? '').split('locations/').pop();\n  return `Sem permissão no canal ${alvo} — a conta autorizada não acessa este canal`.replace('  ', ' ').slice(0, 500);\n}\nfunction falhaDaRecusa(statusCode, erro, detalhe) {\n  const texto = JSON.stringify(erro ?? {});\n  if (CONFIGURACAO_DO_PROJETO.test(texto)) return { causa: 'api_recusou', detalhe };\n  if (statusCode === 429 || SINAIS_DE_LIMITE.test(texto)) {\n    return { causa: 'limite_de_uso', detalhe: String(detalhe).slice(0, 500), pausa: SINAIS_DE_COTA_DIARIA.test(texto) ? 'cota_diaria' : 'limite_temporario', minutos: null };\n  }\n  if (/DEVELOPER_TOKEN/.test(texto)) return { causa: 'api_recusou', detalhe };\n  if (semPermissaoNoRecurso(statusCode, texto)) return { causa: 'sem_acesso', detalhe: mensagemSemAcesso() };\n  if (statusCode === 401 || statusCode === 403) return { causa: 'reauth_pending', detalhe };\n  return { causa: 'api_recusou', detalhe };\n}\n\n\nconst respostaOk = (resposta) => !resposta?.error && resposta?.statusCode >= 200 && resposta?.statusCode < 300;\nconst essencial = todas.find(({ requisicao }) => requisicao?.rotulo === 'canal_dia');\n\nif (essencial?.resposta?.error) {\n  const detalhe = essencial.resposta.error?.message ?? String(essencial.resposta.error);\n  return devolver([], [{ causa: 'api_recusou', detalhe: `falha de rede: ${detalhe}`.slice(0, 500) }]);\n}\n\nif (essencial && !respostaOk(essencial.resposta)) {\n  const recusada = essencial.resposta;\n  const erro = Array.isArray(recusada.body) ? recusada.body[0]?.error : recusada.body?.error;\n  const detalhe = String(erro?.message || `HTTP ${recusada.statusCode}`).slice(0, 500);\n  return devolver([], [falhaDaRecusa(recusada.statusCode, erro, detalhe)]);\n}\n\nconst motivoDaRecusa = (resposta) => {\n  if (resposta?.error) return `falha de rede: ${resposta.error?.message ?? String(resposta.error)}`;\n  const erro = Array.isArray(resposta?.body) ? resposta.body[0]?.error : resposta?.body?.error;\n  return String(erro?.message || `HTTP ${resposta?.statusCode}`);\n};\n\nfunction coletaIncompleta(recusas) {\n  const porTabela = new Map();\n  for (const { tabela, resposta } of recusas) {\n    const atual = porTabela.get(tabela) ?? { total: 0, motivo: motivoDaRecusa(resposta) };\n    porTabela.set(tabela, { ...atual, total: atual.total + 1 });\n  }\n  return [...porTabela].map(([tabela, { total, motivo }]) => ({\n    causa: 'coleta_incompleta',\n    detalhe: `${tabela}: ${total > 1 ? `${total} pedidos recusados, ` : ''}${motivo}`.slice(0, 500),\n  }));\n}\n\nconst lerTabela = (corpo) => {\n  const nomes = (corpo?.columnHeaders ?? []).map((coluna) => coluna.name);\n  return (corpo?.rows ?? []).map((linha) => Object.fromEntries(nomes.map((nome, indice) => [nome, linha[indice]])));\n};\n\nconst duracaoEmSegundos = (iso) => {\n  const partes = /^P(?:(\\d+)D)?(?:T(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+)S)?)?$/.exec(String(iso ?? ''));\n  if (!partes) return null;\n  const [, dias, horas, minutos, segundos] = partes.map((valor) => Number(valor ?? 0));\n  return dias * 86400 + horas * 3600 + minutos * 60 + segundos;\n};\n\nconst linhasDoRecorte = (tabela, coluna) => ({ resposta }) => lerTabela(resposta.body).map((linha) => ({\n  _tabela: tabela,\n  metricDate: linha.day,\n  categoria: linha[coluna],\n  views: Number(linha.views ?? 0),\n  minutesWatched: Number(linha.estimatedMinutesWatched ?? 0),\n}));\n\nconst consultaDeReceita = todas.find(({ requisicao }) => requisicao?.rotulo === 'receita');\nconst receitaOk = Boolean(consultaDeReceita) && respostaOk(consultaDeReceita.resposta);\nconst receitaSemPermissao = Boolean(consultaDeReceita) && !receitaOk && [401, 403].includes(consultaDeReceita.resposta?.statusCode);\nif (receitaSemPermissao) avisos.push({ tipo: 'receita_indisponivel', detalhe: 'canal sem monetização ou sem escopo de receita: estimatedRevenue fica nulo' });\nconst receitaPorDia = new Map(receitaOk ? lerTabela(consultaDeReceita.resposta.body).map((linha) => [linha.day, Number(linha.estimatedRevenue ?? 0)]) : []);\nconst receitaDoDia = (linha) => {\n  if (receitaPorDia.has(linha.day)) return receitaPorDia.get(linha.day);\n  if (linha.estimatedRevenue !== undefined && linha.estimatedRevenue !== null) return Number(linha.estimatedRevenue);\n  return receitaOk ? 0 : null;\n};\n\nconst tradutores = {\n  canal_dia: ({ resposta }) => lerTabela(resposta.body).map((linha) => ({\n    metricDate: linha.day ?? null,\n    views: Number(linha.views ?? 0),\n    minutesWatched: Number(linha.estimatedMinutesWatched ?? 0),\n    subscribersGained: Number(linha.subscribersGained ?? 0),\n    subscribersLost: Number(linha.subscribersLost ?? 0),\n    estimatedRevenue: receitaDoDia(linha),\n  })),\n  receita: () => [],\n  origem_trafego: linhasDoRecorte('origem_trafego', 'insightTrafficSourceType'),\n  dispositivo: linhasDoRecorte('dispositivo', 'deviceType'),\n  local_reproducao: linhasDoRecorte('local_reproducao', 'insightPlaybackLocationType'),\n  pais: ({ requisicao, resposta }) => lerTabela(resposta.body).map((linha) => ({\n    _tabela: 'pais',\n    metricDate: requisicao.dia,\n    categoria: linha.country,\n    views: Number(linha.views ?? 0),\n    minutesWatched: Number(linha.estimatedMinutesWatched ?? 0),\n  })),\n  audiencia: ({ requisicao, resposta }) => lerTabela(resposta.body).map((linha) => ({\n    _tabela: 'audiencia',\n    metricDate: requisicao.dia,\n    faixaEtaria: linha.ageGroup,\n    genero: linha.gender,\n    percentualEspectadores: Number(linha.viewerPercentage ?? 0),\n  })),\n  video_dia: ({ requisicao, resposta }) => lerTabela(resposta.body).map((linha) => ({\n    _tabela: 'video_diario',\n    videoId: requisicao.videoId,\n    metricDate: linha.day,\n    views: Number(linha.views ?? 0),\n    minutesWatched: Number(linha.estimatedMinutesWatched ?? 0),\n    averageViewDuration: Number(linha.averageViewDuration ?? 0),\n    likes: Number(linha.likes ?? 0),\n    comments: Number(linha.comments ?? 0),\n    shares: Number(linha.shares ?? 0),\n    subscribersGained: Number(linha.subscribersGained ?? 0),\n    subscribersLost: Number(linha.subscribersLost ?? 0),\n  })),\n  videos: ({ resposta }) => (resposta.body?.items ?? []).map((video) => ({\n    _tabela: 'dim_video',\n    videoId: video.id,\n    titulo: video.snippet?.title ?? null,\n    duracaoSegundos: duracaoEmSegundos(video.contentDetails?.duration),\n    publicadoEm: video.snippet?.publishedAt ?? null,\n    privacidade: video.status?.privacyStatus ?? null,\n    categoriaId: video.snippet?.categoryId ?? null,\n  })),\n  playlists: ({ resposta }) => (resposta.body?.items ?? []).map((playlist) => ({\n    _tabela: 'dim_playlist',\n    playlistId: playlist.id,\n    titulo: playlist.snippet?.title ?? null,\n    privacidade: playlist.status?.privacyStatus ?? null,\n    qtdVideos: playlist.contentDetails?.itemCount ?? null,\n  })),\n};\n\nconst linhas = todas\n  .filter(({ requisicao, resposta }) => requisicao && tradutores[requisicao.rotulo] && respostaOk(resposta))\n  .flatMap((entrada) => tradutores[entrada.requisicao.rotulo](entrada));\n\nconst TABELA_DO_ROTULO = { 'video_dia': 'video_diario', 'videos': 'dim_video', 'playlists': 'dim_playlist' };\n\nconst incompletas = coletaIncompleta(todas\n  .filter(({ requisicao, resposta }) => requisicao && tradutores[requisicao.rotulo] && requisicao.rotulo !== 'canal_dia' && !respostaOk(resposta) && !(requisicao.rotulo === 'receita' && receitaSemPermissao))\n  .map(({ requisicao, resposta }) => ({ tabela: TABELA_DO_ROTULO[requisicao.rotulo] ?? requisicao.rotulo, resposta })));\n\nif (linhas.length === 0) return devolver([], incompletas.length > 0 ? incompletas : [{ causa: 'sem_dados_no_periodo', detalhe: null }]);\nreturn devolver(linhas.map((linha) => ({ ...linha, versaoApi: contexto.versaoApi })), incompletas);\n"
       }
     }
   ],
@@ -158,7 +265,7 @@
       "main": [
         [
           {
-            "node": "Montar requisição",
+            "node": "Obter token",
             "type": "main",
             "index": 0
           }
@@ -203,6 +310,46 @@
         [
           {
             "node": "Normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter token": {
+      "main": [
+        [
+          {
+            "node": "Token obtido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token obtido?": {
+      "main": [
+        [
+          {
+            "node": "Retomar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sem token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retomar entrada": {
+      "main": [
+        [
+          {
+            "node": "Montar requisição",
             "type": "main",
             "index": 0
           }

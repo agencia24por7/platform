@@ -336,7 +336,7 @@ describe('parseMetaPages', () => {
 
 describe('proximaPaginaDoGraph', () => {
   it('segue só paging.next do próprio Graph', () => {
-    const graph = 'https:' + '/'.repeat(2) + 'graph.facebook.com/v23.0/me/accounts?after=x';
+    const graph = 'https:' + '/'.repeat(2) + 'graph.facebook.com/v27.0/me/accounts?after=x';
     assert.equal(proximaPaginaDoGraph({ paging: { next: graph } }), graph);
     assert.equal(proximaPaginaDoGraph({ paging: { next: 'https:' + '/'.repeat(2) + 'exemplo.com/x' } }), null);
     assert.equal(proximaPaginaDoGraph({ paging: {} }), null);

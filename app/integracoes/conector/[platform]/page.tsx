@@ -11,6 +11,7 @@ import {
   ROTULO_DA_PLATAFORMA,
   ROTULO_DO_RECURSO,
   concordaComRecurso,
+  precisaReautorizar,
   temRecursoParaVincular,
   veiculaAnuncio,
   type Connection,
@@ -32,6 +33,7 @@ import {
   vincularRecurso,
 } from '@/../app/integracoes/acoes';
 import { env } from '@/shared/config/env';
+import { provedorDaPlataforma } from '@/modules/privacidade/domain/revogacao';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,7 +63,7 @@ export default async function ConectorPage({
   searchParams,
 }: {
   params: Promise<{ platform: string }>;
-  searchParams: Promise<{ aviso?: string }>;
+  searchParams: Promise<{ aviso?: string; outraConta?: string }>;
 }) {
   const { platform } = await params;
   const plataforma = plataformaValida(platform);
@@ -72,16 +74,19 @@ export default async function ConectorPage({
   const organization = ctx.organization;
   const agencia = organization.type === 'agency';
   const podeVincular = canOperate(ctx.role);
-  const { aviso } = await searchParams;
+  const { aviso, outraConta } = await searchParams;
 
   const voltarPara = `/integracoes/conector/${plataforma}`;
 
-  const [todasConexoes, todasContas, todasAlcancaveis, tarefas, clientes] = await Promise.all([
+  const [todasConexoes, todasContas, todasAlcancaveis, tarefas, clientes, pedidosDeExclusao] = await Promise.all([
     modules().connections.listConnections(organization.id),
     modules().connections.listAccounts(organization.id),
     modules().discoveredAccounts.listAll(organization.id),
     modules().tasks.listRecentes(organization.id),
     modules().clients.list(organization.id),
+    provedorDaPlataforma(plataforma) === 'meta'
+      ? modules().pedidosDeExclusao.abertosDaOrganizacao(organization.id)
+      : Promise.resolve([]),
   ]);
 
   const conexoes = todasConexoes.filter(
@@ -119,8 +124,10 @@ export default async function ConectorPage({
     : [];
   const clientesPorId = new Map(clientes.map((cliente) => [cliente.id, cliente]));
 
-  const oauth = falaOauth(plataforma);
+  const oauth = falaOauth(plataforma) && !usaChaveDeApi(plataforma);
   const pronto = oauth && isConfigured(credenciaisDaPlataforma(plataforma), plataforma);
+  const inicioDoOauth = `/api/oauth/${plataforma}/start?returnTo=${encodeURIComponent(voltarPara)}`;
+  const aReautorizar = conexoes.filter((conexao) => precisaReautorizar(conexao));
 
   return (
     <Shell title={ROTULO_DA_PLATAFORMA[plataforma]} organization={organization} active="/integracoes">
@@ -134,6 +141,28 @@ export default async function ConectorPage({
       </div>
 
       <Feedback message={aviso} tone="info" />
+
+      {outraConta && aReautorizar.length > 0 ? (
+        <div className="aviso" role="alert">
+          <strong>Você autorizou com outra conta.</strong> Isso criou uma conexão nova; a conexão pendente de{' '}
+          {aReautorizar.map((conexao) => conexao.accountEmail ?? conexao.externalId).join(', ')} continua sem token e as
+          contas vinculadas a ela não voltam a coletar. Reautorize entrando com essa mesma conta. Não remova a conexão
+          pendente para "trocar de conta": remover solta os vínculos dos clientes e, no YouTube, apaga os dados do
+          BigQuery (ADR 0032, runbook do corte).
+        </div>
+      ) : null}
+
+      {aReautorizar.length > 0 ? (
+        <div className="aviso" role="status">
+          <strong>
+            {aReautorizar.length === 1 ? 'Uma conexão precisa' : `${aReautorizar.length} conexões precisam`} ser
+            reautorizada{aReautorizar.length === 1 ? '' : 's'}.
+          </strong>{' '}
+          {oauth
+            ? 'Use Reautorizar e entre com a mesma conta que concedeu o acesso (o e-mail aparece na lista): a conexão volta com o mesmo nome, as mesmas contas vinculadas e o histórico de coleta.'
+            : 'Cole a chave de novo no formulário abaixo: a conexão volta com as mesmas contas vinculadas e o histórico de coleta.'}
+        </div>
+      ) : null}
 
       <section className="fornecedor">
         <header className="fornecedor__head">
@@ -157,10 +186,7 @@ export default async function ConectorPage({
             ))}
             {oauth ? (
               pronto ? (
-                <Link
-                  className="btn btn--compacto"
-                  href={`/api/oauth/${plataforma}/start?returnTo=${encodeURIComponent(voltarPara)}`}
-                >
+                <Link className="btn btn--compacto" href={inicioDoOauth}>
                   {conexoes.length > 0 ? 'Autorizar outra conta' : 'Autorizar'}
                 </Link>
               ) : (
@@ -198,6 +224,19 @@ export default async function ConectorPage({
                         <span className="row">
                           <span className={`dot ${PONTO_DO_ESTADO[conexao.status]}`} />
                           {conexao.status}
+                          {precisaReautorizar(conexao) ? (
+                            oauth && pronto ? (
+                              <Link
+                                className="btn btn--compacto"
+                                href={inicioDoOauth}
+                                title="Entre com a mesma conta que concedeu o acesso: a mesma conexão é renovada, com os vínculos e o histórico."
+                              >
+                                Reautorizar
+                              </Link>
+                            ) : (
+                              <span className="pill pill--warn">{oauth ? 'reautorizar' : 'cole a chave de novo'}</span>
+                            )
+                          ) : null}
                         </span>
                       </td>
                       <td className="muted">{conexao.authorizedAt.toLocaleString('pt-BR')}</td>
@@ -209,7 +248,7 @@ export default async function ConectorPage({
                             <BotaoDeEnvio
                               className="btn btn--compacto"
                               pendente="Removendo…"
-                              title="Apaga a credencial do cofre, para a coleta e solta as contas dos clientes. O histórico de métricas fica."
+                              title="Revoga o acesso no provedor quando possível, apaga o token do cofre, para a coleta e solta as contas dos clientes. O histórico de métricas fica."
                             >
                               Remover
                             </BotaoDeEnvio>
@@ -224,6 +263,25 @@ export default async function ConectorPage({
           </div>
         ) : null}
       </section>
+
+      {pedidosDeExclusao.length > 0 ? (
+        <div className="aviso" role="status">
+          <strong>Pedido de exclusão de dados recebido da Meta.</strong> Quem autorizou removeu o app da conta do
+          Facebook e pediu a exclusão dos dados. Remova a conexão abaixo e siga
+          <span className="mono"> docs/lgpd/atendimento-ao-titular.md</span> (pedidos de exclusão da Meta) para concluir.
+          <ul>
+            {pedidosDeExclusao.map((pedido) => (
+              <li key={`${pedido.codigo}-${pedido.connectionId}`}>
+                código <span className="mono">{pedido.codigo}</span>, {pedido.situacao.replace('_', ' ')}, recebido em{' '}
+                {pedido.criadoEm.toLocaleDateString('pt-BR')}
+                {porConexao.get(pedido.connectionId)
+                  ? ` · conexão ${porConexao.get(pedido.connectionId)!.accountEmail ?? porConexao.get(pedido.connectionId)!.externalId}`
+                  : ''}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {plataforma === 'meta' ? (
         <div className="aviso">
