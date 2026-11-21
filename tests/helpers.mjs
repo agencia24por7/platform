@@ -2,7 +2,7 @@ import { createCipheriv, createHash, createHmac, hkdfSync, randomBytes, randomUU
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
-export const BASE = 'http://localhost:3000';
+export const BASE = process.env.TRIA_TEST_BASE ?? 'http://localhost:3000';
 
 export function env() {
   return Object.fromEntries(
@@ -44,7 +44,7 @@ const SESSION_COOKIE = 'tria_sessao';
 function psql(sql) {
   return execFileSync(
     'docker',
-    ['exec', '-i', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql],
+    ['exec', '-i', process.env.TRIA_TEST_PG ?? 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql],
     { encoding: 'utf8' },
   )
     .trim()

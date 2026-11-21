@@ -1,3 +1,5 @@
+import type { OrganizationType } from '../../../organizations/domain/organization.ts';
+
 export const PRESETS_DE_SECOES = ['essencial', 'completo', 'personalizado'] as const;
 export type PresetDeSecoes = (typeof PRESETS_DE_SECOES)[number];
 
@@ -10,6 +12,7 @@ export function secoesDoPreset(preset: PresetDeSecoes, todas: readonly string[],
 }
 
 export type DadosDaMensagem = {
+  readonly tipo?: OrganizationType;
   readonly cliente: string;
   readonly organizacao: string;
   readonly link: string;
@@ -32,9 +35,11 @@ function dataCurta(data: Date): string {
 export function mensagemProntaDoLink(dados: DadosDaMensagem): string {
   const lista = dados.secoes.map((s) => `• ${s}`).join('\n');
   const partes = [
-    `Olá, equipe ${dados.cliente}!`,
+    dados.tipo === 'advertiser' ? `Olá! Convidei você para ajudar com ${dados.cliente}.` : `Olá, equipe ${dados.cliente}!`,
     '',
-    `Para a ${dados.organizacao} trabalhar com o máximo de contexto sobre o negócio de vocês, preparamos um mapa rápido para preencher. Leva cerca de ${dados.minutosEstimados} minutos, salva sozinho e dá para parar e continuar depois.`,
+    dados.tipo === 'advertiser'
+      ? `Para termos o máximo de contexto sobre o negócio, há um mapa rápido para preencher. Leva cerca de ${dados.minutosEstimados} minutos, salva sozinho e dá para parar e continuar depois.`
+      : `Para a ${dados.organizacao} trabalhar com o máximo de contexto sobre o negócio de vocês, preparamos um mapa rápido para preencher. Leva cerca de ${dados.minutosEstimados} minutos, salva sozinho e dá para parar e continuar depois.`,
     '',
     'O que vamos perguntar:',
     lista,

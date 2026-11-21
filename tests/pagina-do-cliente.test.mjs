@@ -5,7 +5,7 @@ import { after, before, describe, it } from 'node:test';
 import { BASE, acaoComCampo, appIsUp, browse, ensureUser, signIn, signOut, submitAction } from './helpers.mjs';
 
 const dono = (sql) =>
-  execFileSync('docker', ['exec', '-i', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
+  execFileSync('docker', ['exec', '-i', process.env.TRIA_TEST_PG ?? 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
     encoding: 'utf8',
   })
     .trim()
@@ -56,16 +56,76 @@ describe('página do cliente: abas, papéis e formulário público', { concurren
 
   after(() => signOut());
 
-  it('cada aba responde para quem administra', async () => {
+  it('cada bloco e seção responde para quem administra', async () => {
     signIn(pessoas.owner);
-    for (const aba of ['', '/contexto', '/brain', '/dados', '/acessos', '/configuracoes']) {
-      const { status, texto } = await html(`/clientes/${cliente}${aba}`);
-      assert.equal(status, 200, `aba ${aba || 'visão geral'}`);
+    for (const rota of ['/conexoes', '/conexoes?secao=fontes', '/conexoes?secao=pedir', '/contexto', '/contexto?secao=brain']) {
+      const { status, texto } = await html(`/clientes/${cliente}${rota}`);
+      assert.equal(status, 200, `rota ${rota}`);
       assert.ok(texto.includes(`Café ${sufixo}`));
     }
-    const { texto } = await html(`/clientes/${cliente}/acessos`);
-    assert.ok(texto.includes('Convite de integração'));
-    assert.ok(texto.includes('Enviar mapa de contexto'));
+    const { texto } = await html(`/clientes/${cliente}/conexoes?secao=pedir`);
+    assert.ok(texto.includes('Pedir ao cliente'));
+    assert.ok(texto.includes('Pronto para planejar'));
+  });
+
+  it('rotas antigas redirecionam para o destino da tabela do ADR 0036', async () => {
+    signIn(pessoas.owner);
+    const casos = [
+      ['', '/conexoes'],
+      ['/dados', '/conexoes?secao=fontes'],
+      ['/acessos', '/conexoes?secao=pedir'],
+      ['/acessos?enviar=contexto', '/conexoes?enviar=contexto&secao=pedir'],
+      ['/brain', '/contexto?secao=brain'],
+      ['/configuracoes', '/conexoes'],
+      ['/dados?feito=Ok', '/conexoes?feito=Ok&secao=fontes'],
+    ];
+    for (const [antiga, nova] of casos) {
+      const resposta = await browse(`/clientes/${cliente}${antiga}`);
+      assert.ok([301, 302, 307, 308].includes(resposta.status), `${antiga || 'raiz'}: ${resposta.status}`);
+      assert.equal(new URL(resposta.headers.get('location'), BASE).pathname + new URL(resposta.headers.get('location'), BASE).search, `/clientes/${cliente}${nova}`);
+    }
+  });
+
+  it('cliente de outra organização ou excluído dá 404 em todas as rotas novas e antigas', async () => {
+    const outraOrg = dono(`INSERT INTO core.organizations (name, slug, type) VALUES ('Outra ${sufixo}', 'outra-${sufixo}', 'agency') RETURNING id`);
+    const alheio = dono(`INSERT INTO core.clients (organization_id, name, business_model) VALUES ('${outraOrg}', 'Alheio ${sufixo}', 'ecommerce') RETURNING id`);
+    const excluido = dono(`INSERT INTO core.clients (organization_id, name, business_model, excluido_em, excluido_por) VALUES ('${org}', 'Excluído ${sufixo}', 'ecommerce', now(), '${pessoas.owner}') RETURNING id`);
+    signIn(pessoas.owner);
+    for (const id of [alheio, excluido]) {
+      for (const rota of ['', '/conexoes', '/conexoes?secao=pedir', '/contexto', '/contexto?secao=brain', '/dados', '/acessos', '/brain', '/configuracoes']) {
+        assert.equal((await browse(`/clientes/${id}${rota}`)).status, 404, `${id}${rota}`);
+      }
+    }
+  });
+
+  it('existe um único ponto de entrada para conectar na página de conexões', async () => {
+    signIn(pessoas.owner);
+    for (const rota of ['/conexoes', '/conexoes?secao=fontes']) {
+      const resposta = await browse(`/clientes/${cliente}${rota}`);
+      const corpo = (await resposta.text()).replaceAll('<!-- -->', '').replace(/<script[\s\S]*?<\/script>/g, '');
+      assert.ok(corpo.includes('Pronto para planejar'), `a prontidão precisa carregar em ${rota}`);
+      const entradas = [...corpo.matchAll(/<a [^>]*>((?:Conectar|Vincular)[^<]*)<\/a>/g)];
+      assert.equal(entradas.length, 1, rota);
+      const noCabecalho = entradas[0].index < corpo.indexOf('id="t-fontes"');
+      assert.equal(noCabecalho, entradas[0][1] !== 'Conectar conta', 'ação de conexão no cabeçalho esconde o botão de Fontes; sem ela, o botão é o de Fontes');
+    }
+  });
+
+  it('link público não traz campo não compartilhável nem anotação interna', async () => {
+    const entrada = (campo, valor, compartilhavel) =>
+      dono(
+        `INSERT INTO core.client_context_entries (organization_id, client_id, section, field_key, value, source, shareable)
+         VALUES ('${org}', '${cliente}', 'empresa', '${campo}', to_jsonb('${valor}'::text), 'equipe', ${compartilhavel})
+         ON CONFLICT DO NOTHING RETURNING id`,
+      );
+    entrada('notas_internas_empresa', `SEGREDO-INTERNO-${sufixo}`, false);
+    entrada('descricao_do_cliente', `PRIVADO-DA-EQUIPE-${sufixo}`, false);
+    const { token } = linkAtivo();
+    signOut();
+    const corpo = await fetch(`${BASE}/contexto/${token}`).then((r) => r.text());
+    assert.ok(corpo.includes('Mapa de contexto'));
+    assert.ok(!corpo.includes(`SEGREDO-INTERNO-${sufixo}`), 'anotação interna vazou');
+    assert.ok(!corpo.includes(`PRIVADO-DA-EQUIPE-${sufixo}`), 'campo não compartilhável vazou');
   });
 
   it('cliente de outra organização ou id inválido dá 404', async () => {
@@ -76,33 +136,33 @@ describe('página do cliente: abas, papéis e formulário público', { concurren
 
   it('quem opera edita o contexto e envia o mapa, mas não cria convite de integração', async () => {
     signIn(pessoas.operator);
-    const { texto } = await html(`/clientes/${cliente}/acessos`);
-    assert.ok(texto.includes('Enviar mapa de contexto'));
-    assert.ok(!texto.includes(`/clientes/${cliente}/convite/novo`), 'convite de integração é só de quem administra');
+    const { texto } = await html(`/clientes/${cliente}/conexoes?secao=pedir`);
+    assert.ok(texto.includes('Pedir ao cliente'));
+    assert.ok(!texto.includes('Conectar contas'), 'plataformas do convite são só de quem administra');
   });
 
   it('quem só vê não recebe ações de edição', async () => {
     signIn(pessoas.viewer);
-    const acessos = await html(`/clientes/${cliente}/acessos`);
+    const acessos = await html(`/clientes/${cliente}/conexoes?secao=pedir`);
     assert.equal(acessos.status, 200);
     assert.ok(!acessos.texto.includes('Gerar link'));
-    assert.ok(!acessos.texto.includes('>Enviar mapa de contexto<'));
-    const dados = await html(`/clientes/${cliente}/dados`);
-    assert.ok(!dados.texto.includes('Vincular conta ou fonte'));
+    assert.ok(!acessos.texto.includes('>Pedir ao cliente<</button>'));
+    const dados = await html(`/clientes/${cliente}/conexoes?secao=fontes`);
+    assert.ok(!dados.texto.includes('>Conectar conta<'));
   });
 
   it('revogar link: quem só vê é recusado, quem opera revoga', async () => {
     const { id } = linkAtivo();
     signIn(pessoas.owner);
-    const acao = await acaoComCampo(`/clientes/${cliente}/acessos`, 'linkId');
+    const acao = await acaoComCampo(`/clientes/${cliente}/conexoes?secao=pedir`, 'linkId');
 
     signIn(pessoas.viewer);
-    const recusado = await submitAction(`/clientes/${cliente}/acessos`, acao, { clientId: cliente, linkId: id });
+    const recusado = await submitAction(`/clientes/${cliente}/conexoes?secao=pedir`, acao, { clientId: cliente, linkId: id });
     assert.match(decodeURIComponent(recusado.location ?? recusado.redirectedTo ?? ''), /erro=/);
     assert.equal(dono(`SELECT revoked_at IS NULL FROM core.client_context_links WHERE id = '${id}'`), 't');
 
     signIn(pessoas.operator);
-    const aceito = await submitAction(`/clientes/${cliente}/acessos`, acao, { clientId: cliente, linkId: id });
+    const aceito = await submitAction(`/clientes/${cliente}/conexoes?secao=pedir`, acao, { clientId: cliente, linkId: id });
     assert.match(decodeURIComponent(aceito.location ?? aceito.redirectedTo ?? ''), /feito=/);
     assert.equal(dono(`SELECT revoked_at IS NOT NULL FROM core.client_context_links WHERE id = '${id}'`), 't');
   });

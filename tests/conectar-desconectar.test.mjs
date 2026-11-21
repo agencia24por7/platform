@@ -4,7 +4,7 @@ import { before, describe, it } from 'node:test';
 import { BASE, acaoComCampo, appIsUp, browse, ensureUser, get, makeOwner, signIn, signOut, sqlDeConexao, submitAction } from './helpers.mjs';
 
 const dono = (sql) =>
-  execFileSync('docker', ['exec', '-i', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
+  execFileSync('docker', ['exec', '-i', process.env.TRIA_TEST_PG ?? 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
     encoding: 'utf8',
   }).trim();
 
@@ -164,7 +164,7 @@ describe('recurso descoberto: vincular, mover e desvincular, em toda plataforma 
           clienteA,
         );
 
-        const origem = `/clientes/${clienteA}/dados`;
+        const origem = `/clientes/${clienteA}/conexoes?secao=fontes`;
         const mover = await acaoComCampo(origem, 'destinoId');
         aprovado(await submitAction(origem, mover, { clientId: clienteA, recursoId: recurso, destinoId: clienteB }));
         assert.equal(estadoDoRecurso(recurso), `linked|${clienteB}`);

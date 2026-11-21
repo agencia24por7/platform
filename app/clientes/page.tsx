@@ -4,9 +4,20 @@ import { Readiness } from '@/../app/_components/Readiness';
 import { Shell } from '@/../app/_components/Shell';
 import { modules } from '@/composition';
 import type { ClientWithAccounts } from '@/modules/clients/domain/client';
+import { carregarProntidao } from '@/../app/clientes/[id]/_dados';
+import { Icone } from '@/../app/clientes/[id]/_componentes/Icones';
+import { ROTULO_DO_VEREDITO, type Veredito } from '@/modules/clients/domain/painel/prontidao';
+import { podeCadastrarCliente } from '@/modules/clients/domain/painel/permissoes';
+import { vocabularioDe } from '@/modules/organizations/domain/vocabulario';
+import { ORGANIZACAO_INTEIRA, escopoDeCliente } from '@/shared/db/escopo';
 import { requireContext } from '@/shared/http/currentOrganization';
 
 export const dynamic = 'force-dynamic';
+
+const LIMITE_DE_PRONTIDAO = 30;
+const LOTE_DE_PRONTIDAO = 4;
+const CLASSE_DO_VEREDITO: Record<Veredito, string> = { sim: 'pill--ok', parcial: 'pill--warn', nao: 'pill--danger' };
+const ICONE_DO_VEREDITO = { sim: 'ok', parcial: 'parcial', nao: 'nao' } as const;
 
 const SITUACOES = [
   { valor: 'active', rotulo: 'Ativo', pill: 'pill--ok' },
@@ -35,7 +46,8 @@ function primeiro(valor: string | readonly string[] | undefined): string | undef
 }
 
 export default async function ClientsPage({ searchParams }: { searchParams: Promise<RawBusca> }) {
-  const organization = (await requireContext()).organization;
+  const contexto = await requireContext();
+  const organization = contexto.organization;
 
   const bruto = await searchParams;
   const filtro: Busca = { situacao: primeiro(bruto.situacao), busca: primeiro(bruto.busca) };
@@ -45,8 +57,13 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
     modules().connections.listConnections(organization.id),
     modules().connections.listAccounts(organization.id),
   ]);
-  const noun = organization.type === 'advertiser' ? 'Negócios' : 'Clientes';
-  const substantivo = noun === 'Negócios' ? 'negócio' : 'cliente';
+  const vocabulario = vocabularioDe(organization.type);
+  const noun = vocabulario.clientes;
+  const substantivo = vocabulario.cliente;
+  const ehAnunciante = organization.type === 'advertiser';
+  if (ehAnunciante && todosClientes.length === 1 && !filtro.situacao && !filtro.busca && (await escopoDeCliente(organization.id)) === ORGANIZACAO_INTEIRA) {
+    redirect(`/clientes/${todosClientes[0]!.id}`);
+  }
 
   const termo = filtro.busca?.trim().toLowerCase() ?? '';
   const clients = todosClientes.filter((client) => {
@@ -54,6 +71,15 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
     if (termo && !client.name.toLowerCase().includes(termo)) return false;
     return true;
   });
+  const prontidoes = new Map<string, Awaited<ReturnType<typeof carregarProntidao>>>();
+  const paraAvaliar = clients.filter((client) => client.status !== 'archived').slice(0, LIMITE_DE_PRONTIDAO);
+  for (let i = 0; i < paraAvaliar.length; i += LOTE_DE_PRONTIDAO) {
+    await Promise.all(
+      paraAvaliar.slice(i, i + LOTE_DE_PRONTIDAO).map(async (client) => {
+        prontidoes.set(client.id, await carregarProntidao(organization.id, client.id));
+      }),
+    );
+  }
   const filtrando = Boolean(filtro.situacao) || termo.length > 0;
 
   return (
@@ -62,14 +88,17 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
         <div>
           <div className="page__title">{noun}</div>
           <div className="page__sub">
-            Rede e filial formam hierarquia de um nível. Cada cliente recebe contas de anúncio próprias,
-            vinculadas a uma autorização da organização.
+            {ehAnunciante
+              ? 'Cada negócio tem as próprias contas de anúncio e o próprio contexto.'
+              : 'Rede e filial formam hierarquia de um nível. Cada cliente recebe contas de anúncio próprias, vinculadas a uma autorização da organização.'}
           </div>
         </div>
         <div className="page__actions">
-          <Link className="btn btn--primary" href="/clientes/novo">
-            Novo {substantivo}
-          </Link>
+          {podeCadastrarCliente(organization.type, contexto.role) && contexto.clientIds === null ? (
+            <Link className="btn btn--primary" href="/clientes/novo">
+              Novo {substantivo}
+            </Link>
+          ) : null}
         </div>
       </div>
 
@@ -136,6 +165,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
                   <th>Modelo</th>
                   <th className="num">Contas</th>
                   <th>Situação</th>
+                  <th>Pronto para planejar</th>
                   <th />
                 </tr>
               </thead>
@@ -160,6 +190,16 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
                           <span className="dot" />
                           {situacao.rotulo}
                         </span>
+                      </td>
+                      <td>
+                        {prontidoes.get(client.id) ? (
+                          <span className={`pill ${CLASSE_DO_VEREDITO[prontidoes.get(client.id)!.veredito]}`}>
+                            <Icone nome={ICONE_DO_VEREDITO[prontidoes.get(client.id)!.veredito]} tamanho={14} />
+                            {ROTULO_DO_VEREDITO[prontidoes.get(client.id)!.veredito]}
+                          </span>
+                        ) : (
+                          <span className="subtle">—</span>
+                        )}
                       </td>
                       <td>
                         <Link className="btn" href={`/clientes/${client.id}`}>

@@ -8,6 +8,7 @@ import { encodeStateCookie } from '@/modules/connections/domain/tenantBinding';
 import { convidavelPorLink } from '@/modules/connections/domain/integrationInvite';
 import {
   PROVIDERS,
+  isSafeReturnPath,
   authorizeUrlFor,
   falaOauth,
   isConfigured,
@@ -71,6 +72,8 @@ export async function GET(
     configId: credentials.configId,
   });
 
+  const nao = request.nextUrl.searchParams.get('nao') ?? '';
+  const retorno = /^[a-z0-9_,]{1,120}$/.test(nao) ? `/convite/${token}?nao=${nao}` : `/convite/${token}`;
   const response = NextResponse.redirect(destination);
   const options = {
     httpOnly: true,
@@ -84,7 +87,7 @@ export async function GET(
     encodeStateCookie(
       {
         state,
-        returnTo: `/convite/${token}`,
+        returnTo: isSafeReturnPath(retorno) ? retorno : `/convite/${token}`,
         organizationId: resolvido.organizationId,
         userId: null,
         inviteItemId: resolvido.itemId,
