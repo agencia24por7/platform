@@ -27,7 +27,7 @@ orquestrador, backfill, tarefas de conta, jobs da plataforma e os coletores/exec
 
 Nunca altera workflow com tag credaz/agencia. Ordem: alertas, genéricos, backfill · janela, demais
 (os ids dos sub-workflows e do fluxo de erro são resolvidos pela nota de origem já implantada).
-Workflows antigos por conexão ("Coletor · ORLA · coletor · …") são ignorados: remova com scripts/n8n-limpar-legado.mjs.`;
+Workflows antigos por conexão ("Coletor · ORLA · coletor · …") são ignorados (a limpeza foi concluída em 2026-11-21, ADR 0035).`;
 
 const argumentos = process.argv.slice(2);
 if (argumentos.some((a) => ['--help', '-h', '--ajuda'].includes(a))) {
@@ -142,7 +142,7 @@ async function main() {
   const contagem = resultados.reduce((acc, r) => ({ ...acc, [r.acao]: (acc[r.acao] ?? 0) + 1 }), {});
   console.log(`\n${aplicar ? 'Aplicado' : 'Simulação (use --aplicar para gravar)'}:`, contagem);
   if (legados.length > 0) {
-    console.log(`${legados.length} workflow(s) por conexão do modelo antigo ignorado(s): rode scripts/n8n-limpar-legado.mjs (ADR 0032).`);
+    console.log(`${legados.length} workflow(s) por conexão do modelo antigo ignorado(s): apague-os pela interface do n8n (ADR 0035).`);
   }
 
   if (resultados.some((r) => ['falhou', 'bloqueado'].includes(r.acao))) process.exitCode = 1;

@@ -175,10 +175,7 @@ até não sobrar `reauth_pending` que deveria voltar. Lead Ads perde o que passa
 
 ## 9. Limpeza do n8n — só depois do piloto aprovado (H)
 
-```sh
-npm run n8n:limpar-legado                      # simulação, chave de DONO; aborta sem ela
-npm run n8n:limpar-legado -- --aplicar         # repetir até falhas = 0
-```
+Concluído em 2026-11-21 (24 itens, 0 pendências); script `n8n:limpar-legado` removido junto da 0123 (ADR 0035).
 
 Verificação: `SELECT count(*) FROM integrations.corte_para_cofre_refs WHERE limpo_em IS NULL;` = 0.
 
@@ -197,12 +194,22 @@ Restaurar o backup lógico: `gcloud storage cp gs://tria-platform-tria-producao-
 (conta de dono), parar `app`/`n8n`, `gunzip -c ... | docker exec -i orla-postgres psql -U postgres` num banco
 recriado. Restaurar o snapshot: novo disco a partir do snapshot e `data_disk_source_snapshot` no Terraform (ADR 0002).
 
+## Release 0123 (remoção do legado do cofre)
+
+A `0123_remover_legado_do_cofre.sql` está em `db/migrations/` e em `db/corte-gate.txt` (é um `DROP`): o deploy só a
+aplica com `autorizar_corte=true` e a marca do pre-flight da mesma release. Antes de disparar, confirmar na VM:
+
+```sql
+SELECT count(*) FROM integrations.corte_para_cofre_refs WHERE limpo_em IS NULL;  -- 0
+```
+
+A própria migração recusa se houver linha sem `limpo_em` ou conexão com `credential_ref`/`coletor_ref`/`executor_ref`.
+Depois dela, não há volta ao modelo antigo sem restaurar backup (ADR 0035).
+
 ## Depois da release
 
 - Remover a variável `RELEASE_CORTE_AUTORIZADO`/`BQ_DDL_APLICADO` do repositório, se foram criadas.
-- Release seguinte: mover `db/pendentes/0123_remover_legado_do_cofre.sql` para `db/migrations/` (apaga
-  `corte_para_cofre_refs` e as colunas legadas; recusa se a limpeza não terminou) e **acrescentar `0123_*` em
-  `db/corte-gate.txt`** (é um `DROP`).
+- Release 0123: ver a seção "Release 0123" abaixo.
 - Job de recifragem após rotação do KMS (ADR 0032, pendências).
 - Monitoramento: workflow `ORLA · plataforma · alertas de falha` (ligado a todos os workflows da plataforma por
   `errorWorkflow`), página Coletas, `ORLA · tokens · renovação` a cada 6 h, `npm run bq:verificar -- --prod` diário

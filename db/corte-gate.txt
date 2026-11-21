@@ -4,3 +4,4 @@
 # Procedimento: docs/release/2026-11-release-cofre-e-contexto.md
 0121_corte_para_cofre.sql
 0122_cofre_modo_unico.sql
+0123_remover_legado_do_cofre.sql
