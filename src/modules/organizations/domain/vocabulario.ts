@@ -13,6 +13,13 @@ export type Vocabulario = {
   readonly descricaoDoCicloDeVida: string;
   readonly nomeDaOrganizacao: string;
   readonly enviarMapaNoPerfil: boolean;
+  readonly rotuloDeCompartilhar: string;
+  readonly dicaDeCompartilhar: string;
+  readonly seloDoCompartilhado: string;
+  readonly dicaDoSelo: string;
+  readonly seloInterno: string;
+  readonly avisoDeCompartilhou: string;
+  readonly avisoDeDescompartilhou: string;
 };
 
 const AGENCIA: Vocabulario = {
@@ -28,6 +35,13 @@ const AGENCIA: Vocabulario = {
   descricaoDoCicloDeVida: 'Cuida da equipe, das conexões e do ciclo de vida dos clientes.',
   nomeDaOrganizacao: 'Nome da agência',
   enviarMapaNoPerfil: true,
+  rotuloDeCompartilhar: 'Compartilhável com o cliente',
+  dicaDeCompartilhar: 'Mostra ao cliente, no formulário enviado por link, o que a equipe já preencheu nesta seção',
+  seloDoCompartilhado: 'cliente vê',
+  dicaDoSelo: 'O cliente vê esta informação no formulário',
+  seloInterno: 'só a equipe vê',
+  avisoDeCompartilhou: 'O que já está preenchido nesta seção passa a aparecer para o cliente.',
+  avisoDeDescompartilhou: 'Esta seção deixa de mostrar as respostas da equipe ao cliente.',
 };
 
 const ANUNCIANTE: Vocabulario = {
@@ -43,6 +57,13 @@ const ANUNCIANTE: Vocabulario = {
   descricaoDoCicloDeVida: 'Cuida da equipe, das conexões e do ciclo de vida dos negócios.',
   nomeDaOrganizacao: 'Nome da empresa',
   enviarMapaNoPerfil: false,
+  rotuloDeCompartilhar: 'Visível a quem eu convidar',
+  dicaDeCompartilhar: 'Mostra a quem você convidar, no formulário enviado por link, o que já está preenchido nesta seção',
+  seloDoCompartilhado: 'convidado vê',
+  dicaDoSelo: 'Quem você convidar vê esta informação no formulário',
+  seloInterno: 'só você vê',
+  avisoDeCompartilhou: 'O que já está preenchido nesta seção passa a aparecer para quem você convidar.',
+  avisoDeDescompartilhou: 'Esta seção deixa de mostrar o que já está preenchido a quem você convidar.',
 };
 
 export function vocabularioDe(tipo: OrganizationType): Vocabulario {

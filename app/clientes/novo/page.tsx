@@ -5,7 +5,7 @@ import { modules } from '@/composition';
 import { atorAtual } from '@/shared/http/ator';
 import { optionalText, requestId, text, toActionState } from '@/shared/http/actions';
 import { requireContext } from '@/shared/http/currentOrganization';
-import { canOperate } from '@/modules/identity/domain/user';
+import { podeCadastrarCliente } from '@/modules/clients/domain/painel/permissoes';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,8 +14,8 @@ async function createClient(formData: FormData): Promise<void> {
 
   const ctx = await requireContext();
   if (ctx.clientIds !== null) redirect('/clientes');
-  if (!canOperate(ctx.role)) {
-    redirect(`/clientes/novo?erro=${encodeURIComponent('Seu papel não permite cadastrar clientes.')}`);
+  if (!podeCadastrarCliente(ctx.organization.type, ctx.role)) {
+    redirect(`/clientes/novo?erro=${encodeURIComponent('Seu papel não permite cadastrar.')}`);
   }
   const organization = ctx.organization;
 
@@ -41,7 +41,9 @@ async function createClient(formData: FormData): Promise<void> {
 }
 
 export default async function NewClientPage({ searchParams }: { searchParams: Promise<{ erro?: string }> }) {
-  const organization = (await requireContext()).organization;
+  const contexto = await requireContext();
+  const organization = contexto.organization;
+  if (contexto.clientIds !== null || !podeCadastrarCliente(organization.type, contexto.role)) redirect('/clientes');
 
   const [params, clients] = await Promise.all([searchParams, modules().clients.list(organization.id)]);
   const possibleParents = clients.filter((client) => client.parentClientId === null);

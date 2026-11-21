@@ -5,14 +5,14 @@ import { requireContext } from '@/shared/http/currentOrganization';
 
 type Contexto = Awaited<ReturnType<typeof requireContext>>;
 
-export async function clienteNoEscopo(ctx: Contexto, clientId: string) {
-  if (!idValido(clientId)) return null;
+export async function clienteNoEscopo(ctx: Contexto, clientId: unknown) {
+  if (typeof clientId !== 'string' || !idValido(clientId)) return null;
   if (ctx.clientIds !== null && !ctx.clientIds.includes(clientId)) return null;
   const encontrado = await modules().clients.byId(ctx.organization.id, clientId);
   return encontrado.ok ? encontrado.value : null;
 }
 
-export async function escopoDoClienteNaOrganizacao(clientId: string) {
+export async function escopoDoClienteNaOrganizacao(clientId: unknown) {
   const ctx = await requireContext();
   const cliente = await clienteNoEscopo(ctx, clientId);
   if (!cliente) return null;
@@ -20,6 +20,6 @@ export async function escopoDoClienteNaOrganizacao(clientId: string) {
     ctx,
     cliente,
     admin: canAdminister(ctx.role),
-    comando: { organizationId: ctx.organization.id, clientId, papelDeQuemAge: ctx.role },
+    comando: { organizationId: ctx.organization.id, clientId: cliente.id, papelDeQuemAge: ctx.role },
   };
 }

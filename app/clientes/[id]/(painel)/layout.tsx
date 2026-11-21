@@ -10,6 +10,7 @@ import { mudarSituacao } from '@/../app/clientes/[id]/(painel)/conexoes/acoes';
 import { EFEITO_DA_SITUACAO, ROTULO_DA_SITUACAO, SITUACOES, mudancaPermitida } from '@/modules/clients/domain/ciclo';
 import { tamanhoLegivel } from '@/modules/clients/domain/painel/formato';
 import { acaoPrincipal, ROTULO_DO_VEREDITO, type Veredito } from '@/modules/clients/domain/painel/prontidao';
+import { podeCadastrarCliente } from '@/modules/clients/domain/painel/permissoes';
 import { noVocabularioDe, vocabularioDe } from '@/modules/organizations/domain/vocabulario';
 
 export const dynamic = 'force-dynamic';
@@ -73,7 +74,7 @@ export default async function LayoutDoCliente({
                 {principal.rotulo}
               </Link>
             ) : null}
-            {ctx.organization.type === 'advertiser' && podeAdministrar && organizacaoInteira ? (
+            {ctx.organization.type === 'advertiser' && organizacaoInteira && podeCadastrarCliente(ctx.organization.type, ctx.role) ? (
               <Link className="btn" href="/clientes/novo">
                 Novo negócio
               </Link>
@@ -96,6 +97,7 @@ export default async function LayoutDoCliente({
                   <BotaoDeEnvio className="btn" pendente="Aplicando…">
                     Aplicar
                   </BotaoDeEnvio>
+                  <p className="field__hint">Excluir é lógico (ADR 0022) e fica com quem administra: arquive aqui.</p>
                 </form>
               ) : null}
                 <dl className="menu-mais__bloco fatos">
@@ -114,7 +116,6 @@ export default async function LayoutDoCliente({
                     </div>
                   ) : null}
                 </dl>
-                <p className="field__hint menu-mais__bloco">Excluir é lógico (ADR 0022) e fica com quem administra: arquive aqui.</p>
               </MenuMais>
           </div>
         </div>

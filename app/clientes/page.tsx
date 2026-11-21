@@ -7,6 +7,7 @@ import type { ClientWithAccounts } from '@/modules/clients/domain/client';
 import { carregarProntidao } from '@/../app/clientes/[id]/_dados';
 import { Icone } from '@/../app/clientes/[id]/_componentes/Icones';
 import { ROTULO_DO_VEREDITO, type Veredito } from '@/modules/clients/domain/painel/prontidao';
+import { podeCadastrarCliente } from '@/modules/clients/domain/painel/permissoes';
 import { vocabularioDe } from '@/modules/organizations/domain/vocabulario';
 import { ORGANIZACAO_INTEIRA, escopoDeCliente } from '@/shared/db/escopo';
 import { requireContext } from '@/shared/http/currentOrganization';
@@ -93,9 +94,11 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
           </div>
         </div>
         <div className="page__actions">
-          <Link className="btn btn--primary" href="/clientes/novo">
-            Novo {substantivo}
-          </Link>
+          {podeCadastrarCliente(organization.type, contexto.role) && contexto.clientIds === null ? (
+            <Link className="btn btn--primary" href="/clientes/novo">
+              Novo {substantivo}
+            </Link>
+          ) : null}
         </div>
       </div>
 

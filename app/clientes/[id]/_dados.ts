@@ -5,7 +5,7 @@ import { modules } from '@/composition';
 import { canAdminister, canOperate } from '@/modules/identity/domain/user';
 import { idValido } from '@/modules/clients/domain/painel/enderecos';
 import { ROTULO_DA_PLATAFORMA, precisaReautorizar } from '@/modules/connections/domain/connection';
-import { acoesComConexoesAoVivo, prontidaoDoCliente, type ProntidaoDoCliente } from '@/modules/clients/domain/painel/prontidao';
+import { acoesComConexoesDoCliente, prontidaoDoCliente, type ProntidaoDoCliente } from '@/modules/clients/domain/painel/prontidao';
 import { requireContext } from '@/shared/http/currentOrganization';
 
 export const carregarPainel = cache(async (id: string) => {
@@ -45,14 +45,25 @@ export const carregarConexoes = cache(async (organizationId: string) => modules(
 
 export const carregarProntidao = cache(async (organizationId: string, clientId: string): Promise<ProntidaoDoCliente | null> => {
   try {
-    const [montado, conexoes] = await Promise.all([montarSnapshotDoCliente(organizationId, clientId), carregarConexoes(organizationId)]);
+    const [montado, conexoes, [contas, fontes]] = await Promise.all([
+      montarSnapshotDoCliente(organizationId, clientId),
+      carregarConexoes(organizationId),
+      carregarContas(organizationId, clientId),
+    ]);
     if (!montado.ok) return null;
-    const aoVivo = conexoes.map((c) => ({
-      platform: c.platform,
-      rotulo: ROTULO_DA_PLATAFORMA[c.platform],
-      precisaReautorizar: precisaReautorizar(c) || c.status === 'revoked',
-    }));
-    const diagnostico = { ...montado.value.diagnostico, acoes: acoesComConexoesAoVivo(montado.value.diagnostico.acoes, aoVivo) };
+    const fontesPorConexao = new Map<string, number>();
+    for (const conta of contas) if (conta.status !== 'unlinked') fontesPorConexao.set(conta.connectionId, (fontesPorConexao.get(conta.connectionId) ?? 0) + 1);
+    for (const fonte of fontes) fontesPorConexao.set(fonte.connectionId, (fontesPorConexao.get(fonte.connectionId) ?? 0) + 1);
+    const doCliente = conexoes
+      .filter((c) => fontesPorConexao.has(c.id))
+      .map((c) => ({
+        id: c.id,
+        platform: c.platform,
+        rotulo: ROTULO_DA_PLATAFORMA[c.platform],
+        precisaReautorizar: c.status !== 'revoked' && precisaReautorizar(c),
+        fontesDoCliente: fontesPorConexao.get(c.id) ?? 0,
+      }));
+    const diagnostico = { ...montado.value.diagnostico, acoes: acoesComConexoesDoCliente(montado.value.diagnostico.acoes, doCliente) };
     return prontidaoDoCliente({ capacidades: montado.value.capacidades, diagnostico });
   } catch (erro) {
     console.error(JSON.stringify({ evento: 'cliente.prontidao_indisponivel', clientId, erro: erro instanceof Error ? erro.message.slice(0, 300) : 'erro' }));

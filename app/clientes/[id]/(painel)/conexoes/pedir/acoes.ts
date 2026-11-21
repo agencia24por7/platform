@@ -1,6 +1,7 @@
 'use server';
 
 import { redirect } from 'next/navigation';
+import { lerPedidoAoCliente, lerPedidoDeLink } from '@/modules/clients/domain/painel/pedido';
 import { escopoDoClienteNaOrganizacao } from '@/../app/clientes/[id]/_escopo';
 import { modules } from '@/composition';
 import { comAviso, enderecoDoConvite, enderecoDoFormulario, idValido, rotaDoCliente } from '@/modules/clients/domain/painel/enderecos';
@@ -30,11 +31,14 @@ async function urlDoConvite(organizationId: string, clientId: string, conviteId:
 
 export async function criarLinkDeContexto(
   clientId: string,
-  pedido: { readonly secoes: readonly string[]; readonly expiraEmDias: number; readonly nota: string; readonly conviteDeIntegracaoId: string | null },
+  pedidoBruto: { readonly secoes: readonly string[]; readonly expiraEmDias: number; readonly nota: string; readonly conviteDeIntegracaoId: string | null },
 ): Promise<LinkGerado> {
   const escopo = await escopoDoCliente(clientId);
   if (!escopo) return { ok: false, erro: 'Cliente não encontrado.' };
-  if (pedido.conviteDeIntegracaoId && !escopo.admin) {
+  const lido = lerPedidoDeLink(pedidoBruto);
+  if (!lido.ok) return { ok: false, erro: 'Pedido inválido.' };
+  const pedido = lido.valor;
+  if (pedido.conviteDeIntegracaoId && !(escopo.admin && escopo.ctx.clientIds === null)) {
     return { ok: false, erro: 'Só quem administra a organização pode juntar o mapa a um convite de integração.' };
   }
   const resultado = await modules().contexto.criarLink(
@@ -94,9 +98,12 @@ async function criarConviteParaOPedido(escopo: NonNullable<Awaited<ReturnType<ty
   return { ok: true as const, conviteId: convite.id, expiraEm: convite.expiresAt };
 }
 
-export async function criarPedidoAoCliente(clientId: string, pedido: PedidoAoCliente): Promise<LinkGerado> {
+export async function criarPedidoAoCliente(clientId: string, pedidoBruto: PedidoAoCliente): Promise<LinkGerado> {
   const escopo = await escopoDoCliente(clientId);
   if (!escopo) return { ok: false, erro: 'Cliente não encontrado.' };
+  const lido = lerPedidoAoCliente(pedidoBruto);
+  if (!lido.ok) return { ok: false, erro: 'Pedido inválido.' };
+  const pedido = lido.valor;
   let conviteId = pedido.conviteDeIntegracaoId;
   let expiraEm: Date | null = null;
   if (pedido.plataformas.length > 0) {

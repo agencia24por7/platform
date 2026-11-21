@@ -61,7 +61,10 @@ export function acaoPrincipal(acoes: readonly AcaoRecomendada[], clienteId: stri
     return { id: primeira.id, titulo: primeira.titulo, rotulo, href, ehConexao: false };
   }
   const ehConexao = primeira.tipo === 'conectar' || primeira.tipo === 'vincular_recurso';
-  if (primeira.tipo === 'reautorizar') return { id: primeira.id, titulo: visao.titulo, rotulo: visao.titulo, href: visao.href, ehConexao: false };
+  if (primeira.tipo === 'reautorizar') {
+    const href = primeira.alvo ? `/integracoes/${primeira.alvo}` : visao.href;
+    return { id: primeira.id, titulo: visao.titulo, rotulo: visao.titulo, href, ehConexao: false };
+  }
   if (ehConexao) {
     const especifico = primeira.tipo === 'conectar' ? visao.titulo : rotuloDeVincular(visao.titulo);
     const rotulo = vocabulario.enviarMapaNoPerfil ? especifico : vocabulario.rotuloDaAcaoDeConexao;
@@ -70,25 +73,35 @@ export function acaoPrincipal(acoes: readonly AcaoRecomendada[], clienteId: stri
   return { id: primeira.id, titulo: visao.titulo, rotulo: visao.rotulo, href: visao.href, ehConexao: false };
 }
 
-export type ConexaoAoVivo = { readonly platform: string; readonly rotulo: string; readonly precisaReautorizar: boolean };
+export type ConexaoDoCliente = {
+  readonly id: string;
+  readonly platform: string;
+  readonly rotulo: string;
+  readonly precisaReautorizar: boolean;
+  readonly fontesDoCliente: number;
+};
 
-export function acoesComConexoesAoVivo(acoes: readonly AcaoRecomendada[], conexoes: readonly ConexaoAoVivo[]): readonly AcaoRecomendada[] {
-  const jaTem = new Set(acoes.filter((a) => a.tipo === 'reautorizar').map((a) => a.id));
-  const extras: AcaoRecomendada[] = [];
+export function acoesDeReautorizacaoDoCliente(conexoes: readonly ConexaoDoCliente[]): readonly AcaoRecomendada[] {
+  const porPlataforma = new Map<string, { conexao: ConexaoDoCliente; fontes: number }>();
   for (const conexao of conexoes) {
-    const id = `reautorizar:${conexao.platform}`;
-    if (!conexao.precisaReautorizar || jaTem.has(id)) continue;
-    jaTem.add(id);
-    extras.push({
-      id,
-      tipo: 'reautorizar',
-      impacto: 100,
-      titulo: `Reautorizar ${conexao.rotulo}`,
-      motivo: 'A autorização expirou ou foi revogada: a coleta parou para as fontes desta conexão.',
-      alvo: null,
-    });
+    if (!conexao.precisaReautorizar || conexao.fontesDoCliente === 0) continue;
+    const atual = porPlataforma.get(conexao.platform);
+    const fontes = (atual?.fontes ?? 0) + conexao.fontesDoCliente;
+    const representante = !atual || conexao.fontesDoCliente > atual.conexao.fontesDoCliente ? conexao : atual.conexao;
+    porPlataforma.set(conexao.platform, { conexao: representante, fontes });
   }
-  return extras.length === 0 ? acoes : [...acoes, ...extras];
+  return [...porPlataforma.entries()].map(([plataforma, { conexao, fontes }]) => ({
+    id: `reautorizar:${plataforma}`,
+    tipo: 'reautorizar' as const,
+    impacto: 100 + Math.min(fontes, 99) / 100,
+    titulo: `Reautorizar ${conexao.rotulo}`,
+    motivo: 'A autorização expirou ou foi revogada: a coleta parou para as fontes desta conexão.',
+    alvo: conexao.id,
+  }));
+}
+
+export function acoesComConexoesDoCliente(acoes: readonly AcaoRecomendada[], conexoes: readonly ConexaoDoCliente[]): readonly AcaoRecomendada[] {
+  return [...acoes.filter((a) => a.tipo !== 'reautorizar'), ...acoesDeReautorizacaoDoCliente(conexoes)];
 }
 
 export type TomDoBloco = 'ok' | 'atencao' | 'critico' | 'vazio';
@@ -107,7 +120,7 @@ function primeiroPasso(acoes: readonly AcaoRecomendada[], tipos: readonly TipoDe
 export function blocoDeConexoes(entrada: EntradaDoBloco): EstadoDoBloco {
   const proximoPasso = primeiroPasso(entrada.acoes, TIPOS_DE_CONEXOES);
   const { conectores, fontes } = entrada.resumo;
-  if (conectores.precisa_reautorizar > 0 || entrada.acoes.some((a) => a.tipo === 'reautorizar')) return { tom: 'critico', rotulo: 'Reautorizar', proximoPasso };
+  if (entrada.acoes.some((a) => a.tipo === 'reautorizar')) return { tom: 'critico', rotulo: 'Reautorizar', proximoPasso };
   if (conectores.conectado === 0 && conectores.conexao_sem_vinculo === 0) return { tom: 'vazio', rotulo: 'Vazio', proximoPasso };
   if (fontes.parado + fontes.atrasado > 0) return { tom: 'atencao', rotulo: 'Atenção', proximoPasso };
   return { tom: 'ok', rotulo: 'Ok', proximoPasso };

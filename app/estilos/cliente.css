@@ -233,7 +233,7 @@
 
 .fontes-topo { display: flex; align-items: center; justify-content: space-between; gap: var(--gap); flex-wrap: wrap; }
 .fontes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.fonte { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.2fr) auto; gap: 12px 16px; align-items: center; padding: 12px 16px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.fonte { position: relative; display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.2fr) auto; gap: 12px 16px; align-items: center; padding: 12px 16px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius-lg); }
 .fonte--reautorizar, .fonte--erro { border-left: 4px solid var(--c-danger); }
 .fonte--atencao { border-left: 4px solid var(--c-warn); }
 .fonte__quem { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -242,14 +242,11 @@
 .fonte__nome { overflow-wrap: anywhere; }
 .fonte__estado { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .fonte__acoes { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
-.fonte__mais { position: relative; }
-.fonte__mais > summary { list-style: none; cursor: pointer; }
-.fonte__mais > summary::-webkit-details-marker { display: none; }
-.fonte__mais-painel { position: absolute; right: 0; top: calc(100% + 4px); z-index: 10; min-width: 260px; display: flex; flex-direction: column; gap: 10px; padding: 12px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-lg); }
 @media (max-width: 760px) {
   .fonte { grid-template-columns: 1fr; }
   .fonte__acoes { justify-content: flex-start; }
-  .fonte__mais-painel { left: 0; right: auto; min-width: min(260px, 80vw); }
+  .menu-mais--compacto { position: static; }
+  .menu-mais--compacto .menu-mais__painel { left: 12px; right: 12px; width: auto; }
 }
 .menu-mais__gatilho { display: inline-flex; align-items: center; justify-content: center; width: 38px; padding: 0; color: var(--fg); }
 .menu-mais__gatilho svg { display: block; flex: none; width: 18px; min-width: 18px; height: 18px; fill: currentColor; }

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { after, before, describe, it } from 'node:test';
-import { acaoComCampo, appIsUp, ensureUser, signIn, signOut, submitAction } from './helpers.mjs';
+import { appIsUp, browse, ensureUser, signIn, signOut, submitAction } from './helpers.mjs';
 
 const dono = (sql) =>
   execFileSync('docker', ['exec', '-i', process.env.TRIA_TEST_PG ?? 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
@@ -30,10 +30,24 @@ function cliente(org, nome) {
   return dono(`INSERT INTO core.clients (organization_id, name, business_model) VALUES ('${org}', '${nome} ${sufixo}', 'ecommerce') RETURNING id`);
 }
 
-function conta(clienteId, externo) {
+function conexao(org, plataforma, rotulo, status = 'reauth_pending') {
+  return dono(
+    `INSERT INTO integrations.connections (organization_id, platform, grant_type, label, external_id, status)
+     VALUES ('${org}', '${plataforma}', 'oauth_user', '${rotulo} ${sufixo}', '${plataforma}-${rotulo}-${sufixo}', '${status}') RETURNING id`,
+  );
+}
+
+function conta(org, clienteId, conexaoId, externo, plataforma = 'meta') {
   return dono(
     `INSERT INTO integrations.ad_accounts (organization_id, client_id, connection_id, platform, external_id, name)
-     VALUES ('${ids.org}', '${clienteId}', '${ids.conexao}', 'meta', '${externo}-${sufixo}', 'Conta ${externo}') RETURNING id`,
+     VALUES ('${org}', '${clienteId}', '${conexaoId}', '${plataforma}', '${externo}-${sufixo}', 'Conta ${externo}') RETURNING id`,
+  );
+}
+
+function fonte(clienteId, externo) {
+  return dono(
+    `INSERT INTO integrations.connection_accounts (organization_id, connection_id, platform, external_id, name, state, client_id)
+     VALUES ('${ids.org}', '${ids.conexaoGoogle}', 'ga4', '${externo}-${sufixo}', 'Fonte ${externo}', 'linked', '${clienteId}') RETURNING id`,
   );
 }
 
@@ -46,11 +60,38 @@ function link(clienteId) {
   );
 }
 
-const sincronizando = (conta) => dono(`SELECT sync_enabled FROM integrations.ad_accounts WHERE id = '${conta}'`);
-const donoDaConta = (conta) => dono(`SELECT client_id FROM integrations.ad_accounts WHERE id = '${conta}'`);
+const sincronizando = (id) => dono(`SELECT sync_enabled FROM integrations.ad_accounts WHERE id = '${id}'`);
+const donoDaConta = (id) => dono(`SELECT client_id FROM integrations.ad_accounts WHERE id = '${id}'`);
+const estadoDaConta = (id) => dono(`SELECT status FROM integrations.ad_accounts WHERE id = '${id}'`);
+const estadoDaFonte = (id) => dono(`SELECT state || '|' || coalesce(client_id::text, '-') FROM integrations.connection_accounts WHERE id = '${id}'`);
 const erro = (r) => /erro=/.test(decodeURIComponent(r.location ?? r.redirectedTo ?? ''));
 
-describe('ações de Conexões respeitam o recorte e o cliente informado', { concurrency: false }, () => {
+async function acaoDoBotao(caminho, rotuloDoBotao, campo) {
+  const html = (await (await browse(caminho)).text()).replaceAll('<!-- -->', '');
+  for (const pedaco of html.split('<form').slice(1)) {
+    const formulario = pedaco.slice(0, pedaco.indexOf('</form>'));
+    if (!formulario.includes(`name="${campo}"`) || !formulario.includes(`>${rotuloDoBotao}<`)) continue;
+    const id = formulario.match(/name="\$ACTION_ID_([a-f0-9]+)"/)?.[1];
+    if (id) return id;
+  }
+  throw new Error(`Nenhuma action com o botão "${rotuloDoBotao}" e o campo "${campo}" em ${caminho}`);
+}
+
+async function acoesDeFontes() {
+  signIn(pessoas.owner);
+  const tela = `/clientes/${ids.b}/conexoes?secao=fontes`;
+  return {
+    alternar: await acaoDoBotao(tela, 'Pausar coleta', 'accountId'),
+    moverConta: await acaoDoBotao(tela, 'Mover', 'accountId'),
+    desvincularConta: await acaoDoBotao(tela, 'Desvincular', 'accountId'),
+    moverFonte: await acaoDoBotao(tela, 'Mover', 'recursoId'),
+    desvincularFonte: await acaoDoBotao(tela, 'Desvincular', 'recursoId'),
+  };
+}
+
+describe('ações de Conexões respeitam o recorte, o papel e o cliente informado', { concurrency: false }, () => {
+  let acao;
+
   before(async () => {
     if (!(await appIsUp())) throw new Error('App não está no ar');
     ids.org = dono(`INSERT INTO core.organizations (name, slug, type) VALUES ('Escopo ${sufixo}', 'escopo-${sufixo}', 'agency') RETURNING id`);
@@ -61,78 +102,155 @@ describe('ações de Conexões respeitam o recorte e o cliente informado', { con
     pessoas.owner = membro('owner', ids.org, 'owner');
     pessoas.recortado = membro('recortado', ids.org, 'operator');
     pessoas.operador = membro('operador', ids.org, 'operator');
+    pessoas.viewer = membro('viewer', ids.org, 'viewer');
     ids.excluido = dono(
       `INSERT INTO core.clients (organization_id, name, business_model, excluido_em, excluido_por) VALUES ('${ids.org}', 'Excluído ${sufixo}', 'ecommerce', now(), '${pessoas.owner}') RETURNING id`,
     );
     const membroId = dono(`SELECT id FROM core.members WHERE user_id = '${pessoas.recortado}' AND organization_id = '${ids.org}'`);
     dono(`INSERT INTO core.member_clients (member_id, client_id) VALUES ('${membroId}', '${ids.a}')`);
-    ids.conexao = dono(
-      `INSERT INTO integrations.connections (organization_id, platform, grant_type, label, external_id, status)
-       VALUES ('${ids.org}', 'meta', 'oauth_user', 'Meta ${sufixo}', 'm-${sufixo}', 'reauth_pending') RETURNING id`,
-    );
-    ids.contaA = conta(ids.a, 'a');
-    ids.contaB = conta(ids.b, 'b');
+    ids.conexao = conexao(ids.org, 'meta', 'Meta');
+    ids.conexaoGoogle = conexao(ids.org, 'google', 'Google');
+    ids.conexaoAlheia = conexao(ids.outraOrg, 'meta', 'Alheia');
+    ids.contaA = conta(ids.org, ids.a, ids.conexao, 'a');
+    ids.contaB = conta(ids.org, ids.b, ids.conexao, 'b');
+    ids.contaAlheia = conta(ids.outraOrg, ids.alheio, ids.conexaoAlheia, 'alheia');
+    ids.fonteB = fonte(ids.b, 'fb');
+    ids.fonteB2 = fonte(ids.b, 'fb2');
+    ids.fonteA = fonte(ids.a, 'fa');
     ids.linkA = link(ids.a);
     ids.linkB = link(ids.b);
+    acao = await acoesDeFontes();
   });
 
   after(() => signOut());
 
+  it('controle positivo: quem vê tudo opera, move e desvincula o que é do cliente informado', async () => {
+    signIn(pessoas.owner);
+    const tela = `/clientes/${ids.b}/conexoes?secao=fontes`;
+    assert.ok(!erro(await submitAction(tela, acao.alternar, { clientId: ids.b, accountId: ids.contaB, ligar: 'nao' })));
+    assert.equal(sincronizando(ids.contaB), 'f');
+    assert.ok(!erro(await submitAction(tela, acao.moverFonte, { clientId: ids.b, recursoId: ids.fonteB2, destinoId: ids.a })));
+    assert.equal(estadoDaFonte(ids.fonteB2), `linked|${ids.a}`);
+    assert.ok(!erro(await submitAction(tela, acao.desvincularFonte, { clientId: ids.a, recursoId: ids.fonteB2 })));
+    assert.equal(estadoDaFonte(ids.fonteB2).startsWith('discovered'), true);
+    assert.ok(!erro(await submitAction(tela, acao.alternar, { clientId: ids.b, accountId: ids.contaB, ligar: 'sim' })));
+  });
+
   it('membro recortado opera a conta do próprio cliente', async () => {
     signIn(pessoas.recortado);
     const tela = `/clientes/${ids.a}/conexoes?secao=fontes`;
-    const acao = await acaoComCampo(tela, 'ligar');
-    const r = await submitAction(tela, acao, { clientId: ids.a, accountId: ids.contaA, ligar: 'nao' });
+    const r = await submitAction(tela, acao.alternar, { clientId: ids.a, accountId: ids.contaA, ligar: 'nao' });
     assert.ok(!erro(r), 'operação permitida');
     assert.equal(sincronizando(ids.contaA), 'f');
   });
 
-  it('membro recortado não mexe em conta de cliente fora do recorte', async () => {
-    signIn(pessoas.operador);
-    const telaCompleta = `/clientes/${ids.b}/conexoes?secao=fontes`;
-    const alternar = await acaoComCampo(telaCompleta, 'ligar');
-    const mover = await acaoComCampo(telaCompleta, 'destinoId');
-    const desvincular = await acaoComCampo(telaCompleta, 'accountId');
+  it('membro recortado não mexe em conta nem fonte de cliente fora do recorte, nem manda para fora', async () => {
     signIn(pessoas.recortado);
     const tela = `/clientes/${ids.a}/conexoes?secao=fontes`;
-
-    assert.ok(erro(await submitAction(tela, alternar, { clientId: ids.b, accountId: ids.contaB, ligar: 'nao' })));
-    assert.ok(erro(await submitAction(tela, alternar, { clientId: ids.a, accountId: ids.contaB, ligar: 'nao' })), 'conta de outro cliente com clientId do recorte');
-    assert.ok(erro(await submitAction(tela, mover, { clientId: ids.a, accountId: ids.contaA, destinoId: ids.b })), 'destino fora do recorte');
-    assert.ok(erro(await submitAction(tela, desvincular, { clientId: ids.b, accountId: ids.contaB })));
+    assert.ok(erro(await submitAction(tela, acao.alternar, { clientId: ids.b, accountId: ids.contaB, ligar: 'nao' })));
+    assert.ok(erro(await submitAction(tela, acao.alternar, { clientId: ids.a, accountId: ids.contaB, ligar: 'nao' })), 'conta de outro cliente com clientId do recorte');
+    assert.ok(erro(await submitAction(tela, acao.moverConta, { clientId: ids.a, accountId: ids.contaA, destinoId: ids.b })), 'destino fora do recorte');
+    assert.ok(erro(await submitAction(tela, acao.desvincularConta, { clientId: ids.b, accountId: ids.contaB })));
+    assert.ok(erro(await submitAction(tela, acao.desvincularConta, { clientId: ids.a, accountId: ids.contaB })));
+    assert.ok(erro(await submitAction(tela, acao.moverFonte, { clientId: ids.a, recursoId: ids.fonteA, destinoId: ids.b })));
+    assert.ok(erro(await submitAction(tela, acao.desvincularFonte, { clientId: ids.b, recursoId: ids.fonteB })));
     assert.equal(sincronizando(ids.contaB), 't');
     assert.equal(donoDaConta(ids.contaA), ids.a);
     assert.equal(donoDaConta(ids.contaB), ids.b);
+    assert.equal(estadoDaFonte(ids.fonteA), `linked|${ids.a}`);
+    assert.equal(estadoDaFonte(ids.fonteB), `linked|${ids.b}`);
   });
 
-  it('quem vê a organização inteira não move conta para cliente excluído ou de outra organização', async () => {
+  it('quem vê a organização inteira não age sobre cliente excluído, de outra organização ou conta alheia', async () => {
     signIn(pessoas.operador);
     const tela = `/clientes/${ids.b}/conexoes?secao=fontes`;
-    const mover = await acaoComCampo(tela, 'destinoId');
     for (const destino of [ids.excluido, ids.alheio, 'nao-e-uuid']) {
-      assert.ok(erro(await submitAction(tela, mover, { clientId: ids.b, accountId: ids.contaB, destinoId: destino })), destino);
+      assert.ok(erro(await submitAction(tela, acao.moverConta, { clientId: ids.b, accountId: ids.contaB, destinoId: destino })), destino);
+      assert.ok(erro(await submitAction(tela, acao.moverFonte, { clientId: ids.b, recursoId: ids.fonteB, destinoId: destino })), destino);
     }
-    assert.ok(erro(await submitAction(tela, mover, { clientId: ids.alheio, accountId: ids.contaB, destinoId: ids.a })), 'origem de outra organização');
-    assert.ok(erro(await submitAction(tela, mover, { clientId: ids.excluido, accountId: ids.contaB, destinoId: ids.a })), 'origem excluída');
+    assert.ok(erro(await submitAction(tela, acao.moverConta, { clientId: ids.alheio, accountId: ids.contaB, destinoId: ids.a })), 'origem de outra organização');
+    assert.ok(erro(await submitAction(tela, acao.moverConta, { clientId: ids.excluido, accountId: ids.contaB, destinoId: ids.a })), 'origem excluída');
+    assert.ok(erro(await submitAction(tela, acao.desvincularConta, { clientId: ids.b, accountId: ids.contaAlheia })), 'conta de outra organização');
+    assert.ok(erro(await submitAction(tela, acao.desvincularConta, { clientId: ids.alheio, accountId: ids.contaAlheia })), 'cliente de outra organização');
+    assert.ok(erro(await submitAction(tela, acao.desvincularFonte, { clientId: ids.excluido, recursoId: ids.fonteB })), 'fonte com origem excluída');
     assert.equal(donoDaConta(ids.contaB), ids.b);
+    assert.equal(estadoDaConta(ids.contaAlheia), 'linked');
+    assert.equal(estadoDaFonte(ids.fonteB), `linked|${ids.b}`);
+  });
+
+  it('quem só vê é recusado em todas as ações de Conexões', async () => {
+    signIn(pessoas.viewer);
+    const tela = `/clientes/${ids.b}/conexoes?secao=fontes`;
+    await submitAction(tela, acao.alternar, { clientId: ids.b, accountId: ids.contaB, ligar: 'nao' });
+    await submitAction(tela, acao.desvincularConta, { clientId: ids.b, accountId: ids.contaB });
+    await submitAction(tela, acao.moverConta, { clientId: ids.b, accountId: ids.contaB, destinoId: ids.a });
+    await submitAction(tela, acao.desvincularFonte, { clientId: ids.b, recursoId: ids.fonteB });
+    await submitAction(tela, acao.moverFonte, { clientId: ids.b, recursoId: ids.fonteB, destinoId: ids.a });
+    assert.equal(sincronizando(ids.contaB), 't');
+    assert.equal(estadoDaConta(ids.contaB), 'linked');
+    assert.equal(donoDaConta(ids.contaB), ids.b);
+    assert.equal(estadoDaFonte(ids.fonteB), `linked|${ids.b}`);
   });
 
   it('revogar link: cliente de outra organização, excluído e fora do recorte são recusados', async () => {
-    signIn(pessoas.recortado);
+    signIn(pessoas.owner);
     const tela = `/clientes/${ids.a}/conexoes?secao=pedir`;
-    const acao = await acaoComCampo(tela, 'linkId');
+    const revogar = await acaoDoBotao(tela, 'Revogar', 'linkId');
+    signIn(pessoas.recortado);
     for (const alvo of [ids.b, ids.alheio, ids.excluido]) {
-      assert.ok(erro(await submitAction(tela, acao, { clientId: alvo, linkId: ids.linkB })), alvo);
+      assert.ok(erro(await submitAction(tela, revogar, { clientId: alvo, linkId: ids.linkB })), alvo);
     }
     assert.equal(dono(`SELECT revoked_at IS NULL FROM core.client_context_links WHERE id = '${ids.linkB}'`), 't');
+    assert.ok(!erro(await submitAction(tela, revogar, { clientId: ids.a, linkId: ids.linkA })), 'controle positivo no próprio cliente');
+    assert.equal(dono(`SELECT revoked_at IS NOT NULL FROM core.client_context_links WHERE id = '${ids.linkA}'`), 't');
   });
 
-  it('mudar situação exige cliente no escopo', async () => {
-    signIn(pessoas.recortado);
+  it('mudar situação exige cliente no escopo e papel', async () => {
+    signIn(pessoas.owner);
     const tela = `/clientes/${ids.a}/conexoes?secao=fontes`;
-    const acao = await acaoComCampo(tela, 'situacao').catch(() => null);
-    if (!acao) return;
-    assert.ok(erro(await submitAction(tela, acao, { clientId: ids.b, situacao: 'paused' })));
+    const mudar = await acaoDoBotao(tela, 'Aplicar', 'situacao');
+    signIn(pessoas.recortado);
+    assert.ok(erro(await submitAction(tela, mudar, { clientId: ids.b, situacao: 'paused' })));
     assert.equal(dono(`SELECT status FROM core.clients WHERE id = '${ids.b}'`), 'active');
+    assert.ok(erro(await submitAction(tela, mudar, { clientId: ids.alheio, situacao: 'paused' })));
+    assert.equal(dono(`SELECT status FROM core.clients WHERE id = '${ids.alheio}'`), 'active');
+    signIn(pessoas.viewer);
+    await submitAction(tela, mudar, { clientId: ids.b, situacao: 'paused' });
+    assert.equal(dono(`SELECT status FROM core.clients WHERE id = '${ids.b}'`), 'active');
+    signIn(pessoas.owner);
+    assert.ok(!erro(await submitAction(tela, mudar, { clientId: ids.b, situacao: 'paused' })), 'controle positivo');
+    assert.equal(dono(`SELECT status FROM core.clients WHERE id = '${ids.b}'`), 'paused');
+  });
+
+  it('reautorização é só das conexões do cliente: outro cliente, conexão revogada e cliente sem fontes não pesam', async () => {
+    dono(`UPDATE integrations.connections SET status = 'reauth_pending' WHERE id = '${ids.conexao}'`);
+    dono(`UPDATE integrations.connections SET status = 'revoked' WHERE id = '${ids.conexaoGoogle}'`);
+    const clienteSemFontes = cliente(ids.org, 'Sem fontes');
+    signIn(pessoas.owner);
+    const texto = async (id) => (await (await browse(`/clientes/${id}/conexoes`)).text()).replaceAll('<!-- -->', '').replace(/<script[\s\S]*?<\/script>/g, '');
+    const doClienteA = await texto(ids.a);
+    assert.ok(doClienteA.includes('Reautorizar Meta Ads'), 'cliente com conta na conexão em reautorização');
+    assert.ok(!doClienteA.includes('Reautorizar Google Ads'), 'conexão revogada não pesa');
+    const semFontes = await texto(clienteSemFontes);
+    assert.ok(!semFontes.includes('Reautorizar Meta Ads'), 'cliente sem fontes não herda a reautorização da organização');
+    assert.ok(!semFontes.includes('Reautorizar Google Ads'));
+  });
+
+  it('o aviso de reautorização não aparece em outro cliente cuja conexão está em dia', async () => {
+    const outraConexao = conexao(ids.org, 'meta', 'Meta2', 'reauth_pending');
+    dono(
+      `INSERT INTO integrations.connection_tokens (connection_id, organization_id, tipo, ciphertext, kms_key_version, algoritmo)
+       VALUES ('${outraConexao}', '${ids.org}', 'oauth_refresh', decode(repeat('ab',40),'hex'), 'v1', 'aes-256-gcm+local')`,
+    );
+    const clienteC = cliente(ids.org, 'C');
+    const clienteD = cliente(ids.org, 'D');
+    const comProblema = conexao(ids.org, 'google', 'GoogleC', 'reauth_pending');
+    conta(ids.org, clienteC, comProblema, 'c', 'google');
+    conta(ids.org, clienteD, outraConexao, 'd');
+    dono(`UPDATE integrations.connections SET status = 'active' WHERE id = '${outraConexao}'`);
+    signIn(pessoas.owner);
+    const texto = async (id) => (await (await browse(`/clientes/${id}/conexoes`)).text()).replaceAll('<!-- -->', '').replace(/<script[\s\S]*?<\/script>/g, '');
+    assert.ok((await texto(clienteC)).includes('Reautorizar Google Ads'));
+    assert.ok(!(await texto(clienteD)).includes('Reautorizar Google Ads'));
   });
 });

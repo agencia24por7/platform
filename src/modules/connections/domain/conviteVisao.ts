@@ -3,6 +3,7 @@ export type SituacaoDoItem = { readonly rotulo: string; readonly classe: string;
 export function situacaoDoItem(status: string, dispensada: boolean): SituacaoDoItem {
   if (status === 'completed') return { rotulo: 'Conectada', classe: 'pill--ok', icone: 'ok' };
   if (dispensada) return { rotulo: 'Dispensada', classe: 'pill--info', icone: 'pausada' };
+  if (status === 'closed') return { rotulo: 'Encerrada', classe: 'pill--info', icone: 'pausada' };
   if (status === 'expired') return { rotulo: 'Expirada', classe: 'pill--warn', icone: 'atencao' };
   if (status === 'revoked') return { rotulo: 'Revogada', classe: 'pill--danger', icone: 'erro' };
   return { rotulo: 'Pendente', classe: '', icone: 'vazio' };

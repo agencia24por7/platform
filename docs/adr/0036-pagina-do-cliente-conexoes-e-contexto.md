@@ -190,3 +190,23 @@ Organização `type='advertiser'` gerencia os próprios anúncios, sem agência.
 - **Acessibilidade**: axe-core 4.10.2 sem violações em Conexões, Pedir, Contexto, Brain e convite público (ajustes:
   `--fg-subtle` mais escuro, lista de definição e região rolável do Brain, ícone do `⋯`). Teclado validado no menu `⋯`,
   em "Mais" de Fontes e no diálogo de Pedir (abre, Esc fecha e devolve o foco).
+
+## Correções da segunda revisão
+
+- **Reautorização ao vivo só do cliente**: a ação nasce das conexões que têm conta ou fonte deste cliente (não
+  desvinculada), ignora conexão revogada e descarta a ação de reautorizar herdada do diagnóstico, que olha a organização
+  inteira. O estado do bloco Conexões usa só essas ações. Desempate: fontes do cliente afetadas, depois id. A ação aponta
+  para `/integracoes/[id]` da conexão (a mesma rota do botão do grupo em Fontes), que só aparece para quem opera e vê a
+  organização inteira.
+- **Quem cadastra negócio**: anunciante só owner e admin; agência, quem opera. Vale no servidor (`createClient` e a
+  página `/clientes/novo`), no botão da lista e no cabeçalho do negócio.
+- **Convite com mapa**: `criarLinkDeContexto` com convite anexado exige admin e organização inteira. Os pedidos são
+  validados com schema antes de qualquer acesso (sem 500 por formato errado) e `clienteNoEscopo` exige id textual.
+- **Convite público**: item pendente de convite concluído aparece como "Encerrada", não "Expirada".
+- **Perfil do anunciante**: textos do catálogo que falam da relação agência e cliente são trocados por um mapa exato de
+  frases (`contexto/vocabulario.ts`); frases sobre os clientes do negócio ficam como estão. O interruptor vira "Visível a
+  quem eu convidar" e o selo "convidado vê", mantendo a semântica de compartilhar com o link.
+- **Painel do "Mais" em Fontes**: no celular o painel ocupa a largura da linha.
+- **Testes**: ações de Conexões testadas com a action certa por botão (conta, fonte, mover, desvincular), controle
+  positivo, viewer, recortado, outra organização e excluído. Com todas as guardas removidas o teste de destinos falha; as
+  guardas de posse da conta e de recorte ficam mascaradas pela RLS e pelo serviço (defesa em profundidade).

@@ -8,6 +8,7 @@ describe('visão do convite público', () => {
     assert.equal(situacaoDoItem('pending', true).rotulo, 'Dispensada');
     assert.equal(situacaoDoItem('pending', false).rotulo, 'Pendente');
     assert.equal(situacaoDoItem('expired', false).icone, 'atencao');
+    assert.equal(situacaoDoItem('closed', false).rotulo, 'Encerrada');
   });
   it('só aceita plataformas do convite em "não uso"', () => {
     assert.deepEqual(plataformasQueNaoUso('meta,google,meta,x', ['meta', 'google']), ['meta', 'google']);

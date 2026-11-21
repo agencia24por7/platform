@@ -103,7 +103,11 @@ describe('página do cliente: abas, papéis e formulário público', { concurren
     for (const rota of ['/conexoes', '/conexoes?secao=fontes']) {
       const resposta = await browse(`/clientes/${cliente}${rota}`);
       const corpo = (await resposta.text()).replaceAll('<!-- -->', '').replace(/<script[\s\S]*?<\/script>/g, '');
-      assert.equal((corpo.match(/<a [^>]*>(?:Conectar|Vincular)[^<]*<\/a>/g) ?? []).length, 1, rota);
+      assert.ok(corpo.includes('Pronto para planejar'), `a prontidão precisa carregar em ${rota}`);
+      const entradas = [...corpo.matchAll(/<a [^>]*>((?:Conectar|Vincular)[^<]*)<\/a>/g)];
+      assert.equal(entradas.length, 1, rota);
+      const noCabecalho = entradas[0].index < corpo.indexOf('id="t-fontes"');
+      assert.equal(noCabecalho, entradas[0][1] !== 'Conectar conta', 'ação de conexão no cabeçalho esconde o botão de Fontes; sem ela, o botão é o de Fontes');
     }
   });
 

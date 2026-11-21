@@ -22,7 +22,7 @@ export async function Perfil({ clienteId, secaoInicial, campoInicial }: { readon
 
   return (
     <div className="pilha">
-      <EditorDeContexto clienteId={cliente.id} dados={dados} podeEditar={podeEditar} secaoInicial={secaoInicial} campoInicial={campoInicial} />
+      <EditorDeContexto tipo={ctx.organization.type} clienteId={cliente.id} dados={dados} podeEditar={podeEditar} secaoInicial={secaoInicial} campoInicial={campoInicial} />
       {revisoes.ok && revisoes.value.length > 0 ? (
         <details className="recolhivel">
           <summary className="recolhivel__resumo">

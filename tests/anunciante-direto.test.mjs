@@ -56,6 +56,8 @@ describe('anunciante direto: vocabulário, atalho e tipo da organização', { co
     pessoas.pausado = membro('pausado', orgs.pausado, 'owner');
     pessoas.misto = membro('misto', orgs.misto, 'owner');
     pessoas.zero = membro('zero', orgs.zero, 'owner');
+    pessoas.operadorMisto = membro('opmisto', orgs.misto, 'operator');
+    pessoas.adminMisto = membro('admmisto', orgs.misto, 'admin');
     orgs.negocioPausado = negocio(orgs.pausado, `Parado ${sufixo}`, 'paused');
     negocio(orgs.misto, `Ativo ${sufixo}`);
     negocio(orgs.misto, `Pausado ${sufixo}`, 'paused');
@@ -84,6 +86,35 @@ describe('anunciante direto: vocabulário, atalho e tipo da organização', { co
     const zero = await html('/clientes');
     assert.equal(zero.status, 200);
     assert.ok(zero.texto.includes('Novo negócio'));
+  });
+
+  it('só owner e admin do anunciante cadastram negócio, também no servidor; agência segue com quem opera', async () => {
+    signIn(pessoas.misto);
+    const criar = await acaoComCampo('/clientes/novo', 'name');
+    signIn(pessoas.operadorMisto);
+    const pagina = await html('/clientes/novo');
+    assert.ok([307, 308].includes(pagina.status), 'operador de anunciante não abre o formulário');
+    const recusado = await submitAction('/clientes/novo', criar, { name: `Intruso ${sufixo}`, businessModel: 'leads' });
+    assert.match(decodeURIComponent(recusado.location ?? recusado.redirectedTo ?? ''), /erro=/);
+    assert.equal(dono(`SELECT count(*) FROM core.clients WHERE organization_id = '${orgs.misto}' AND name = 'Intruso ${sufixo}'`), '0');
+    assert.ok(!(await html('/clientes')).texto?.includes('Novo negócio'));
+
+    signIn(pessoas.adminMisto);
+    const aceito = await submitAction('/clientes/novo', criar, { name: `Segundo ${sufixo}`, businessModel: 'leads' });
+    assert.ok(!/erro=/.test(decodeURIComponent(aceito.location ?? aceito.redirectedTo ?? '')));
+    assert.equal(dono(`SELECT count(*) FROM core.clients WHERE organization_id = '${orgs.misto}' AND name = 'Segundo ${sufixo}'`), '1');
+  });
+
+  it('Perfil do anunciante fala de convidado, não de cliente; o da agência mantém o texto original', async () => {
+    signIn(pessoas.dono);
+    const anunciante = await html(`/clientes/${orgs.negocio}/contexto`);
+    assert.ok(anunciante.texto.includes('Descrição do negócio'));
+    assert.ok(!anunciante.texto.includes('Descrição do cliente'));
+    assert.ok(!anunciante.texto.includes('Compartilhável com o cliente'));
+    assert.ok(anunciante.texto.includes('Visível a quem eu convidar'));
+    signIn(pessoas.agencia);
+    const agencia = await html(`/clientes/${orgs.cliente}/contexto`);
+    assert.ok(agencia.texto.includes('Descrição do cliente'));
   });
 
   it('anunciante dono ou admin cria o segundo negócio a partir do cabeçalho do negócio', async () => {

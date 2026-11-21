@@ -59,8 +59,8 @@ export function destinoDaRotaLegada(
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function idValido(id: string): boolean {
-  return UUID.test(id);
+export function idValido(id: unknown): id is string {
+  return typeof id === 'string' && UUID.test(id);
 }
 
 export function rotaDoCliente(

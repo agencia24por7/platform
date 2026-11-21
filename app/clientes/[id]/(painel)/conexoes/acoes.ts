@@ -20,18 +20,18 @@ function concluir(clientId: string, resultado: Result<unknown, Failure>, sucesso
   redirect(comAviso(destino, 'feito', sucesso));
 }
 
-async function origemValida(ctx: Contexto, clientId: string): Promise<boolean> {
+async function clienteVisivel(ctx: Contexto, clientId: string): Promise<boolean> {
   return (await clienteNoEscopo(ctx, clientId)) !== null;
 }
 
 async function contaDoCliente(ctx: Contexto, clientId: string, accountId: string): Promise<boolean> {
-  if (!(await origemValida(ctx, clientId))) return false;
+  if (!(await clienteVisivel(ctx, clientId))) return false;
   const contas = await modules().connections.listAccountsByClient(ctx.organization.id, clientId);
   return contas.some((c) => c.id === accountId);
 }
 
 async function fonteDoCliente(ctx: Contexto, clientId: string, recursoId: string): Promise<boolean> {
-  if (!(await origemValida(ctx, clientId))) return false;
+  if (!(await clienteVisivel(ctx, clientId))) return false;
   const fontes = await modules().recursos.listarPorCliente(ctx.organization.id, clientId);
   return fontes.some((f) => f.id === recursoId);
 }
@@ -39,7 +39,7 @@ async function fonteDoCliente(ctx: Contexto, clientId: string, recursoId: string
 export async function mudarSituacao(formData: FormData): Promise<void> {
   const ctx = await requireContext();
   const clientId = text(formData, 'clientId');
-  if (!(await origemValida(ctx, clientId))) concluir(clientId, err(NAO_ENCONTRADO), '', null);
+  if (!(await clienteVisivel(ctx, clientId))) concluir(clientId, err(NAO_ENCONTRADO), '', null);
   const resultado = await modules().clients.mudarSituacao(
     { organizationId: ctx.organization.id, papelDeQuemAge: ctx.role, clientId, situacao: text(formData, 'situacao') },
     await atorAtual(),
@@ -52,7 +52,7 @@ export async function moverConta(formData: FormData): Promise<void> {
   const origem = text(formData, 'clientId');
   const accountId = text(formData, 'accountId');
   const destinoId = text(formData, 'destinoId');
-  if (!(await contaDoCliente(ctx, origem, accountId)) || !(await origemValida(ctx, destinoId))) concluir(origem, err(NAO_ENCONTRADO), '');
+  if (!(await contaDoCliente(ctx, origem, accountId)) || !(await clienteVisivel(ctx, destinoId))) concluir(origem, err(NAO_ENCONTRADO), '');
   const resultado = await modules().connections.reassignAccount(
     { organizationId: ctx.organization.id, papelDeQuemAge: ctx.role, accountId, clientId: destinoId },
     await atorAtual(),
@@ -89,7 +89,7 @@ export async function moverFonte(formData: FormData): Promise<void> {
   const origem = text(formData, 'clientId');
   const recursoId = text(formData, 'recursoId');
   const destinoId = text(formData, 'destinoId');
-  if (!(await fonteDoCliente(ctx, origem, recursoId)) || !(await origemValida(ctx, destinoId))) concluir(origem, err(NAO_ENCONTRADO), '');
+  if (!(await fonteDoCliente(ctx, origem, recursoId)) || !(await clienteVisivel(ctx, destinoId))) concluir(origem, err(NAO_ENCONTRADO), '');
   const resultado = await modules().recursos.mover(
     { organizationId: ctx.organization.id, papelDeQuemAge: ctx.role, recursoId, clientId: destinoId },
     await atorAtual(),

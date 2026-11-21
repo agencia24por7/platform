@@ -114,7 +114,7 @@ export default async function PaginaDoConvite({
               {convite.items.map((item) => {
                 const concluido = item.status === 'completed';
                 const dispensada = !concluido && naoUso.includes(item.platform);
-                const statusEfetivo = item.status === 'pending' && !ativo ? (convite.status === 'revoked' ? 'revoked' : 'expired') : item.status;
+                const statusEfetivo = item.status === 'pending' && !ativo ? (convite.status === 'revoked' ? 'revoked' : convite.status === 'completed' ? 'closed' : 'expired') : item.status;
                 const situacao = situacaoDoItem(statusEfetivo, dispensada);
                 const doErro = aviso && aviso.plataforma === item.platform ? aviso : null;
                 const destacada = autorizada === item.platform;

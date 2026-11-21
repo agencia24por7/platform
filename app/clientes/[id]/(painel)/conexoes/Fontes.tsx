@@ -80,7 +80,7 @@ function agruparPorConexao(ordenadas: readonly Linha[]): Grupo[] {
 }
 
 function conexaoPrecisaReautorizar(conexao: Connection | undefined): boolean {
-  return conexao ? precisaReautorizar(conexao) || conexao.status === 'revoked' : false;
+  return conexao ? conexao.status !== 'revoked' && precisaReautorizar(conexao) : false;
 }
 
 export async function Fontes({ clienteId }: { readonly clienteId: string }) {
@@ -102,7 +102,7 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
     ...contas.map((conta): Linha => {
       const conexao = conexaoPorId.get(conta.connectionId);
       const situacao = situacaoDaFonte(
-        { precisaReautorizar: conexaoPrecisaReautorizar(conexao), coletaLigada: conta.syncEnabled, comErro: conta.status === 'error', ultimaColeta: conta.lastSyncAt },
+        { precisaReautorizar: conexaoPrecisaReautorizar(conexao), coletaLigada: conta.syncEnabled, comErro: conta.status === 'error' || conexao?.status === 'revoked', ultimaColeta: conta.lastSyncAt },
         agora,
       );
       const atraso = conta.syncEnabled ? atrasoDaColeta(conta.lastSyncAt, agora) : null;
@@ -176,7 +176,7 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
                   <span className="strong">{ROTULO_DA_PLATAFORMA[grupo.plataforma]}</span>
                   <span className="subtle xsmall">{grupo.rotulo}</span>
                 </div>
-                {podeEditar && grupo.reautorizar && grupo.conexaoId ? (
+                {podeEditar && organizacaoInteira && grupo.reautorizar && grupo.conexaoId ? (
                   <Link className="btn btn--compacto btn--primary" href={`/integracoes/${grupo.conexaoId}`}>
                     Reautorizar
                   </Link>
