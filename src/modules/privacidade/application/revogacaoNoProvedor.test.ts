@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import '../../../shared/testing/registrarAlias.mjs';
-import type { ExecutorDeRevogacao, DesfechoDoExecutor } from './revogacaoNoProvedor.ts';
 import type { ConexaoARevogar } from '../domain/revogacao.ts';
 
 Object.assign(process.env, {
@@ -12,26 +11,19 @@ Object.assign(process.env, {
   LOG_LEVEL: 'error',
 });
 
-const { createRevogadorNoProvedor } = await import('./revogacaoNoProvedor.ts');
-const { avisoDaRevogacao, mensagemDaRemocao } = await import('../domain/revogacao.ts');
+const { createPoliticaDeRevogacao } = await import('./revogacaoNoProvedor.ts');
+const { avisoDaRevogacao, mensagemDaRemocao, resultadoDaRevogacaoNoCofre } = await import('../domain/revogacao.ts');
 
-function montar(opcoes: { desfecho?: DesfechoDoExecutor | Error; compartilhado?: boolean | Error; disponivel?: boolean } = {}) {
-  const pedidos: { provedor: string; credentialId: string }[] = [];
-  const executor: ExecutorDeRevogacao = {
-    disponivel: opcoes.disponivel ?? true,
-    async executar(input) {
-      pedidos.push({ provedor: input.provedor, credentialId: input.credentialId });
-      if (opcoes.desfecho instanceof Error) throw opcoes.desfecho;
-      return opcoes.desfecho ?? 'revogado';
-    },
-  };
-  const revogador = createRevogadorNoProvedor(executor, {
-    async compartilhado() {
+function montar(opcoes: { compartilhado?: boolean | Error } = {}) {
+  const consultas: string[] = [];
+  const politica = createPoliticaDeRevogacao({
+    async compartilhado(_organizationId, connectionId) {
+      consultas.push(connectionId);
       if (opcoes.compartilhado instanceof Error) throw opcoes.compartilhado;
       return opcoes.compartilhado ?? false;
     },
   });
-  return { revogador, pedidos };
+  return { politica, consultas };
 }
 
 const conexao = (sobrescrever: Partial<ConexaoARevogar> = {}): ConexaoARevogar => ({
@@ -39,46 +31,48 @@ const conexao = (sobrescrever: Partial<ConexaoARevogar> = {}): ConexaoARevogar =
   organizationId: 'org-1',
   platform: 'youtube',
   grantType: 'oauth_user',
-  credentialRef: 'n8n:credential:abc123XYZ',
   ...sobrescrever,
 });
 
-describe('revogação no provedor ao remover a conexão', () => {
-  it('Google e Meta revogam com a credencial da própria conexão', async () => {
-    for (const [platform, provedor] of [['ga4', 'google'], ['youtube', 'google'], ['meta', 'meta'], ['leadads', 'meta']] as const) {
-      const { revogador, pedidos } = montar();
-      assert.deepEqual(await revogador.revogar(conexao({ platform })), { revogadoNoProvedor: true, motivo: 'revogado' });
-      assert.deepEqual(pedidos, [{ provedor, credentialId: 'abc123XYZ' }]);
+describe('política de revogação no provedor ao remover a conexão', () => {
+  it('Google e Meta com usuário OAuth: tenta revogar pelo cofre', async () => {
+    for (const platform of ['ga4', 'youtube', 'meta', 'leadads'] as const) {
+      assert.deepEqual(await montar().politica.decidir(conexao({ platform })), { tentar: true });
     }
   });
 
-  it('chave de API e autorização sem usuário OAuth não são suportadas e não chamam o executor', async () => {
-    const { revogador, pedidos } = montar();
-    assert.equal((await revogador.revogar(conexao({ platform: 'rdstation', grantType: 'api_key' }))).revogadoNoProvedor, 'nao_suportado');
-    assert.deepEqual(await revogador.revogar(conexao({ platform: 'meta', grantType: 'system_user' })), {
-      revogadoNoProvedor: 'nao_suportado',
-      motivo: 'autorizacao_sem_usuario',
+  it('chave de API e autorização sem usuário OAuth não são suportadas e nem consultam o compartilhamento', async () => {
+    const { politica, consultas } = montar();
+    assert.deepEqual(await politica.decidir(conexao({ platform: 'rdstation', grantType: 'api_key' })), {
+      tentar: false,
+      resultado: { revogadoNoProvedor: 'nao_suportado', motivo: 'plataforma_sem_revogacao' },
     });
-    assert.equal(pedidos.length, 0);
+    assert.deepEqual(await politica.decidir(conexao({ platform: 'meta', grantType: 'system_user' })), {
+      tentar: false,
+      resultado: { revogadoNoProvedor: 'nao_suportado', motivo: 'autorizacao_sem_usuario' },
+    });
+    assert.equal(consultas.length, 0);
   });
 
   it('não revoga quando a mesma pessoa autoriza outra conexão ativa', async () => {
-    const { revogador, pedidos } = montar({ compartilhado: true });
-    assert.deepEqual(await revogador.revogar(conexao()), { revogadoNoProvedor: false, motivo: 'acesso_compartilhado' });
-    assert.equal(pedidos.length, 0);
+    assert.deepEqual(await montar({ compartilhado: true }).politica.decidir(conexao()), {
+      tentar: false,
+      resultado: { revogadoNoProvedor: false, motivo: 'acesso_compartilhado' },
+    });
   });
 
   it('falha ao conferir o compartilhamento não revoga (lado seguro)', async () => {
-    const { revogador, pedidos } = montar({ compartilhado: new Error('banco') });
-    assert.deepEqual(await revogador.revogar(conexao()), { revogadoNoProvedor: false, motivo: 'falhou' });
-    assert.equal(pedidos.length, 0);
+    assert.deepEqual(await montar({ compartilhado: new Error('banco') }).politica.decidir(conexao()), {
+      tentar: false,
+      resultado: { revogadoNoProvedor: false, motivo: 'falhou' },
+    });
   });
 
-  it('sem credencial no cofre, sem n8n, recusa ou erro do provedor viram false', async () => {
-    assert.equal((await montar().revogador.revogar(conexao({ credentialRef: 'pendente:cofre-indisponivel' }))).motivo, 'sem_credencial_no_cofre');
-    assert.equal((await montar({ disponivel: false }).revogador.revogar(conexao())).motivo, 'revogador_indisponivel');
-    assert.deepEqual(await montar({ desfecho: 'recusado' }).revogador.revogar(conexao()), { revogadoNoProvedor: false, motivo: 'recusado_pelo_provedor' });
-    assert.deepEqual(await montar({ desfecho: new Error('timeout') }).revogador.revogar(conexao()), { revogadoNoProvedor: false, motivo: 'falhou' });
+  it('o desfecho do cofre vira o campo de auditoria revogadoNoProvedor', () => {
+    assert.deepEqual(resultadoDaRevogacaoNoCofre('revogado'), { revogadoNoProvedor: true, motivo: 'revogado' });
+    assert.deepEqual(resultadoDaRevogacaoNoCofre('falhou'), { revogadoNoProvedor: false, motivo: 'falhou' });
+    assert.deepEqual(resultadoDaRevogacaoNoCofre('sem_token'), { revogadoNoProvedor: false, motivo: 'sem_credencial_no_cofre' });
+    assert.deepEqual(resultadoDaRevogacaoNoCofre('sem_suporte'), { revogadoNoProvedor: 'nao_suportado', motivo: 'plataforma_sem_revogacao' });
   });
 });
 
@@ -93,7 +87,7 @@ describe('aviso ao admin', () => {
   it('a mensagem da remoção soma revogação, aviso e expurgo do YouTube', () => {
     assert.equal(
       mensagemDaRemocao({ revogadoNoProvedor: true, avisoDeRevogacao: null, expurgo: { enfileirados: 1, concluidos: 1 } }),
-      'Conexão removida. A credencial foi apagada do cofre e a coleta dessa conta parou. O acesso também foi revogado no provedor. Os dados do YouTube dessa conexão foram apagados do BigQuery.',
+      'Conexão removida. O token foi apagado do cofre e a coleta dessa conta parou. O acesso também foi revogado no provedor. Os dados do YouTube dessa conexão foram apagados do BigQuery.',
     );
     assert.match(
       mensagemDaRemocao({ revogadoNoProvedor: false, avisoDeRevogacao: 'AVISO', expurgo: { enfileirados: 1, concluidos: 0 } }),

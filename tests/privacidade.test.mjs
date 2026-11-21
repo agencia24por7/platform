@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { before, describe, it } from 'node:test';
-import { BASE, appIsUp } from './helpers.mjs';
+import { BASE, appIsUp, sqlDeConexao } from './helpers.mjs';
 
 function senhaDoApp() {
   return readFileSync('.env', 'utf8')
@@ -62,11 +62,14 @@ function novaOrganizacao(nome) {
 }
 
 function conexao(org, platform, externalId, status = 'active') {
-  return umaLinha(dono(
-    `INSERT INTO integrations.connections (organization_id, platform, grant_type, label, external_id, scopes, credential_ref, status)
-     VALUES ('${org}', '${platform}', 'oauth_user', '${platform} ${externalId}', '${externalId}', ARRAY[]::text[], 'n8n:credential:abc123', '${status}')
-     RETURNING id`,
-  ));
+  return umaLinha(dono(sqlDeConexao({
+    organizationId: org,
+    platform,
+    label: `${platform} ${externalId}`,
+    externalId,
+    status,
+    comToken: status !== 'revoked',
+  }).sql));
 }
 
 function canal(org, connectionId, externalId, nome = 'Canal com título') {

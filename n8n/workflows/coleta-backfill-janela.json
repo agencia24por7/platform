@@ -70,7 +70,7 @@
     },
     {
       "id": "tem-coletor",
-      "name": "Tem coletor?",
+      "name": "Tem token?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
@@ -86,11 +86,13 @@
           },
           "conditions": [
             {
-              "leftValue": "={{ $('Entrada').item.json.fonte.coletorRef }}",
+              "id": "tem-token-c",
+              "leftValue": "={{ $('Entrada').item.json.fonte.temToken === true }}",
               "rightValue": "",
               "operator": {
-                "type": "string",
-                "operation": "notEmpty"
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
               }
             },
             {
@@ -120,7 +122,7 @@
       "parameters": {
         "workflowId": {
           "__rl": true,
-          "value": "={{ $('Entrada').item.json.fonte.coletorRef }}",
+          "value": "={{ ({ google: 'origem:n8n/workflows/coletores/coletor-google-ads.json', meta: 'origem:n8n/workflows/coletores/coletor-meta-insights.json', ga4: 'origem:n8n/workflows/coletores/coletor-ga4.json', searchconsole: 'origem:n8n/workflows/coletores/coletor-searchconsole.json', youtube: 'origem:n8n/workflows/coletores/coletor-youtube.json', gbp: 'origem:n8n/workflows/coletores/coletor-gbp.json', gtm: 'origem:n8n/workflows/coletores/coletor-gtm.json', rdstation: 'origem:n8n/workflows/coletores/coletor-rdstation.json', pixel: 'origem:n8n/workflows/coletores/coletor-meta-dataset.json', leadads: 'origem:n8n/workflows/coletores/coletor-meta-formularios.json' })[$('Entrada').item.json.fonte.platform] ?? '' }}",
           "mode": "id"
         },
         "workflowInputs": {
@@ -128,7 +130,8 @@
           "value": {
             "fonte": "={{ $('Entrada').item.json.fonte }}",
             "janela": "={{ $('Entrada').item.json.janela }}",
-            "modo": "completa"
+            "modo": "completa",
+            "coletaId": "={{ $('Abrir execução').item.json.id }}"
           }
         }
       }
@@ -243,7 +246,7 @@
     },
     {
       "id": "calcular-sem-coletor",
-      "name": "Calcular qualidade (sem coletor)",
+      "name": "Calcular qualidade (sem token)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -252,12 +255,12 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const fonte = $('Entrada').item.json.fonte;\nconst coleta = $json;\nconst temColeta = Boolean(coleta?.id);\nconst detalheDaRecusa = String(coleta?.title ?? coleta?.detail ?? coleta?.error?.message ?? 'sem resposta do app').slice(0, 400);\nconst causa = temColeta ? 'sem_credencial' : 'abrir_recusado';\nconst detalhe = temColeta ? 'Conexão sem coletor provisionado no n8n.' : `abrir recusou a coleta: ${detalheDaRecusa}`;\n\nconst qualidadeResumo = {\n  fontesEsperadas: 1,\n  fontesColetadas: 0,\n  faltantes: [{ fonte: fonte.nome || fonte.externalId, causa: 'sem_credencial', detalhe }],\n  paridade: [],\n  volumetria: { linhas: 0, bytes: 0, requests: 0, duracaoMs: 0 },\n};\n\nreturn {\n  json: {\n    coletaId: temColeta ? coleta.id : null,\n    temColeta,\n    status: 'failed',\n    errorCode: causa,\n    errorMessage: detalhe,\n    qualidadeResumo: temColeta ? qualidadeResumo : null,\n  },\n};"
+        "jsCode": "const fonte = $('Entrada').item.json.fonte;\nconst coleta = $json;\nconst temColeta = Boolean(coleta?.id);\nconst detalheDaRecusa = String(coleta?.title ?? coleta?.detail ?? coleta?.error?.message ?? 'sem resposta do app').slice(0, 400);\nconst causa = temColeta ? 'reauth_pending' : 'abrir_recusado';\nconst detalhe = temColeta ? 'Conexão sem token no cofre: reautorize a conexão (ADR 0032).' : `abrir recusou a coleta: ${detalheDaRecusa}`;\n\nconst qualidadeResumo = {\n  fontesEsperadas: 1,\n  fontesColetadas: 0,\n  faltantes: [{ fonte: fonte.nome || fonte.externalId, causa: 'reauth_pending', detalhe }],\n  paridade: [],\n  volumetria: { linhas: 0, bytes: 0, requests: 0, duracaoMs: 0 },\n};\n\nreturn {\n  json: {\n    coletaId: temColeta ? coleta.id : null,\n    temColeta,\n    status: 'failed',\n    errorCode: causa,\n    errorMessage: detalhe,\n    qualidadeResumo: temColeta ? qualidadeResumo : null,\n  },\n};"
       }
     },
     {
       "id": "fechar-sem-coletor",
-      "name": "Fechar execução (sem coletor)",
+      "name": "Fechar execução (sem token)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -417,24 +420,6 @@
         ]
       ]
     },
-    "Tem coletor?": {
-      "main": [
-        [
-          {
-            "node": "Chamar coletor",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Calcular qualidade (sem coletor)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Chamar coletor": {
       "main": [
         [
@@ -476,28 +461,6 @@
       ]
     },
     "Fechar execução": {
-      "main": [
-        [
-          {
-            "node": "Resumo",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Calcular qualidade (sem coletor)": {
-      "main": [
-        [
-          {
-            "node": "Tem coleta aberta?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Fechar execução (sem coletor)": {
       "main": [
         [
           {
@@ -566,7 +529,7 @@
         ],
         [
           {
-            "node": "Tem coletor?",
+            "node": "Tem token?",
             "type": "main",
             "index": 0
           }
@@ -577,7 +540,7 @@
       "main": [
         [
           {
-            "node": "Fechar execução (sem coletor)",
+            "node": "Fechar execução (sem token)",
             "type": "main",
             "index": 0
           }
@@ -596,6 +559,46 @@
         [
           {
             "node": "Fechar execução",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem token?": {
+      "main": [
+        [
+          {
+            "node": "Chamar coletor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Calcular qualidade (sem token)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular qualidade (sem token)": {
+      "main": [
+        [
+          {
+            "node": "Tem coleta aberta?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fechar execução (sem token)": {
+      "main": [
+        [
+          {
+            "node": "Resumo",
             "type": "main",
             "index": 0
           }

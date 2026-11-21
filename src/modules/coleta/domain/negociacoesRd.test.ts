@@ -105,13 +105,14 @@ function rodarNormalizar(respostaDosFunis: unknown, paginas: readonly unknown[])
 }
 
 describe('coletor do RD Station (modelo do n8n)', () => {
-  it('toda chamada HTTP usa a credencial httpQueryAuth que o provisioner substitui', () => {
-    const chamadas = modelo.nodes.filter((candidato) => candidato.type === 'n8n-nodes-base.httpRequest');
+  it('toda chamada ao RD leva o token do cofre na query, sem credencial por conexão no nó', () => {
+    const chamadas = modelo.nodes.filter((candidato) => candidato.type === 'n8n-nodes-base.httpRequest' && candidato.name !== 'Obter token');
     assert.equal(chamadas.length, 7);
     for (const chamada of chamadas) {
-      assert.equal(chamada.parameters.authentication, 'genericCredentialType');
-      assert.equal(chamada.parameters.genericAuthType, 'httpQueryAuth');
-      assert.ok(chamada.credentials && 'httpQueryAuth' in chamada.credentials);
+      assert.equal(chamada.parameters.authentication, 'none');
+      assert.equal(chamada.credentials, undefined);
+      const query = (chamada.parameters.queryParameters as { parameters: { name: string; value: string }[] }).parameters;
+      assert.ok(query.find((parametro) => parametro.name === 'token')!.value.includes("$('Obter token')"), chamada.name);
       assert.ok(String(chamada.parameters.url).startsWith(BASE_DA_API));
     }
   });

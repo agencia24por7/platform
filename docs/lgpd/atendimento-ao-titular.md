@@ -20,7 +20,7 @@ Canal: contato@agencia24por7.com. Prazo prometido na política: 15 dias.
 | Desfazer a exclusão de um cliente | `node scripts/titular.mjs restaurar-cliente <client_id> --por <quem pediu>` (simula) e depois com `--confirmar` |
 | Eliminação definitiva de um cliente por obrigação legal | `node scripts/titular.mjs expurgar-cliente <client_id>` (simula) e depois com `--confirmar` |
 | Correção | pela tela do app (nome e foto vêm do Google; o titular corrige na conta Google e o próximo login atualiza) |
-| Revogar consentimento de conexão | remover a conexão na tela de conectores: a orla revoga no Google ou na Meta e apaga a credencial; se a tela avisar que não revogou, o titular revoga em myaccount.google.com/permissions (Google) ou facebook.com/settings?tab=business_tools (Meta) |
+| Revogar consentimento de conexão | remover a conexão na tela de conectores: a orla revoga no Google ou na Meta e apaga o token cifrado do cofre; se a tela avisar que não revogou, o titular revoga em myaccount.google.com/permissions (Google) ou facebook.com/settings?tab=business_tools (Meta) |
 | Pedido de exclusão recebido da Meta (callback) | ver "Pedidos de exclusão da Meta" abaixo |
 | Apagar do BigQuery os dados de uma fonte (fim de autorização, YouTube) | `node scripts/titular.mjs expurgar-fonte <organization_id> <plataforma> <external_id>` (simula) e depois com `--confirmar` |
 
@@ -73,7 +73,7 @@ pessoa acompanha. A tela do conector da Meta mostra o pedido ao admin da organiz
    plataforma, estado).
 2. `node scripts/titular.mjs pedidos-de-exclusao andamento <código> --confirmar --por <quem>`.
 3. Em cada organização listada, remova as conexões ligadas na tela do conector (a revogação no provedor
-   provavelmente já caiu, porque a pessoa removeu o app). Remover apaga a credencial, para a coleta e solta as
+   provavelmente já caiu, porque a pessoa removeu o app). Remover apaga o token cifrado do cofre, para a coleta e solta as
    contas e recursos.
 4. Se a pessoa é titular de dados guardados (usuário da orla), siga também "Exclusão ou anonimização" acima. Se
    o pedido é de um cliente da agência, avalie `excluir-cliente`/`expurgar-cliente`. Métricas de campanha de um

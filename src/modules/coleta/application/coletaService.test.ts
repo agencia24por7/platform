@@ -33,7 +33,7 @@ type Fonte = { fonteTipo: 'ad_account'; fonteId: string; platform: string };
 function fonte(fonteId: string, platform = 'google'): Fonte & Record<string, unknown> {
   return {
     fonteTipo: 'ad_account', fonteId, organizationId: 'o', clientId: 'c', clientName: 'C', platform, externalId: fonteId,
-    managerExternalId: null, nome: fonteId, currency: 'BRL', timezone: 'America/Sao_Paulo', credentialRef: 'r', coletorRef: 'w', connectionId: 'n',
+    managerExternalId: null, nome: fonteId, currency: 'BRL', timezone: 'America/Sao_Paulo', connectionId: 'n', temToken: true,
   };
 }
 

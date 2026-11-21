@@ -83,8 +83,8 @@ export default async function IntegrationsPage({
         <div>
           <div className="page__title">Conexões</div>
           <div className="page__sub">
-            Um card por conector. Clique para abrir as configurações. O segredo vive cifrado no
-            cofre do n8n; aqui ficam só o metadado e uma referência.
+            Um card por conector. Clique para abrir as configurações. O segredo vive cifrado (Cloud KMS)
+            no cofre de tokens do app; o n8n só recebe um token de curta duração na hora de coletar.
           </div>
         </div>
       </div>

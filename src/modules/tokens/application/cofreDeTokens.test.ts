@@ -6,7 +6,7 @@ import type { Alvo } from '@/modules/tokens/domain/token';
 import type {
   FabricaDeProvedores,
   FalhaDoProvedor,
-  Gravar,
+  MudancaDeToken,
   ProvedorDeToken,
   Registro,
   RegistroDeToken,
@@ -34,7 +34,8 @@ type Linha = {
 function criarRepositorio(conexoes: Record<string, { organizationId: string; platform: Platform }>) {
   const linhas = new Map<string, Linha>();
   for (const [id, conexao] of Object.entries(conexoes)) linhas.set(id, { ...conexao, registro: null });
-  const filas = new Map<string, Promise<unknown>>();
+  const concessoes = new Map<string, string>();
+  const reivindicacoes: string[] = [];
 
   const repositorio: RepositorioDeTokens = {
     async plataformaDa(alvo) {
@@ -59,28 +60,34 @@ function criarRepositorio(conexoes: Record<string, { organizationId: string; pla
         renovadoEm: null,
         versao: (linha.registro?.versao ?? 0) + 1,
       };
+      concessoes.delete(alvo.connectionId);
     },
-    comTrava(alvo, trabalho) {
-      const anterior = filas.get(alvo.connectionId) ?? Promise.resolve();
-      const atual = anterior.then(async () => {
-        const linha = linhas.get(alvo.connectionId);
-        const registro = linha?.registro ?? null;
-        const gravar: Gravar = async (mudanca) => {
-          if (!linha?.registro || linha.registro.versao !== registro?.versao) return false;
-          linha.registro = {
-            ...linha.registro,
-            ...(mudanca.acesso ? { acesso: mudanca.acesso.cifrado.bytes, acessoExpiraEm: mudanca.acesso.expiraEm } : {}),
-            ...(mudanca.segredo ? { segredo: mudanca.segredo.cifrado.bytes, segredoExpiraEm: mudanca.segredo.expiraEm } : {}),
-            ...(mudanca.renovadoEm ? { renovadoEm: mudanca.renovadoEm } : {}),
-            versao: linha.registro.versao + 1,
-          };
-          falhas.push(mudanca.falha ?? null);
-          return true;
-        };
-        return trabalho(registro, gravar);
-      });
-      filas.set(alvo.connectionId, atual.catch(() => undefined));
-      return atual;
+    async reivindicarRenovacao(alvo, _prazo, concessao) {
+      const linha = linhas.get(alvo.connectionId);
+      if (!linha?.registro || linha.organizationId !== alvo.organizationId) return { registro: null, dono: false };
+      if (concessoes.has(alvo.connectionId)) return { registro: linha.registro, dono: false };
+      concessoes.set(alvo.connectionId, concessao);
+      reivindicacoes.push(alvo.connectionId);
+      return { registro: linha.registro, dono: true };
+    },
+    async concluirRenovacao(alvo, versaoLida, concessao, mudanca: MudancaDeToken) {
+      if (concessoes.get(alvo.connectionId) === concessao) concessoes.delete(alvo.connectionId);
+      const linha = linhas.get(alvo.connectionId);
+      if (!linha?.registro || linha.registro.versao !== versaoLida) return false;
+      linha.registro = {
+        ...linha.registro,
+        ...(mudanca.acesso ? { acesso: mudanca.acesso.cifrado.bytes, acessoExpiraEm: mudanca.acesso.expiraEm } : {}),
+        ...(mudanca.segredo ? { segredo: mudanca.segredo.cifrado.bytes, segredoExpiraEm: mudanca.segredo.expiraEm } : {}),
+        ...(mudanca.renovadoEm ? { renovadoEm: mudanca.renovadoEm } : {}),
+        versao: linha.registro.versao + 1,
+      };
+      falhas.push(mudanca.falha ?? null);
+      return true;
+    },
+    async liberarRenovacao(alvo, concessao, falha) {
+      if (concessoes.get(alvo.connectionId) !== concessao) return;
+      concessoes.delete(alvo.connectionId);
+      if (falha !== undefined) falhas.push(falha);
     },
     async apagar(alvo) {
       const linha = linhas.get(alvo.connectionId);
@@ -95,7 +102,7 @@ function criarRepositorio(conexoes: Record<string, { organizationId: string; pla
     },
   };
   const falhas: (string | null)[] = [];
-  return { repositorio, linhas, falhas };
+  return { repositorio, linhas, falhas, concessoes, reivindicacoes };
 }
 
 type Roteiro = (segredo: string) => Promise<Result<Renovacao, FalhaDoProvedor>>;
@@ -137,8 +144,8 @@ const META: Alvo = { organizationId: ORG, connectionId: 'conexao-meta' };
 const APIFY: Alvo = { organizationId: ORG, connectionId: 'conexao-apify' };
 const OUTRA: Alvo = { organizationId: ORG, connectionId: 'conexao-outra' };
 
-function montar(opcoes: { roteiro?: Roteiro; agora?: () => Date } = {}) {
-  const { repositorio, linhas, falhas } = criarRepositorio({
+function montar(opcoes: { roteiro?: Roteiro; agora?: () => Date; esperar?: (ms: number) => Promise<void> } = {}) {
+  const { repositorio, linhas, falhas, concessoes, reivindicacoes } = criarRepositorio({
     [GOOGLE.connectionId]: { organizationId: ORG, platform: 'google' },
     [META.connectionId]: { organizationId: ORG, platform: 'meta' },
     [APIFY.connectionId]: { organizationId: ORG, platform: 'apify' },
@@ -163,11 +170,17 @@ function montar(opcoes: { roteiro?: Roteiro; agora?: () => Date } = {}) {
       repositorio,
       cifra,
       provedores,
-      marcador: { marcar: async (alvo, motivo) => void marcadas.push({ alvo, motivo }) },
+      marcador: {
+        marcar: async (alvo, motivo, versaoLida) => {
+          if ((linhas.get(alvo.connectionId)?.registro?.versao ?? null) !== versaoLida) return;
+          marcadas.push({ alvo, motivo });
+        },
+      },
       registro,
       relogio,
+      esperar: opcoes.esperar ?? ((ms) => new Promise((resolver) => setTimeout(resolver, Math.min(ms, 5)))),
     });
-  return { cofre: novoCofre(), novoCofre, linhas, falhas, google, meta, marcadas, logs };
+  return { cofre: novoCofre(), novoCofre, linhas, falhas, google, meta, marcadas, logs, concessoes, reivindicacoes, repositorio, cifra };
 }
 
 describe('CofreDeTokens — Google (refresh token)', () => {
@@ -344,5 +357,166 @@ describe('CofreDeTokens — registros sem segredo', () => {
     for (const linha of t.logs) {
       for (const segredo of [REFRESH, ACESSO, TOKEN_META, 'outro-refresh']) assert.ok(!linha.includes(segredo), linha);
     }
+  });
+});
+
+describe('CofreDeTokens — renovação única sem transação aberta na chamada de rede', () => {
+  it('o perdedor não chama o provedor: espera e lê o access token gravado pelo dono', async () => {
+    let liberarProvedor: () => void = () => {};
+    const provedorPreso = new Promise<void>((resolver) => {
+      liberarProvedor = resolver;
+    });
+    const t = montar({
+      roteiro: async () => {
+        await provedorPreso;
+        return { ok: true, value: { accessToken: ACESSO, expiraEm: new Date(AGORA.getTime() + 3_600_000) } };
+      },
+    });
+    await t.cofre.guardar(GOOGLE, { tipo: 'oauth_refresh', segredo: REFRESH });
+    const dono = t.cofre.obterAcesso(GOOGLE);
+    await new Promise((resolver) => setTimeout(resolver, 5));
+    assert.ok(t.concessoes.has(GOOGLE.connectionId), 'o dono segura só a concessão, não uma transação');
+
+    const perdedor = t.novoCofre().obterAcesso(GOOGLE);
+    await new Promise((resolver) => setTimeout(resolver, 15));
+    liberarProvedor();
+
+    const [a, b] = await Promise.all([dono, perdedor]);
+    assert.ok(a.ok && b.ok);
+    assert.equal(a.value.token, ACESSO);
+    assert.equal(b.value.token, ACESSO);
+    assert.equal(t.google.chamadas.length, 1);
+    assert.equal(t.concessoes.size, 0);
+  });
+
+  it('falha transitória do dono grava o código, libera a concessão e o próximo pedido tenta de novo', async () => {
+    let falhar = true;
+    const t = montar({
+      roteiro: async () =>
+        falhar
+          ? { ok: false, error: { natureza: 'transitoria', codigo: 'http_503' } }
+          : { ok: true, value: { accessToken: ACESSO, expiraEm: new Date(AGORA.getTime() + 3_600_000) } },
+    });
+    await t.cofre.guardar(GOOGLE, { tipo: 'oauth_refresh', segredo: REFRESH });
+    assert.deepEqual(await t.cofre.obterAcesso(GOOGLE), { ok: false, error: 'indisponivel' });
+    assert.deepEqual(t.falhas, ['http_503']);
+    assert.equal(t.concessoes.size, 0);
+
+    falhar = false;
+    const segunda = await t.cofre.obterAcesso(GOOGLE);
+    assert.ok(segunda.ok);
+    assert.equal(t.google.chamadas.length, 2);
+  });
+
+  it('concessão presa por outro processo: desiste depois do prazo, sem chamar o provedor', async () => {
+    let esperas = 0;
+    const t = montar({ esperar: async () => void (esperas += 1) });
+    await t.cofre.guardar(GOOGLE, { tipo: 'oauth_refresh', segredo: REFRESH });
+    t.concessoes.set(GOOGLE.connectionId, 'concessao-de-outro-processo');
+    assert.deepEqual(await t.cofre.obterAcesso(GOOGLE), { ok: false, error: 'indisponivel' });
+    assert.equal(t.google.chamadas.length, 0);
+    assert.ok(esperas > 1);
+  });
+
+  it('reautorização durante a renovação: a gravação com versão velha é recusada e o segredo novo fica', async () => {
+    const SEGREDO_NOVO = '1//refresh-novo-da-reautorizacao';
+    let cofre: ReturnType<typeof montar>['cofre'] | null = null;
+    const t = montar({
+      roteiro: async () => {
+        await cofre!.guardar(GOOGLE, { tipo: 'oauth_refresh', segredo: SEGREDO_NOVO });
+        return { ok: true, value: { accessToken: ACESSO, expiraEm: new Date(AGORA.getTime() + 3_600_000), novoSegredo: '1//rotacionado-velho' } };
+      },
+    });
+    cofre = t.novoCofre();
+    await t.cofre.guardar(GOOGLE, { tipo: 'oauth_refresh', segredo: REFRESH });
+
+    const acesso = await t.cofre.obterAcesso(GOOGLE);
+    assert.ok(acesso.ok);
+    const registro = t.linhas.get(GOOGLE.connectionId)!.registro!;
+    assert.equal(await t.cifra.decifrar(registro.segredo, { connectionId: GOOGLE.connectionId, platform: 'google', finalidade: 'segredo' }), SEGREDO_NOVO);
+    assert.equal(registro.acesso, null, 'o access token do segredo velho não entra no registro novo');
+    assert.ok(t.logs.some((linha) => linha.includes('tokens.gravacao.concorrente')));
+  });
+
+  it('só emite access token do Google com pelo menos 30 minutos de validade', async () => {
+    let agora = AGORA;
+    const t = montar({ agora: () => agora });
+    await t.cofre.guardar(GOOGLE, { tipo: 'oauth_refresh', segredo: REFRESH });
+    await t.cofre.obterAcesso(GOOGLE);
+    agora = new Date(AGORA.getTime() + 20 * 60_000);
+    await t.novoCofre().obterAcesso(GOOGLE);
+    assert.equal(t.google.chamadas.length, 1, 'com 40 minutos de folga, reaproveita');
+    agora = new Date(AGORA.getTime() + 31 * 60_000);
+    await t.novoCofre().obterAcesso(GOOGLE);
+    assert.equal(t.google.chamadas.length, 2, 'com 29 minutos de folga, renova');
+  });
+});
+
+describe('CofreDeTokens — remoção com política e apagamento atômico', () => {
+  it('sem revogar no provedor: apaga com a versão lida e informa nao_tentada', async () => {
+    const t = montar();
+    await t.cofre.guardar(GOOGLE, { tipo: 'oauth_refresh', segredo: REFRESH });
+    const versoes: (number | null)[] = [];
+    const resultado = await t.cofre.revogarEApagar(GOOGLE, {
+      revogarNoProvedor: false,
+      apagar: async (versao) => {
+        versoes.push(versao);
+        return true;
+      },
+    });
+    assert.deepEqual(resultado, { revogacao: 'nao_tentada', apagado: true });
+    assert.deepEqual(versoes, [1]);
+    assert.equal(t.google.revogados.length, 0);
+  });
+
+  it('apaga (condicionado à versão) ANTES de revogar; perdendo a corrida, não revoga o grant da reautorização', async () => {
+    const t = montar();
+    await t.cofre.guardar(GOOGLE, { tipo: 'oauth_refresh', segredo: REFRESH });
+    const ordem: string[] = [];
+    t.google.provedor.revogar = async () => {
+      ordem.push('revogar');
+      return { ok: true, value: 'revogado' };
+    };
+    const perdeu = await t.cofre.revogarEApagar(GOOGLE, {
+      apagar: async () => {
+        ordem.push('apagar');
+        return false;
+      },
+    });
+    assert.deepEqual(perdeu, { revogacao: 'nao_tentada', apagado: false });
+    assert.deepEqual(ordem, ['apagar'], 'quem perdeu a corrida não revoga');
+
+    const ganhou = await t.cofre.revogarEApagar(GOOGLE, {
+      apagar: async () => {
+        ordem.push('apagar');
+        return true;
+      },
+    });
+    assert.deepEqual(ganhou, { revogacao: 'revogado', apagado: true });
+    assert.deepEqual(ordem, ['apagar', 'apagar', 'revogar']);
+  });
+});
+
+describe('CofreDeTokens — corridas com reautorização (versão do token)', () => {
+  it('invalid_grant de uma renovação com o segredo velho não marca reauth_pending por cima da reautorização', async () => {
+    let cofre: ReturnType<typeof montar>['cofre'] | null = null;
+    const t = montar({
+      roteiro: async () => {
+        await cofre!.guardar(GOOGLE, { tipo: 'oauth_refresh', segredo: '1//novo-da-reautorizacao' });
+        return { ok: false, error: { natureza: 'reautorizar', codigo: 'invalid_grant' } };
+      },
+    });
+    cofre = t.novoCofre();
+    await t.cofre.guardar(GOOGLE, { tipo: 'oauth_refresh', segredo: REFRESH });
+    assert.deepEqual(await t.cofre.obterAcesso(GOOGLE), { ok: false, error: 'reautorizar' });
+    assert.deepEqual(t.marcadas, [], 'a versão mudou: a marcação não vale para o token novo');
+  });
+
+  it('a concessão de outro processo não é solta por quem chegou atrasado', async () => {
+    const t = montar({ roteiro: async () => ({ ok: false, error: { natureza: 'transitoria', codigo: 'http_503' } }) });
+    await t.cofre.guardar(GOOGLE, { tipo: 'oauth_refresh', segredo: REFRESH });
+    t.concessoes.set(GOOGLE.connectionId, 'concessao-de-outro-processo');
+    await t.repositorio.liberarRenovacao(GOOGLE, 'concessao-vencida-minha', 'http_503');
+    assert.equal(t.concessoes.get(GOOGLE.connectionId), 'concessao-de-outro-processo');
   });
 });

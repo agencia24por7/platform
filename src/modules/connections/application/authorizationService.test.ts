@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 import '../../../shared/testing/registrarAlias.mjs';
 import type { AuditEvent } from '@/modules/audit/domain/auditEvent';
-import type { Connection, NewConnection, Platform } from '@/modules/connections/domain/connection';
+import type { Connection, Platform } from '@/modules/connections/domain/connection';
 import type { DiscoveredAccount } from '@/modules/connections/domain/discovery';
 import type { PlataformaOauth } from '@/modules/connections/domain/oauth';
-import type { ConnectionRepository } from '@/modules/connections/infrastructure/connectionRepository';
+import type { ConnectionRepository, NovaConexaoComId } from '@/modules/connections/infrastructure/connectionRepository';
+import type { NovoSegredo } from '@/modules/tokens/application/portas';
 import type { PlatformDiscovery } from '@/modules/connections/application/platformDiscoveryPort';
 import type { AuthorizationInput } from './authorizationService.ts';
 
@@ -19,10 +20,13 @@ Object.assign(process.env, {
 
 const { createAuthorizationService } = await import('./authorizationService.ts');
 const { PLATAFORMAS_OAUTH, FAMILIA_GOOGLE, FAMILIA_META } = await import('@/modules/connections/domain/oauth.ts');
-const { CREDENCIAL_SEM_COFRE } = await import('@/modules/connections/domain/connection.ts');
+const { createCofreDeTokens } = await import('@/modules/tokens/application/cofreDeTokens.ts');
+const { createCifraEnvelope } = await import('@/modules/tokens/infrastructure/envelope.ts');
+const { createChaveMestraLocal } = await import('@/modules/tokens/infrastructure/chavesMestras.ts');
 
 const ORGANIZACAO = 'org-1';
 const SEGREDO_DO_TOKEN = 'ya29.token-secreto-de-acesso';
+const COM_COFRE = PLATAFORMAS_OAUTH.filter((plataforma) => plataforma !== 'rdstation');
 
 function conta(platform: Platform): DiscoveredAccount {
   return {
@@ -39,62 +43,64 @@ function conta(platform: Platform): DiscoveredAccount {
 
 type Cenario = ReturnType<typeof montarCenario>;
 
-function montarCenario(opcoes: { cofre?: boolean; falhaNoInsert?: boolean; semIdentidade?: boolean } = {}) {
-  const cofreDisponivel = opcoes.cofre ?? true;
+type Guardado = { readonly connectionId: string; readonly tipo: string; readonly expiraEm: Date | null; readonly bytes: Buffer; readonly versao: number };
+
+function montarCenario(opcoes: { falhaNoInsert?: boolean; semIdentidade?: boolean; cofreFalha?: boolean; antesDoRenew?: () => void } = {}) {
   const conexoes = new Map<string, Connection>();
-  const cofre = { armazenados: [] as string[], descartados: [] as string[], segredos: [] as unknown[] };
-  const coletores = { criados: [] as string[], removidos: [] as string[] };
-  const executores = { criados: [] as string[], removidos: [] as string[] };
-  const refsAtuais = new Map<string, { coletor: string | null; executor: string | null }>();
+  const tokens = new Map<string, Guardado>();
+  const selados: { connectionId: string; segredo: string; tipo: string }[] = [];
   const descobertas: { connectionId: string; contas: readonly DiscoveredAccount[] }[] = [];
   const consultasDeDescoberta: string[] = [];
   const eventos: AuditEvent[] = [];
-  let sequencia = 0;
+  const esquecidas: string[] = [];
+
+  const gravarToken = (connectionId: string, segredo: NovoSegredo) => {
+    const anterior = tokens.get(connectionId);
+    tokens.set(connectionId, {
+      connectionId,
+      tipo: segredo.tipo,
+      expiraEm: segredo.expiraEm,
+      bytes: segredo.cifrado.bytes,
+      versao: (anterior?.versao ?? 0) + 1,
+    });
+  };
+  const comVersao = (conexao: Connection): Connection => ({ ...conexao, versaoDoToken: tokens.get(conexao.id)?.versao ?? null });
 
   const repositorio: ConnectionRepository = {
-    async insert(input: NewConnection) {
+    async insert(input: NovaConexaoComId, segredo: NovoSegredo) {
       if (opcoes.falhaNoInsert) throw new Error('banco indisponível');
       const conexao: Connection = {
         ...input,
-        id: `conn-${++sequencia}`,
         status: input.status ?? 'active',
         authorizedAt: new Date(),
         webhookToken: null,
+        versaoDoToken: null,
       };
       conexoes.set(conexao.id, conexao);
-      refsAtuais.set(conexao.id, { coletor: null, executor: null });
-      return conexao;
+      gravarToken(conexao.id, segredo);
+      return comVersao(conexao);
     },
-    async findByExternalId(_organizationId, platform, externalId) {
-      return [...conexoes.values()].find((c) => c.platform === platform && c.externalId === externalId) ?? null;
+    async findByExternalId(_organizationId: string, platform: string, externalId: string) {
+      const achada = [...conexoes.values()].find((c) => c.platform === platform && c.externalId === externalId);
+      return achada ? comVersao(achada) : null;
     },
-    async renew(input, esperada) {
-      const atual = conexoes.get(input.id)!;
-      if (atual.credentialRef !== esperada) return null;
+    async renew(input: NovaConexaoComId, segredo: NovoSegredo, esperada: number | null) {
+      opcoes.antesDoRenew?.();
+      const atual = conexoes.get(input.id);
+      if (!atual || (tokens.get(input.id)?.versao ?? null) !== esperada) return null;
       const renovada: Connection = { ...atual, ...input, status: input.status ?? 'active' };
       conexoes.set(renovada.id, renovada);
-      return renovada;
-    },
-    async trocarColetorRef(_organizationId, id, ref) {
-      const refs = refsAtuais.get(id)!;
-      const anterior = refs.coletor;
-      refs.coletor = ref;
-      return anterior;
-    },
-    async trocarExecutorRef(_organizationId, id, ref) {
-      const refs = refsAtuais.get(id)!;
-      const anterior = refs.executor;
-      refs.executor = ref;
-      return anterior;
+      gravarToken(renovada.id, segredo);
+      return comVersao(renovada);
     },
     async findById() {
       return null;
     },
     async list() {
-      return [];
+      return [...conexoes.values()].map(comVersao);
     },
     async revogar() {
-      return null;
+      return false;
     },
   };
 
@@ -120,6 +126,25 @@ function montarCenario(opcoes: { cofre?: boolean; falhaNoInsert?: boolean; semId
     lastSweep: () => ({ raizes: 0, brutas: 0, administradoras: 0, recusadas: 0 }),
   } as unknown as PlatformDiscovery;
 
+  const cifra = createCifraEnvelope(createChaveMestraLocal('s'.repeat(40)));
+  const cofreReal = createCofreDeTokens({
+    repositorio: {} as never,
+    cifra,
+    provedores: () => null,
+    marcador: { marcar: async () => {} },
+    registro: { info() {}, aviso() {}, erro() {} },
+  });
+  const cofre = {
+    async selar(destino: { connectionId: string; platform: Platform }, novo: { tipo: string; segredo: string; expiraEm?: Date | null }) {
+      if (opcoes.cofreFalha) return { ok: false as const, error: 'indisponivel' as const };
+      selados.push({ connectionId: destino.connectionId, segredo: novo.segredo, tipo: novo.tipo });
+      return cofreReal.selar(destino, novo as never);
+    },
+    esquecer(connectionId: string) {
+      esquecidas.push(connectionId);
+    },
+  };
+
   const servico = createAuthorizationService(
     {
       exists: async () => true,
@@ -136,49 +161,19 @@ function montarCenario(opcoes: { cofre?: boolean; falhaNoInsert?: boolean; semId
       },
     } as never,
     descoberta,
-    {
-      available: cofreDisponivel,
-      async store(segredo: unknown) {
-        cofre.segredos.push(segredo);
-        const ref = `n8n:credential:cred${cofre.armazenados.length + 1}abc`;
-        cofre.armazenados.push(ref);
-        return ref;
-      },
-      async discard(ref: string) {
-        cofre.descartados.push(ref);
-        return 'descartada' as const;
-      },
-    },
+    cofre,
     {
       async record(evento: AuditEvent) {
         eventos.push(evento);
       },
     } as never,
-    {
-      async provisionar() {
-        const ref = `wf-coletor-${coletores.criados.length + 1}`;
-        coletores.criados.push(ref);
-        return ref;
-      },
-      async remover(ref: string) {
-        coletores.removidos.push(ref);
-        return true;
-      },
-    } as never,
-    {
-      async provisionar() {
-        const ref = `wf-executor-${executores.criados.length + 1}`;
-        executores.criados.push(ref);
-        return ref;
-      },
-      async remover(ref: string) {
-        executores.removidos.push(ref);
-        return true;
-      },
-    } as never,
+    () => new Date('2026-11-20T12:00:00Z'),
   );
 
-  return { servico, conexoes, cofre, coletores, executores, refsAtuais, descobertas, consultasDeDescoberta, eventos };
+  const decifrar = (guardado: Guardado, platform: Platform) =>
+    cifra.decifrar(guardado.bytes, { connectionId: guardado.connectionId, platform, finalidade: 'segredo' });
+
+  return { servico, conexoes, tokens, selados, descobertas, consultasDeDescoberta, eventos, esquecidas, decifrar };
 }
 
 function pedido(platform: PlataformaOauth, extra: Partial<AuthorizationInput> = {}): AuthorizationInput {
@@ -231,52 +226,59 @@ describe('a lista cobre todas as plataformas OAuth', () => {
   });
 });
 
-for (const plataforma of PLATAFORMAS_OAUTH) {
+const ehGoogle = (plataforma: string) => (FAMILIA_GOOGLE as readonly string[]).includes(plataforma);
+
+for (const plataforma of COM_COFRE) {
   describe(`conectar ${plataforma}`, () => {
-    it('guarda o segredo no cofre, descobre os recursos, provisiona coletor e executor uma vez e audita', async () => {
+    it('cifra o segredo de longa duração no cofre junto com a conexão, descobre os recursos e audita, sem n8n', async () => {
       const c = montarCenario();
       const resultado = await c.servico.complete(pedido(plataforma));
 
       assert.ok(resultado.ok, 'a autorização devia concluir');
-      assert.equal(resultado.value.discovered, plataforma === 'rdstation' || plataforma === 'whatsapp' ? 0 : 1);
+      assert.equal(resultado.value.discovered, plataforma === 'whatsapp' ? 0 : 1);
       assert.equal(resultado.value.organizationCreated, false);
-
-      assert.equal(c.cofre.armazenados.length, 1);
-      const [segredo] = c.cofre.segredos as { accessToken: string; refreshToken: string | null; platform: string }[];
-      assert.equal(segredo!.accessToken, SEGREDO_DO_TOKEN);
-      assert.equal(segredo!.refreshToken, 'refresh-secreto');
-      assert.equal(segredo!.platform, plataforma);
 
       const [conexao] = [...c.conexoes.values()];
       assert.equal(c.conexoes.size, 1);
-      assert.equal(conexao!.credentialRef, c.cofre.armazenados[0]);
       assert.equal(conexao!.status, 'active');
       assert.equal(conexao!.externalId, `identidade-${plataforma}`);
       assert.equal(conexao!.authorizedVia, 'staff');
 
-      assert.equal(c.coletores.criados.length, 1);
-      assert.equal(c.executores.criados.length, 1);
-      assert.deepEqual(c.refsAtuais.get(conexao!.id), { coletor: 'wf-coletor-1', executor: 'wf-executor-1' });
-      assert.equal(c.coletores.removidos.length, 0);
+      const guardado = c.tokens.get(conexao!.id)!;
+      assert.equal(guardado.versao, 1);
+      if (ehGoogle(plataforma)) {
+        assert.equal(guardado.tipo, 'oauth_refresh');
+        assert.equal(await c.decifrar(guardado, plataforma), 'refresh-secreto');
+        assert.equal(conexao!.expiresAt, null);
+      } else {
+        assert.equal(guardado.tipo, 'oauth_long_lived');
+        assert.equal(await c.decifrar(guardado, plataforma), SEGREDO_DO_TOKEN);
+        assert.equal(guardado.expiraEm!.toISOString(), '2026-11-20T13:00:00.000Z');
+        assert.equal(conexao!.expiresAt!.toISOString(), '2026-11-20T13:00:00.000Z');
+      }
+      assert.ok(!guardado.bytes.toString('latin1').includes('refresh-secreto'));
+      assert.ok(!guardado.bytes.toString('latin1').includes(SEGREDO_DO_TOKEN));
+      assert.deepEqual(c.esquecidas, [conexao!.id]);
 
-      const guardado = JSON.stringify([...c.conexoes.values()]) + JSON.stringify(c.eventos);
-      assert.ok(!guardado.includes(SEGREDO_DO_TOKEN), 'o token apareceu fora do cofre');
-      assert.ok(!guardado.includes('refresh-secreto'), 'o refresh token apareceu fora do cofre');
-      assert.ok(!guardado.includes('segredo-do-cliente-da-plataforma'), 'o segredo do app apareceu fora do cofre');
+      const fora = JSON.stringify([...c.conexoes.values()]) + JSON.stringify(c.eventos);
+      assert.ok(!fora.includes(SEGREDO_DO_TOKEN), 'o token apareceu fora do cofre');
+      assert.ok(!fora.includes('refresh-secreto'), 'o refresh token apareceu fora do cofre');
+      assert.ok(!fora.includes('segredo-do-cliente-da-plataforma'), 'o segredo do app apareceu fora do cofre');
 
       const autorizacoes = c.eventos.filter((evento) => evento.action === 'connection.authorize');
       assert.equal(autorizacoes.length, 1);
       assert.equal(autorizacoes[0]!.targetId, conexao!.id);
       assert.equal(autorizacoes[0]!.organizationId, ORGANIZACAO);
       assert.equal(autorizacoes[0]!.metadata?.platform, plataforma);
-      assert.equal(autorizacoes[0]!.metadata?.vaultAvailable, true);
+      assert.equal(autorizacoes[0]!.metadata?.tipoNoCofre, ehGoogle(plataforma) ? 'oauth_refresh' : 'oauth_long_lived');
+      assert.equal(autorizacoes[0]!.metadata?.renovouConexao, false);
     });
 
     it('descobre só os recursos da própria plataforma e grava como conta descoberta da conexão', async () => {
       const c = montarCenario();
       await c.servico.complete(pedido(plataforma));
 
-      const semDescoberta = plataforma === 'rdstation' || plataforma === 'whatsapp';
+      const semDescoberta = plataforma === 'whatsapp';
       assert.deepEqual(c.consultasDeDescoberta, semDescoberta ? [] : [plataforma]);
 
       const [conexao] = [...c.conexoes.values()];
@@ -285,27 +287,62 @@ for (const plataforma of PLATAFORMAS_OAUTH) {
       assert.equal(c.descobertas[0]!.contas.length, semDescoberta ? 0 : 1);
     });
 
-    it('reconectar a mesma identidade renova a conexão, descarta a credencial velha e troca o coletor sem duplicar', async () => {
+    it('reconectar a mesma identidade renova a MESMA conexão e troca o token com versão nova', async () => {
       const c = montarCenario();
       const primeira = await c.servico.complete(pedido(plataforma));
+      responderToken({ corpo: { access_token: `${SEGREDO_DO_TOKEN}-2`, refresh_token: 'refresh-secreto-2', expires_in: 3600 } });
       const segunda = await c.servico.complete(pedido(plataforma));
 
       assert.ok(primeira.ok && segunda.ok);
       assert.equal(c.conexoes.size, 1, 'reconectar não pode criar outra conexão');
       assert.equal(segunda.value.connectionId, primeira.value.connectionId);
 
-      const [conexao] = [...c.conexoes.values()];
-      assert.equal(conexao!.credentialRef, c.cofre.armazenados[1]);
-      assert.deepEqual(c.cofre.descartados, [c.cofre.armazenados[0]]);
-
-      assert.equal(c.coletores.criados.length, 2);
-      assert.deepEqual(c.coletores.removidos, ['wf-coletor-1']);
-      assert.deepEqual(c.executores.removidos, ['wf-executor-1']);
-      assert.deepEqual(c.refsAtuais.get(conexao!.id), { coletor: 'wf-coletor-2', executor: 'wf-executor-2' });
+      const guardado = c.tokens.get(segunda.value.connectionId)!;
+      assert.equal(guardado.versao, 2);
+      assert.equal(await c.decifrar(guardado, plataforma), ehGoogle(plataforma) ? 'refresh-secreto-2' : `${SEGREDO_DO_TOKEN}-2`);
 
       const autorizacoes = c.eventos.filter((evento) => evento.action === 'connection.authorize');
       assert.equal(autorizacoes.length, 2);
-      assert.equal(autorizacoes[1]!.metadata?.credencialAnterior, 'descartada');
+      assert.equal(autorizacoes[1]!.metadata?.renovouConexao, true);
+    });
+
+    it('conexão em reauth_pending sem token (pós-corte) volta a active com o mesmo id', async () => {
+      const c = montarCenario();
+      const primeira = await c.servico.complete(pedido(plataforma));
+      assert.ok(primeira.ok);
+      const id = primeira.value.connectionId;
+      c.conexoes.set(id, { ...c.conexoes.get(id)!, status: 'reauth_pending' });
+      c.tokens.delete(id);
+
+      const reautorizada = await c.servico.complete(pedido(plataforma));
+      assert.ok(reautorizada.ok);
+      assert.equal(reautorizada.value.connectionId, id);
+      assert.equal(c.conexoes.get(id)!.status, 'active');
+      assert.equal(c.tokens.get(id)!.versao, 1);
+    });
+
+    it('renovação concorrente: quem leu a versão velha recebe conflito e não sobrescreve o token mais novo', async () => {
+      let intrometer = false;
+      const c = montarCenario({
+        antesDoRenew: () => {
+          if (!intrometer) return;
+          intrometer = false;
+          const [conexao] = [...c.conexoes.values()];
+          const atual = c.tokens.get(conexao!.id)!;
+          c.tokens.set(conexao!.id, { ...atual, versao: atual.versao + 1 });
+        },
+      });
+      const primeira = await c.servico.complete(pedido(plataforma));
+      assert.ok(primeira.ok);
+      const antes = c.tokens.get(primeira.value.connectionId)!;
+
+      intrometer = true;
+      const atrasada = await c.servico.complete(pedido(plataforma));
+      assert.ok(!atrasada.ok);
+      assert.equal(atrasada.error.code, 'conflict');
+      const depois = c.tokens.get(primeira.value.connectionId)!;
+      assert.equal(depois.versao, antes.versao + 1, 'o token da outra requisição ficou');
+      assert.equal(depois.bytes, antes.bytes);
     });
 
     it('recusa quem não administra, sem falar com a plataforma nem tocar no cofre', async () => {
@@ -316,7 +353,7 @@ for (const plataforma of PLATAFORMAS_OAUTH) {
         assert.ok(!resultado.ok);
         assert.equal(resultado.error.code, 'forbidden');
         assert.equal(chamadasDeToken.length, 0);
-        assert.equal(c.cofre.armazenados.length, 0);
+        assert.equal(c.selados.length, 0);
         assert.equal(c.conexoes.size, 0);
         assert.equal(c.eventos.length, 0);
       }
@@ -329,9 +366,8 @@ for (const plataforma of PLATAFORMAS_OAUTH) {
 
       assert.ok(!resultado.ok);
       assert.equal(resultado.error.code, 'unavailable');
-      assert.equal(c.cofre.armazenados.length, 0);
+      assert.equal(c.selados.length, 0);
       assert.equal(c.conexoes.size, 0);
-      assert.equal(c.coletores.criados.length, 0);
       assert.equal(c.eventos.length, 0);
     });
 
@@ -341,7 +377,7 @@ for (const plataforma of PLATAFORMAS_OAUTH) {
       const resultado = await c.servico.complete(pedido(plataforma));
 
       assert.ok(!resultado.ok);
-      assert.equal(c.cofre.armazenados.length, 0);
+      assert.equal(c.selados.length, 0);
       assert.equal(c.conexoes.size, 0);
     });
 
@@ -350,31 +386,24 @@ for (const plataforma of PLATAFORMAS_OAUTH) {
       const resultado = await c.servico.complete(pedido(plataforma));
 
       assert.ok(!resultado.ok);
-      assert.equal(c.cofre.armazenados.length, 0);
+      assert.equal(c.selados.length, 0);
       assert.equal(c.conexoes.size, 0);
-      assert.equal(c.coletores.criados.length, 0);
     });
 
-    it('falha ao gravar a conexão descarta a credencial recém-guardada', async () => {
+    it('falha ao gravar a conexão não deixa token nem conexão (mesma transação)', async () => {
       const c = montarCenario({ falhaNoInsert: true });
       await assert.rejects(c.servico.complete(pedido(plataforma)), /banco indisponível/);
-
-      assert.deepEqual(c.cofre.descartados, c.cofre.armazenados);
-      assert.equal(c.coletores.criados.length, 0);
+      assert.equal(c.tokens.size, 0);
+      assert.equal(c.conexoes.size, 0);
       assert.equal(c.eventos.length, 0);
     });
 
-    it('sem cofre a conexão fica degradada, sem credencial e sem coletor', async () => {
-      const c = montarCenario({ cofre: false });
+    it('cofre indisponível recusa a autorização: nunca existe conexão ativa sem token', async () => {
+      const c = montarCenario({ cofreFalha: true });
       const resultado = await c.servico.complete(pedido(plataforma));
-
-      assert.ok(resultado.ok);
-      const [conexao] = [...c.conexoes.values()];
-      assert.equal(conexao!.status, 'degraded');
-      assert.equal(conexao!.credentialRef, CREDENCIAL_SEM_COFRE);
-      assert.equal(c.cofre.armazenados.length, 0);
-      assert.equal(c.coletores.criados.length, 0);
-      assert.equal(c.executores.criados.length, 0);
+      assert.ok(!resultado.ok);
+      assert.equal(resultado.error.code, 'unavailable');
+      assert.equal(c.conexoes.size, 0);
     });
 
     it('autorização por convite grava a origem e audita como convite', async () => {
@@ -393,6 +422,65 @@ for (const plataforma of PLATAFORMAS_OAUTH) {
   });
 }
 
+describe('reautorizar com outra conta', () => {
+  it('cria conexão nova e avisa que a pendente (outra identidade) continua sem token', async () => {
+    const c = montarCenario();
+    const primeira = await c.servico.complete(pedido('ga4'));
+    assert.ok(primeira.ok);
+    const antiga = c.conexoes.get(primeira.value.connectionId)!;
+    c.conexoes.set(antiga.id, { ...antiga, status: 'reauth_pending', externalId: 'identidade-de-outra-conta' });
+    c.tokens.delete(antiga.id);
+
+    const outra = await c.servico.complete(pedido('ga4'));
+    assert.ok(outra.ok);
+    assert.notEqual(outra.value.connectionId, antiga.id);
+    assert.equal(outra.value.pendentesDeOutraConta, 1);
+    assert.equal(c.conexoes.get(antiga.id)!.status, 'reauth_pending', 'a pendente não é tocada');
+    assert.equal(primeira.value.pendentesDeOutraConta, 0);
+  });
+});
+
+describe('segredo que o cofre não sabe guardar', () => {
+  it('Google sem refresh token é recusado sem criar conexão', async () => {
+    responderToken({ corpo: { access_token: SEGREDO_DO_TOKEN, expires_in: 3600 } });
+    const c = montarCenario();
+    const resultado = await c.servico.complete(pedido('ga4'));
+    assert.ok(!resultado.ok);
+    assert.match(resultado.error.message, /refresh token/);
+    assert.equal(c.conexoes.size, 0);
+  });
+
+  it('RD Station por OAuth é recusado: a conexão do RD é por chave de API', async () => {
+    const c = montarCenario();
+    const resultado = await c.servico.complete(pedido('rdstation'));
+    assert.ok(!resultado.ok);
+    assert.equal(c.conexoes.size, 0);
+  });
+
+  it('Meta: se a troca pelo token de longa duração falha, nada é gravado (o token curto não vira de 60 dias)', async () => {
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      const corpo = String(init?.body ?? '');
+      if (corpo.includes('fb_exchange_token')) return new Response(JSON.stringify({ error: { code: 1 } }), { status: 500 });
+      return new Response(JSON.stringify({ access_token: SEGREDO_DO_TOKEN, expires_in: 3600 }), { status: 200 });
+    }) as typeof fetch;
+    const c = montarCenario();
+    const resultado = await c.servico.complete(pedido('meta'));
+    assert.ok(!resultado.ok);
+    assert.equal(resultado.error.code, 'unavailable');
+    assert.match(resultado.error.message, /longa duração/);
+    assert.equal(c.conexoes.size, 0);
+    assert.equal(c.selados.length, 0);
+  });
+
+  it('Meta sem expires_in assume 60 dias de validade', async () => {
+    responderToken({ corpo: { access_token: SEGREDO_DO_TOKEN } });
+    const c = montarCenario();
+    const resultado = await c.servico.complete(pedido('meta'));
+    assert.ok(resultado.ok);
+    assert.equal(c.tokens.get(resultado.value.connectionId)!.expiraEm!.toISOString(), '2027-01-19T12:00:00.000Z');
+  });
+});
+
 describe('permissões da autorização', () => {
   const exigida: Record<string, string> = {
     google: 'https://www.googleapis.com/auth/adwords',
@@ -409,23 +497,21 @@ describe('permissões da autorização', () => {
 
       assert.ok(!resultado.ok);
       assert.equal(resultado.error.code, 'forbidden');
-      assert.equal(c.cofre.armazenados.length, 0);
+      assert.equal(c.selados.length, 0);
       assert.equal(c.conexoes.size, 0, escopo);
     });
   }
 });
 
 describe('conexões de plataformas diferentes na mesma organização', () => {
-  it('cada plataforma ganha a própria conexão, credencial e coletor', async () => {
+  it('cada plataforma ganha a própria conexão e o próprio token', async () => {
     const c: Cenario = montarCenario();
-    for (const plataforma of PLATAFORMAS_OAUTH) {
+    for (const plataforma of COM_COFRE) {
       const resultado = await c.servico.complete(pedido(plataforma));
       assert.ok(resultado.ok);
     }
 
-    assert.equal(c.conexoes.size, PLATAFORMAS_OAUTH.length);
-    assert.equal(new Set([...c.conexoes.values()].map((x) => x.credentialRef)).size, PLATAFORMAS_OAUTH.length);
-    assert.equal(c.coletores.criados.length, PLATAFORMAS_OAUTH.length);
-    assert.equal(c.coletores.removidos.length, 0);
+    assert.equal(c.conexoes.size, COM_COFRE.length);
+    assert.equal(c.tokens.size, COM_COFRE.length);
   });
 });

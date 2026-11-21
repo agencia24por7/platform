@@ -98,7 +98,8 @@ describe('coletor YouTube: receita é opcional', () => {
 describe('coletor GTM respeita 0,25 QPS', () => {
   it('todo nó HTTP tem batching de 1 item a cada 4,5 s ou mais', () => {
     const modelo = carregar('coletores/coletor-gtm.json');
-    for (const no of modelo.nodes.filter((candidato) => candidato.type === 'n8n-nodes-base.httpRequest')) {
+    const daApi = (candidato: No) => candidato.type === 'n8n-nodes-base.httpRequest' && !String(candidato.parameters.url).includes('app:3000');
+    for (const no of modelo.nodes.filter(daApi)) {
       const lote = (no.parameters.options as { batching?: { batch: { batchSize: number; batchInterval: number } } }).batching!.batch;
       assert.equal(lote.batchSize, 1, no.name);
       assert.ok(lote.batchInterval >= 4500, no.name);
@@ -151,7 +152,7 @@ describe('orquestrador e janela do backfill: robustez', () => {
 
     it(`${arquivo}: fonte ocupada é pulada antes de qualquer outro passo`, () => {
       assert.equal(modelo.connections['Abrir execução']!.main[0]![0]!.node, 'Fonte ocupada?');
-      assert.equal(modelo.connections['Fonte ocupada?']!.main[1]![0]!.node, 'Tem coletor?');
+      assert.equal(modelo.connections['Fonte ocupada?']!.main[1]![0]!.node, 'Tem token?');
       assert.ok(String(JSON.stringify(no('Fonte ocupada?').parameters)).includes('fonte_ocupada'));
     });
 
@@ -168,7 +169,7 @@ describe('orquestrador e janela do backfill: robustez', () => {
     });
 
     it(`${arquivo}: gravar e fechar retentam e o fluxo tem timeout`, () => {
-      for (const nome of ['Gravar métricas', 'Fechar execução', 'Fechar execução (sem coletor)']) {
+      for (const nome of ['Gravar métricas', 'Fechar execução', 'Fechar execução (sem token)']) {
         assert.equal(no(nome).retryOnFail, true, nome);
         assert.ok((no(nome).maxTries ?? 0) >= 2, nome);
       }
@@ -176,15 +177,16 @@ describe('orquestrador e janela do backfill: robustez', () => {
       assert.ok(String(no('Fechar execução').parameters.jsonBody).includes('pausa: $json.pausa'));
     });
 
-    it(`${arquivo}: abrir recusado não vira sem_credencial nem tenta fechar`, () => {
+    it(`${arquivo}: abrir recusado não vira reauth_pending nem tenta fechar`, () => {
       const fonteAtual = { nome: 'F', externalId: 'x', fonte: { nome: 'F' } };
       const nos = { 'Processar em série': [{ json: fonteAtual }], Entrada: [{ json: { fonte: fonteAtual } }] };
-      const recusado = executar(modelo, 'Calcular qualidade (sem coletor)', [{ json: { status: 422, title: 'Janela inválida' } }], nos);
+      const recusado = executar(modelo, 'Calcular qualidade (sem token)', [{ json: { status: 422, title: 'Janela inválida' } }], nos);
       assert.equal(recusado[0]!.json.errorCode, 'abrir_recusado');
       assert.equal(recusado[0]!.json.temColeta, false);
-      const semCredencial = executar(modelo, 'Calcular qualidade (sem coletor)', [{ json: { id: 'k' } }], nos);
-      assert.equal(semCredencial[0]!.json.errorCode, 'sem_credencial');
-      assert.equal(modelo.connections['Calcular qualidade (sem coletor)']!.main[0]![0]!.node, 'Tem coleta aberta?');
+      const semToken = executar(modelo, 'Calcular qualidade (sem token)', [{ json: { id: 'k' } }], nos);
+      assert.equal(semToken[0]!.json.errorCode, 'reauth_pending');
+      assert.match(String(semToken[0]!.json.errorMessage), /reautorize/);
+      assert.equal(modelo.connections['Calcular qualidade (sem token)']!.main[0]![0]!.node, 'Tem coleta aberta?');
     });
   }
 });

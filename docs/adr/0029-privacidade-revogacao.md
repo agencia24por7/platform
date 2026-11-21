@@ -221,3 +221,16 @@ consulta, e não por streaming. Não há buffer de streaming bloqueando `DELETE`
    3. chamar `POST /api/v0/manutencao/dimensoes`.
 
    Esse caminho não é automático porque refaz histórico SCD2.
+
+## Adendo (ADR 0032, 2026-11-20): quem revoga é o cofre do app
+
+Os workflows temporários de revogação por conexão (`n8n/workflows/plataforma/revogacao/*`), o relay
+`plataforma/revogar-acesso.json` (com o portador do Google) e o `ExecutorDeRevogacaoN8n` foram removidos. Como o
+segredo agora mora no app, `removerConexao` usa `CofreDeTokens.revogarEApagar`: a política
+(`createPoliticaDeRevogacao`: família Google/Meta, grant `oauth_user`, sem `acesso_compartilhado`) decide se tenta
+revogar; o cofre decifra, chama o provedor (Google `oauth2.googleapis.com/revoke`, Meta `DELETE /me/permissions`)
+**antes** de apagar e apaga o ciphertext **sempre**, na mesma transação que marca a conexão como revogada. Ficam
+iguais: o campo `revogadoNoProvedor`/`motivoDaRevogacao` em `connection.removed`, o aviso ao admin com o caminho
+manual quando não revogou, `connection.provider_revoked` quando revogou mas a remoção não completou, e o expurgo
+do YouTube depois da remoção. Conexão pós-corte sem token (`reauth_pending`) é removida com o aviso de revogar a
+autorização antiga à mão (motivo `sem_credencial_no_cofre`).

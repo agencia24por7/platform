@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { before, describe, it } from 'node:test';
-import { BASE, appIsUp, get, post, workerHeaders } from './helpers.mjs';
+import { BASE, appIsUp, get, post, sqlDeConexao, workerHeaders } from './helpers.mjs';
 
 const query = (sql) =>
   execFileSync('docker', ['exec', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
@@ -35,8 +35,7 @@ function semear() {
   const cliente = query(`insert into core.clients (organization_id, name, business_model) values ('${org}', 'Cliente brain ${s}', 'leads') returning id`);
   const vizinho = query(`insert into core.clients (organization_id, name, business_model) values ('${org}', 'Vizinho brain ${s}', 'leads') returning id`);
   const conexao = query(
-    `insert into integrations.connections (organization_id, platform, grant_type, label, external_id, credential_ref)
-     values ('${org}', 'meta', 'oauth_user', 'BM brain', 'bm-${s}', 'n8n:credential:segredo-${s}') returning id`,
+    sqlDeConexao({ organizationId: org, platform: 'meta', label: 'BM brain', externalId: `bm-${s}`, segredo: `orla-teste:segredo-${s}` }).sql,
   );
   const conta = query(
     `insert into integrations.ad_accounts (organization_id, client_id, connection_id, platform, external_id, name)

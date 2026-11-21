@@ -7,6 +7,7 @@ import {
   MARCA_DA_PLATAFORMA,
   ROTULO_DA_PLATAFORMA,
   missingScopes,
+  precisaReautorizar,
   readinessOf,
 } from '@/modules/connections/domain/connection';
 import { Feedback } from '@/../app/_components/Feedback';
@@ -16,6 +17,8 @@ import { text } from '@/shared/http/actions';
 import { atorAtual } from '@/shared/http/ator';
 import { requireContext } from '@/shared/http/currentOrganization';
 import { canAdminister } from '@/modules/identity/domain/user';
+import { falaOauth } from '@/modules/connections/domain/oauth';
+import { usaChaveDeApi } from '@/modules/connections/domain/chaveDeApi';
 
 export const dynamic = 'force-dynamic';
 
@@ -159,6 +162,25 @@ export default async function DetalheAutorizacao({
       {!prontidao.collectable ? (
         <div className="alert alert--warn">
           <strong>Esta autorização não coleta.</strong> {prontidao.reason}
+          {precisaReautorizar(conexao) ? (
+            falaOauth(conexao.platform) && !usaChaveDeApi(conexao.platform) ? (
+              <>
+                {' '}
+                Entre com a mesma conta ({conexao.accountEmail ?? conexao.externalId}) para renovar esta mesma conexão.{' '}
+                <Link
+                  className="btn btn--compacto"
+                  href={`/api/oauth/${conexao.platform}/start?returnTo=${encodeURIComponent(`/integracoes/conector/${conexao.platform}`)}`}
+                >
+                  Reautorizar
+                </Link>
+              </>
+            ) : (
+              <>
+                {' '}
+                <Link href={`/integracoes/conector/${conexao.platform}`}>Cole a chave de novo no conector</Link>.
+              </>
+            )
+          ) : null}
         </div>
       ) : null}
 
@@ -189,7 +211,7 @@ export default async function DetalheAutorizacao({
             </div>
             <div className="fatos__item">
               <span className="fatos__rotulo">Credencial</span>
-              <span>{prontidao.collectable ? 'guardada no cofre' : 'ausente'}</span>
+              <span>{conexao.versaoDoToken !== null ? 'cifrada no cofre de tokens' : 'ausente: reautorize'}</span>
             </div>
             {conexao.expiresAt ? (
               <div className="fatos__item">

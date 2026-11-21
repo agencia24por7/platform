@@ -83,3 +83,11 @@ era desvincular, e para quem usa isso soou como "não deixou apagar a conta".
 Remover a conexão do Google ou da Meta passa a revogar o acesso no provedor antes de apagar a credencial do
 cofre (workflow temporário com a credencial da própria conexão). A falha do cofre continua sem alterar nada; a
 falha da revogação não impede a remoção e vira aviso ao admin. Ver ADR 0029.
+
+## Adendo (ADR 0032, 2026-11-20): a chave mora no cofre de tokens
+
+A chave de API (RD Station, Apify, Z-API) deixou de virar credencial do n8n. `guardarChave` testa a chave em
+claro, cifra com `CofreDeTokens.selar` (`tipo = 'api_key'`) e grava conexão e token na mesma transação; rotacionar
+a chave renova a mesma conexão (mesma identidade `principal`) e sobe a `versao` do token. O coletor genérico do
+RD recebe a chave pela rota `/api/v0/coleta/token` (`tipo = 'query'`, vai em `?token=`). Não há mais coletor
+provisionado por conexão.

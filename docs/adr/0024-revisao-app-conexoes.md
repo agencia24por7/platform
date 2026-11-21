@@ -151,3 +151,14 @@ Proposta:
   `revogadoNoProvedor` em `connection.removed` (ADR 0029, seção 1).
 - Os testes de integração de exclusão vista por usuário com recorte de clientes estão em
   `tests/privacidade.test.mjs`; os do papel do worker continuam com o item 6.
+
+## Adendo (ADR 0032, 2026-11-20): cofre no app, trava pela versão do token
+
+- `credential_ref` deixou de ser usada (zerada no corte 0121; a coluna sai em `db/pendentes/0123` no release seguinte). Os casos `pendente:cofre-indisponivel` e `descartada` sumiram
+  junto: conexão ativa sem token é estado inválido (gatilho adiado `conexao_ativa_exige_token`) e o cofre
+  indisponível recusa a autorização em vez de criar conexão `degraded`.
+- A trava otimista de `credential_ref` do PR #107 foi substituída pela `versao` de `connection_tokens`: `renew` e
+  `revogar` travam a linha da conexão e a do token e só gravam se a versão do token ainda for a lida (ou se
+  continuar sem token, quando foi lida sem). Quem leu a versão velha recebe conflito e nada é sobrescrito.
+- Não há mais provisionamento de coletor/executor no app nem descarte de credencial no n8n: conexão e token são
+  gravados e apagados juntos, numa transação.

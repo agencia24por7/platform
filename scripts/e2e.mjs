@@ -64,7 +64,6 @@ const account = await submit(`/clientes/${clientId}/contas/nova`, {
   connectionLabel: 'Business Manager da organização',
   grantType: 'system_user',
   connectionExternalId: '1094887233',
-  credentialRef: 'n8n:credential:meta-system-user',
   scopes: ['ads_read', 'ads_management'],
   externalId: 'act_1234567890',
   name: 'Meta — Cliente Piloto | Principal',
@@ -90,5 +89,5 @@ console.log('4. fila de coleta:', queue.count, 'conta(s)');
 if (queue.count > 0) {
   const entry = queue.accounts[0];
   console.log('   conta:', entry.accountName, '| janela', entry.window.start, '→', entry.window.end);
-  console.log('   credencial exposta?', Object.keys(entry).some((k) => /token|secret|password/i.test(k)) ? 'SIM' : 'não — apenas credentialRef');
+  console.log('   credencial exposta?', Object.keys(entry).some((k) => k !== 'temToken' && /token|secret|password/i.test(k)) ? 'SIM' : 'não — o segredo fica no cofre de tokens');
 }

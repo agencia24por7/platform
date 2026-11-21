@@ -31,21 +31,34 @@ describe('o segredo não mora aqui', { concurrency: false }, () => {
       FROM information_schema.columns
       WHERE table_schema IN ('core','integrations','metrics','automation','audit')
         AND (column_name ~* '(access_?token|refresh_?token|client_?secret|api_?key|password|senha|chave)')
-        AND column_name <> 'credential_ref'
         AND NOT (table_schema = 'integrations' AND table_name = 'connection_tokens'
                  AND column_name LIKE '%\\_ciphertext' AND data_type = 'bytea')`);
 
     assert.equal(suspeitas, '', `coluna com cara de segredo: ${suspeitas}`);
   });
 
-  it('a conexão guarda referência de cofre, nunca o valor', () => {
-    const fora = dono(`
-      SELECT coalesce(string_agg(external_id, ', '), '')
-      FROM integrations.connections
-      WHERE credential_ref NOT LIKE 'n8n:credential:%'
-        AND credential_ref NOT LIKE 'pendente:%'`);
+  it('não sobra ponteiro de credencial do n8n na conexão: o segredo vive só cifrado no cofre (ADR 0032)', () => {
+    const comPonteiro = dono(`
+      SELECT count(*) FROM integrations.connections
+      WHERE credential_ref IS NOT NULL OR coletor_ref IS NOT NULL OR executor_ref IS NOT NULL`);
+    assert.equal(comPonteiro, '0', 'as colunas legadas ficam só até db/pendentes/0123 e sempre nulas');
 
-    assert.equal(fora, '', `credential_ref fora do formato de referência: ${fora}`);
+    const ativaSemToken = dono(`
+      SELECT count(*) FROM integrations.connections c
+      WHERE c.status IN ('active', 'expiring', 'degraded')
+        AND NOT EXISTS (SELECT 1 FROM integrations.connection_tokens t WHERE t.connection_id = c.id)`);
+    assert.equal(ativaSemToken, '0', 'conexão ativa sem token no cofre');
+  });
+
+  it('o banco recusa conexão ativa sem token no cofre (gatilho adiado do corte)', () => {
+    let erro = '';
+    try {
+      dono(`INSERT INTO integrations.connections (organization_id, platform, grant_type, label, external_id, scopes)
+            VALUES ((SELECT id FROM core.organizations LIMIT 1), 'ga4', 'oauth_user', 'sem token', 'sem-token-${Date.now()}', ARRAY[]::text[])`);
+    } catch (falha) {
+      erro = String(falha.stderr ?? falha.message);
+    }
+    assert.match(erro, /ativa sem token no cofre/);
   });
 
   it('a chave de API nunca é gravada, só o apelido com as pontas', () => {
@@ -55,10 +68,10 @@ describe('o segredo não mora aqui', { concurrency: false }, () => {
     );
     const guardar = servico.slice(
       servico.indexOf('async guardarChave('),
-      servico.indexOf('async createConnection('),
+      servico.indexOf('async removerConexao('),
     );
 
-    assert.ok(guardar.includes('accessToken: chave'), 'a chave precisa ir para o cofre');
+    assert.ok(/cofre\.selar\([^)]*segredo: chave/.test(guardar), 'a chave precisa ir para o cofre');
     assert.ok(
       !/externalId:\s*chave\b/.test(guardar) && !/label:.*\$\{chave\}/.test(guardar),
       'a chave crua não pode virar coluna do banco',

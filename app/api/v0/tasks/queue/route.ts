@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { modules } from '@/composition';
 import { workerQueryRoute } from '@/shared/http/workerRoute';
 import { ok } from '@/shared/result/result';
+import { logger } from '@/shared/logging/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,5 +19,7 @@ const schema = z.object({
 
 export const GET = workerQueryRoute(schema, async (input) => {
   const tarefas = await modules().tasks.claim(input.limit, input.kinds);
-  return ok({ tasks: tarefas });
+  const esperando = await modules().tasks.esperandoReautorizacao();
+  if (esperando > 0) logger.info('tarefas.esperando_reautorizacao', { total: esperando });
+  return ok({ tasks: tarefas, esperandoReautorizacao: esperando });
 });

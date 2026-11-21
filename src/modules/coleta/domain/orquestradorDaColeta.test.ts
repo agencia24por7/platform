@@ -61,7 +61,7 @@ for (const arquivo of FLUXOS) {
       assert.equal(conferida.errorCode, 'gravacao_bq');
       assert.match(conferida.errorMessage, /ECONNREFUSED/);
       assert.ok(!conferida.errorMessage.includes('EAAsegredo123'));
-      for (const nome of ['Gravar métricas', 'Fechar execução', 'Fechar execução (sem coletor)']) {
+      for (const nome of ['Gravar métricas', 'Fechar execução', 'Fechar execução (sem token)']) {
         assert.equal((modelo.nodes.find((no) => no.name === nome) as { onError?: string }).onError, 'continueRegularOutput', nome);
       }
     });

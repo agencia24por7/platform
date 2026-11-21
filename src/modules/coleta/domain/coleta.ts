@@ -22,9 +22,8 @@ export type FonteElegivel = {
   readonly nome: string;
   readonly currency: string;
   readonly timezone: string;
-  readonly credentialRef: string;
-  readonly coletorRef: string | null;
   readonly connectionId: string;
+  readonly temToken: boolean;
   readonly janelaSugerida: Janela;
   readonly marcaDagua: string | null;
   readonly comDimensoes: boolean;

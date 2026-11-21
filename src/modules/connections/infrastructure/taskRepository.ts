@@ -18,9 +18,9 @@ export type ClaimedTask = {
   readonly kind: string;
   readonly managerExternalId: string;
   readonly targetExternalId: string;
-  readonly credentialRef: string;
   readonly platform: string;
-  readonly executorRef: string | null;
+  readonly connectionId: string;
+  readonly temToken: boolean;
 };
 
 type Row = {
@@ -61,6 +61,7 @@ export type TaskRepository = {
   listByConnection(organizationId: string, connectionId: string): Promise<readonly AccountTask[]>;
   listByClient(organizationId: string, clientId: string): Promise<readonly AccountTask[]>;
   claim(limit: number, kinds: readonly string[] | null): Promise<readonly ClaimedTask[]>;
+  esperandoReautorizacao(): Promise<number>;
   report(taskId: string, sucesso: boolean, outcome: string): Promise<string | null>;
 };
 
@@ -122,9 +123,9 @@ export function createTaskRepository(): TaskRepository {
           kind: string;
           manager_external_id: string;
           target_external_id: string;
-          credential_ref: string;
           platform: string;
-          executor_ref: string | null;
+          connection_id: string;
+          tem_token: boolean;
         }[];
 
         return rows.map((row) => ({
@@ -133,10 +134,17 @@ export function createTaskRepository(): TaskRepository {
           kind: row.kind,
           managerExternalId: row.manager_external_id,
           targetExternalId: row.target_external_id,
-          credentialRef: row.credential_ref,
           platform: row.platform,
-          executorRef: row.executor_ref,
+          connectionId: row.connection_id,
+          temToken: row.tem_token,
         }));
+      });
+    },
+
+    async esperandoReautorizacao() {
+      return withoutTenant(async (tx) => {
+        const rows = (await tx`SELECT automation.tarefas_esperando_reautorizacao() AS total`) as unknown as { total: number }[];
+        return rows[0]?.total ?? 0;
       });
     },
 

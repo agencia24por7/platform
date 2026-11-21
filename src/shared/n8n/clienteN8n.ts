@@ -32,6 +32,8 @@ export type ClienteN8n = {
   atualizar(workflowId: string, corpo: CorpoDeWorkflow): Promise<boolean>;
   publicar(workflowId: string): Promise<boolean>;
   marcarDaPlataforma(workflowId: string, tagsAtuais?: readonly { readonly id: string }[]): Promise<boolean>;
+  removerCredencial(credentialId: string): Promise<'removida' | 'ausente' | 'falhou'>;
+  verificarAcessoDeDono(): Promise<boolean>;
 };
 
 const TENTATIVAS_DE_REMOCAO = 10;
@@ -152,8 +154,11 @@ export function criarClienteN8n(configuracao: ConfiguracaoN8n, logger: Registrad
         if (cursor) consulta.set('cursor', cursor);
         const resposta = await chamar('GET', `workflows?${consulta}`);
         if (!resposta.ok) throw new Error(`n8n respondeu ${resposta.status} ao listar workflows`);
-        const pagina = (await resposta.json()) as { data: WorkflowImplantado[]; nextCursor?: string | null };
+        const pagina = (await resposta.json()) as { data?: WorkflowImplantado[]; nextCursor?: string | null };
+        if (!Array.isArray(pagina.data)) throw new Error('n8n devolveu uma página de workflows sem lista');
+        if (pagina.nextCursor && pagina.data.length === 0) throw new Error('n8n devolveu página vazia com cursor: listagem incompleta');
         todos.push(...pagina.data);
+        if (pagina.nextCursor && pagina.nextCursor === cursor) throw new Error('n8n repetiu o cursor: listagem incompleta');
         cursor = pagina.nextCursor ?? undefined;
       } while (cursor);
       return todos;
@@ -163,6 +168,30 @@ export function criarClienteN8n(configuracao: ConfiguracaoN8n, logger: Registrad
       const resposta = await chamar('PUT', `workflows/${workflowId}`, corpo);
       if (!resposta.ok) logger.error('n8n.workflow.atualizar.falhou', { workflowId, status: resposta.status });
       return resposta.ok;
+    },
+
+    async verificarAcessoDeDono() {
+      try {
+        const resposta = await chamar('GET', 'users?limit=1');
+        if (!resposta.ok) return false;
+        const corpo = (await resposta.json()) as { data?: unknown };
+        return Array.isArray(corpo.data);
+      } catch {
+        return false;
+      }
+    },
+
+    async removerCredencial(credentialId) {
+      try {
+        const resposta = await chamar('DELETE', `credentials/${encodeURIComponent(credentialId)}`);
+        if (resposta.ok) return 'removida';
+        if (resposta.status === 404) return 'ausente';
+        logger.error('n8n.credencial.remover.falhou', { credentialId, status: resposta.status });
+        return 'falhou';
+      } catch (error) {
+        logger.error('n8n.credencial.remover.erro', { credentialId, error: error instanceof Error ? error.message : 'desconhecido' });
+        return 'falhou';
+      }
     },
 
     async publicar(workflowId) {

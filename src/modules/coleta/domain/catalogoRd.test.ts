@@ -68,10 +68,14 @@ function rodar(extras: Record<string, unknown[]>, deals: unknown[] = [negociacao
 const daTabela = (saida: Saida, tabela: string) => saida.linhas.filter((linha) => linha._tabela === tabela);
 
 describe('coletor do RD Station: catálogo, produtos, histórico e tarefas', () => {
-  it('lê catálogos em série antes dos funis e só pelo token da query', () => {
+  it('lê catálogos em série antes dos funis e só pelo token da query, vindo do cofre', () => {
     const cadeia = ['Montar requisição', 'Listar fontes', 'Listar campanhas', 'Listar produtos', 'Listar usuários', 'Listar tarefas', 'Listar funis'];
     for (let i = 0; i < cadeia.length - 1; i += 1) assert.equal(modelo.connections[cadeia[i]!]!.main[0]![0]!.node, cadeia[i + 1]);
-    for (const nome of cadeia.slice(1, -1)) assert.equal(no(nome).parameters.genericAuthType, 'httpQueryAuth');
+    for (const nome of cadeia.slice(1, -1)) {
+      assert.equal(no(nome).parameters.authentication, 'none');
+      const query = (no(nome).parameters.queryParameters as { parameters: { name: string; value: string }[] }).parameters;
+      assert.ok(query.find((parametro) => parametro.name === 'token')!.value.includes("$('Obter token')"), nome);
+    }
   });
 
   it('funis e etapas viram dimensões com nome e ordem', () => {

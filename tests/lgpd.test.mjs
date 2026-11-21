@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { before, describe, it } from 'node:test';
-import { BASE, appIsUp, workerHeaders } from './helpers.mjs';
+import { appIsUp, BASE, sqlDeConexao, workerHeaders } from './helpers.mjs';
 
 function senhaDoApp() {
   return readFileSync('.env', 'utf8')
@@ -143,10 +143,14 @@ describe('retenção e direitos do titular', { concurrency: false }, () => {
     const cliente = umaLinha(dono(
       `INSERT INTO core.clients (organization_id, name, business_model) VALUES ('${org}', '${nome}', 'leads') RETURNING id`,
     ));
-    const conexao = umaLinha(dono(
-      `INSERT INTO integrations.connections (organization_id, platform, grant_type, label, external_id, scopes, credential_ref)
-       VALUES ('${org}', 'google', 'mcc', 'MCC ${nome}', '999-${String(marca).slice(-3)}-${sufixo}', ARRAY['adwords'], 'cred') RETURNING id`,
-    ));
+    const conexao = umaLinha(dono(sqlDeConexao({
+      organizationId: org,
+      platform: 'google',
+      grantType: 'mcc',
+      label: `MCC ${nome}`,
+      externalId: `999-${String(marca).slice(-3)}-${sufixo}`,
+      scopes: ['adwords'],
+    }).sql));
     const conta = umaLinha(dono(
       `INSERT INTO integrations.ad_accounts (organization_id, client_id, connection_id, platform, external_id, name)
        VALUES ('${org}', '${cliente}', '${conexao}', 'google', '123-${String(marca).slice(-3)}-${sufixo}', 'Conta ${nome}')

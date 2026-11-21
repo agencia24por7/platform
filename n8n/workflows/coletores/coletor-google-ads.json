@@ -1,11 +1,12 @@
 {
-  "name": "Coletor · Google Ads (modelo)",
+  "name": "ORLA · Google Ads · coletor",
   "settings": {
     "executionOrder": "v1",
     "saveDataErrorExecution": "none",
     "saveDataSuccessExecution": "none",
     "timezone": "America/Sao_Paulo",
-    "saveManualExecutions": false
+    "saveManualExecutions": false,
+    "callerPolicy": "workflowsFromSameOwner"
   },
   "nodes": [
     {
@@ -28,9 +29,110 @@
             },
             {
               "name": "modo"
+            },
+            {
+              "name": "coletaId"
             }
           ]
         }
+      }
+    },
+    {
+      "id": "obter-token",
+      "name": "Obter token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        20,
+        -200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=http://app:3000/api/v0/coleta/token",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ coletaId: $('Entrada').first().json.coletaId }) }}",
+        "options": {
+          "timeout": 20000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "a-definir-pelo-provisioner",
+          "name": "ORLA · worker token"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "token-obtido",
+      "name": "Token obtido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        240,
+        -200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "token-obtido-c",
+              "leftValue": "={{ $json.statusCode === 200 && typeof $json.body?.token === 'string' && $json.body.token.length > 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "retomar-entrada",
+      "name": "Retomar entrada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        -300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return $('Entrada').all().map((item) => ({ json: item.json }));\n"
+      }
+    },
+    {
+      "id": "sem-token",
+      "name": "Sem token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        -100
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const resposta = $('Obter token').first().json ?? {};\nconst status = Number(resposta.statusCode ?? 0);\nconst motivo = String(resposta.body?.errors?.motivo ?? '');\nconst PEDE_REAUTORIZACAO = new Set(['reauth_pending', 'sem_token', 'conexao_revogada']);\n\nlet falha;\nif (status === 409 && PEDE_REAUTORIZACAO.has(motivo)) {\n  falha = { causa: 'reauth_pending', detalhe: `cofre de tokens: ${motivo}; reautorize a conexão` };\n} else if (status === 429) {\n  falha = { causa: 'limite_de_uso', detalhe: 'cofre de tokens: pedidos de token demais para esta execução', pausa: 'limite_temporario', minutos: 5 };\n} else if (status === 0 || status >= 500) {\n  falha = { causa: 'api_recusou', detalhe: `cofre de tokens indisponível (HTTP ${status || 'sem resposta'})` };\n} else {\n  falha = { causa: 'falha_coletor', detalhe: `cofre de tokens recusou o pedido (HTTP ${status}${motivo ? `, ${motivo}` : ''})` };\n}\n\nreturn [{ json: { linhas: [], volumetria: { linhas: 0, bytes: 0, requests: 0, duracaoMs: 0 }, falhas: [falha], avisos: [], requests: 0 } }];\n"
       }
     },
     {
@@ -59,8 +161,7 @@
       "parameters": {
         "method": "POST",
         "url": "={{ $json.url }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "googleOAuth2Api",
+        "authentication": "none",
         "options": {
           "response": {
             "response": {
@@ -80,6 +181,10 @@
         "headerParameters": {
           "parameters": [
             {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Obter token').first().json.body.token }}"
+            },
+            {
               "name": "login-customer-id",
               "value": "={{ $json.administradora }}"
             }
@@ -88,12 +193,6 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.corpo) }}"
-      },
-      "credentials": {
-        "googleOAuth2Api": {
-          "id": "a-definir-pelo-provisioner",
-          "name": "a-definir-pelo-provisioner"
-        }
       },
       "onError": "continueRegularOutput",
       "alwaysOutputData": true
@@ -118,7 +217,7 @@
       "main": [
         [
           {
-            "node": "Montar requisição",
+            "node": "Obter token",
             "type": "main",
             "index": 0
           }
@@ -141,6 +240,46 @@
         [
           {
             "node": "Normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter token": {
+      "main": [
+        [
+          {
+            "node": "Token obtido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token obtido?": {
+      "main": [
+        [
+          {
+            "node": "Retomar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sem token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retomar entrada": {
+      "main": [
+        [
+          {
+            "node": "Montar requisição",
             "type": "main",
             "index": 0
           }
