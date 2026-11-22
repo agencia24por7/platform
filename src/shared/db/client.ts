@@ -8,12 +8,16 @@ declare global {
   var __triaSql: Sql | undefined;
   var __triaSqlWorker: Sql | undefined;
   var __triaChamadaDoWorker: AsyncLocalStorage<true> | undefined;
+  var __triaChamadaPublica: AsyncLocalStorage<true> | undefined;
 }
 
 type Conexao = { readonly url: string; readonly max: number; readonly nome: string };
 
 globalThis.__triaChamadaDoWorker ??= new AsyncLocalStorage<true>();
 const chamadaDoWorker = globalThis.__triaChamadaDoWorker;
+
+globalThis.__triaChamadaPublica ??= new AsyncLocalStorage<true>();
+const chamadaPublica = globalThis.__triaChamadaPublica;
 
 function create(conexao: Conexao): Sql {
   const config = env();
@@ -48,6 +52,14 @@ function sqlDoWorker(): Sql {
 
 export function comoWorker<T>(trabalho: () => Promise<T>): Promise<T> {
   return chamadaDoWorker.run(true, trabalho);
+}
+
+export function comoPublico<T>(trabalho: () => Promise<T>): Promise<T> {
+  return chamadaPublica.run(true, trabalho);
+}
+
+export function emChamadaPublica(): boolean {
+  return chamadaPublica.getStore() === true;
 }
 
 export function emChamadaDoWorker(): boolean {

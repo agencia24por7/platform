@@ -2,7 +2,7 @@ import { cache } from 'react';
 import { cookies } from 'next/headers';
 import { SESSION_COOKIE, readSession } from '@/modules/identity/domain/session';
 import { env } from '@/shared/config/env';
-import { sql } from '@/shared/db/client';
+import { emChamadaDoWorker, emChamadaPublica, sql } from '@/shared/db/client';
 
 export const ORGANIZACAO_INTEIRA = '*';
 export const SEM_SESSAO = '';
@@ -36,10 +36,23 @@ export async function escopoDoUsuario(userId: string, organizationId: string): P
   return escopo && escopo.length > 0 ? escopo.join(',') : ORGANIZACAO_INTEIRA;
 }
 
-async function resolver(organizationId: string): Promise<string> {
-  const userId = await usuarioDaSessao();
-  if (!userId) return ORGANIZACAO_INTEIRA;
-  return escopoDoUsuario(userId, organizationId);
+export type OrigemDoEscopo = 'usuario' | 'organizacao_inteira' | 'recusar';
+
+export function origemDoEscopo(userId: string, chamadaDoWorker: boolean, chamadaPublica: boolean): OrigemDoEscopo {
+  if (userId) return 'usuario';
+  return chamadaDoWorker || chamadaPublica ? 'organizacao_inteira' : 'recusar';
 }
 
-export const escopoDeCliente = cache(resolver);
+async function resolver(organizationId: string): Promise<string> {
+  const userId = await usuarioDaSessao();
+  const origem = origemDoEscopo(userId, emChamadaDoWorker(), emChamadaPublica());
+  if (origem === 'usuario') return escopoDoUsuario(userId, organizationId);
+  if (origem === 'organizacao_inteira') return ORGANIZACAO_INTEIRA;
+  throw new Error('Contexto de tenant sem sessão, sem chamada do worker e sem entrada pública declarada.');
+}
+
+const resolverPorOrigem = cache((organizationId: string, _origem: string) => resolver(organizationId));
+
+export function escopoDeCliente(organizationId: string): Promise<string> {
+  return resolverPorOrigem(organizationId, `${emChamadaDoWorker()}:${emChamadaPublica()}`);
+}
