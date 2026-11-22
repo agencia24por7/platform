@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+raiz=$(git rev-parse --show-toplevel)
+cd "$raiz"
+exec node scripts/seguranca-verificar.mjs --push "${1:-origin}"

@@ -1,0 +1,14 @@
+# Exceções conscientes ao scripts/seguranca-verificar.mjs, uma por linha: caminho::id
+# Cada linha nova entra por PR e precisa de justificativa no corpo do PR.
+
+# Script de tema com nonce (constante do código, sem entrada de usuário).
+app/layout.tsx::html-injetado
+
+# network.tf: entrada pública 80/443 do app e a regra que nega o resto da entrada.
+infra/terraform/network.tf::terraform-aberto-ao-mundo
+
+# Fixtures de teste com token OAuth falso, usadas para provar a redação e o cofre.
+src/modules/connections/application/authorizationService.test.ts::segredo
+src/modules/tokens/application/acessoDoWorker.test.ts::segredo
+src/modules/tokens/application/cofreDeTokens.test.ts::segredo
+src/shared/logging/redactText.test.ts::segredo

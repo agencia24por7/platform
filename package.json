@@ -8,6 +8,7 @@
   },
   "scripts": {
     "bootstrap": "node scripts/bootstrap.mjs",
+    "ambiente:verificar": "node scripts/ambiente-verificar.mjs",
     "n8n:sincronizar": "node --experimental-strip-types scripts/n8n-sincronizar.mjs",
     "bq:verificar": "node scripts/bq/verificar-integridade.mjs",
     "infra:up": "docker compose -f infra/docker-compose.yml --project-directory . up -d",
@@ -20,7 +21,9 @@
     "test": "npm run test:unit && npm run test:integration",
     "test:unit": "node --test --experimental-strip-types \"src/**/*.test.ts\"",
     "test:integration": "node --test --test-concurrency=1 tests/*.test.mjs",
-    "verify": "npm run typecheck && npm run build && npm run test"
+    "verify": "npm run typecheck && npm run build && npm run test",
+    "seguranca:verificar": "node scripts/seguranca-verificar.mjs --arvore",
+    "ambiente:hooks": "git config core.hooksPath .githooks"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^9.6.1",
