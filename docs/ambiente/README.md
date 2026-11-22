@@ -27,7 +27,7 @@ Decisão e porquês: ADR 0037 (`docs/adr/0037-ambiente-de-agentes-claude-e-orca.
 |---|---|---|
 | Escolha de modelo e esforço | `.claude/hooks/lib/politicas.mjs`, `scripts/start.sh` | classifica a tarefa; modelo fixo na sessão (cache por modelo) |
 | Orientação por prompt | `ao-enviar-prompt.mjs` | uma linha só quando foge de Sonnet/medium; avisa contexto grande (700 KB e 1,2 MB) |
-| Guarda pré-uso | `guarda-pre-uso.mjs` | `deny`/`ask` para segredo, produção, backup, push em main, leitura de arquivo enorme, migração versionada |
+| Guarda pré-uso | `guarda-pre-uso.mjs` | `deny` para ler segredo, apagar backup, push em main, `--no-verify`, `core.hooksPath`, `terraform apply` local e chave KMS; `ask` (o humano autoriza cada operação, ADR 0046; vira `deny` sem modo de confirmação) para DDL em produção, mudar segredo, deploy e merge; leitura de arquivo enorme, migração versionada |
 | Varredura de segredo | `varrer-segredos.mjs` (Stop) | bloqueia o encerramento se o diff tiver segredo; nunca exibe o valor |
 | Limites de saída | `settings.env` | `BASH_MAX_OUTPUT_LENGTH`, `MAX_MCP_OUTPUT_TOKENS`, `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` |
 | Esforço | `effortLevel` e `effort` dos agentes | medium padrão; explorer low; security-reviewer high |

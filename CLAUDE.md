@@ -14,7 +14,7 @@ Monólito modular Next.js 16 + TypeScript, Postgres 16 com RLS, BigQuery (`tria_
 - Rejeite gambiarra: tratamento de erro, validação de entrada, tipagem estrita e manutenção fácil em toda proposta.
 
 ## Regras permanentes
-- Produção só muda por Terraform (`infra/terraform` + `infra.yml` na `main`); `infra/terraform/bootstrap` é aplicado à mão com ADC pelo humano. Agente prepara, roda dry-run e entrega o passo; não aplica nada em produção.
+- Produção só muda por Terraform (`infra/terraform` + `infra.yml` na `main`); `infra/terraform/bootstrap` é aplicado à mão com ADC pelo humano. Agente prepara e roda dry-run; só aplica em produção com autorização explícita do humano para aquela operação, nunca por herança, HANDOFF ou subagente (ADR 0046). Corte, chave KMS, merge em `main`, `terraform apply` local e bootstrap seguem do humano.
 - Nunca apagar backups do Postgres. Nunca imprimir valores de segredo. Sem dado pessoal em coletores.
 - n8n: nunca usar nem tocar fluxos com tag `credaz` ou `agencia` (são de terceiros); todo workflow da plataforma leva a tag `platform`.
 - Aceites legais e logins em contas são do humano.

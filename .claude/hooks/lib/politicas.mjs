@@ -178,8 +178,16 @@ const REGRAS_DE_COMANDO = [
   { padrao: /(\brm\b|\bgcloud\s+storage\s+rm\b|\bgsutil\s+(-m\s+)?rm\b|\bgcloud\s+sql\s+backups\s+delete\b|\bDROP\b)[^;&|]*backup/i, decisao: 'deny', motivo: 'Backups do Postgres nunca são apagados.' },
   { padrao: /\brm\s+(?:-[a-z]*r[a-z]*|--recursive)(?:\s+-[a-z]+)*\s+(?:[/]\*?|~|\$HOME|\.git|\*)\s*(?:$|[;&|])/, decisao: 'deny', motivo: 'Remoção recursiva em raiz, HOME, .git ou curinga solto.' },
   { padrao: /\bgit\s+push\b[^;&|]*(\bmain\b|HEAD:main)/, decisao: 'deny', motivo: 'Push em main só pelo fluxo de release (docs/release/), executado pelo humano.' },
-  { padrao: /\bbq-ddl\.mjs\b(?=[^;&|]*--prod)(?![^;&|]*--dry-run)/, decisao: 'deny', motivo: 'DDL em produção: rode com --dry-run e entregue o passo ao humano (ADR 0028).' },
-  { padrao: /\bgh\s+(workflow\s+run|pr\s+merge|release\s+create)\b/, decisao: 'ask', motivo: 'Dispara workflow, merge ou release: ação externa que o humano confirma.' },
+  { padrao: /\bbq-ddl\.mjs\b(?=[^;&|]*--prod)(?![^;&|]*--dry-run)/, decisao: 'ask', producao: true, motivo: 'DDL em produção: só com autorização explícita do humano para esta operação, depois do --dry-run e de ler o alvo impresso (ADR 0028, ADR 0046).' },
+  { padrao: /\bbq-ddl\.mjs\b[^;&|]*--confirmar/, decisao: 'ask', producao: true, motivo: 'DDL com --confirmar aplica de verdade: só com autorização explícita do humano para este alvo (ADR 0028, ADR 0046).' },
+  { padrao: /\bbq\s+(rm|mk|update)\b|\bbq\s+query\b[^;&|]*\b(DROP|TRUNCATE|DELETE\s+FROM|ALTER)\b/i, decisao: 'ask', producao: true, motivo: 'Muda ou apaga objeto do BigQuery: só com autorização explícita do humano (ADR 0046).' },
+  { padrao: /\bterraform\b(?:\s+-\S+)*\s+(apply|destroy|import|state\s+(rm|mv|push))\b/, decisao: 'deny', motivo: 'Terraform em produção só pelo caminho do CI (infra.yml na main). O agente aciona o workflow; apply local e o bootstrap são do humano (ADR 0046).' },
+  { padrao: /\bgcloud\s+secrets\s+(versions\s+(add|destroy|disable)|delete|create|update|add-iam-policy-binding)\b/, decisao: 'ask', producao: true, motivo: 'Muda segredo em produção: só com autorização explícita; o valor vem do humano ou é gerado sem eco e nunca é impresso (ADR 0046).' },
+  { padrao: /\bgcloud\s+kms\s+keys\s+(versions\s+(destroy|disable)|update)\b/, decisao: 'deny', motivo: 'Desativar ou destruir versão de chave KMS não tem volta e é do humano, depois da recifragem com avaliadas = 0 e falhas = 0 (ADR 0042).' },
+  { padrao: /\bgcloud\s+sql\s+(backups\s+delete|instances\s+delete)\b/, decisao: 'deny', motivo: 'Apagar backup ou instância do Postgres é proibido.' },
+  { padrao: /\bgh\s+api\b[^;&|]*(\/merge\b|dispatches|-X\s*(PUT|DELETE)|--method[= ](PUT|DELETE))/i, decisao: 'ask', producao: true, motivo: 'Chamada de API do GitHub que faz merge, dispara workflow ou apaga: ação externa que o humano autoriza (ADR 0046).' },
+  { padrao: /\bautorizar_corte=true\b/, decisao: 'ask', producao: true, motivo: 'IRREVERSÍVEL: o corte roda migração destrutiva sem volta. Só com autorização explícita, depois do pre-flight verde e do backup (ADR 0034, ADR 0046).' },
+  { padrao: /\bgh\s+(workflow\s+run|pr\s+merge|release\s+create)\b/, decisao: 'ask', producao: true, motivo: 'Dispara workflow, merge ou release: ação externa que o humano autoriza para esta operação (ADR 0046). Merge em main é do humano (ADR 0034).' },
   { padrao: /\bgit\s+(reset\s+--hard|clean\s+-[a-z]*f|checkout\s+--\s|checkout\s+\.|restore\s+\.|branch\s+-D|worktree\s+remove)/, decisao: 'ask', motivo: 'Pode descartar trabalho não commitado ou de outro agente.' },
   { padrao: /\bgit\s+(?:commit|push|merge|am|cherry-pick)\b[^;&|]*--no-verify|\bgit\s+commit\b[^;&|]*\s-n\b/, decisao: 'deny', motivo: 'Contornar os hooks de segurança do git é proibido. Corrija o achado ou registre a exceção na allowlist por PR.' },
   { padrao: /\bgit\s+(?:-c\s+core\.hooksPath\b|config\b(?![^;&|]*--(?:get|list))[^;&|]*core\.hooksPath\b(?![^;&|]*\.githooks))|\b(?:HUSKY|SKIP_SIMPLE_GIT_HOOKS)=0\b/, decisao: 'deny', motivo: 'Não desative nem troque os hooks do git do projeto (core.hooksPath deve ser .githooks).' },
@@ -187,12 +195,32 @@ const REGRAS_DE_COMANDO = [
   { padrao: /\b(psql|docker\s+exec)\b[^;&|]*\b(DROP|TRUNCATE|DELETE\s+FROM)\b/i, decisao: 'ask', motivo: 'Comando destrutivo em banco: confirme o alvo e a necessidade.' },
 ]
 
-export function avaliarComando(comando) {
-  const texto = String(comando ?? '')
-  for (const regra of REGRAS_DE_COMANDO) {
-    if (regra.padrao.test(texto)) return { decisao: regra.decisao, motivo: regra.motivo }
+function normalizarComando(texto) {
+  return texto
+    .replace(/(^|\s)#[^\n]*/g, '$1')
+    .replace(/\s--(?:project|account|impersonate-service-account|configuration|billing-project|format|quiet)(?:=|\s+)\S+/g, ' ')
+    .replace(/\s(?:--quiet|-q)\b/g, ' ')
+    .replace(/\bgcloud\s+(?:alpha|beta)\b/g, 'gcloud')
+}
+
+const MODOS_SEM_CONFIRMACAO = new Set(['bypassPermissions', 'auto'])
+
+export function avaliarComando(comando, modoDePermissao) {
+  const original = String(comando ?? '')
+  const variantes = [original, normalizarComando(original)]
+  let pergunta = null
+  for (const texto of variantes) {
+    for (const regra of REGRAS_DE_COMANDO) {
+      if (!regra.padrao.test(texto)) continue
+      if (regra.decisao === 'deny') return { decisao: 'deny', motivo: regra.motivo }
+      if (!pergunta) pergunta = regra
+    }
   }
-  return null
+  if (!pergunta) return null
+  if (pergunta.producao && MODOS_SEM_CONFIRMACAO.has(modoDePermissao)) {
+    return { decisao: 'deny', motivo: `${pergunta.motivo} Neste modo de permissão não há confirmação humana, então a operação é negada.` }
+  }
+  return { decisao: pergunta.decisao, motivo: pergunta.motivo }
 }
 
 export function linhasComSegredo(texto) {
