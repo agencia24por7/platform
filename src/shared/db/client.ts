@@ -58,6 +58,10 @@ export function comoPublico<T>(trabalho: () => Promise<T>): Promise<T> {
   return chamadaPublica.run(true, trabalho);
 }
 
+export function foraDoContextoDeChamada<T>(trabalho: () => T): T {
+  return chamadaDoWorker.exit(() => chamadaPublica.exit(trabalho));
+}
+
 export function emChamadaPublica(): boolean {
   return chamadaPublica.getStore() === true;
 }

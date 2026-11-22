@@ -33,7 +33,7 @@ type AuditEvent = import('../../audit/domain/auditEvent.ts').AuditEvent;
 const trabalhador = { requestId: 'r1', callerFingerprint: 'fp', sourceIp: null };
 const recebido = { workflowId: 'wf', workflowNome: 'ORLA · coleta', no: 'Abrir', mensagem: 'erro com access_token=SEGREDO12345 e maria@x.com' };
 
-function montar(opcoes: { deduplicado?: boolean; podeCriar?: boolean } = {}) {
+function montar(opcoes: { deduplicado?: boolean; podeCriar?: boolean; operadores?: string[] } = {}) {
   const auditoria: AuditEvent[] = [];
   const notificacoes: string[] = [];
   const repositorio: AlertaRepository = {
@@ -45,6 +45,7 @@ function montar(opcoes: { deduplicado?: boolean; podeCriar?: boolean } = {}) {
     { record: async (evento: AuditEvent) => void auditoria.push(evento), list: async () => [], search: async () => [] },
     async (texto) => void notificacoes.push(texto),
     () => opcoes.podeCriar !== false,
+    async (userId) => (opcoes.operadores ?? []).includes(userId),
   );
   return { servico, auditoria, notificacoes };
 }
@@ -74,5 +75,11 @@ describe('serviço de alertas de falha', () => {
     const resultado = await servico.registrar(recebido, trabalhador);
     assert.deepEqual(resultado.ok && resultado.value, { id: null, deduplicado: false, limitado: true });
     assert.equal(auditoria.length, 0);
+  });
+
+  it('contagem de alertas só vale para quem o serviço confirma como operador', async () => {
+    const { servico } = montar({ operadores: ['op-1'] });
+    assert.equal(await servico.contarAbertosParaOperador('op-1'), 2);
+    assert.equal(await servico.contarAbertosParaOperador('admin-2'), 0);
   });
 });

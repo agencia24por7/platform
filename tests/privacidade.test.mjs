@@ -133,9 +133,11 @@ describe('privacidade: revogação, expurgo do YouTube e pedidos da Meta (ADR 00
 
     const id = umaLinha(dono(`SELECT id FROM privacidade.expurgos_de_fonte WHERE external_id = 'UCso${marca}'`));
     assert.ok(comoWorker(`SELECT external_id FROM privacidade.expurgos_de_fonte_vencidos(500)`).includes(`UCso${marca}`));
-    comoApp(`SELECT privacidade.registrar_resultado_do_expurgo('${id}', 'quota')`);
+    naSessao(outraOrg, '*', `SELECT privacidade.registrar_resultado_do_expurgo('${id}', 'outra')`);
+    assert.equal(umaLinha(dono(`SELECT tentativas FROM privacidade.expurgos_de_fonte WHERE id = '${id}'`)), '0', 'outra organização não registra resultado');
+    naSessao(org, '*', `SELECT privacidade.registrar_resultado_do_expurgo('${id}', 'quota')`);
     assert.equal(umaLinha(dono(`SELECT tentativas || '|' || ultimo_erro || '|' || (concluido_em IS NULL) FROM privacidade.expurgos_de_fonte WHERE id = '${id}'`)), '1|quota|true');
-    comoApp(`SELECT privacidade.registrar_resultado_do_expurgo('${id}', NULL)`);
+    naSessao(org, '*', `SELECT privacidade.registrar_resultado_do_expurgo('${id}', NULL)`);
     assert.equal(umaLinha(dono(`SELECT concluido_em IS NOT NULL FROM privacidade.expurgos_de_fonte WHERE id = '${id}'`)), 't');
 
     assert.match(falhaDe(() => naSessao(org, '*', 'SELECT count(*) FROM privacidade.expurgos_de_fonte')) ?? '', /permission denied/,

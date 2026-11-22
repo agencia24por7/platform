@@ -50,13 +50,15 @@ describe('escopo sem sessão (D\')', () => {
     assert.equal(await comoWorker(() => escopoDeCliente(`${ORGANIZACAO}-wrk`)), ORGANIZACAO_INTEIRA);
   });
 
-  it('a sessão sempre prevalece sobre o marcador público e o do worker', () => {
+  it('worker e entrada pública prevalecem sobre qualquer sessão', () => {
     const usuario = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
-    for (const worker of [false, true]) {
-      for (const publico of [false, true]) {
-        assert.equal(origemDoEscopo(usuario, worker, publico), 'usuario');
-      }
-    }
+    assert.equal(origemDoEscopo(usuario, true, false), 'organizacao_inteira');
+    assert.equal(origemDoEscopo(usuario, false, true), 'organizacao_inteira');
+    assert.equal(origemDoEscopo(usuario, true, true), 'organizacao_inteira');
+  });
+
+  it('sem worker nem entrada pública a sessão decide', () => {
+    assert.equal(origemDoEscopo('3f2504e0-4f89-11d3-9a0c-0305e82c3301', false, false), 'usuario');
   });
 
   it('sem sessão só worker ou entrada pública recebem a organização inteira', () => {

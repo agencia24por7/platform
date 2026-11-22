@@ -16,6 +16,16 @@ function opcional<T extends z.ZodTypeAny>(tipo: T) {
   return z.preprocess((valor) => (valor === '' ? undefined : valor), tipo.optional());
 }
 
+const listaDeEmails = z.string().refine(
+  (valor) =>
+    valor
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0)
+      .every((item) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item)),
+  'precisa ser uma lista de e-mails separados por vírgula',
+);
+
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL: z.string().url().startsWith('postgres'),
@@ -44,6 +54,7 @@ const schema = z.object({
   N8N_PUBLIC_URL: opcional(z.string().url()),
   N8N_OWNER_EMAIL: opcional(z.string().email()),
   N8N_OWNER_PASSWORD: opcional(z.string().min(8)),
+  PLATAFORMA_OPERADORES: opcional(listaDeEmails),
   N8N_API_KEY: opcional(z.string().min(20)),
   ALERT_WEBHOOK_URL: opcional(z.string().url().startsWith('https://')),
   BQ_PROJECT_ID: opcional(z.string().min(3)),

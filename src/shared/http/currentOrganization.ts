@@ -7,7 +7,7 @@ import type { MemberRole } from '@/modules/identity/domain/user';
 import type { Organization } from '@/modules/organizations/domain/organization';
 import { atorAtual } from '@/shared/http/ator';
 import { currentUser } from '@/shared/http/currentUser';
-import { escopoDeCliente, ORGANIZACAO_INTEIRA } from '@/shared/db/escopo';
+import { escopoDeCliente, ORGANIZACAO_INTEIRA, SEM_CLIENTES } from '@/shared/db/escopo';
 
 export type ActiveContext = {
   readonly session: SignedInUser;
@@ -37,7 +37,7 @@ export async function activeContext(): Promise<ActiveContext | null> {
     session,
     organization: found.value,
     role: membership.role,
-    clientIds: escopo === ORGANIZACAO_INTEIRA ? null : escopo.split(','),
+    clientIds: escopo === ORGANIZACAO_INTEIRA ? null : escopo === SEM_CLIENTES ? [] : escopo.split(','),
   };
 }
 

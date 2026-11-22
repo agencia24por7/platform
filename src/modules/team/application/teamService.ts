@@ -16,6 +16,8 @@ import {
   revogacaoPermitida,
   trocaDePapelPermitida,
 } from '@/modules/team/domain/membro';
+import type { ModoDoRecorte } from '@/modules/team/domain/recorte';
+import { MOTIVO_RECORTE, idsDoRecorte, validarRecorte } from '@/modules/team/domain/recorte';
 import type { TeamRepository } from '@/modules/team/infrastructure/teamRepository';
 import { failure, type Failure } from '@/shared/result/failure';
 import { err, ok, type Result } from '@/shared/result/result';
@@ -38,7 +40,7 @@ export type TeamService = {
     papelDeQuemConvida: MemberRole;
     email: string;
     role: string;
-    clientIds: readonly string[];
+    recorte: ModoDoRecorte;
   }, ator: Ator): Promise<Result<Convite, Failure>>;
   revogarConvite(
     organizationId: string,
@@ -61,12 +63,26 @@ export type TeamService = {
     organizationId: string;
     papelDeQuemAge: MemberRole;
     memberId: string;
-    clientIds: readonly string[];
+    recorte: ModoDoRecorte;
   }, ator: Ator): Promise<Result<void, Failure>>;
   aceitarPendentes(userId: string, email: string, ator: Ator): Promise<readonly string[]>;
 };
 
 const PAPEIS: readonly MemberRole[] = ['owner', 'admin', 'operator', 'viewer'];
+
+async function conferirRecorte(
+  repository: TeamRepository,
+  organizationId: string,
+  recorte: ModoDoRecorte,
+): Promise<Failure | null> {
+  const motivo = validarRecorte(recorte);
+  if (motivo) return failure('validation', MOTIVO_RECORTE[motivo]);
+  if (recorte.modo === 'organizacao') return null;
+
+  const ids = idsDoRecorte(recorte);
+  const vivos = await repository.clientesVivosDaOrganizacao(organizationId, ids);
+  return vivos === ids.length ? null : failure('validation', MOTIVO_RECORTE.cliente_invalido);
+}
 
 export function createTeamService(repository: TeamRepository, audit: AuditRecorder): TeamService {
   async function exigirMembro(
@@ -97,6 +113,9 @@ export function createTeamService(repository: TeamRepository, audit: AuditRecord
       if (motivo) return err(recusa(motivo));
       if (!ator.userId) return err(failure('unauthorized', 'Sem sessão para convidar.'));
 
+      const problema = await conferirRecorte(repository, input.organizationId, input.recorte);
+      if (problema) return err(problema);
+
       if (await repository.memberByEmail(input.organizationId, email)) {
         return err(recusa('ja_e_membro'));
       }
@@ -110,7 +129,7 @@ export function createTeamService(repository: TeamRepository, audit: AuditRecord
         role: input.role as PapelConvidavel,
         invitedBy: ator.userId,
         expiresAt: expiraEm(new Date()),
-        clientIds: input.clientIds,
+        recorte: input.recorte,
       });
 
       await audit.record({
@@ -125,8 +144,8 @@ export function createTeamService(repository: TeamRepository, audit: AuditRecord
         metadata: {
           email,
           role: convite.role,
-          clientesNoEscopo: input.clientIds.length,
-          organizacaoInteira: input.clientIds.length === 0,
+          clientesNoEscopo: idsDoRecorte(input.recorte).length,
+          organizacaoInteira: input.recorte.modo === 'organizacao',
         },
       });
 
@@ -228,7 +247,10 @@ export function createTeamService(repository: TeamRepository, audit: AuditRecord
         return err(bloqueio('sem_permissao'));
       }
 
-      await repository.replaceScope(input.organizationId, input.memberId, input.clientIds);
+      const problema = await conferirRecorte(repository, input.organizationId, input.recorte);
+      if (problema) return err(problema);
+
+      await repository.replaceScope(input.organizationId, input.memberId, input.recorte);
 
       await audit.record({
         organizationId: input.organizationId,
@@ -242,8 +264,8 @@ export function createTeamService(repository: TeamRepository, audit: AuditRecord
         metadata: {
           email: alvo.value.email,
           de: alvo.value.clientIds.length,
-          para: input.clientIds.length,
-          organizacaoInteira: input.clientIds.length === 0,
+          para: idsDoRecorte(input.recorte).length,
+          organizacaoInteira: input.recorte.modo === 'organizacao',
         },
       });
 
@@ -251,7 +273,7 @@ export function createTeamService(repository: TeamRepository, audit: AuditRecord
     },
 
     async aceitarPendentes(userId, email, ator) {
-      const pendentes = await repository.pendingFor(email);
+      const pendentes = await repository.pendingFor(userId, email);
       const entrou: string[] = [];
 
       for (const convite of pendentes) {
