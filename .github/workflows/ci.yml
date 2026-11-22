@@ -43,6 +43,9 @@ jobs:
       - name: Auditoria de dependências
         run: npm audit --audit-level=high
 
+      - name: Verificação de segurança do código
+        run: npm run seguranca:verificar
+
       - run: npm run typecheck
 
       - name: Testes de domínio
