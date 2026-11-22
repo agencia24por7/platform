@@ -229,6 +229,11 @@ test('leitores extras e busca por arquivos de segredo são barrados', () => {
   assert.equal(avaliarBusca({ caminho: '.', glob: '.env' }).decisao, 'deny')
   assert.equal(avaliarBusca({ caminho: '.', glob: '.env.example' }), null)
   assert.equal(avaliarBusca({ caminho: 'src', glob: '*.ts' }), null)
+  assert.equal(avaliarBusca({ caminho: 'src', glob: '*.{ts,tsx}' }), null)
+  for (const glob of ['.en{v,x}', '.en[v]', '.en?', '*.{pem,key}', '.ENV', '**/*.PEM', '[.]env', '{.env,a}', '*']) {
+    assert.equal(avaliarBusca({ caminho: '.', glob }).decisao, 'deny', glob)
+  }
+  assert.equal(avaliarBusca({ caminho: 'SRC/.ENV', glob: undefined }).decisao, 'deny')
 })
 
 test('hook cobre Grep, Glob e leitura por symlink', () => {
@@ -243,6 +248,7 @@ test('hook cobre Grep, Glob e leitura por symlink', () => {
     assert.match(decisao('Grep', { pattern: 'A', path: pasta, glob: '.env' }), /"deny"/)
     assert.match(decisao('Glob', { pattern: '**/*.pem', path: pasta }), /"deny"/)
     assert.equal(decisao('Grep', { pattern: 'A', path: pasta, glob: '*.ts' }), '')
+    assert.match(decisao('Read', { file_path: join(pasta, '.ENV') }), /"deny"/)
   } finally {
     rmSync(pasta, { recursive: true, force: true })
   }

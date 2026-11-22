@@ -85,19 +85,60 @@ export function detectarSegredo(texto) {
   return PADROES_DE_SEGREDO.filter(([, padrao]) => padrao.test(alvo)).map(([nome]) => nome)
 }
 
-const ARQUIVO_SENSIVEL = /(^|[/])(\.env(\.(?!example$)[\w.-]+)?|[^/]*\.(pem|key|p12|pfx)|id_(rsa|ed25519|ecdsa)|credentials\.json|service-account[^/]*\.json)$/
+const ARQUIVO_SENSIVEL = /(^|[/])(\.env(\.(?!example$)[\w.-]+)?|[^/]*\.(pem|key|p12|pfx)|id_(rsa|ed25519|ecdsa)|credentials\.json|service-account[^/]*\.json)$/i
 
 export function arquivoSensivel(caminho) {
   return ARQUIVO_SENSIVEL.test(String(caminho ?? ''))
 }
 
-const GLOB_SENSIVEL = /(^|[/*])(\.env(?!\.example)|[^/]*\.(pem|key|p12|pfx)|id_(rsa|ed25519|ecdsa)|credentials|service-account)/
+const GLOB_SENSIVEL = /(^|[/*])(\.env(?!\.example)|[^/]*\.(pem|key|p12|pfx)|id_(rsa|ed25519|ecdsa)|credentials|service-account)/i
+
+const SONDAS_DE_SEGREDO = ['.env', '.env.local', '.env.production', 'chave.pem', 'chave.key', 'cert.p12', 'cert.pfx', 'id_rsa', 'id_ed25519', 'credentials.json', 'service-account.json']
+
+function globParaRegex(glob) {
+  let corpo = ''
+  let chaves = 0
+  for (let indice = 0; indice < glob.length; indice += 1) {
+    const caractere = glob[indice]
+    if (caractere === '*') {
+      if (glob[indice + 1] === '*') {
+        corpo += '.*'
+        indice += 1
+      } else corpo += '[^/]*'
+    } else if (caractere === '?') corpo += '[^/]'
+    else if (caractere === '[') {
+      const fim = glob.indexOf(']', indice + 1)
+      if (fim > indice) {
+        corpo += '[' + glob.slice(indice + 1, fim).replace(/^!/, '^') + ']'
+        indice = fim
+      } else corpo += '\\['
+    } else if (caractere === '{') {
+      corpo += '(?:'
+      chaves += 1
+    } else if (caractere === '}' && chaves > 0) {
+      corpo += ')'
+      chaves -= 1
+    } else if (caractere === ',' && chaves > 0) corpo += '|'
+    else corpo += caractere.replace(/[.+^$()|\\]/g, '\\$&')
+  }
+  return new RegExp('^(?:.*[/])?' + corpo + '$', 'i')
+}
+
+export function globAlcancaSegredo(glob) {
+  let regex
+  try {
+    regex = globParaRegex(String(glob))
+  } catch {
+    return true
+  }
+  return SONDAS_DE_SEGREDO.some((sonda) => regex.test(sonda) || regex.test('x/' + sonda))
+}
 
 export function avaliarBusca({ caminho, glob }) {
   if (caminho && arquivoSensivel(caminho)) {
     return { decisao: 'deny', motivo: 'Busca em arquivo sensível: segredo nunca entra no contexto.' }
   }
-  if (glob && GLOB_SENSIVEL.test(String(glob))) {
+  if (glob && (GLOB_SENSIVEL.test(String(glob)) || globAlcancaSegredo(glob))) {
     return { decisao: 'deny', motivo: 'Busca por arquivos de segredo (.env, chaves, credenciais) bloqueada.' }
   }
   return null
@@ -130,7 +171,7 @@ export function avaliarEscrita({ caminho, conteudo, existeVersionado }) {
 
 const REGRAS_DE_COMANDO = [
   { padrao: /\bcurl\b[^|;&]*\|\s*(sudo\s+)?(ba|z)?sh\b|\bwget\b[^|;&]*\|\s*(sudo\s+)?(ba|z)?sh\b/, decisao: 'deny', motivo: 'Baixar e executar script direto no shell é proibido. Baixe, leia e só então execute.' },
-  { padrao: /\b(cat|less|more|head|tail|bat|nl|strings|xxd|od|sed|awk|grep|rg|cp|mv|ln|tar|zip|gzip|base64|openssl|python3?|node|perl|ruby|source|xargs|diff|jq|curl|wget|scp|rsync|tee|git\s+(?:show|diff|add))\b[^|;&]*(?<![\w-])(\.env(?!\.example)(\.[\w.-]+)?|[\w./-]*\.(pem|key|p12|pfx)|id_rsa|id_ed25519|credentials\.json)\b/, decisao: 'deny', motivo: 'Leitura de arquivo de segredo bloqueada. Nunca imprima valor de segredo.' },
+  { padrao: /\b(cat|less|more|head|tail|bat|nl|strings|xxd|od|sed|awk|grep|rg|cp|mv|ln|tar|zip|gzip|base64|openssl|python3?|node|perl|ruby|source|xargs|diff|jq|curl|wget|scp|rsync|tee|git\s+(?:show|diff|add))\b[^|;&]*(?<![\w-])(\.env(?!\.example)(\.[\w.-]+)?|[\w./-]*\.(pem|key|p12|pfx)|id_rsa|id_ed25519|credentials\.json)\b/i, decisao: 'deny', motivo: 'Leitura de arquivo de segredo bloqueada. Nunca imprima valor de segredo.' },
   { padrao: /(?:^|[;&|(]\s*)(?:printenv|env|export\s+-p|set)\s*(?:$|[|;&])/, decisao: 'deny', motivo: 'Despejar o ambiente expõe segredos. Consulte uma variável específica pelo nome sem imprimir o valor.' },
   { padrao: /\becho\b[^|;&]*\$\{?\w*(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY)\w*/i, decisao: 'deny', motivo: 'Não imprima variável de segredo.' },
   { padrao: /\bgcloud\s+secrets\s+versions\s+access\b/, decisao: 'deny', motivo: 'Ler o valor de um segredo imprime o segredo. Crie versões por pipe sem eco e peça ao humano para conferir.' },

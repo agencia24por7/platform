@@ -55,7 +55,7 @@ function caminhosParaAvaliar(caminho, raiz) {
   const completo = absoluto(caminho, raiz)
   let real = completo
   try {
-    real = realpathSync(completo)
+    real = realpathSync.native(completo)
   } catch {
     real = completo
   }
