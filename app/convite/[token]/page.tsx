@@ -11,6 +11,7 @@ import { MARCA_DA_PLATAFORMA, ROTULO_DA_PLATAFORMA } from '@/modules/connections
 import { Icone, type NomeDoIcone } from '@/../app/clientes/[id]/_componentes/Icones';
 import { FocoNaConta } from '@/../app/convite/[token]/FocoNaConta';
 import { avisoDoConvite, plataformasQueNaoUso, situacaoDoItem } from '@/modules/connections/domain/conviteVisao';
+import { comoPublico } from '@/shared/db/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,7 +47,7 @@ export default async function PaginaDoConvite({
     return <EstadoDoLink titulo="Muitas tentativas" texto="Espere um pouco e tente de novo." />;
   }
 
-  const convite = await modules().connectionInvites.forDisplay(token);
+  const convite = await comoPublico(() => modules().connectionInvites.forDisplay(token));
   if (!convite) notFound();
 
   const agora = new Date();
@@ -54,7 +55,7 @@ export default async function PaginaDoConvite({
   const ativo = convite.status === 'pending' && !expirado;
 
   const mapa = ativo
-    ? await modules().contexto.carregarPeloLink({ credencial: { tipo: 'convite', token }, ip: sourceIp, requestId: requestId() })
+    ? await comoPublico(() => modules().contexto.carregarPeloLink({ credencial: { tipo: 'convite', token }, ip: sourceIp, requestId: requestId() }))
     : null;
   const comMapa = mapa?.ok ? mapa.value : null;
   const naoUso = plataformasQueNaoUso(unico(busca['nao']), convite.items.map((i) => i.platform));

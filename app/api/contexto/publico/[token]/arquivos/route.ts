@@ -12,10 +12,11 @@ import {
 import { modules } from '@/composition';
 import { enderecoConfiavel } from '@/modules/audit/domain/actor';
 import { requestId } from '@/shared/http/actions';
+import { entradaPublica } from '@/shared/http/entradaPublica';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(request: Request, { params }: { params: Promise<{ token: string }> }) {
+async function tratarPost(request: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   if (!mesmaOrigem(request)) {
     descartarCorpo(request);
@@ -49,3 +50,5 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     });
   });
 }
+
+export const POST = entradaPublica(tratarPost);

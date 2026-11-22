@@ -17,6 +17,7 @@ import { ORGANIZACAO_INTEIRA, escopoDeCliente } from '@/shared/db/escopo';
 import { temRecursoParaVincular, type Platform } from '@/modules/connections/domain/connection';
 import type { AuthorizationOutcome } from '@/modules/connections/application/authorizationService';
 import { destinoDoErroDeAutorizacao } from '@/modules/connections/domain/erroDeAutorizacao';
+import { entradaPublica } from '@/shared/http/entradaPublica';
 
 export const dynamic = 'force-dynamic';
 
@@ -150,7 +151,7 @@ async function concluirItemDoConvite(
   );
 }
 
-export async function GET(
+async function tratarGet(
   request: NextRequest,
   context: { params: Promise<{ platform: string }> },
 ): Promise<NextResponse> {
@@ -264,3 +265,5 @@ export async function GET(
     outcome.value.pendentesDeOutraConta,
   );
 }
+
+export const GET = entradaPublica(tratarGet);

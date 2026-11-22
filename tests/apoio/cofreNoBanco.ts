@@ -9,7 +9,7 @@ import { createAuthorizationService } from '@/modules/connections/application/au
 import { createConnectionService } from '@/modules/connections/application/connectionService';
 import { createDiscoveredAccountRepository } from '@/modules/connections/infrastructure/discoveredAccountRepository';
 import type { PlatformDiscovery } from '@/modules/connections/application/platformDiscoveryPort';
-import { sql } from '@/shared/db/client';
+import { comoPublico, sql } from '@/shared/db/client';
 import { withTenant } from '@/shared/db/tenant';
 
 const organizationId = process.argv[2]!;
@@ -291,7 +291,7 @@ async function chaveContraOBanco(
   return { mesmoId: primeira.value.id === segunda.value.id, versao: segunda.value.versaoDoToken, decifrada, tipo: registro?.tipo };
 }
 
-main().catch((erro) => {
+comoPublico(main).catch((erro) => {
   console.error(erro);
   process.exit(1);
 });
