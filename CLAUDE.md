@@ -49,6 +49,9 @@ Monólito modular Next.js 16 + TypeScript, Postgres 16 com RLS, BigQuery (`tria_
 - Escale quando precisar: Sonnet falhou duas vezes no mesmo problema, chame um subagente Opus para diagnosticar. Economia nunca justifica baixar o modelo de tarefa crítica.
 - Hooks do projeto (`.claude/hooks/`) lembram disto a cada prompt, avisam de contexto grande, barram segredo e comando de produção e varrem o diff por segredo ao parar.
 
+## Identidade visual
+- Marca, cor, tipografia e azulejo: `docs/marca/LEIA-ME.md`. Fonte: Figma https://www.figma.com/design/lJ4hDLCunsBTli4MIcZXn2/Orla-%C2%B7-Identidade-visual; referência visual da azulejaria: `docs/marca/referencia-azulejaria.png`. Todo material visual novo (app, site, apresentação) parte dali.
+
 ## Ambiente de agentes
 - Iniciar sessão: `scripts/start.sh` (ou `/start` dentro de uma sessão). Estrutura, limites e manutenção: `docs/ambiente/README.md` (ADR 0037).
 - Mexeu em `.claude/`, `CLAUDE.md`, `orca.yaml` ou `scripts/start.sh`: rode `npm run ambiente:verificar` e atualize `docs/ambiente/README.md` no mesmo PR.
