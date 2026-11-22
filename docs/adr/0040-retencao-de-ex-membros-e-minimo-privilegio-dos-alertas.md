@@ -18,6 +18,10 @@ A auditoria de 2026-11-21 achou quatro lacunas de retenção e três de privilé
 ## Substitui
 - O trecho do adendo de alertas da ADR 0025 que fala em "política só para o papel do app" e em "um botão para resolvê-los": o app só lê e o botão deixou de existir.
 
+## Implantação
+- Aplicar a 0136 junto com o deploy da imagem nova: o app antigo, ainda no ar, chama `expurgarAntigos` (DELETE) ao registrar alerta e o `orla_worker` deixa de herdar esse privilégio, então `/api/v0/manutencao/alerta` responde 500 até a imagem nova subir. Registrar no roteiro da release.
+- Quem tem convite pendente com o mesmo e-mail de um ex-membro anonimizado entra com um `core.users` novo; o histórico fica na linha antiga, já anonimizada. Aceito.
+
 ## Consequências
 - O prazo de 90 dias dos alertas vive só na SQL de `core.aplicar_retencao`; não há constante no código.
 - O e-mail da conta que o ex-membro conectou (`integrations.connections.account_email`) pertence à conexão da organização e não é anonimizado junto com o usuário; sai com a conexão ou no pedido de exclusão (`anonimizar_titular`).
