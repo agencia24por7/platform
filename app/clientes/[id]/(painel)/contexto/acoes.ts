@@ -11,7 +11,7 @@ import { CATALOGO } from '@/modules/clients/domain/contexto/catalogo';
 import type { EntradaDeCampo, ItemDeLista } from '@/modules/clients/domain/contexto/tipos';
 import { idValido } from '@/modules/clients/domain/painel/enderecos';
 import { atorAtual } from '@/shared/http/ator';
-import { requireContext } from '@/shared/http/currentOrganization';
+import { escopoDoClienteNaOrganizacao } from '@/../app/clientes/[id]/_escopo';
 import type { Failure } from '@/shared/result/failure';
 import type { Result } from '@/shared/result/result';
 
@@ -36,10 +36,8 @@ function semCatalogo(r: Result<ContextoCompleto, Failure>): Result<DadosDoEditor
 const NAO_ENCONTRADO: Resposta<never> = { ok: false, erro: 'Cliente não encontrado.', codigo: 'not_found', versaoAtual: null, campos: null };
 
 async function comando(clientId: string) {
-  const ctx = await requireContext();
-  if (!idValido(clientId)) return null;
-  if (ctx.clientIds !== null && !ctx.clientIds.includes(clientId)) return null;
-  return { organizationId: ctx.organization.id, clientId, papelDeQuemAge: ctx.role };
+  const escopo = await escopoDoClienteNaOrganizacao(clientId);
+  return escopo ? escopo.comando : null;
 }
 
 function responder<T>(resultado: Result<T, Failure>): Resposta<T> {

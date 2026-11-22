@@ -1,7 +1,9 @@
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { redirect } from 'next/navigation';
 import { Feedback } from '@/../app/_components/Feedback';
 import { Shell } from '@/../app/_components/Shell';
+import { carregarPainel } from '@/../app/clientes/[id]/_dados';
+import { escopoDoClienteNaOrganizacao } from '@/../app/clientes/[id]/_escopo';
 import { modules } from '@/composition';
 import {
   MARCA_DA_PLATAFORMA,
@@ -13,7 +15,7 @@ import {
 import type { StoredDiscovery } from '@/modules/connections/infrastructure/discoveredAccountRepository';
 import { atorAtual } from '@/shared/http/ator';
 import { checkbox, requestId, text, toActionState } from '@/shared/http/actions';
-import { currentOrganization, requireContext } from '@/shared/http/currentOrganization';
+import { requireContext } from '@/shared/http/currentOrganization';
 import { canOperate } from '@/modules/identity/domain/user';
 import { fonteDe } from '@/modules/coleta/domain/mapaDeFontes';
 
@@ -32,6 +34,7 @@ async function vincularConta(formData: FormData): Promise<void> {
   if (!canOperate(ctx.role)) {
     redirect(`/clientes/${clientId}/contas/nova?erro=${encodeURIComponent('Seu papel não permite vincular contas.')}`);
   }
+  if (!(await escopoDoClienteNaOrganizacao(clientId))) redirect('/clientes');
   const descobertaId = text(formData, 'descobertaId');
   const voltar = (mensagem: string): never =>
     redirect(`/clientes/${clientId}/contas/nova?erro=${encodeURIComponent(mensagem)}`);
@@ -88,14 +91,11 @@ export default async function VincularConta({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ erro?: string }>;
 }) {
-  const organization = await currentOrganization();
-  if (!organization) redirect('/organizacoes/nova');
-
   const { id } = await params;
   const { erro } = await searchParams;
 
-  const cliente = await modules().clients.byId(organization.id, id);
-  if (!cliente.ok) notFound();
+  const { ctx: contextoDoPainel, cliente } = await carregarPainel(id);
+  const organization = contextoDoPainel.organization;
 
   const descobertas = await modules().discoveredAccounts.listPending(organization.id);
   const disponiveis = descobertas.filter((conta) => !conta.inactive);
@@ -121,10 +121,10 @@ export default async function VincularConta({
   );
 
   return (
-    <Shell title={`Vincular conta ou fonte · ${cliente.value.name}`} organization={organization} active="/clientes">
+    <Shell title={`Vincular conta ou fonte · ${cliente.name}`} organization={organization} active="/clientes">
       <div className="page__head">
         <div>
-          <h1 className="page__title">Vincular conta ou fonte a {cliente.value.name}</h1>
+          <h1 className="page__title">Vincular conta ou fonte a {cliente.name}</h1>
           <p className="page__sub">
             Estas são as contas que as plataformas liberaram para você. Escolha quais pertencem a este
             cliente — nada aqui é digitado à mão.
@@ -148,7 +148,7 @@ export default async function VincularConta({
       ) : (
         <form action={vincularConta} className="card">
           <div className="card__body">
-            <input type="hidden" name="clientId" value={cliente.value.id} />
+            <input type="hidden" name="clientId" value={cliente.id} />
 
             {contasDeAnuncio.length > 0 ? (
               <fieldset className="contas contas--grupo">
@@ -180,7 +180,7 @@ export default async function VincularConta({
             ) : null}
 
             <div className="page__actions">
-              <Link className="btn btn--pill" href={`/clientes/${cliente.value.id}/conexoes?secao=fontes`}>
+              <Link className="btn btn--pill" href={`/clientes/${cliente.id}/conexoes?secao=fontes`}>
                 Cancelar
               </Link>
               <button className="btn btn--primary btn--pill" type="submit">

@@ -34,6 +34,10 @@ export async function revogarConviteDeIntegracao(formData: FormData): Promise<vo
     );
   }
 
+  if (!(await clienteDaOrganizacao(organization.id, clientId))) {
+    redirect(`/clientes/${clientId}/conexoes?secao=pedir&erro=${encodeURIComponent('Cliente não encontrado nesta organização.')}`);
+  }
+
   const inviteId = text(formData, 'inviteId');
   const revogado = await modules().connectionInvites.revoke(organization.id, inviteId);
   if (!revogado) {

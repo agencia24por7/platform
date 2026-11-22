@@ -3,6 +3,7 @@ import { env } from '@/shared/config/env';
 import { sql } from '@/shared/db/client';
 import { logger } from '@/shared/logging/logger';
 import { consume } from '@/shared/security/rateLimit';
+import { secureCompare } from '@/shared/security/tokens';
 import {
   assinaturaDaMetaValida,
   referenciaExternaDoWhatsapp,
@@ -27,7 +28,7 @@ export function GET(request: NextRequest): NextResponse {
   if (
     !verifyToken ||
     query.get('hub.mode') !== 'subscribe' ||
-    query.get('hub.verify_token') !== verifyToken
+    !secureCompare(query.get('hub.verify_token') ?? '', verifyToken)
   ) {
     logger.warn('webhook.whatsapp.handshake_recusado', {});
     return NextResponse.json({ error: 'verificacao_falhou' }, { status: 403 });
