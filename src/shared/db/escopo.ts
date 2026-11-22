@@ -51,4 +51,8 @@ async function resolver(organizationId: string): Promise<string> {
   throw new Error('Contexto de tenant sem sessão, sem chamada do worker e sem entrada pública declarada.');
 }
 
-export const escopoDeCliente = cache(resolver);
+const resolverPorOrigem = cache((organizationId: string, _origem: string) => resolver(organizationId));
+
+export function escopoDeCliente(organizationId: string): Promise<string> {
+  return resolverPorOrigem(organizationId, `${emChamadaDoWorker()}:${emChamadaPublica()}`);
+}
