@@ -36,15 +36,9 @@ const recebido = { workflowId: 'wf', workflowNome: 'ORLA · coleta', no: 'Abrir'
 function montar(opcoes: { deduplicado?: boolean; podeCriar?: boolean } = {}) {
   const auditoria: AuditEvent[] = [];
   const notificacoes: string[] = [];
-  let expurgos = 0;
   const repositorio: AlertaRepository = {
     registrar: async () => ({ id: 'id-1', deduplicado: opcoes.deduplicado === true }),
     contarAbertos: async () => 2,
-    resolverAbertos: async () => 2,
-    expurgarAntigos: async () => {
-      expurgos += 1;
-      return 0;
-    },
   };
   const servico = createAlertaService(
     repositorio,
@@ -52,12 +46,12 @@ function montar(opcoes: { deduplicado?: boolean; podeCriar?: boolean } = {}) {
     async (texto) => void notificacoes.push(texto),
     () => opcoes.podeCriar !== false,
   );
-  return { servico, auditoria, notificacoes, expurgos: () => expurgos };
+  return { servico, auditoria, notificacoes };
 }
 
 describe('serviço de alertas de falha', () => {
   it('alerta novo grava auditoria plataforma.alerta sem segredo e notifica', async () => {
-    const { servico, auditoria, notificacoes, expurgos } = montar();
+    const { servico, auditoria, notificacoes } = montar();
     const resultado = await servico.registrar(recebido, trabalhador);
     assert.deepEqual(resultado.ok && resultado.value, { id: 'id-1', deduplicado: false, limitado: false });
     assert.equal(auditoria.length, 1);
@@ -66,7 +60,6 @@ describe('serviço de alertas de falha', () => {
     const serializado = JSON.stringify([auditoria, notificacoes]);
     assert.ok(!serializado.includes('SEGREDO12345') && !serializado.includes('maria@'));
     assert.equal(notificacoes.length, 1);
-    assert.equal(expurgos(), 1);
   });
 
   it('repetição na janela só incrementa: sem auditoria nem notificação', async () => {

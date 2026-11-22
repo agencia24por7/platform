@@ -183,7 +183,13 @@ export default function Privacidade() {
           <li>Registros de execução das automações: 14 dias. Os fluxos de leads não guardam o conteúdo dos leads.</li>
           <li>Avisos de mensagens do WhatsApp: 90 dias.</li>
           <li>Convites de equipe vencidos ou cancelados: o e-mail é apagado depois de 90 dias.</li>
+          <li>Convites de equipe já aceitos: o e-mail do convite é apagado depois de 30 dias do aceite.</li>
           <li>Contas Google que entraram sem ter acesso liberado: apagadas depois de 30 dias.</li>
+          <li>
+            Pessoas que deixaram a equipe: o nome e o e-mail são anonimizados 90 dias depois do último acesso revogado,
+            e a trilha de auditoria continua sem identificá-las.
+          </li>
+          <li>Alertas de falha da plataforma: 90 dias.</li>
           <li>
             Trilha de auditoria: o endereço IP é apagado depois de 6 meses e o registro, depois de 2 anos.
           </li>

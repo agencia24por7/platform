@@ -2,8 +2,6 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Shell } from '@/../app/_components/Shell';
 import { modules } from '@/composition';
-import { BotaoDeEnvio } from '@/../app/_components/BotaoDeEnvio';
-import { resolverAlertasDaPlataforma } from '@/../app/automacoes/acoes';
 import { canAdminister } from '@/modules/identity/domain/user';
 import { requireContext } from '@/shared/http/currentOrganization';
 
@@ -35,12 +33,7 @@ export default async function AutomationsPage() {
           </div>
         </div>
         {alertasAbertos > 0 ? (
-          <form action={resolverAlertasDaPlataforma}>
-            <span className="pill pill--danger">{alertasAbertos} alerta(s) de falha da plataforma</span>{' '}
-            <BotaoDeEnvio className="btn" pendente="Resolvendo…">
-              Marcar como resolvidos
-            </BotaoDeEnvio>
-          </form>
+          <span className="pill pill--danger">{alertasAbertos} alerta(s) de falha da plataforma</span>
         ) : null}
       </div>
 
