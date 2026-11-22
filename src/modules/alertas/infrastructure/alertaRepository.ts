@@ -1,7 +1,6 @@
 import { sql } from '@/shared/db/client';
 import {
   DIAS_ATE_O_ALERTA_SAIR_DA_CONTAGEM,
-  DIAS_DE_RETENCAO_DO_ALERTA,
   JANELA_DE_DEDUPLICACAO_EM_MINUTOS,
   type AlertaLimpo,
 } from '@/modules/alertas/domain/alerta';
@@ -11,8 +10,6 @@ export type ResultadoDoRegistro = { readonly id: string; readonly deduplicado: b
 export type AlertaRepository = {
   registrar(alerta: AlertaLimpo): Promise<ResultadoDoRegistro>;
   contarAbertos(): Promise<number>;
-  resolverAbertos(): Promise<number>;
-  expurgarAntigos(): Promise<number>;
 };
 
 type LinhaDoRegistro = { atualizado_id: string | null; inserido_id: string | null };
@@ -49,18 +46,6 @@ export function createAlertaRepository(): AlertaRepository {
            AND ultima_em > now() - make_interval(days => ${DIAS_ATE_O_ALERTA_SAIR_DA_CONTAGEM})
       `) as unknown as { total: number }[];
       return linhas[0]!.total;
-    },
-
-    async resolverAbertos() {
-      const resolvidos = await sql()`UPDATE automation.alertas SET resolvido_em = now() WHERE resolvido_em IS NULL`;
-      return resolvidos.count;
-    },
-
-    async expurgarAntigos() {
-      const apagados = await sql()`
-        DELETE FROM automation.alertas WHERE ultima_em < now() - make_interval(days => ${DIAS_DE_RETENCAO_DO_ALERTA})
-      `;
-      return apagados.count;
     },
   };
 }

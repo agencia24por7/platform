@@ -14,7 +14,6 @@ export type LimiteDeNovos = () => boolean;
 export type AlertaService = {
   registrar(recebido: AlertaRecebido, worker: WorkerIdentity): Promise<Result<ResumoDoAlerta, Failure>>;
   contarAbertos(): Promise<number>;
-  resolverAbertos(): Promise<number>;
 };
 
 export function createAlertaService(
@@ -31,7 +30,6 @@ export function createAlertaService(
       const { id, deduplicado } = await alertas.registrar(alerta);
       if (deduplicado) return ok({ id, deduplicado: true, limitado: false });
 
-      await alertas.expurgarAntigos();
       await audit.record({
         organizationId: null,
         actorType: 'worker',
@@ -48,6 +46,5 @@ export function createAlertaService(
     },
 
     contarAbertos: () => alertas.contarAbertos(),
-    resolverAbertos: () => alertas.resolverAbertos(),
   };
 }

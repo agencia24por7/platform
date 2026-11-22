@@ -5,7 +5,6 @@ export const TAMANHO_MAXIMO_DA_MENSAGEM = 500;
 export const TAMANHO_MAXIMO_DO_NOME = 200;
 export const JANELA_DE_DEDUPLICACAO_EM_MINUTOS = 60;
 export const DIAS_ATE_O_ALERTA_SAIR_DA_CONTAGEM = 7;
-export const DIAS_DE_RETENCAO_DO_ALERTA = 90;
 
 export type AlertaRecebido = {
   readonly workflowId: string | null;
