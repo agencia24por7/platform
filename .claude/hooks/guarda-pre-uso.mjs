@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, realpathSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { isAbsolute, join, relative } from 'node:path'
-import { avaliarComando, avaliarEscrita, avaliarLeitura } from './lib/politicas.mjs'
+import { avaliarBusca, avaliarComando, avaliarEscrita, avaliarLeitura } from './lib/politicas.mjs'
 
 function lerEntrada() {
   let bruto = ''
@@ -50,15 +50,44 @@ function conteudoDaEscrita(ferramenta, entrada) {
   return ''
 }
 
+function caminhosParaAvaliar(caminho, raiz) {
+  if (!caminho) return []
+  const completo = absoluto(caminho, raiz)
+  let real = completo
+  try {
+    real = realpathSync.native(completo)
+  } catch {
+    real = completo
+  }
+  return [...new Set([caminho, relative(raiz, real)])]
+}
+
+function primeiraDecisao(caminhos, avaliar) {
+  for (const caminho of caminhos) {
+    const resultado = avaliar(caminho)
+    if (resultado) return resultado
+  }
+  return null
+}
+
 function decidir(ferramenta, entrada, raiz) {
   if (ferramenta === 'Bash') return avaliarComando(entrada.command)
-  const caminho = entrada.file_path ?? entrada.notebook_path ?? ''
-  const completo = absoluto(caminho, raiz)
-  if (ferramenta === 'Read') {
-    const tamanho = existsSync(completo) ? statSync(completo).size : 0
-    return avaliarLeitura({ caminho, tamanho, comRecorte: entrada.limit != null || entrada.offset != null })
+  if (ferramenta === 'Grep' || ferramenta === 'Glob') {
+    const glob = entrada.glob ?? (ferramenta === 'Glob' ? entrada.pattern : undefined)
+    const caminhos = caminhosParaAvaliar(entrada.path ?? '', raiz)
+    return primeiraDecisao(caminhos.length > 0 ? caminhos : [''], (caminho) => avaliarBusca({ caminho, glob }))
   }
-  return avaliarEscrita({ caminho, conteudo: conteudoDaEscrita(ferramenta, entrada), existeVersionado: versionado(completo, raiz) })
+  const caminho = entrada.file_path ?? entrada.notebook_path ?? ''
+  const caminhos = caminhosParaAvaliar(caminho, raiz)
+  if (ferramenta === 'Read') {
+    const completo = absoluto(caminho, raiz)
+    const tamanho = existsSync(completo) ? statSync(completo).size : 0
+    const comRecorte = entrada.limit != null || entrada.offset != null
+    return primeiraDecisao(caminhos, (candidato) => avaliarLeitura({ caminho: candidato, tamanho, comRecorte }))
+  }
+  const conteudo = conteudoDaEscrita(ferramenta, entrada)
+  const completo = absoluto(caminho, raiz)
+  return primeiraDecisao(caminhos, (candidato) => avaliarEscrita({ caminho: candidato, conteudo, existeVersionado: versionado(completo, raiz) }))
 }
 
 const evento = await lerEntrada()

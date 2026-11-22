@@ -10,7 +10,14 @@
       "Read(./.env)",
       "Read(./.env.local)",
       "Read(./.env.production)",
-      "Read(./n8n-limpeza-*.json)"
+      "Read(./n8n-limpeza-*.json)",
+      "Read(./**/.env)",
+      "Read(./**/.env.local)",
+      "Read(./**/.env.production)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.key)",
+      "Read(./**/credentials.json)",
+      "Read(./**/service-account*.json)"
     ],
     "ask": [
       "Bash(terraform apply:*)",
@@ -51,7 +58,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|Read|Write|Edit|MultiEdit",
+        "matcher": "Bash|Read|Write|Edit|MultiEdit|Grep|Glob",
         "hooks": [
           {
             "type": "command",
