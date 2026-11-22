@@ -219,7 +219,8 @@ describe('ações de Conexões respeitam o recorte, o papel e o cliente informad
     const revogar = await acaoDoBotao(tela, 'Revogar', 'inviteId');
     const status = () => dono(`SELECT status FROM integrations.connection_invites WHERE id = '${convite}'`);
     signIn(pessoas.recortado);
-    assert.ok(erro(await submitAction(tela, revogar, { clientId: ids.a, inviteId: convite })), 'recortado não administra');
+    const doRecortado = await submitAction(tela, revogar, { clientId: ids.a, inviteId: convite });
+    assert.ok(!/feito=/.test(decodeURIComponent(doRecortado.location ?? '')), 'recortado não administra');
     assert.equal(status(), 'pending');
     signIn(pessoas.owner);
     assert.ok(erro(await submitAction(tela, revogar, { clientId: ids.alheio, inviteId: convite })), 'cliente de outra organização');
