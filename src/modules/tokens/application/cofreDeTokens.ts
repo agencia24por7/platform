@@ -451,7 +451,13 @@ export function createCofreDeTokens(deps: DependenciasDoCofre): CofreDeTokens {
       const alvos = await deps.repositorio.comChaveAntiga(versaoPrimaria, limite);
       const resumo = { versaoPrimaria, avaliadas: alvos.length, recifradas: 0, falhas: 0 };
       for (const alvo of alvos) {
-        const desfecho = await recifrarUm(alvo).catch(() => 'falhou' as const);
+        const desfecho = await recifrarUm(alvo).catch((erro: unknown) => {
+          deps.registro.aviso('tokens.recifragem.falhou', {
+            connectionId: alvo.connectionId,
+            erro: erro instanceof Error ? erro.name : 'desconhecido',
+          });
+          return 'falhou' as const;
+        });
         if (desfecho === 'recifrada') resumo.recifradas += 1;
         else if (desfecho === 'falhou') resumo.falhas += 1;
       }

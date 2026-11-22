@@ -603,5 +603,7 @@ describe('CofreDeTokens — recifragem após rotação da chave', () => {
     t.linhas.get(GOOGLE.connectionId)!.registro = { ...t.linhas.get(GOOGLE.connectionId)!.registro!, segredo: Buffer.alloc(40, 1) };
     const resumo = await cofreComChave(t, chaveNaVersao('local:v2')).recifrarProativamente();
     assert.deepEqual(resumo, { versaoPrimaria: 'local:v2', avaliadas: 2, recifradas: 1, falhas: 1 });
+    assert.ok(t.logs.some((linha) => linha.includes('tokens.recifragem.falhou') && linha.includes(GOOGLE.connectionId)));
+    assert.ok(!t.logs.some((linha) => linha.includes(REFRESH)));
   });
 });
