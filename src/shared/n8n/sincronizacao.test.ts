@@ -8,6 +8,7 @@ import {
   PASTA_DOS_EXECUTORES,
   WORKFLOWS_DA_PLATAFORMA,
   WORKFLOW_DE_CONFORMIDADE_DO_YOUTUBE,
+  WORKFLOW_DE_RECIFRAGEM_DE_TOKENS,
   WORKFLOW_DE_RENOVACAO_DE_TOKENS,
   ehSubWorkflowGenerico,
   ordemDeImplantacao,
@@ -225,6 +226,22 @@ describe('jobs da plataforma (ADR 0029, ADR 0032)', () => {
     assert.match(JSON.stringify(gatilho.parameters), /\*\/6 \* \* \*/);
     const chamada = job.nodes.find((no) => no.type === 'n8n-nodes-base.httpRequest')!;
     assert.equal(chamada.parameters?.['url'], '=http://app:3000/api/v0/tokens/renovar-proativo');
+    assert.equal(chamada.credentials?.['httpHeaderAuth']?.name, 'ORLA · worker token');
+    assert.equal(job.settings['saveDataSuccessExecution'], 'none');
+    assert.equal(job.settings['saveDataErrorExecution'], 'none');
+    assert.equal(job.settings['errorWorkflow'], 'origem:n8n/workflows/plataforma/alertas-de-falha.json');
+  });
+});
+
+describe('recifragem do cofre (ADR 0042)', () => {
+  it('roda aos domingos, chama a rota do cofre e cai no alerta da plataforma', () => {
+    assert.ok((WORKFLOWS_DA_PLATAFORMA as readonly string[]).includes(WORKFLOW_DE_RECIFRAGEM_DE_TOKENS));
+    const job = ler(WORKFLOW_DE_RECIFRAGEM_DE_TOKENS);
+    assert.equal(job.name, 'ORLA · tokens · recifragem');
+    const gatilho = job.nodes.find((no) => no.type === 'n8n-nodes-base.scheduleTrigger')!;
+    assert.match(JSON.stringify(gatilho.parameters), /30 4 \* \* 0/);
+    const chamada = job.nodes.find((no) => no.type === 'n8n-nodes-base.httpRequest')!;
+    assert.equal(chamada.parameters?.['url'], '=http://app:3000/api/v0/tokens/recifrar');
     assert.equal(chamada.credentials?.['httpHeaderAuth']?.name, 'ORLA · worker token');
     assert.equal(job.settings['saveDataSuccessExecution'], 'none');
     assert.equal(job.settings['saveDataErrorExecution'], 'none');

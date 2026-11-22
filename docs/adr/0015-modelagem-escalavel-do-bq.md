@@ -1,6 +1,6 @@
 # 0015 — Modelagem escalável do BigQuery (várias tabelas por plataforma)
 
-- Status: aceito
+- Status: aceito (a modelagem por plataforma foi feita nos ADRs 0016 a 0020)
 - Data: 2026-11-20
 
 ## Contexto
@@ -8,7 +8,7 @@
 Cada coletor gravava em exatamente um fato: `CONFIG_POR_PLATAFORMA` em
 `bigQueryGravador.ts` tinha uma entrada por plataforma, GTM era um caso
 especial no meio do gravador e a exclusão de cliente tinha a lista de fatos
-fixa em `scripts/titular.mjs`. A próxima etapa é modelar várias tabelas por
+fixa em `scripts/titular.mjs`. A etapa seguinte, concluída nos ADRs 0016 a 0020, modelou várias tabelas por
 plataforma (fatos por campanha/anúncio/criativo, dimensões de entidade como
 campanhas e formulários), em paralelo, por agentes diferentes. Com tudo em
 três arquivos compartilhados, cada tabela nova seria um conflito de merge e

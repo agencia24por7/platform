@@ -4,9 +4,10 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { before, describe, it } from 'node:test';
 import { BASE, appIsUp, get, post, sqlDeConexao, workerHeaders } from './helpers.mjs';
+import { PG_CONTAINER } from './apoio/pgContainer.mjs';
 
 const query = (sql) =>
-  execFileSync('docker', ['exec', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
+  execFileSync('docker', ['exec', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
     .toString()
     .trim()
     .split('\n')[0]
@@ -22,7 +23,7 @@ function senhaDoApp() {
 const comoApp = (sql) =>
   execFileSync(
     'docker',
-    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoApp()}`, 'orla-postgres', 'psql', '-U', 'orla_app', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
+    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoApp()}`, PG_CONTAINER, 'psql', '-U', 'orla_app', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
     { encoding: 'utf8' },
   ).trim().split('\n').pop().trim();
 

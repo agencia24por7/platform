@@ -190,6 +190,15 @@ export function createTokenRepository(): RepositorioDeTokens {
       }[];
       return linhas.map((linha) => ({ connectionId: linha.connection_id, organizationId: linha.organization_id }));
     },
+
+    async comChaveAntiga(versaoPrimaria, limite) {
+      const linhas = (await sql()`
+        SELECT connection_id, organization_id FROM integrations.tokens_com_chave_antiga(${versaoPrimaria}, ${limite})`) as unknown as {
+        connection_id: string;
+        organization_id: string;
+      }[];
+      return linhas.map((linha) => ({ connectionId: linha.connection_id, organizationId: linha.organization_id }));
+    },
   };
 }
 

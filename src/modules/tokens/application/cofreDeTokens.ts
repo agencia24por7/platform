@@ -48,6 +48,13 @@ export type ResumoDaVarredura = {
   readonly falhas: number;
 };
 
+export type ResumoDaRecifragem = {
+  readonly versaoPrimaria: string | null;
+  readonly avaliadas: number;
+  readonly recifradas: number;
+  readonly falhas: number;
+};
+
 export type NovoSegredoEmClaro = {
   readonly tipo: TipoDeSegredo;
   readonly segredo: string;
@@ -70,6 +77,7 @@ export type CofreDeTokens = {
   obterAcesso(alvo: Alvo): Promise<Result<Acesso, FalhaDoCofre>>;
   revogarEApagar(alvo: Alvo, opcoes?: OpcoesDaRemocao): Promise<{ readonly revogacao: Revogacao; readonly apagado: boolean }>;
   renovarProativamente(limite?: number): Promise<ResumoDaVarredura>;
+  recifrarProativamente(limite?: number): Promise<ResumoDaRecifragem>;
   esquecer(connectionId: string): void;
 };
 
@@ -85,6 +93,7 @@ export type DependenciasDoCofre = {
 };
 
 const TAMANHO_MAXIMO_DO_SEGREDO = 8192;
+const SONDA_DA_CHAVE = '00000000-0000-4000-8000-000000000000';
 const VALIDADE_PADRAO_DO_ACESSO_MS = 3_600_000;
 const INTERVALO_DE_ESPERA_MS = 250;
 
@@ -315,6 +324,37 @@ export function createCofreDeTokens(deps: DependenciasDoCofre): CofreDeTokens {
     return desfecho.valor;
   }
 
+  async function recifrarUmComoDono(alvo: Alvo, registro: RegistroDeToken, concessao: Concessao): Promise<'recifrada' | 'ignorada'> {
+    const segredo = await decifrar(registro.segredo, contexto(registro, 'segredo'));
+    const cifrado = await deps.cifra.cifrar(segredo, contexto(registro, 'segredo'));
+    const gravou = await deps.repositorio.concluirRenovacao(alvo, registro.versao, concessao, {
+      segredo: { cifrado, expiraEm: registro.segredoExpiraEm },
+      acesso: null,
+    });
+    lembrancas.delete(alvo.connectionId);
+    if (!gravou) {
+      deps.registro.aviso('tokens.gravacao.concorrente', { connectionId: alvo.connectionId });
+      return 'ignorada';
+    }
+    return 'recifrada';
+  }
+
+  async function recifrarUm(alvo: Alvo): Promise<'recifrada' | 'ignorada'> {
+    const desfecho = await comConcessao(alvo, (registro, concessao) => recifrarUmComoDono(alvo, registro, concessao));
+    if (!desfecho || desfecho.tipo === 'ocupado') return 'ignorada';
+    return desfecho.valor;
+  }
+
+  async function versaoPrimariaDaChave(): Promise<string | null> {
+    try {
+      const sonda = await deps.cifra.cifrar('sonda', { connectionId: SONDA_DA_CHAVE, platform: 'meta', finalidade: 'segredo' });
+      return sonda.versaoDaChave;
+    } catch {
+      deps.registro.erro('tokens.recifragem.sem_chave', {});
+      return null;
+    }
+  }
+
   async function selar(destino: DestinoDoSegredo, novo: NovoSegredoEmClaro): Promise<Result<NovoSegredo, FalhaDoCofre>> {
     if (novo.segredo.length === 0 || novo.segredo.length > TAMANHO_MAXIMO_DO_SEGREDO) return err('segredo_invalido');
     try {
@@ -399,6 +439,20 @@ export function createCofreDeTokens(deps: DependenciasDoCofre): CofreDeTokens {
         const desfecho = await renovarUm(alvo).catch(() => 'falhou' as const);
         if (desfecho === 'renovada') resumo.renovadas += 1;
         else if (desfecho === 'reautorizar') resumo.reautorizar += 1;
+        else if (desfecho === 'falhou') resumo.falhas += 1;
+      }
+      return resumo;
+    },
+
+    async recifrarProativamente(limite = 50) {
+      const versaoPrimaria = await versaoPrimariaDaChave();
+      if (!versaoPrimaria) return { versaoPrimaria: null, avaliadas: 0, recifradas: 0, falhas: 1 };
+
+      const alvos = await deps.repositorio.comChaveAntiga(versaoPrimaria, limite);
+      const resumo = { versaoPrimaria, avaliadas: alvos.length, recifradas: 0, falhas: 0 };
+      for (const alvo of alvos) {
+        const desfecho = await recifrarUm(alvo).catch(() => 'falhou' as const);
+        if (desfecho === 'recifrada') resumo.recifradas += 1;
         else if (desfecho === 'falhou') resumo.falhas += 1;
       }
       return resumo;

@@ -6,7 +6,7 @@ import { request as pedidoHttp } from 'node:http';
 import { before, describe, it } from 'node:test';
 import { BASE, appIsUp, env as ambiente } from './helpers.mjs';
 
-const CONTAINER = process.env.ORLA_PG_CONTAINER ?? 'orla-postgres';
+const CONTAINER = process.env.TRIA_TEST_PG ?? process.env.ORLA_PG_CONTAINER ?? 'orla-postgres';
 
 function senhaDoApp() {
   if (process.env.APP_DB_PASSWORD) return process.env.APP_DB_PASSWORD;

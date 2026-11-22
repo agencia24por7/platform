@@ -13,11 +13,12 @@ import type {
   Renovacao,
   RepositorioDeTokens,
 } from '@/modules/tokens/application/portas';
+import type { ChaveMestra } from '@/modules/tokens/application/portas';
 import type { Result } from '@/shared/result/result';
 
 const { createCofreDeTokens } = await import('./cofreDeTokens.ts');
 const { createCifraEnvelope } = await import('@/modules/tokens/infrastructure/envelope.ts');
-const { createChaveMestraLocal } = await import('@/modules/tokens/infrastructure/chavesMestras.ts');
+const { createChaveMestraLocal, createChaveMestraFechada } = await import('@/modules/tokens/infrastructure/chavesMestras.ts');
 
 const DIA = 86_400_000;
 const AGORA = new Date('2026-11-20T12:00:00Z');
@@ -36,6 +37,7 @@ function criarRepositorio(conexoes: Record<string, { organizationId: string; pla
   for (const [id, conexao] of Object.entries(conexoes)) linhas.set(id, { ...conexao, registro: null });
   const concessoes = new Map<string, string>();
   const reivindicacoes: string[] = [];
+  const versoesDaChave = new Map<string, string>();
 
   const repositorio: RepositorioDeTokens = {
     async plataformaDa(alvo) {
@@ -60,6 +62,7 @@ function criarRepositorio(conexoes: Record<string, { organizationId: string; pla
         renovadoEm: null,
         versao: (linha.registro?.versao ?? 0) + 1,
       };
+      versoesDaChave.set(alvo.connectionId, novo.cifrado.versaoDaChave);
       concessoes.delete(alvo.connectionId);
     },
     async reivindicarRenovacao(alvo, _prazo, concessao) {
@@ -77,10 +80,12 @@ function criarRepositorio(conexoes: Record<string, { organizationId: string; pla
       linha.registro = {
         ...linha.registro,
         ...(mudanca.acesso ? { acesso: mudanca.acesso.cifrado.bytes, acessoExpiraEm: mudanca.acesso.expiraEm } : {}),
+        ...(mudanca.acesso === null ? { acesso: null, acessoExpiraEm: null } : {}),
         ...(mudanca.segredo ? { segredo: mudanca.segredo.cifrado.bytes, segredoExpiraEm: mudanca.segredo.expiraEm } : {}),
         ...(mudanca.renovadoEm ? { renovadoEm: mudanca.renovadoEm } : {}),
         versao: linha.registro.versao + 1,
       };
+      if (mudanca.segredo) versoesDaChave.set(alvo.connectionId, mudanca.segredo.cifrado.versaoDaChave);
       falhas.push(mudanca.falha ?? null);
       return true;
     },
@@ -100,9 +105,15 @@ function criarRepositorio(conexoes: Record<string, { organizationId: string; pla
         .filter(([, linha]) => linha.registro?.tipo === 'oauth_long_lived' && linha.registro.segredoExpiraEm! < antes)
         .map(([connectionId, linha]) => ({ connectionId, organizationId: linha.organizationId }));
     },
+    async comChaveAntiga(versaoPrimaria, limite) {
+      return [...linhas.entries()]
+        .filter(([connectionId, linha]) => linha.registro && versoesDaChave.get(connectionId) !== versaoPrimaria)
+        .slice(0, limite)
+        .map(([connectionId, linha]) => ({ connectionId, organizationId: linha.organizationId }));
+    },
   };
   const falhas: (string | null)[] = [];
-  return { repositorio, linhas, falhas, concessoes, reivindicacoes };
+  return { repositorio, linhas, falhas, concessoes, reivindicacoes, versoesDaChave };
 }
 
 type Roteiro = (segredo: string) => Promise<Result<Renovacao, FalhaDoProvedor>>;
@@ -145,7 +156,7 @@ const APIFY: Alvo = { organizationId: ORG, connectionId: 'conexao-apify' };
 const OUTRA: Alvo = { organizationId: ORG, connectionId: 'conexao-outra' };
 
 function montar(opcoes: { roteiro?: Roteiro; agora?: () => Date; esperar?: (ms: number) => Promise<void> } = {}) {
-  const { repositorio, linhas, falhas, concessoes, reivindicacoes } = criarRepositorio({
+  const { repositorio, linhas, falhas, concessoes, reivindicacoes, versoesDaChave } = criarRepositorio({
     [GOOGLE.connectionId]: { organizationId: ORG, platform: 'google' },
     [META.connectionId]: { organizationId: ORG, platform: 'meta' },
     [APIFY.connectionId]: { organizationId: ORG, platform: 'apify' },
@@ -180,7 +191,7 @@ function montar(opcoes: { roteiro?: Roteiro; agora?: () => Date; esperar?: (ms: 
       relogio,
       esperar: opcoes.esperar ?? ((ms) => new Promise((resolver) => setTimeout(resolver, Math.min(ms, 5)))),
     });
-  return { cofre: novoCofre(), novoCofre, linhas, falhas, google, meta, marcadas, logs, concessoes, reivindicacoes, repositorio, cifra };
+  return { cofre: novoCofre(), novoCofre, linhas, falhas, google, meta, marcadas, logs, concessoes, reivindicacoes, repositorio, cifra, versoesDaChave, registro };
 }
 
 describe('CofreDeTokens — Google (refresh token)', () => {
@@ -518,5 +529,79 @@ describe('CofreDeTokens — corridas com reautorização (versão do token)', ()
     t.concessoes.set(GOOGLE.connectionId, 'concessao-de-outro-processo');
     await t.repositorio.liberarRenovacao(GOOGLE, 'concessao-vencida-minha', 'http_503');
     assert.equal(t.concessoes.get(GOOGLE.connectionId), 'concessao-de-outro-processo');
+  });
+});
+
+describe('CofreDeTokens — recifragem após rotação da chave', () => {
+  const chaveLocal = createChaveMestraLocal('s'.repeat(40));
+  const chaveNaVersao = (versao: string): ChaveMestra => ({
+    ...chaveLocal,
+    embrulhar: async (chave, aad) => ({ ...(await chaveLocal.embrulhar(chave, aad)), versao }),
+  });
+  const cofreComChave = (t: ReturnType<typeof montar>, chave: ChaveMestra) =>
+    createCofreDeTokens({
+      repositorio: t.repositorio,
+      cifra: createCifraEnvelope(chave),
+      provedores: () => null,
+      marcador: { marcar: async () => {} },
+      registro: t.registro,
+      relogio: () => AGORA,
+    });
+
+  it('recifra o que está em versão antiga, apaga o access token e mantém o segredo legível', async () => {
+    const t = montar();
+    await t.cofre.guardar(GOOGLE, { tipo: 'oauth_refresh', segredo: REFRESH });
+    await t.cofre.obterAcesso(GOOGLE);
+    await t.cofre.guardar(META, { tipo: 'oauth_long_lived', segredo: TOKEN_META, expiraEm: new Date(AGORA.getTime() + 60 * DIA) });
+    assert.ok(t.linhas.get(GOOGLE.connectionId)!.registro!.acesso);
+    const bytesAntes = t.linhas.get(META.connectionId)!.registro!.segredo;
+
+    const rotacionado = cofreComChave(t, chaveNaVersao('local:v2'));
+    const resumo = await rotacionado.recifrarProativamente();
+    assert.deepEqual(resumo, { versaoPrimaria: 'local:v2', avaliadas: 2, recifradas: 2, falhas: 0 });
+    assert.equal(t.versoesDaChave.get(GOOGLE.connectionId), 'local:v2');
+    assert.equal(t.versoesDaChave.get(META.connectionId), 'local:v2');
+    assert.equal(t.linhas.get(GOOGLE.connectionId)!.registro!.acesso, null);
+    assert.ok(!t.linhas.get(META.connectionId)!.registro!.segredo.equals(bytesAntes));
+
+    const lido = await rotacionado.obterAcesso(META);
+    assert.ok(lido.ok);
+    assert.equal(lido.value.token, TOKEN_META);
+  });
+
+  it('segunda rodada não encontra nada e não toca nos registros', async () => {
+    const t = montar();
+    await t.cofre.guardar(GOOGLE, { tipo: 'oauth_refresh', segredo: REFRESH });
+    const rotacionado = cofreComChave(t, chaveNaVersao('local:v2'));
+    await rotacionado.recifrarProativamente();
+    const versao = t.linhas.get(GOOGLE.connectionId)!.registro!.versao;
+    assert.deepEqual(await rotacionado.recifrarProativamente(), { versaoPrimaria: 'local:v2', avaliadas: 0, recifradas: 0, falhas: 0 });
+    assert.equal(t.linhas.get(GOOGLE.connectionId)!.registro!.versao, versao);
+  });
+
+  it('respeita o limite por rodada', async () => {
+    const t = montar();
+    await t.cofre.guardar(GOOGLE, { tipo: 'oauth_refresh', segredo: REFRESH });
+    await t.cofre.guardar(OUTRA, { tipo: 'oauth_refresh', segredo: `${REFRESH}-2` });
+    const resumo = await cofreComChave(t, chaveNaVersao('local:v2')).recifrarProativamente(1);
+    assert.equal(resumo.avaliadas, 1);
+    assert.equal(resumo.recifradas, 1);
+  });
+
+  it('sem a chave primária disponível não mexe em nada e conta falha', async () => {
+    const t = montar();
+    await t.cofre.guardar(GOOGLE, { tipo: 'oauth_refresh', segredo: REFRESH });
+    const fechada = cofreComChave(t, createChaveMestraFechada('kms fora do ar'));
+    assert.deepEqual(await fechada.recifrarProativamente(), { versaoPrimaria: null, avaliadas: 0, recifradas: 0, falhas: 1 });
+    assert.equal(t.versoesDaChave.get(GOOGLE.connectionId), 'local:v1');
+  });
+
+  it('segredo que não decifra conta falha e segue para o próximo', async () => {
+    const t = montar();
+    await t.cofre.guardar(GOOGLE, { tipo: 'oauth_refresh', segredo: REFRESH });
+    await t.cofre.guardar(OUTRA, { tipo: 'oauth_refresh', segredo: `${REFRESH}-2` });
+    t.linhas.get(GOOGLE.connectionId)!.registro = { ...t.linhas.get(GOOGLE.connectionId)!.registro!, segredo: Buffer.alloc(40, 1) };
+    const resumo = await cofreComChave(t, chaveNaVersao('local:v2')).recifrarProativamente();
+    assert.deepEqual(resumo, { versaoPrimaria: 'local:v2', avaliadas: 2, recifradas: 1, falhas: 1 });
   });
 });

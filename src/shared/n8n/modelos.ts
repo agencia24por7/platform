@@ -42,6 +42,7 @@ export const CREDENCIAL_DO_WORKER = 'ORLA · worker token';
 
 export const WORKFLOW_DE_CONFORMIDADE_DO_YOUTUBE = 'n8n/workflows/plataforma/youtube-conformidade-diaria.json';
 export const WORKFLOW_DE_RENOVACAO_DE_TOKENS = 'n8n/workflows/plataforma/tokens-renovacao.json';
+export const WORKFLOW_DE_RECIFRAGEM_DE_TOKENS = 'n8n/workflows/plataforma/tokens-recifragem.json';
 export const ARQUIVO_DO_ALERTA_DA_PLATAFORMA = 'n8n/workflows/plataforma/alertas-de-falha.json';
 
 export const WORKFLOWS_DA_PLATAFORMA = [
@@ -50,6 +51,7 @@ export const WORKFLOWS_DA_PLATAFORMA = [
   'n8n/workflows/plataforma/contexto-brain-diario.json',
   WORKFLOW_DE_CONFORMIDADE_DO_YOUTUBE,
   WORKFLOW_DE_RENOVACAO_DE_TOKENS,
+  WORKFLOW_DE_RECIFRAGEM_DE_TOKENS,
 ] as const;
 
 export const ehSubWorkflowGenerico = (caminho: string) =>
