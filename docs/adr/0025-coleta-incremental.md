@@ -385,7 +385,8 @@ Conferido de forma empírica, só leitura, na mesma data.
   `plataforma.alerta`. A variável opcional `ALERT_WEBHOOK_URL` (HTTPS) recebe
   `{ "text": ... }` a cada alerta novo; sem ela, nada sai do app e nenhuma
   credencial nova existe no n8n. A tela Coletas mostra, para quem administra,
-  quantos alertas abertos existem (últimos 7 dias) e um botão para resolvê-los.
+  quantos alertas abertos existem (últimos 7 dias) e um botão para resolvê-los
+  (o botão e a política só do papel do app foram substituídos pelo ADR 0040).
   Nos modelos, `settings.errorWorkflow` é `origem:<arquivo>`; a sincronização
   troca pelo id do workflow implantado cuja nota de origem aponta para esse
   arquivo (nunca pelo nome) e processa o fluxo de alertas primeiro. Se ele ainda

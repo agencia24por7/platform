@@ -8,8 +8,11 @@ Fonte da verdade dos prazos publicados em `/privacidade` (seção 8). Mudou um p
 | Registro da trilha de auditoria | 2 anos | `core.aplicar_retencao()` |
 | Eventos de login de quem não tem organização | 30 dias | `core.aplicar_retencao()` |
 | E-mail de convite vencido ou cancelado | 90 dias após vencer/cancelar | `core.aplicar_retencao()` (vira `removido+<id>@invalid`) |
+| E-mail de convite aceito | 30 dias após o aceite | `core.aplicar_retencao()` (vira `removido+<id>@invalid`) |
 | Conta Google que entrou sem acesso liberado | 30 dias sem login | `core.aplicar_retencao()` (só se não tiver vínculo, convite aberto nem referência) |
-| Avisos do WhatsApp (`whatsapp_inbound_events`) | 90 dias | `core.aplicar_retencao()` |
+| Ex-membro (`core.users` com todos os vínculos revogados) | 90 dias após o último vínculo revogado | `core.aplicar_retencao()` anonimiza nome, e-mail e foto e limpa e-mail e IP da trilha (e-mail da conta conectada fica com a conexão da organização); a linha fica para preservar a trilha de auditoria |
+| Avisos do WhatsApp (`whatsapp_inbound_events`) | 90 dias; o `payload` que contém o e-mail do titular é limpo no pedido de exclusão (telefone e nome de perfil saem pelos 90 dias) | `core.aplicar_retencao()` e `core.anonimizar_titular()` |
+| Alertas de falha da plataforma (`automation.alertas`) | 90 dias | `core.aplicar_retencao()` (a rotina diária apaga; entrar alerta novo não apaga mais) |
 | Estado do corte para o cofre (`integrations.corte_para_cofre_refs`: ids de workflows e credenciais do n8n do modelo antigo, sem segredo) | até a migração 0123 (aplicada em 2026-11-21; a tabela deixou de existir) | A limpeza do n8n removeu as credenciais e marcou `limpo_em`; com todas as linhas marcadas, `db/migrations/0123_remover_legado_do_cofre.sql` apagou a tabela e as colunas legadas (ADR 0032, ADR 0035). Só o superusuário lê a tabela (RLS sem política para o app) |
 | Token de conexão (ciphertext em `integrations.connection_tokens`) | enquanto a conexão existir | remover a conexão revoga o acesso no Google ou na Meta antes de apagar (salvo conta que sustenta outra conexão; aí a tela mostra o caminho manual) e apaga o ciphertext na mesma transação que marca a conexão como revogada (`removerConexao` → `CofreDeTokens.revogarEApagar`, ADR 0029, ADR 0032). O backup lógico diário leva o ciphertext, inútil sem a chave do KMS |
 | Dados da API do YouTube nas dimensões (`dim_youtube_video_scd2`, `dim_youtube_playlist_scd2`: títulos e detalhes) | 30 dias sem renovação | a coleta renova `carregado_em`; o job `ORLA · privacidade · YouTube 30 dias` (03:45) apaga versão com `carregado_em` de mais de 30 dias (ADR 0029) |
@@ -39,5 +42,5 @@ chama `POST /api/v0/manutencao/youtube` às 03:45, antes da sincronização de d
 
 O workflow `ORLA · privacidade · retenção diária` (`n8n/workflows/plataforma/retencao-diaria.json`) chama
 `POST /api/v0/manutencao/retencao` às 03:30 (America/Sao_Paulo). A rota executa `core.aplicar_retencao()` com
-o papel do app (única função de privacidade que ele pode executar) e grava `privacidade.retencao_aplicada` na
+o papel `orla_worker` (a migração 0070 tirou a permissão do papel do app; só o worker executa) e grava `privacidade.retencao_aplicada` na
 auditoria com as contagens, sem dado pessoal. Falha dispara o alerta por e-mail.
