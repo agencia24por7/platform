@@ -91,6 +91,18 @@ export function arquivoSensivel(caminho) {
   return ARQUIVO_SENSIVEL.test(String(caminho ?? ''))
 }
 
+const GLOB_SENSIVEL = /(^|[/*])(\.env(?!\.example)|[^/]*\.(pem|key|p12|pfx)|id_(rsa|ed25519|ecdsa)|credentials|service-account)/
+
+export function avaliarBusca({ caminho, glob }) {
+  if (caminho && arquivoSensivel(caminho)) {
+    return { decisao: 'deny', motivo: 'Busca em arquivo sensível: segredo nunca entra no contexto.' }
+  }
+  if (glob && GLOB_SENSIVEL.test(String(glob))) {
+    return { decisao: 'deny', motivo: 'Busca por arquivos de segredo (.env, chaves, credenciais) bloqueada.' }
+  }
+  return null
+}
+
 const TAMANHO_MAXIMO_LEITURA = 100_000
 
 export function avaliarLeitura({ caminho, tamanho, comRecorte }) {
@@ -118,7 +130,7 @@ export function avaliarEscrita({ caminho, conteudo, existeVersionado }) {
 
 const REGRAS_DE_COMANDO = [
   { padrao: /\bcurl\b[^|;&]*\|\s*(sudo\s+)?(ba|z)?sh\b|\bwget\b[^|;&]*\|\s*(sudo\s+)?(ba|z)?sh\b/, decisao: 'deny', motivo: 'Baixar e executar script direto no shell é proibido. Baixe, leia e só então execute.' },
-  { padrao: /\b(cat|less|more|head|tail|bat|nl|strings|xxd|od|sed|awk|grep|rg)\b[^|;&]*(?<![\w-])(\.env(?!\.example)(\.[\w.-]+)?|[\w./-]*\.(pem|key|p12|pfx)|id_rsa|id_ed25519|credentials\.json)\b/, decisao: 'deny', motivo: 'Leitura de arquivo de segredo bloqueada. Nunca imprima valor de segredo.' },
+  { padrao: /\b(cat|less|more|head|tail|bat|nl|strings|xxd|od|sed|awk|grep|rg|cp|mv|ln|tar|zip|gzip|base64|openssl|python3?|node|perl|ruby|source|xargs|diff|jq|curl|wget|scp|rsync|tee|git\s+(?:show|diff|add))\b[^|;&]*(?<![\w-])(\.env(?!\.example)(\.[\w.-]+)?|[\w./-]*\.(pem|key|p12|pfx)|id_rsa|id_ed25519|credentials\.json)\b/, decisao: 'deny', motivo: 'Leitura de arquivo de segredo bloqueada. Nunca imprima valor de segredo.' },
   { padrao: /(?:^|[;&|(]\s*)(?:printenv|env|export\s+-p|set)\s*(?:$|[|;&])/, decisao: 'deny', motivo: 'Despejar o ambiente expõe segredos. Consulte uma variável específica pelo nome sem imprimir o valor.' },
   { padrao: /\becho\b[^|;&]*\$\{?\w*(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY)\w*/i, decisao: 'deny', motivo: 'Não imprima variável de segredo.' },
   { padrao: /\bgcloud\s+secrets\s+versions\s+access\b/, decisao: 'deny', motivo: 'Ler o valor de um segredo imprime o segredo. Crie versões por pipe sem eco e peça ao humano para conferir.' },

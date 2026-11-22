@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { detectarSegredo, arquivoSensivel } from '../.claude/hooks/lib/politicas.mjs'
+import { linhasAdicionadas, alteracoesDoNameStatus } from '../.claude/hooks/lib/diff.mjs'
 
 const AJUDA = `Uso: node scripts/seguranca-verificar.mjs <modo>
 
@@ -81,55 +82,26 @@ function portaoDeCorte() {
   return new Set(linhas.filter((linha) => linha && !linha.startsWith('#')))
 }
 
-function linhasAdicionadas(textoDoDiff) {
-  const resultado = []
-  let arquivo = ''
-  let linhaNova = 0
-  for (const linha of textoDoDiff.split('\n')) {
-    const cabecalho = linha.match(/^\+\+\+ b\/(.*)$/)
-    if (cabecalho) {
-      arquivo = cabecalho[1]
-      continue
-    }
-    const trecho = linha.match(/^@@ -\S+ \+(\d+)/)
-    if (trecho) {
-      linhaNova = Number(trecho[1]) - 1
-      continue
-    }
-    if (!linha.startsWith('+') || linha.startsWith('+++')) continue
-    linhaNova += 1
-    resultado.push({ arquivo, linha: linhaNova, texto: linha.slice(1) })
-  }
-  return resultado
-}
-
-function alteracoesDoDiff(textoNomes) {
-  return textoNomes.split('\n').filter(Boolean).map((linha) => {
-    const [status, ...resto] = linha.split('\t')
-    return { status: status[0], arquivo: resto[resto.length - 1] }
-  })
-}
-
 function contextoDoIndice() {
-  const diff = (extra) => git(['diff', '--cached', '--no-color', '--no-renames', ...extra])
+  const diff = (extra) => git(['-c', 'core.quotePath=false', 'diff', '--cached', '--no-color', '--no-renames', ...extra])
   return {
-    alteracoes: alteracoesDoDiff(diff(['--name-status'])),
+    alteracoes: alteracoesDoNameStatus(diff(['--name-status', '-z'])),
     adicionadas: linhasAdicionadas(diff(['-U0'])),
     conteudo: (arquivo) => git(['show', `:${arquivo}`]),
   }
 }
 
 function contextoDoIntervalo(inicio, fim) {
-  const diff = (extra) => git(['diff', `${inicio}..${fim}`, '--no-color', '--no-renames', ...extra])
+  const diff = (extra) => git(['-c', 'core.quotePath=false', 'diff', `${inicio}..${fim}`, '--no-color', '--no-renames', ...extra])
   return {
-    alteracoes: alteracoesDoDiff(diff(['--name-status'])),
+    alteracoes: alteracoesDoNameStatus(diff(['--name-status', '-z'])),
     adicionadas: linhasAdicionadas(diff(['-U0'])),
     conteudo: (arquivo) => git(['show', `${fim}:${arquivo}`]),
   }
 }
 
 function contextoDaArvore() {
-  const arquivos = git(['ls-files']).split('\n').filter(Boolean)
+  const arquivos = git(['-c', 'core.quotePath=false', 'ls-files', '-z']).split('\0').filter(Boolean)
   const adicionadas = []
   for (const arquivo of arquivos) {
     const completo = join(raiz, arquivo)

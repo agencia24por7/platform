@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { linhasComSegredo, arquivoSensivel } from './lib/politicas.mjs'
+import { linhasAdicionadas } from './lib/diff.mjs'
 
 const raiz = process.env.CLAUDE_PROJECT_DIR ?? process.cwd()
 const TAMANHO_MAXIMO = 200_000
@@ -33,31 +34,18 @@ function git(argumentos) {
 
 function achadosNoDiff() {
   const achados = []
-  let arquivo = ''
-  let linhaNova = 0
-  for (const linha of git(['diff', 'HEAD', '-U0', '--no-color']).split('\n')) {
-    const cabecalho = linha.match(/^\+\+\+ b\/(.*)$/)
-    if (cabecalho) {
-      arquivo = cabecalho[1]
-      continue
-    }
-    const trecho = linha.match(/^@@ -\S+ \+(\d+)/)
-    if (trecho) {
-      linhaNova = Number(trecho[1]) - 1
-      continue
-    }
-    if (!linha.startsWith('+') || linha.startsWith('+++')) continue
-    linhaNova += 1
-    if (IGNORADOS.test(arquivo)) continue
-    const tipos = linhasComSegredo(linha.slice(1))
-    if (tipos.length > 0) achados.push({ arquivo, linha: linhaNova, tipos: tipos[0].tipos })
+  const diff = git(['-c', 'core.quotePath=false', 'diff', 'HEAD', '-U0', '--no-color', '--no-renames'])
+  for (const linha of linhasAdicionadas(diff)) {
+    if (IGNORADOS.test(linha.arquivo)) continue
+    const tipos = linhasComSegredo(linha.texto)
+    if (tipos.length > 0) achados.push({ arquivo: linha.arquivo, linha: linha.linha, tipos: tipos[0].tipos })
   }
   return achados
 }
 
 function achadosEmNaoRastreados() {
   const achados = []
-  const lista = git(['ls-files', '--others', '--exclude-standard']).split('\n').filter(Boolean)
+  const lista = git(['-c', 'core.quotePath=false', 'ls-files', '--others', '--exclude-standard', '-z']).split('\0').filter(Boolean)
   for (const arquivo of lista) {
     if (IGNORADOS.test(arquivo)) continue
     if (arquivoSensivel(arquivo)) {

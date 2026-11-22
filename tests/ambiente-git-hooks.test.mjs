@@ -211,6 +211,7 @@ test('hooks reais do git: commit e push passam pelo verificador', () => {
     mkdirSync(join(pasta, '.githooks'), { recursive: true })
     copyFileSync(scriptDeSeguranca, join(pasta, 'scripts', 'seguranca-verificar.mjs'))
     copyFileSync(join(raiz, '.claude', 'hooks', 'lib', 'politicas.mjs'), join(pasta, '.claude', 'hooks', 'lib', 'politicas.mjs'))
+    copyFileSync(join(raiz, '.claude', 'hooks', 'lib', 'diff.mjs'), join(pasta, '.claude', 'hooks', 'lib', 'diff.mjs'))
     for (const nome of ['pre-commit', 'pre-push']) {
       copyFileSync(join(raiz, '.githooks', nome), join(pasta, '.githooks', nome))
       chmodSync(join(pasta, '.githooks', nome), 0o755)
@@ -252,5 +253,34 @@ test('hooks do git do projeto estão instalados no repositório e são executáv
   for (const nome of ['pre-commit', 'pre-push']) {
     const resultado = spawnSync('test', ['-x', join(raiz, '.githooks', nome)])
     assert.equal(resultado.status, 0, `${nome} sem permissão de execução`)
+  }
+})
+
+test('linha adicionada que começa com ++ não escapa da varredura', () => {
+  const pasta = criarRepositorio()
+  try {
+    const valor = falso('ghp', '_', 'K'.repeat(36))
+    preparar(pasta, 'src/j.ts', `++${valor}\n`)
+    const resultado = verificar(pasta, ['--staged'])
+    assert.equal(resultado.status, 1)
+    assert.match(resultado.stderr, /src\/j\.ts:1 \[segredo\]/)
+    assert.ok(!resultado.stderr.includes(valor))
+  } finally {
+    rmSync(pasta, { recursive: true, force: true })
+  }
+})
+
+test('nome de arquivo com aspas não desvia a atribuição nem a varredura', () => {
+  const pasta = criarRepositorio()
+  try {
+    preparar(pasta, 'src/we"ird.ts', 'const o = { rejectUnauthorized: false }\n')
+    const resultado = verificar(pasta, ['--staged'])
+    assert.equal(resultado.status, 1)
+    assert.match(resultado.stderr, /\[tls-desligado\]/)
+    git(pasta, 'reset', '-q')
+    preparar(pasta, 'src/ç-acentuado.ts', `const k = '${falso('AKI', 'A', 'ABCDEFGHIJKLMNOP')}'\n`)
+    assert.match(verificar(pasta, ['--staged']).stderr, /ç-acentuado\.ts:1 \[segredo\]/)
+  } finally {
+    rmSync(pasta, { recursive: true, force: true })
   }
 })
