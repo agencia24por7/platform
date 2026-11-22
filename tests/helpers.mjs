@@ -98,6 +98,16 @@ export function handoffToken(userId) {
   return `${corpo}.${assinatura}`;
 }
 
+export function portariaToken(userId) {
+  const agora = Date.now();
+  const corpo = Buffer.from(
+    JSON.stringify({ userId, audience: 'n8n-sessao', issuedAt: agora, expiresAt: agora + 3600_000 }),
+  ).toString('base64url');
+  const chave = createHmac('sha256', env().TRIA_SESSION_SECRET).update('n8n-sessao').digest('hex');
+  const assinatura = createHmac('sha256', chave).update(corpo).digest('base64url');
+  return `${corpo}.${assinatura}`;
+}
+
 export function signOut() {
   cookieAtual = '';
 }

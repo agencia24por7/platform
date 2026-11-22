@@ -6,9 +6,10 @@ import {
   HANDOFF_COOKIE,
   SEM_AUTOMACAO_COOKIE,
   SEM_AUTOMACAO_SEGUNDOS,
+  PORTARIA_SESSAO_SEGUNDOS,
+  issuePortariaSession,
   readHandoff,
 } from '@/modules/identity/domain/handoff';
-import { SESSION_MAX_AGE_SECONDS, issueSession } from '@/modules/identity/domain/session';
 import { env } from '@/shared/config/env';
 import { logger } from '@/shared/logging/logger';
 
@@ -41,13 +42,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const response = NextResponse.redirect(destino);
   response.cookies.set(
     HANDOFF_COOKIE,
-    issueSession(passagem.userId, configuration.TRIA_SESSION_SECRET, Date.now()),
+    issuePortariaSession(passagem.userId, configuration.TRIA_SESSION_SECRET, Date.now()),
     {
       httpOnly: true,
       sameSite: 'lax',
       secure: configuration.NODE_ENV === 'production',
       path: '/',
-      maxAge: SESSION_MAX_AGE_SECONDS,
+      maxAge: PORTARIA_SESSAO_SEGUNDOS,
     },
   );
 

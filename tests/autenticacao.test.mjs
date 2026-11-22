@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
-import { acaoComCampo, appIsUp, BASE, browse, ensureUser, handoffToken, makeOwner, sessionCookie, signIn, signOut, sqlDeConexao, submitAction, submitForm } from './helpers.mjs';
+import { acaoComCampo, appIsUp, BASE, browse, ensureUser, handoffToken, portariaToken, makeOwner, sessionCookie, signIn, signOut, sqlDeConexao, submitAction, submitForm } from './helpers.mjs';
 
 const query = (sql) =>
   execFileSync('docker', ['exec', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
@@ -193,6 +193,22 @@ describe('a ponte para o n8n não pode virar laço', { concurrency: false }, () 
 
   it('com a pausa marcada, a guarda deixa passar em vez de redirecionar', async () => {
     const usuario = ensureUser('laco@tria.local');
+    const organizacao = query(
+      `INSERT INTO core.organizations (name, slug, type) VALUES ('Laço', 'laco-${Date.now()}', 'agency') RETURNING id`,
+    );
+    query(`UPDATE core.members SET revoked_at = now() WHERE user_id = '${usuario}'`);
+    makeOwner(usuario, organizacao);
+
+    const resposta = await fetch(`${BASE}/api/portaria`, {
+      headers: { Cookie: `tria_portaria=${portariaToken(usuario)}; tria_portaria_sem_n8n=1` },
+      redirect: 'manual',
+    });
+
+    assert.equal(resposta.status, 204, 'a guarda precisa liberar durante a pausa');
+  });
+
+  it('sessão do app no cookie da portaria não abre a guarda', async () => {
+    const usuario = ensureUser('laco@tria.local');
     const sessao = sessionCookie(usuario);
 
     const resposta = await fetch(`${BASE}/api/portaria`, {
@@ -200,7 +216,19 @@ describe('a ponte para o n8n não pode virar laço', { concurrency: false }, () 
       redirect: 'manual',
     });
 
-    assert.equal(resposta.status, 204, 'a guarda precisa liberar durante a pausa');
+    assert.equal(resposta.status, 302);
+  });
+
+  it('quem foi rebaixado a leitor perde a guarda mesmo com a sessão da portaria válida', async () => {
+    const usuario = ensureUser('laco@tria.local');
+    query(`UPDATE core.members SET role = 'viewer' WHERE user_id = '${usuario}' AND revoked_at IS NULL`);
+
+    const resposta = await fetch(`${BASE}/api/portaria`, {
+      headers: { Cookie: `tria_portaria=${portariaToken(usuario)}; tria_portaria_sem_n8n=1` },
+      redirect: 'manual',
+    });
+
+    assert.equal(resposta.status, 302);
   });
 });
 

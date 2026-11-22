@@ -21,10 +21,7 @@ async function lerUsuario(): Promise<string> {
 
 export const usuarioDaSessao = cache(lerUsuario);
 
-async function resolver(organizationId: string): Promise<string> {
-  const userId = await usuarioDaSessao();
-  if (!userId) return ORGANIZACAO_INTEIRA;
-
+export async function escopoDoUsuario(userId: string, organizationId: string): Promise<string> {
   const linhas = (await sql()`
     SELECT core.sessao_alcanca_organizacao(${organizationId}::uuid, ${userId}::uuid) AS alcanca,
            core.client_scope_of(${userId}::uuid, ${organizationId}::uuid) AS escopo
@@ -37,6 +34,12 @@ async function resolver(organizationId: string): Promise<string> {
 
   const escopo = linha.escopo;
   return escopo && escopo.length > 0 ? escopo.join(',') : ORGANIZACAO_INTEIRA;
+}
+
+async function resolver(organizationId: string): Promise<string> {
+  const userId = await usuarioDaSessao();
+  if (!userId) return ORGANIZACAO_INTEIRA;
+  return escopoDoUsuario(userId, organizationId);
 }
 
 export const escopoDeCliente = cache(resolver);

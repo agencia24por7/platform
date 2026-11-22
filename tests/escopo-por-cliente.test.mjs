@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { after, before, describe, it } from 'node:test';
-import { appIsUp, browse, ensureUser, signIn, signOut, submitAction } from './helpers.mjs';
+import { BASE, acaoComCampo, appIsUp, browse, ensureUser, sessionCookie, signIn, signOut, submitAction } from './helpers.mjs';
 
 const dono = (sql) =>
   execFileSync('docker', ['exec', '-i', process.env.TRIA_TEST_PG ?? 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
@@ -203,6 +203,61 @@ describe('ações de Conexões respeitam o recorte, o papel e o cliente informad
     assert.equal(dono(`SELECT revoked_at IS NULL FROM core.client_context_links WHERE id = '${ids.linkB}'`), 't');
     assert.ok(!erro(await submitAction(tela, revogar, { clientId: ids.a, linkId: ids.linkA })), 'controle positivo no próprio cliente');
     assert.equal(dono(`SELECT revoked_at IS NOT NULL FROM core.client_context_links WHERE id = '${ids.linkA}'`), 't');
+  });
+
+  it('revogar convite de integração: cliente de outra organização não derruba convite, e recortado nem vê o botão', async () => {
+    const convite = dono(
+      `INSERT INTO integrations.connection_invites (organization_id, client_id, kind, token, expires_at)
+       VALUES ('${ids.org}', '${ids.a}', 'oauth_self_service', '${randomBytes(24).toString('base64url')}', now() + interval '7 days') RETURNING id`,
+    );
+    dono(
+      `INSERT INTO integrations.connection_invite_items (invite_id, organization_id, platform)
+       VALUES ('${convite}', '${ids.org}', 'meta')`,
+    );
+    signIn(pessoas.owner);
+    const tela = `/clientes/${ids.a}/conexoes?secao=pedir`;
+    const revogar = await acaoDoBotao(tela, 'Revogar', 'inviteId');
+    const status = () => dono(`SELECT status FROM integrations.connection_invites WHERE id = '${convite}'`);
+    signIn(pessoas.recortado);
+    assert.ok(erro(await submitAction(tela, revogar, { clientId: ids.a, inviteId: convite })), 'recortado não administra');
+    assert.equal(status(), 'pending');
+    signIn(pessoas.owner);
+    assert.ok(erro(await submitAction(tela, revogar, { clientId: ids.alheio, inviteId: convite })), 'cliente de outra organização');
+    assert.equal(status(), 'pending');
+    assert.ok(!erro(await submitAction(tela, revogar, { clientId: ids.a, inviteId: convite })), 'controle positivo');
+    assert.equal(status(), 'revoked');
+  });
+
+  it('vincular conta: cliente de outra organização ou fora do recorte não recebe a fonte', async () => {
+    const descoberta = dono(
+      `INSERT INTO integrations.connection_accounts (organization_id, connection_id, platform, external_id, name, state)
+       VALUES ('${ids.org}', '${ids.conexaoGoogle}', 'ga4', 'desc-${sufixo}', 'Descoberta ${sufixo}', 'discovered') RETURNING id`,
+    );
+    signIn(pessoas.owner);
+    const vincular = await acaoComCampo(`/clientes/${ids.b}/contas/nova`, 'descobertaId');
+    for (const alvo of [ids.alheio, ids.excluido, 'nao-e-uuid']) {
+      await submitAction(`/clientes/${ids.b}/contas/nova`, vincular, { clientId: alvo, descobertaId: descoberta });
+      assert.equal(estadoDaFonte(descoberta).startsWith('discovered'), true, alvo);
+    }
+  });
+
+  it('página de vincular conta: recortado recebe 404 em cliente fora do recorte', async () => {
+    signIn(pessoas.recortado);
+    assert.equal((await browse(`/clientes/${ids.b}/contas/nova`)).status, 404);
+    assert.equal((await browse(`/clientes/${ids.alheio}/contas/nova`)).status, 404);
+  });
+
+  it('envio interno de arquivo: cliente de outra organização, excluído ou fora do recorte dá 404', async () => {
+    const enviar = (clienteId, usuario) =>
+      fetch(`${BASE}/api/contexto/${clienteId}/arquivos`, {
+        method: 'POST',
+        headers: { Cookie: sessionCookie(usuario), Origin: new URL(BASE).origin, 'content-type': 'application/octet-stream' },
+        body: 'x',
+      });
+    assert.equal((await enviar(ids.alheio, pessoas.owner)).status, 404);
+    assert.equal((await enviar(ids.excluido, pessoas.owner)).status, 404);
+    assert.equal((await enviar(ids.b, pessoas.recortado)).status, 404);
+    assert.notEqual((await enviar(ids.a, pessoas.recortado)).status, 404, 'cliente do recorte passa do escopo');
   });
 
   it('mudar situação exige cliente no escopo e papel', async () => {
