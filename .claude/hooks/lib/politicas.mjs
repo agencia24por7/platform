@@ -180,14 +180,14 @@ const REGRAS_DE_COMANDO = [
   { padrao: /\bgit\s+push\b[^;&|]*(\bmain\b|HEAD:main)/, decisao: 'deny', motivo: 'Push em main só pelo fluxo de release (docs/release/), executado pelo humano.' },
   { padrao: /\bbq-ddl\.mjs\b(?=[^;&|]*--prod)(?![^;&|]*--dry-run)/, decisao: 'ask', producao: true, motivo: 'DDL em produção: só com autorização explícita do humano para esta operação, depois do --dry-run e de ler o alvo impresso (ADR 0028, ADR 0046).' },
   { padrao: /\bbq-ddl\.mjs\b[^;&|]*--confirmar/, decisao: 'ask', producao: true, motivo: 'DDL com --confirmar aplica de verdade: só com autorização explícita do humano para este alvo (ADR 0028, ADR 0046).' },
-  { padrao: /\bbq\s+(rm|mk|update)\b|\bbq\s+query\b[^;&|]*\b(DROP|TRUNCATE|DELETE\s+FROM|ALTER)\b/i, decisao: 'ask', producao: true, motivo: 'Muda ou apaga objeto do BigQuery: só com autorização explícita do humano (ADR 0046).' },
+  { padrao: /\bbq\b(?:\s+-{1,2}\S+(?:\s+[^-\s]\S*)?)*\s+(rm|mk|update|cp|load)\b|\bbq\b[^;&|]*\bquery\b[^;&|]*\b(DROP|TRUNCATE|DELETE|ALTER|CREATE|UPDATE|MERGE|INSERT)\b/i, decisao: 'ask', producao: true, motivo: 'Muda ou apaga objeto do BigQuery: só com autorização explícita do humano (ADR 0046).' },
   { padrao: /\bterraform\b(?:\s+-\S+)*\s+(apply|destroy|import|state\s+(rm|mv|push))\b/, decisao: 'deny', motivo: 'Terraform em produção só pelo caminho do CI (infra.yml na main). O agente aciona o workflow; apply local e o bootstrap são do humano (ADR 0046).' },
   { padrao: /\bgcloud\s+secrets\s+(versions\s+(add|destroy|disable)|delete|create|update|add-iam-policy-binding)\b/, decisao: 'ask', producao: true, motivo: 'Muda segredo em produção: só com autorização explícita; o valor vem do humano ou é gerado sem eco e nunca é impresso (ADR 0046).' },
   { padrao: /\bgcloud\s+kms\s+keys\s+(versions\s+(destroy|disable)|update)\b/, decisao: 'deny', motivo: 'Desativar ou destruir versão de chave KMS não tem volta e é do humano, depois da recifragem com avaliadas = 0 e falhas = 0 (ADR 0042).' },
   { padrao: /\bgcloud\s+sql\s+(backups\s+delete|instances\s+delete)\b/, decisao: 'deny', motivo: 'Apagar backup ou instância do Postgres é proibido.' },
-  { padrao: /\bgh\s+api\b[^;&|]*(\/merge\b|dispatches|-X\s*(PUT|DELETE)|--method[= ](PUT|DELETE))/i, decisao: 'ask', producao: true, motivo: 'Chamada de API do GitHub que faz merge, dispara workflow ou apaga: ação externa que o humano autoriza (ADR 0046).' },
+  { padrao: /\bgh\s+api\b[^;&|]*(\/merge\b|dispatches|(?:-X|--method)[= ]*(?!GET\b)\w+|\s-[fF]\s|\s--(?:field|raw-field|input)\b|mutation)/i, decisao: 'ask', producao: true, motivo: 'Chamada de API do GitHub que escreve (merge, dispatch, POST, PUT, PATCH, DELETE ou mutation): ação externa que o humano autoriza (ADR 0046).' },
   { padrao: /\bautorizar_corte=true\b/, decisao: 'ask', producao: true, motivo: 'IRREVERSÍVEL: o corte roda migração destrutiva sem volta. Só com autorização explícita, depois do pre-flight verde e do backup (ADR 0034, ADR 0046).' },
-  { padrao: /\bgh\s+(workflow\s+run|pr\s+merge|release\s+create)\b/, decisao: 'ask', producao: true, motivo: 'Dispara workflow, merge ou release: ação externa que o humano autoriza para esta operação (ADR 0046). Merge em main é do humano (ADR 0034).' },
+  { padrao: /\bgh\s+(workflow\s+run|run\s+rerun|pr\s+merge|release\s+create)\b/, decisao: 'ask', producao: true, motivo: 'Dispara workflow, merge ou release: ação externa que o humano autoriza para esta operação (ADR 0046). Merge em main é do humano (ADR 0034).' },
   { padrao: /\bgit\s+(reset\s+--hard|clean\s+-[a-z]*f|checkout\s+--\s|checkout\s+\.|restore\s+\.|branch\s+-D|worktree\s+remove)/, decisao: 'ask', motivo: 'Pode descartar trabalho não commitado ou de outro agente.' },
   { padrao: /\bgit\s+(?:commit|push|merge|am|cherry-pick)\b[^;&|]*--no-verify|\bgit\s+commit\b[^;&|]*\s-n\b/, decisao: 'deny', motivo: 'Contornar os hooks de segurança do git é proibido. Corrija o achado ou registre a exceção na allowlist por PR.' },
   { padrao: /\bgit\s+(?:-c\s+core\.hooksPath\b|config\b(?![^;&|]*--(?:get|list))[^;&|]*core\.hooksPath\b(?![^;&|]*\.githooks))|\b(?:HUSKY|SKIP_SIMPLE_GIT_HOOKS)=0\b/, decisao: 'deny', motivo: 'Não desative nem troque os hooks do git do projeto (core.hooksPath deve ser .githooks).' },
@@ -213,7 +213,7 @@ export function avaliarComando(comando, modoDePermissao) {
     for (const regra of REGRAS_DE_COMANDO) {
       if (!regra.padrao.test(texto)) continue
       if (regra.decisao === 'deny') return { decisao: 'deny', motivo: regra.motivo }
-      if (!pergunta) pergunta = regra
+      if (!pergunta || (regra.producao && !pergunta.producao)) pergunta = regra
     }
   }
   if (!pergunta) return null

@@ -103,7 +103,7 @@ test('comandos perigosos são negados, os de risco pedem confirmação e os comu
     'node scripts/bq-ddl.mjs --prod --confirmar # --dry-run && git commit -m x --no-verify',
   ]
   for (const comando of negados) assert.equal(avaliarComando(comando)?.decisao, 'deny', comando)
-  const perguntas = ['gh workflow run deploy.yml', 'git reset --hard HEAD~1', 'git push --force origin feature', 'psql -c "DROP TABLE x"', 'node scripts/bq-ddl.mjs --prod --confirmar', 'gcloud secrets versions add x --data-file=-', 'gcloud --project=p secrets versions add x --data-file=-', 'gcloud beta secrets versions add x --data-file=-', 'node scripts/bq-ddl.mjs --projeto tria-platform --dataset tria_dw --confirmar', 'gh workflow run deploy.yml -f autorizar_corte=true', 'gh api -X PUT repos/o/r/pulls/1/merge', 'bq query "DROP TABLE tria_dw.x"']
+  const perguntas = ['gh workflow run deploy.yml', 'git reset --hard HEAD~1', 'git push --force origin feature', 'psql -c "DROP TABLE x"', 'node scripts/bq-ddl.mjs --prod --confirmar', 'gcloud secrets versions add x --data-file=-', 'gcloud --project=p secrets versions add x --data-file=-', 'gcloud beta secrets versions add x --data-file=-', 'node scripts/bq-ddl.mjs --projeto tria-platform --dataset tria_dw --confirmar', 'gh workflow run deploy.yml -f autorizar_corte=true', 'gh api -X PUT repos/o/r/pulls/1/merge', 'bq query "DROP TABLE tria_dw.x"', 'bq --project_id=tria-platform rm -f -t tria_dw.x', 'gh api repos/o/r/issues -f title=x', 'gh api --method PATCH repos/o/r/pulls/1', 'gh run rerun 123']
   for (const comando of perguntas) assert.equal(avaliarComando(comando)?.decisao, 'ask', comando)
   const livres = ['npm run typecheck', 'cat .env.example', 'node scripts/bq-ddl.mjs --prod --dry-run', 'git push origin feature/x', 'git status', 'git config core.hooksPath .githooks', 'git config --get core.hooksPath', 'git commit -m "ajuste"', 'rm -f /tmp/x/.env', 'rm -rf /tmp/x/pasta', 'rm -rf node_modules', 'npm run build && echo pronto', 'env NODE_ENV=test node a.js']
   for (const comando of livres) assert.equal(avaliarComando(comando), null, comando)
@@ -275,4 +275,10 @@ test('operação de produção vira deny quando o modo de permissão não confir
 
 test('o comentário no fim do comando não esconde o --dry-run ausente', () => {
   assert.equal(avaliarComando('node scripts/bq-ddl.mjs --prod # --dry-run')?.decisao, 'ask')
+})
+
+test('ask de produção não é mascarado por ask comum no mesmo comando', () => {
+  const comando = 'git reset --hard HEAD~1 && gcloud secrets versions add x --data-file=-'
+  assert.equal(avaliarComando(comando, 'default')?.decisao, 'ask')
+  assert.equal(avaliarComando(comando, 'bypassPermissions')?.decisao, 'deny')
 })
