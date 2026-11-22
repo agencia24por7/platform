@@ -4,7 +4,7 @@ import type { WorkerContext } from '@/shared/http/workerRoute';
 import { failure, type Failure } from '@/shared/result/failure';
 import { err, ok, type Result } from '@/shared/result/result';
 import type { FormaDoAcesso } from '@/modules/tokens/domain/token';
-import type { CofreDeTokens, FalhaDoCofre, ResumoDaVarredura } from '@/modules/tokens/application/cofreDeTokens';
+import type { CofreDeTokens, FalhaDoCofre, ResumoDaRecifragem, ResumoDaVarredura } from '@/modules/tokens/application/cofreDeTokens';
 
 export type OrigemDoToken = { readonly coletaId: string } | { readonly tarefaId: string };
 
@@ -38,6 +38,7 @@ export type LimiteDeChamadas = (chave: string) => boolean;
 export type AcessoDoWorker = {
   emitir(origem: OrigemDoToken, worker: WorkerContext): Promise<Result<AcessoEmitido, Failure>>;
   renovarProativo(input: { readonly limite: number }, worker: WorkerContext): Promise<Result<ResumoDaVarredura, Failure>>;
+  recifrarProativo(input: { readonly limite: number }, worker: WorkerContext): Promise<Result<ResumoDaRecifragem, Failure>>;
 };
 
 const STATUS_UTILIZAVEIS = new Set(['active', 'expiring', 'degraded']);
@@ -140,6 +141,20 @@ export function createAcessoDoWorker(deps: {
         actorType: 'worker',
         actorId: worker.callerFingerprint,
         action: 'tokens.renovacao_proativa',
+        requestId: worker.requestId,
+        sourceIp: worker.sourceIp,
+        metadata: { ...resumo, limite: input.limite },
+      });
+      return ok(resumo);
+    },
+
+    async recifrarProativo(input, worker) {
+      const resumo = await deps.cofre.recifrarProativamente(input.limite);
+      await deps.audit.record({
+        organizationId: null,
+        actorType: 'worker',
+        actorId: worker.callerFingerprint,
+        action: 'tokens.recifragem',
         requestId: worker.requestId,
         sourceIp: worker.sourceIp,
         metadata: { ...resumo, limite: input.limite },

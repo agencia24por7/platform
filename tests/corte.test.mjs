@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-const CONTAINER = process.env.PG_CONTAINER ?? 'orla-postgres';
+const CONTAINER = process.env.TRIA_TEST_PG ?? process.env.PG_CONTAINER ?? 'orla-postgres';
 const BANCO = `corte_teste_${process.pid}`;
 const pasta = mkdtempSync(join(tmpdir(), 'corte-'));
 

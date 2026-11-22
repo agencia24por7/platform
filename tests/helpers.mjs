@@ -4,7 +4,17 @@ import { readFileSync } from 'node:fs';
 
 export const BASE = process.env.TRIA_TEST_BASE ?? 'http://localhost:3000';
 
+const CHAVES_DO_BANCO = ['DATABASE_URL', 'DATABASE_URL_WORKER'];
+
+function urlsDoBancoDoProcesso() {
+  return Object.fromEntries(CHAVES_DO_BANCO.filter((chave) => process.env[chave]).map((chave) => [chave, process.env[chave]]));
+}
+
 export function env() {
+  return { ...lerArquivoDeAmbiente(), ...urlsDoBancoDoProcesso() };
+}
+
+function lerArquivoDeAmbiente() {
   return Object.fromEntries(
     readFileSync('.env', 'utf8')
       .split('\n')
