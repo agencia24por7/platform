@@ -118,9 +118,7 @@ jobs:
 
       - name: Log do app quando a integração falha
         if: failure()
-        run: |
-          grep -nE "exclusao|rror|ECONN|exit|killed|SIGTERM" app.log | tail -n 40 || true
-          curl -sv -X POST -H 'content-type: application/json' --data '{"signed_request":"x"}' http://localhost:3000/api/meta/exclusao 2>&1 | tail -n 25 || true
+        run: tail -n 120 app.log
 
       - name: Smoke do build de produção (next start)
         run: |
