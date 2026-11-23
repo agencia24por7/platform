@@ -3,9 +3,10 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { before, describe, it } from 'node:test';
 import { BASE, acaoComCampo, appIsUp, browse, ensureUser, get, makeOwner, signIn, signOut, sqlDeConexao, submitAction } from './helpers.mjs';
+import { PG_CONTAINER } from './apoio/pgContainer.mjs';
 
 const dono = (sql) =>
-  execFileSync('docker', ['exec', '-i', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
+  execFileSync('docker', ['exec', '-i', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
     encoding: 'utf8',
   }).trim();
 
@@ -14,7 +15,7 @@ const umaLinha = (saida) => saida.split('\n')[0].trim();
 const aplicarMigracao = (arquivo) =>
   execFileSync(
     'docker',
-    ['exec', '-i', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-v', 'ON_ERROR_STOP=1', '-q'],
+    ['exec', '-i', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-v', 'ON_ERROR_STOP=1', '-q'],
     { input: readFileSync(arquivo), encoding: 'utf8' },
   );
 

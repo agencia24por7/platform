@@ -4,7 +4,17 @@ import { readFileSync } from 'node:fs';
 
 export const BASE = process.env.TRIA_TEST_BASE ?? 'http://localhost:3000';
 
+const CHAVES_DO_BANCO = ['DATABASE_URL', 'DATABASE_URL_WORKER'];
+
+function urlsDoBancoDoProcesso() {
+  return Object.fromEntries(CHAVES_DO_BANCO.filter((chave) => process.env[chave]).map((chave) => [chave, process.env[chave]]));
+}
+
 export function env() {
+  return { ...lerArquivoDeAmbiente(), ...urlsDoBancoDoProcesso() };
+}
+
+function lerArquivoDeAmbiente() {
   return Object.fromEntries(
     readFileSync('.env', 'utf8')
       .split('\n')
@@ -60,6 +70,12 @@ export function ensureUser(email = 'teste@tria.local') {
   return psql(`SELECT id FROM core.users WHERE email = '${email}'`);
 }
 
+export const EMAIL_DO_OPERADOR = (process.env.PLATAFORMA_OPERADORES ?? 'operador@tria.local').split(',')[0].trim().toLowerCase();
+
+export function ensureOperador() {
+  return ensureUser(EMAIL_DO_OPERADOR);
+}
+
 export function makeOwner(userId, organizationId) {
   psql(
     `INSERT INTO core.members (organization_id, user_id, role)
@@ -95,6 +111,16 @@ export function handoffToken(userId) {
     }),
   ).toString('base64url');
   const assinatura = createHmac('sha256', env().TRIA_SESSION_SECRET).update(corpo).digest('base64url');
+  return `${corpo}.${assinatura}`;
+}
+
+export function portariaToken(userId) {
+  const agora = Date.now();
+  const corpo = Buffer.from(
+    JSON.stringify({ userId, audience: 'n8n-sessao', issuedAt: agora, expiresAt: agora + 3600_000 }),
+  ).toString('base64url');
+  const chave = createHmac('sha256', env().TRIA_SESSION_SECRET).update('n8n-sessao').digest('hex');
+  const assinatura = createHmac('sha256', chave).update(corpo).digest('base64url');
   return `${corpo}.${assinatura}`;
 }
 

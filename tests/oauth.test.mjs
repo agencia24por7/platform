@@ -2,12 +2,13 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
 import { BASE, appIsUp, browse, ensureUser, signIn, signOut } from './helpers.mjs';
+import { PG_CONTAINER } from './apoio/pgContainer.mjs';
 
 const follow = (path) => browse(path);
 
 const resetToFirstRun = () =>
   execFileSync('docker', [
-    'exec', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-tAc',
+    'exec', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-tAc',
     'TRUNCATE metrics.metrics_restatements, metrics.metrics_daily, automation.sync_runs, integrations.connection_accounts, integrations.ad_accounts, integrations.connections, core.clients, audit.audit_log, core.organizations RESTART IDENTITY CASCADE',
   ]);
 
@@ -109,7 +110,7 @@ describe('autorizar plataforma exige administrar a organização', { concurrency
   let organizacao = '';
 
   const query = (sql) =>
-    execFileSync('docker', ['exec', '-i', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
+    execFileSync('docker', ['exec', '-i', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
       encoding: 'utf8',
     })
       .trim()

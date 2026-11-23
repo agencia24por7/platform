@@ -9,6 +9,7 @@ import { env } from '@/shared/config/env';
 import { text } from '@/shared/http/actions';
 import { atorAtual } from '@/shared/http/ator';
 import { MOTIVO_DO_CONVITE_DE_INTEGRACAO, validarPlataformasEscolhidas } from '@/modules/connections/domain/integrationInvite';
+import { podeVerConviteDeIntegracao } from '@/modules/connections/domain/visibilidadeDoConvite';
 
 export type LinkGerado =
   | {
@@ -22,9 +23,12 @@ export type LinkGerado =
 
 const escopoDoCliente = escopoDoClienteNaOrganizacao;
 
-async function urlDoConvite(organizationId: string, clientId: string, conviteId: string | null): Promise<string | null> {
+type EscopoDoCliente = NonNullable<Awaited<ReturnType<typeof escopoDoCliente>>>;
+
+async function urlDoConvite(escopo: EscopoDoCliente, clientId: string, conviteId: string | null): Promise<string | null> {
   if (!conviteId) return null;
-  const convites = await modules().connectionInvites.listByClient(organizationId, clientId);
+  if (!podeVerConviteDeIntegracao(escopo.admin, escopo.ctx.clientIds)) return null;
+  const convites = await modules().connectionInvites.listByClient(escopo.comando.organizationId, clientId);
   const convite = convites.find((c) => c.id === conviteId);
   return convite ? enderecoDoConvite(env().TRIA_APP_BASE_URL, convite.token) : null;
 }
@@ -38,7 +42,7 @@ export async function criarLinkDeContexto(
   const lido = lerPedidoDeLink(pedidoBruto);
   if (!lido.ok) return { ok: false, erro: 'Pedido inválido.' };
   const pedido = lido.valor;
-  if (pedido.conviteDeIntegracaoId && !(escopo.admin && escopo.ctx.clientIds === null)) {
+  if (pedido.conviteDeIntegracaoId && !podeVerConviteDeIntegracao(escopo.admin, escopo.ctx.clientIds)) {
     return { ok: false, erro: 'Só quem administra a organização pode juntar o mapa a um convite de integração.' };
   }
   const resultado = await modules().contexto.criarLink(
@@ -56,7 +60,7 @@ export async function criarLinkDeContexto(
   return {
     ok: true,
     url: enderecoDoFormulario(env().TRIA_APP_BASE_URL, token),
-    conviteUrl: escopo.admin ? await urlDoConvite(escopo.comando.organizationId, clientId, link.conviteDeIntegracaoId) : null,
+    conviteUrl: await urlDoConvite(escopo, clientId, link.conviteDeIntegracaoId),
     expiraEm: link.expiraEm.toISOString(),
     secoes: link.secoes,
   };
@@ -71,8 +75,8 @@ export type PedidoAoCliente = {
   readonly conviteDeIntegracaoId: string | null;
 };
 
-async function criarConviteParaOPedido(escopo: NonNullable<Awaited<ReturnType<typeof escopoDoCliente>>>, clientId: string, plataformas: readonly string[]) {
-  if (!escopo.admin || escopo.ctx.clientIds !== null) {
+async function criarConviteParaOPedido(escopo: EscopoDoCliente, clientId: string, plataformas: readonly string[]) {
+  if (!podeVerConviteDeIntegracao(escopo.admin, escopo.ctx.clientIds)) {
     return { ok: false as const, erro: 'Só quem administra a organização pode criar convite de integração.' };
   }
   const decisao = validarPlataformasEscolhidas([...plataformas]);
@@ -113,7 +117,7 @@ export async function criarPedidoAoCliente(clientId: string, pedidoBruto: Pedido
     expiraEm = criado.expiraEm;
   }
   if (!pedido.incluirMapa) {
-    const url = await urlDoConvite(escopo.comando.organizationId, clientId, conviteId);
+    const url = await urlDoConvite(escopo, clientId, conviteId);
     if (!url || !expiraEm) return { ok: false, erro: 'Escolha ao menos uma plataforma ou inclua o contexto.' };
     return { ok: true, url, conviteUrl: url, expiraEm: expiraEm.toISOString(), secoes: [] };
   }
@@ -152,7 +156,7 @@ export async function regenerarLinkDeContexto(clientId: string, linkId: string):
   return {
     ok: true,
     url: enderecoDoFormulario(env().TRIA_APP_BASE_URL, token),
-    conviteUrl: escopo.admin ? await urlDoConvite(escopo.comando.organizationId, clientId, link.conviteDeIntegracaoId) : null,
+    conviteUrl: await urlDoConvite(escopo, clientId, link.conviteDeIntegracaoId),
     expiraEm: link.expiraEm.toISOString(),
     secoes: link.secoes,
   };

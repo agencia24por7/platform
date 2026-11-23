@@ -32,7 +32,7 @@ function montar(opcoes: { falhaNoBigQuery?: Set<string>; disponivel?: boolean; d
     async vencidos() {
       return opcoes.vencidos ?? [];
     },
-    async registrarResultado(id, erro) {
+    async registrarResultado(_organizationId, id, erro) {
       resultados.push([id, erro]);
     },
   };

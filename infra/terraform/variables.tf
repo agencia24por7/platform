@@ -123,3 +123,20 @@ variable "backup_retention_days" {
   type        = number
   default     = 7
 }
+
+variable "logs_na_nuvem_habilitado" {
+  description = "Liga o pacote opcional de logs na nuvem (ADR 0047, decisão 6): instala o Ops Agent na VM só para logs dos containers, cria a métrica de erros e a política de alerta por e-mail. Desligado por padrão; ver a seção Logs na nuvem do README antes de ligar."
+  type        = bool
+  default     = false
+}
+
+variable "logs_na_nuvem_chave_apt_impressao" {
+  description = "Impressão digital (40 hex) da chave do repositório apt do Ops Agent, conferida pelo humano na documentação oficial da Google. Vazia, a instalação do agente é recusada."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = can(regex("^([0-9A-Fa-f]{40})?$", var.logs_na_nuvem_chave_apt_impressao))
+    error_message = "A impressão digital deve ter exatamente 40 caracteres hexadecimais, sem espaços, ou ficar vazia."
+  }
+}

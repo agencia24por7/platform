@@ -4,7 +4,7 @@ import { revogacaoPermitida, trocaDePapelPermitida } from './membro.ts';
 
 const alvo = {
   memberId: 'm', userId: 'u2', email: 'a@b.com', name: 'A',
-  role: 'operator' as const, revokedAt: null, clientIds: [], createdAt: new Date(),
+  role: 'operator' as const, revokedAt: null, clientIds: [], escopo: 'organizacao' as const, createdAt: new Date(),
 };
 
 test('quem não administra não mexe na equipe', () => {

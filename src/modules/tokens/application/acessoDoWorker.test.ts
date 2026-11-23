@@ -32,6 +32,7 @@ function montar(contexto: ContextoDaOrigem | null, opcoes: { permitir?: boolean;
     },
     revogarEApagar: async () => ({ revogacao: 'sem_token', apagado: false }),
     renovarProativamente: async () => ({ avaliadas: 0, renovadas: 0, reautorizar: 0, falhas: 0 }),
+    recifrarProativamente: async () => ({ versaoPrimaria: 'v1', avaliadas: 0, recifradas: 0, falhas: 0 }),
     esquecer: () => {},
     ...opcoes.cofre,
   };
@@ -87,6 +88,7 @@ describe('emissão de token para o worker', () => {
         obterAcesso: async () => ({ ok: true, value: { token: TOKEN, tipo: 'bearer', expiraEm: null } }),
         revogarEApagar: async () => ({ revogacao: 'sem_token', apagado: false }),
         renovarProativamente: async () => ({ avaliadas: 0, renovadas: 0, reautorizar: 0, falhas: 0 }),
+        recifrarProativamente: async () => ({ versaoPrimaria: 'v1', avaliadas: 0, recifradas: 0, falhas: 0 }),
         esquecer: () => {},
       },
       audit: { record: async (evento) => void eventos.push(evento), list: async () => [], search: async () => [] },
@@ -112,5 +114,18 @@ describe('emissão de token para o worker', () => {
     const t = montar(VALIDO, { cofre: { obterAcesso: async () => ({ ok: false, error: 'reautorizar' }) } });
     const resultado = await t.servico.emitir({ coletaId: 'col-1' }, WORKER);
     assert.equal(!resultado.ok && resultado.error.details?.motivo, 'reauth_pending');
+  });
+});
+
+describe('recifragem proativa pelo worker', () => {
+  it('audita só contagens e a versão da chave, sem segredo', async () => {
+    const t = montar(VALIDO, {
+      cofre: { recifrarProativamente: async () => ({ versaoPrimaria: 'v2', avaliadas: 3, recifradas: 2, falhas: 1 }) },
+    });
+    const resultado = await t.servico.recifrarProativo({ limite: 10 }, WORKER);
+    assert.deepEqual(resultado.ok && resultado.value, { versaoPrimaria: 'v2', avaliadas: 3, recifradas: 2, falhas: 1 });
+    assert.equal(t.eventos.length, 1);
+    assert.equal(t.eventos[0]!.action, 'tokens.recifragem');
+    assert.deepEqual(t.eventos[0]!.metadata, { versaoPrimaria: 'v2', avaliadas: 3, recifradas: 2, falhas: 1, limite: 10 });
   });
 });

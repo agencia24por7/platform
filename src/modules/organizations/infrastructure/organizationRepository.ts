@@ -1,4 +1,4 @@
-import { withTenant, withoutTenant } from '@/shared/db/tenant';
+import { comoUsuarioAutenticado, withTenant, withoutTenant } from '@/shared/db/tenant';
 import type { NewOrganization, Organization } from '@/modules/organizations/domain/organization';
 
 type Row = {
@@ -88,7 +88,7 @@ export function createOrganizationRepository(): OrganizationRepository {
     },
 
     async ofUser(userId) {
-      return withoutTenant(async (tx) => {
+      return comoUsuarioAutenticado(userId, async (tx) => {
         const rows = (await tx`SELECT * FROM core.organizations_of(${userId})`) as unknown as Row[];
         return rows.map(toOrganization);
       });

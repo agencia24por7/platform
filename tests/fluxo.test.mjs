@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
 import { appIsUp, BASE, browse, ensureUser, get, makeOwner, post, signIn, sqlDeConexao, submitForm } from './helpers.mjs';
+import { PG_CONTAINER } from './apoio/pgContainer.mjs';
 
 const query = (sql) =>
-  execFileSync('docker', ['exec', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
+  execFileSync('docker', ['exec', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
     .toString()
     .trim()
     .split('\n')[0]
@@ -224,7 +225,7 @@ describe('cadastro de cliente e contas', { concurrency: false }, () => {
     const actions = query(
       "select string_agg(distinct action, ',' order by action) from audit.audit_log where actor_type = 'user'",
     );
-    assert.equal(actions, 'ad_account.link,client.create,identity.became_owner,organization.create');
+    assert.equal(actions, 'ad_account.link,client.create,cliente.leitura,identity.became_owner,organization.create');
   });
 
   it('não grava segredo na auditoria', async () => {

@@ -16,3 +16,6 @@ n8n-limpeza-*.json
 
 # Documentos jurídicos em negociação: ficam só na máquina
 docs/lgpd/minuta-*.md
+
+# Estado vivo da sessão (por pasta, nunca versionado)
+HANDOFF.md

@@ -41,7 +41,13 @@ O Terraform cria os **contêineres** dos segredos; a **versão** (o valor) é se
    done
    ```
    `meta-exclusao-pepper` e `worker-db-password` são obrigatórios (o pre-flight barra sem eles).
-5. Segredo do GitHub `ALERT_WEBHOOK_URL` (opcional, Settings → Secrets → Actions): o smoke pós-deploy avisa por ele.
+5. `tria-producao-plataforma-operadores` (novo, **obrigatório para quem precisa do n8n e dos alertas**, ADR 0043):
+   e-mails dos operadores da plataforma, separados por vírgula, sem espaço obrigatório e sem diferença de caixa.
+   Ausente ou vazio significa ninguém: ninguém entra no n8n pela portaria nem vê `/automacoes` e os alertas.
+   `printf '%s' 'a@empresa.com,b@empresa.com' | gcloud secrets versions add tria-producao-plataforma-operadores --data-file=-`
+   Confira com o mesmo laço da verificação (acrescente `plataforma-operadores`). A variável chega ao app por
+   `startup.sh.tftpl` (próximo boot) ou por `completar-env.sh` (sem reiniciar) e por `docker-compose.prod.yml`.
+6. Segredo do GitHub `ALERT_WEBHOOK_URL` (opcional, Settings → Secrets → Actions): o smoke pós-deploy avisa por ele.
 
 ## 2. Terraform via `main` (H aprova, workflow aplica)
 
@@ -92,7 +98,7 @@ Ordem do job `publicar` (cada etapa só começa com a anterior verde):
    BigQuery, ambiente validado **dentro da imagem nova** pelo schema do `env.ts` (sem imprimir valor), Postgres
    pronto, lista de migrações pendentes, recusa do corte sem `autorizar_corte`, **backup lógico** `pg_dumpall` em
    `gs://tria-platform-tria-producao-backups/postgres/pre-release-<sha>-<hora>.sql.gz`, marca `.preflight-ok`;
-4. `migrar.sh` (o portão recusa 0121/0122 sem `RELEASE_CORTE_AUTORIZADO=1` **e** marca do pre-flight do mesmo sha);
+4. **para o `orla-app`** (janela de indisponibilidade, item 1 da fase 5) e `migrar.sh` (o portão recusa 0121/0122 sem `RELEASE_CORTE_AUTORIZADO=1` **e** marca do pre-flight do mesmo sha);
 5. troca do app e restart do proxy;
 6. smoke: `/api/health` 200, `/api/v0/sync/queue` sem token 401, rotas do cofre (`/api/v0/coleta/token`,
    `/api/v0/tokens/*`, `/api/v0/tarefas/token`) 404 pelo proxy; falha alerta em `ALERT_WEBHOOK_URL`.
@@ -179,12 +185,93 @@ Concluído em 2026-11-21 (24 itens, 0 pendências); script `n8n:limpar-legado` r
 
 Verificação: `SELECT count(*) FROM integrations.corte_para_cofre_refs WHERE limpo_em IS NULL;` = 0.
 
+## Acréscimo da fase 5 de tenant (ADRs 0043, 0044 e 0045)
+
+1. **Janela de indisponibilidade obrigatória.** O esquema novo e o app antigo não convivem: com a `0140` aplicada, o
+   app antigo falha por inteiro para quem está logado (a prova de usuário em `sessao_alcanca_organizacao` e
+   `client_scope_of` exige `app.user_id`, que ele não envia; `current_clients()` ausente ou vazio significa nenhum
+   cliente), além do login Google e do webhook Z-API (o código antigo responde 500 à Z-API, que reenvia). O
+   `deploy.yml` roda assim: pre-flight e backup lógico, depois `up -d postgres` (o container `orla-app` antigo
+   continua de pé), depois `migrar.sh`, depois `pull` e `up -d --remove-orphans` com a imagem nova. Para a janela, o
+   passo "Aplicar migrações pendentes" **para o `orla-app`** (`docker stop orla-app`) logo antes do `migrar.sh`; o
+   proxy responde 502 e as chamadas do n8n ao app falham até o passo "Subir a nova versão" recriar o app com a
+   imagem nova. Janela esperada: do `migrar.sh` até o app novo saudável (minutos). Avise antes, e rode fora do horário
+   de pico. Se o `migrar.sh` falhar, o app **fica parado** de propósito: cada arquivo é atômico, então corrija o dado
+   que a mensagem apontou e rode o deploy de novo (o app volta no passo de subir), ou restaure o backup (item 6).
+   `0140` aborta com mensagem clara se houver conexão apontada por linha de outra organização; nada é aplicado pela
+   metade (transação por arquivo). As migrações `0139` e `0140` começam com `BEGIN; SET LOCAL lock_timeout = '5s';`.
+   O trigger de `member_clients` (vínculo implica recorte) está dentro da `0139`.
+2. Variável nova `PLATAFORMA_OPERADORES` (passo 1.5 acima). Sem ela, **ninguém** acessa o n8n pelo app. Papel de
+   organização (dono, admin) não concede nada. O pre-flight não barra a ausência: confira antes do deploy.
+3. Cookies `tria_portaria` emitidos antes do deploy deixam de valer para quem não é operador: o operador cai uma
+   vez na portaria, é reemitido e segue. Quem não é operador deixa de ver "Coletas" no menu.
+4. `tria_sessao` de sessões encerradas (logout, "encerrar sessões") deixa de abrir o contexto de tenant em
+   qualquer rota, inclusive a portaria e as chamadas de leitura.
+5. Alertas de plataforma: o app não lê mais `automation.alertas` com o papel do app; a leitura é do worker, depois
+   de confirmar o operador. Validação: logado como operador, `/automacoes` mostra o contador; como dono de
+   organização que não é operador, a rota redireciona para `/clientes`.
+6. **Imagem e esquema andam juntos.** A imagem antiga sobre o esquema novo quebra o app inteiro para quem está
+   logado, o login Google (`memberships_of` passa a exigir `app.user_id`; a auditoria sem organização exige o ator
+   igual ao usuário do contexto) e o webhook Z-API (a gravação sem prova de organização lança exceção, e o código
+   antigo responde 500, não 200 mudo). Por isso `0139` e `0140` só vão com a imagem nova, dentro da janela do item 1.
+   Falha **depois** do `migrar.sh` (app novo com problema, smoke reprovado): rollback imediato pela restauração do
+   backup `pre-release-<sha>` com a imagem anterior (linha "Depois do passo 4" da tabela abaixo), **ou** correção
+   adiante com a imagem nova se a causa já está identificada e o app ainda não atendeu tráfego real. **Nunca** volte
+   só a imagem: o app antigo sobre o esquema novo é o estado quebrado descrito acima. A versão nova responde 503 com
+   `Retry-After` quando a gravação do WhatsApp falha, para a Z-API reenviar.
+7. **Pré-deploy, SOMENTE LEITURA (humano revisa antes de aplicar a `0139`).** A migração marca `escopo = 'clientes'`
+   para quem tem vínculo vivo. Sem vínculo vivo, decide o evento mais recente entre o convite aceito do par
+   (usuário, organização) e o último `team.scope_changed` da auditoria: recorte vence se for o mais recente; abrir à
+   organização inteira vence se for o mais recente; sem nenhum sinal fica `organizacao`. Liste quem tem sinal de
+   recorte e a decisão que a `0139` tomará, e confirme caso a caso:
+
+   ```sql
+   SELECT m.organization_id, m.user_id, u.email, m.role,
+          (SELECT count(*) FROM core.member_clients mc WHERE mc.member_id = m.id AND mc.revoked_at IS NULL) AS vinculos_vivos,
+          (SELECT count(*) FROM core.member_clients mc WHERE mc.member_id = m.id AND mc.revoked_at IS NOT NULL) AS vinculos_revogados,
+          ultimo.quando AS ultimo_sinal_em,
+          ultimo.origem AS ultimo_sinal,
+          CASE WHEN EXISTS (SELECT 1 FROM core.member_clients mc WHERE mc.member_id = m.id AND mc.revoked_at IS NULL)
+                 OR coalesce(ultimo.restrito, false)
+               THEN 'clientes' ELSE 'organizacao' END AS escopo_que_a_0139_grava
+     FROM core.members m
+     JOIN core.users u ON u.id = m.user_id
+     LEFT JOIN LATERAL (
+       SELECT e.quando, e.restrito, e.origem
+         FROM (
+           SELECT i.accepted_at AS quando,
+                  cardinality(coalesce(i.client_ids, ARRAY[]::uuid[])) > 0 AS restrito,
+                  'convite' AS origem
+             FROM core.invitations i
+            WHERE i.accepted_by = m.user_id AND i.organization_id = m.organization_id AND i.accepted_at IS NOT NULL
+           UNION ALL
+           SELECT l.occurred_at, (l.metadata->>'organizacaoInteira') = 'false', 'team.scope_changed'
+             FROM audit.audit_log l
+            WHERE l.action = 'team.scope_changed' AND l.organization_id = m.organization_id
+              AND l.target_id = m.user_id::text
+              AND (l.metadata->>'organizacaoInteira') IN ('true', 'false')
+         ) e
+        ORDER BY e.quando DESC
+        LIMIT 1
+     ) ultimo ON true
+    WHERE m.revoked_at IS NULL
+      AND (EXISTS (SELECT 1 FROM core.member_clients mc WHERE mc.member_id = m.id) OR ultimo.quando IS NOT NULL)
+    ORDER BY m.organization_id, u.email;
+   ```
+
+   Fica **sem acesso a clientes** depois da `0139` quem tem `vinculos_vivos = 0` **e** sinal de recorte pela regra
+   nova (`escopo_que_a_0139_grava = 'clientes'`), não apenas quem tem vínculos revogados (fail-closed; reabrir pela
+   tela de equipe depois). Quem aparece com `organizacao` e sinal antigo de recorte foi aberto depois e continua com
+   acesso total.
+8. Verificação pós-deploy: `npm run test:integration` contra o ambiente de teste (`tests/isolamento-fase5.test.mjs`,
+   `tests/fronteiras.test.mjs`) antes de promover; no ambiente, `/api/portaria` sem cookie responde 302.
+
 ## Rollback (árvore de decisão)
 
 | Momento | Situação | O que fazer |
 | --- | --- | --- |
 | Antes do passo 4 / pre-flight reprovado | Nada foi tocado no banco | Corrija o pré-requisito que o log apontou e rode o deploy de novo. A versão anterior continua no ar |
-| Falha numa migração (passo 4) | Cada arquivo é atômico: o que falhou foi desfeito; os anteriores ficaram | Não rode a imagem antiga sobre o esquema novo por muito tempo. Corrija e rode de novo, ou restaure (linha abaixo) |
+| Falha numa migração (passo 4) | Cada arquivo é atômico: o que falhou foi desfeito; os anteriores ficaram. O `orla-app` antigo foi parado antes do `migrar.sh` e **continua parado** | Não suba a imagem antiga sobre o esquema novo. Corrija o dado que a mensagem apontou e rode o deploy de novo (sobe o app novo), ou restaure o backup (linha abaixo) |
 | Depois do passo 4, antes do 9 | App novo com problema | Restaurar o backup lógico `pre-release-<sha>` (ou o snapshot do passo 0.4) **e** a imagem anterior. O deploy só roda de `main`: reverta o merge em `main` (o deploy do revert não tem migração pendente) ou, na VM, `APP_IMAGE=<imagem:sha-anterior>` no `.env` + `docker compose -f docker-compose.prod.yml up -d app` depois de restaurar. As credenciais e workflows antigos ainda estão no n8n. Perde o que o banco gravou depois do backup |
 | Smoke reprovado | App no ar com erro | Ler o alerta; `gcloud compute ssh tria-producao-vm --tunnel-through-iap -- sudo docker logs orla-app --tail 200`. Rollback = linha acima |
 | Depois do passo 9 | — | **Sem volta** ao modelo antigo: as credenciais do n8n foram apagadas; restaurar exige reautorizar tudo de novo |

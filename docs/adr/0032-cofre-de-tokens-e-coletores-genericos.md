@@ -376,8 +376,8 @@ Concluído em 2026-11-21; script removido junto da 0123 (ADR 0035). Descrição 
 ## Pendências
 
 - Job de recifragem após rotação do KMS (lê `kms_key_version` ≠ primária e recifra) antes de desativar versões
-  antigas da chave.
-- Migração que apague `corte_para_cofre_refs` depois da pré-condição da seção 7.
+  antigas da chave: desenho e implementação no ADR 0042.
+- Migração que apague `corte_para_cofre_refs`: concluída em 2026-11-21 (`0123`, ADR 0035). Sem pendência.
 - O teste de ponta a ponta do callback OAuth contra o provedor real não existe em CI (não há app OAuth de teste):
   autorização e chave de API são cobertas por testes de unidade com o cofre real (cifra local) e o banco é
   coberto por `tests/cofre-banco.test.mjs`.

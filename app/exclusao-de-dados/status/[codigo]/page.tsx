@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { DocumentoPublico } from '@/../app/_components/DocumentoPublico';
 import { modules } from '@/composition';
 import type { SituacaoDoPedido } from '@/modules/privacidade/application/pedidosDeExclusao';
+import { comoPublico } from '@/shared/db/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +23,7 @@ const data = (valor: Date) => valor.toLocaleDateString('pt-BR', { timeZone: 'Ame
 
 export default async function SituacaoDoPedidoDeExclusao({ params }: { params: Promise<{ codigo: string }> }) {
   const { codigo } = await params;
-  const pedido = await modules().pedidosDeExclusao.situacao(codigo);
+  const pedido = await comoPublico(() => modules().pedidosDeExclusao.situacao(codigo));
   if (!pedido) notFound();
 
   return (

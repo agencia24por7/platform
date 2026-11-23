@@ -12,10 +12,17 @@ import {
 import { modules } from '@/composition';
 import { enderecoConfiavel } from '@/modules/audit/domain/actor';
 import { requestId } from '@/shared/http/actions';
+import { comRequestId } from '@/shared/http/comRequestId';
+import { entradaPublica } from '@/shared/http/entradaPublica';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(request: Request, { params }: { params: Promise<{ token: string }> }) {
+async function tratarPost(request: Request, { params }: { params: Promise<{ token: string }> }) {
+  const id = await requestId();
+  return comRequestId(id, receberArquivo(request, params, id));
+}
+
+async function receberArquivo(request: Request, params: Promise<{ token: string }>, id: string) {
   const { token } = await params;
   if (!mesmaOrigem(request)) {
     descartarCorpo(request);
@@ -34,7 +41,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
       {
         credencial: { tipo, token },
         ip: enderecoConfiavel((await headers()).get('x-forwarded-for')),
-        requestId: requestId(),
+        requestId: id,
       },
       lido.pedido,
       leitorDoCorpo(request),
@@ -49,3 +56,5 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     });
   });
 }
+
+export const POST = entradaPublica(tratarPost);

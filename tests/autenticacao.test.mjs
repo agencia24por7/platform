@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
-import { acaoComCampo, appIsUp, BASE, browse, ensureUser, handoffToken, makeOwner, sessionCookie, signIn, signOut, sqlDeConexao, submitAction, submitForm } from './helpers.mjs';
+import { acaoComCampo, appIsUp, BASE, browse, ensureOperador, ensureUser, handoffToken, portariaToken, makeOwner, sessionCookie, signIn, signOut, sqlDeConexao, submitAction, submitForm } from './helpers.mjs';
+import { PG_CONTAINER } from './apoio/pgContainer.mjs';
 
 const query = (sql) =>
-  execFileSync('docker', ['exec', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
+  execFileSync('docker', ['exec', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
     .toString()
     .trim()
     .split('\n')[0]
@@ -109,7 +110,7 @@ describe('passagem para a automação', { concurrency: false }, () => {
   });
 
   it('a troca da passagem é recusada na segunda vez', async () => {
-    const usuario = ensureUser('portaria@tria.local');
+    const usuario = ensureOperador();
     const passagem = handoffToken(usuario);
 
     const primeira = await fetch(`${BASE}/api/portaria/receber?t=${encodeURIComponent(passagem)}`, {
@@ -155,7 +156,7 @@ describe('acesso à automação por papel', { concurrency: false }, () => {
     assert.match(destino, /n8n_sem_permissao/);
   });
 
-  it('quem administra recebe a passagem', async () => {
+  it('quem administra a organização, sem ser operador da plataforma, não recebe a passagem', async () => {
     const organizacao = query('select id from core.organizations limit 1');
     const administrador = ensureUser('admin@tria.local');
 
@@ -169,6 +170,17 @@ describe('acesso à automação por papel', { concurrency: false }, () => {
     const resposta = await browse('/api/portaria/emitir');
     const destino = resposta.headers.get('location') ?? '';
 
+    assert.ok(!destino.includes('/api/portaria/receber'), 'admin de organização não é operador');
+    assert.match(destino, /n8n_sem_permissao/);
+  });
+
+  it('o operador da plataforma recebe a passagem', async () => {
+    const operador = ensureOperador();
+
+    signIn(operador);
+    const resposta = await browse('/api/portaria/emitir');
+    const destino = resposta.headers.get('location') ?? '';
+
     assert.match(destino, /\/api\/portaria\/receber/);
   });
 });
@@ -179,7 +191,7 @@ describe('a ponte para o n8n não pode virar laço', { concurrency: false }, () 
   });
 
   it('sem credencial do n8n, a troca marca a pausa em vez de insistir', async () => {
-    const usuario = ensureUser('laco@tria.local');
+    const usuario = ensureOperador();
     const passagem = handoffToken(usuario);
 
     const resposta = await fetch(`${BASE}/api/portaria/receber?t=${encodeURIComponent(passagem)}`, {
@@ -192,6 +204,22 @@ describe('a ponte para o n8n não pode virar laço', { concurrency: false }, () 
   });
 
   it('com a pausa marcada, a guarda deixa passar em vez de redirecionar', async () => {
+    const usuario = ensureOperador();
+    const organizacao = query(
+      `INSERT INTO core.organizations (name, slug, type) VALUES ('Laço', 'laco-${Date.now()}', 'agency') RETURNING id`,
+    );
+    query(`UPDATE core.members SET revoked_at = now() WHERE user_id = '${usuario}'`);
+    makeOwner(usuario, organizacao);
+
+    const resposta = await fetch(`${BASE}/api/portaria`, {
+      headers: { Cookie: `tria_portaria=${portariaToken(usuario)}; tria_portaria_sem_n8n=1` },
+      redirect: 'manual',
+    });
+
+    assert.equal(resposta.status, 204, 'a guarda precisa liberar durante a pausa');
+  });
+
+  it('sessão do app no cookie da portaria não abre a guarda', async () => {
     const usuario = ensureUser('laco@tria.local');
     const sessao = sessionCookie(usuario);
 
@@ -200,7 +228,26 @@ describe('a ponte para o n8n não pode virar laço', { concurrency: false }, () 
       redirect: 'manual',
     });
 
-    assert.equal(resposta.status, 204, 'a guarda precisa liberar durante a pausa');
+    assert.equal(resposta.status, 302);
+  });
+
+  it('quem deixou de ser operador perde a guarda mesmo com a sessão da portaria válida', async () => {
+    const operador = ensureOperador();
+    const emailOriginal = query(`SELECT email FROM core.users WHERE id = '${operador}'`);
+    const guarda = () =>
+      fetch(`${BASE}/api/portaria`, {
+        headers: { Cookie: `tria_portaria=${portariaToken(operador)}; tria_portaria_sem_n8n=1` },
+        redirect: 'manual',
+      });
+
+    assert.equal((await guarda()).status, 204, 'controle positivo: com o e-mail na lista a guarda libera');
+
+    query(`UPDATE core.users SET email = 'ex-operador-${Date.now()}@tria.local' WHERE id = '${operador}'`);
+    try {
+      assert.equal((await guarda()).status, 302, 'a próxima requisição, com a mesma sessão, precisa ser negada');
+    } finally {
+      query(`UPDATE core.users SET email = '${emailOriginal}' WHERE id = '${operador}'`);
+    }
   });
 });
 

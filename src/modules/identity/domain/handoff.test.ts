@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import { describe, it } from 'node:test';
-import { HANDOFF_TTL_SECONDS, issueHandoff, readHandoff } from './handoff.ts';
+import {
+  HANDOFF_TTL_SECONDS,
+  PORTARIA_SESSAO_SEGUNDOS,
+  issueHandoff,
+  issuePortariaSession,
+  readHandoff,
+  readPortariaSession,
+} from './handoff.ts';
+import { issueSession, readSession } from './session.ts';
 
 const SEGREDO = 'segredo-de-teste-com-mais-de-32-caracteres';
 const USUARIO = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
@@ -71,5 +79,33 @@ describe('passagem para a automação', () => {
   it('recusa lixo', () => {
     assert.equal(readHandoff('', SEGREDO, AGORA), null);
     assert.equal(readHandoff('semponto', SEGREDO, AGORA), null);
+  });
+});
+
+describe('sessão da portaria', () => {
+  it('ida e volta devolve usuário e emissão', () => {
+    const lida = readPortariaSession(issuePortariaSession(USUARIO, SEGREDO, AGORA), SEGREDO, AGORA);
+    assert.deepEqual(lida, { userId: USUARIO, issuedAt: AGORA });
+  });
+
+  it('não é aceita como sessão do app', () => {
+    assert.equal(readSession(issuePortariaSession(USUARIO, SEGREDO, AGORA), SEGREDO, AGORA), null);
+  });
+
+  it('sessão do app não abre a portaria', () => {
+    assert.equal(readPortariaSession(issueSession(USUARIO, SEGREDO, AGORA), SEGREDO, AGORA), null);
+  });
+
+  it('passagem de uso único não vira sessão da portaria', () => {
+    assert.equal(readPortariaSession(issueHandoff(USUARIO, SEGREDO, AGORA), SEGREDO, AGORA), null);
+  });
+
+  it('expira no teto da portaria', () => {
+    const token = issuePortariaSession(USUARIO, SEGREDO, AGORA);
+    assert.equal(readPortariaSession(token, SEGREDO, AGORA + PORTARIA_SESSAO_SEGUNDOS * 1000 + 1), null);
+  });
+
+  it('recusa assinatura de outro segredo', () => {
+    assert.equal(readPortariaSession(issuePortariaSession(USUARIO, 'outro-segredo-com-mais-de-32-caracteres', AGORA), SEGREDO, AGORA), null);
   });
 });

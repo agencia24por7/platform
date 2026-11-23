@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { CopyButton } from '@/../app/_components/CopyButton';
 import { Marca } from '@/../app/_components/Marca';
+import { podeVerConviteDeIntegracao } from '@/modules/connections/domain/visibilidadeDoConvite';
 import { pedirAcessoMetaPartner, revogarConviteDeIntegracao } from '@/../app/clientes/[id]/acoes';
 import { carregarPainel } from '@/../app/clientes/[id]/_dados';
 import { revogarLinkDeContexto } from '@/../app/clientes/[id]/(painel)/conexoes/pedir/acoes';
@@ -46,6 +47,7 @@ export async function Pedir({ clienteId, abrirMapa }: { readonly clienteId: stri
   const temBusinessManager = organizacao.ok && Boolean(organizacao.value.businessManagerId);
   const conexaoGoogle = conexoes.find((c) => c.platform === 'google' && c.authorizedVia === 'staff');
   const nomeDaSecao = new Map(CATALOGO.map((s) => [s.key, `${s.letra} · ${s.titulo}`]));
+  const veConvites = podeVerConviteDeIntegracao(podeAdministrar, ctx.clientIds);
   const plataformasConvidaveis = podeAdministrar && organizacaoInteira ? PLATAFORMAS_CONVIDAVEIS.map((p) => ({ platform: p, rotulo: ROTULO_DA_PLATAFORMA[p] })) : [];
 
   return (
@@ -65,7 +67,7 @@ export async function Pedir({ clienteId, abrirMapa }: { readonly clienteId: stri
               organizacao={ctx.organization.name}
               secoes={CATALOGO.map((s) => ({ key: s.key, letra: s.letra, titulo: s.titulo, descricao: s.descricao }))}
               convites={
-                podeAdministrar
+                veConvites
                   ? pendentes.map((c) => ({
                       id: c.id,
                       rotulo: `${c.items.map((i) => ROTULO_DA_PLATAFORMA[i.platform]).join(', ')} · vence ${tempoRelativo(c.expiresAt, agora)}`,
@@ -100,7 +102,7 @@ export async function Pedir({ clienteId, abrirMapa }: { readonly clienteId: stri
                     ))}
                   </span>
                   <span className="subtle xsmall">vence {tempoRelativo(convite.expiresAt, agora)}</span>
-                  {podeAdministrar ? (
+                  {veConvites ? (
                     <span className="linha-compacta__acoes">
                       <CopyButton texto={enderecoDoConvite(baseUrl, convite.token)} />
                       <form action={revogarConviteDeIntegracao}>

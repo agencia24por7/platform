@@ -4,6 +4,7 @@ import { logger } from '@/shared/logging/logger';
 import { consume } from '@/shared/security/rateLimit';
 import { CorpoAcimaDoLimite, declaradoAcimaDoLimite, lerCorpoLimitado } from '@/shared/http/corpoLimitado';
 import { TAMANHO_MAXIMO_DO_SIGNED_REQUEST } from '@/modules/privacidade/domain/pedidoDeExclusaoMeta';
+import { entradaPublica } from '@/shared/http/entradaPublica';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +31,7 @@ function signedRequestDo(corpo: string, tipo: string | null): string | null {
 
 const recusar = (erro: string, status: number) => NextResponse.json({ error: erro }, { status });
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
+async function tratarPost(request: NextRequest): Promise<NextResponse> {
   const sourceIp = ipDoClienteViaProxyConfiavel(request);
   const veredito = consume(`meta:exclusao:${sourceIp}`, LIMITE_POR_IP, JANELA_MS);
   if (!veredito.allowed) {
@@ -65,3 +66,5 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   logger.info('meta.exclusao.registrado', { novo: registro.novo });
   return NextResponse.json(registro.resposta);
 }
+
+export const POST = entradaPublica(tratarPost);

@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { BASE, appIsUp, workerHeaders } from './helpers.mjs';
+import { PG_CONTAINER } from './apoio/pgContainer.mjs';
 
 function senhaDoApp() {
   return readFileSync('.env', 'utf8')
@@ -14,7 +15,7 @@ function senhaDoApp() {
 const comoApp = (sql) =>
   execFileSync(
     'docker',
-    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoApp()}`, 'orla-postgres',
+    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoApp()}`, PG_CONTAINER,
      'psql', '-U', 'orla_app', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
     { encoding: 'utf8' },
   ).trim();
@@ -29,7 +30,7 @@ function senhaDoWorker() {
 const comoWorker = (sql) =>
   execFileSync(
     'docker',
-    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoWorker()}`, 'orla-postgres',
+    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoWorker()}`, PG_CONTAINER,
      'psql', '-U', 'orla_worker', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
     { encoding: 'utf8' },
   ).trim();

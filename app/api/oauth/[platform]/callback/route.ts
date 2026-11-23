@@ -17,6 +17,7 @@ import { ORGANIZACAO_INTEIRA, escopoDeCliente } from '@/shared/db/escopo';
 import { temRecursoParaVincular, type Platform } from '@/modules/connections/domain/connection';
 import type { AuthorizationOutcome } from '@/modules/connections/application/authorizationService';
 import { destinoDoErroDeAutorizacao } from '@/modules/connections/domain/erroDeAutorizacao';
+import { comoPublico } from '@/shared/db/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,11 +83,12 @@ async function completarViaConvite(input: {
 }): Promise<NextResponse> {
   const { request, platform, plataforma, binding, code, clientId, clientSecret } = input;
   const itemId = binding.inviteItemId;
-  if (!itemId) return backTo('convite_invalido', binding.returnTo, platform);
+  const organizationId = binding.organizationId;
+  if (!itemId || !organizationId) return backTo('convite_invalido', binding.returnTo, platform);
 
   const destino = isSafeReturnPath(binding.returnTo) ? binding.returnTo : '/convite';
 
-  const pendente = await modules().connectionInvites.stillPending(itemId);
+  const pendente = await modules().connectionInvites.stillPending(organizationId, itemId);
   if (!pendente) {
     logger.warn('convite.oauth.callback.item_nao_pendente', { platform });
     return NextResponse.redirect(new URL(destino, env().TRIA_APP_BASE_URL));
@@ -117,18 +119,19 @@ async function completarViaConvite(input: {
     return clear(NextResponse.redirect(volta));
   }
 
-  await concluirItemDoConvite(itemId, plataforma, outcome.value, pendente.clientId);
+  await concluirItemDoConvite(organizationId, itemId, plataforma, outcome.value, pendente.clientId);
 
   return redirectComResultado(binding.returnTo, destino, platform, outcome.value.discovered);
 }
 
 async function concluirItemDoConvite(
+  organizationId: string,
   itemId: string,
   platform: Platform,
   outcome: AuthorizationOutcome,
   clientId: string,
 ): Promise<void> {
-  const concluido = await modules().connectionInvites.completeItem(itemId, outcome.connectionId);
+  const concluido = await modules().connectionInvites.completeItem(organizationId, itemId, outcome.connectionId);
   if (!concluido) {
     logger.warn('convite.oauth.callback.item_revogado_durante_fluxo', { platform });
     return;
@@ -150,7 +153,7 @@ async function concluirItemDoConvite(
   );
 }
 
-export async function GET(
+async function tratarGet(
   request: NextRequest,
   context: { params: Promise<{ platform: string }> },
 ): Promise<NextResponse> {
@@ -189,15 +192,8 @@ export async function GET(
   if (!credentials.clientId || !credentials.clientSecret) return backTo('app_indisponivel', origem, platform);
 
   if (binding.inviteItemId) {
-    return completarViaConvite({
-      request,
-      platform,
-      plataforma,
-      binding,
-      code,
-      clientId: credentials.clientId,
-      clientSecret: credentials.clientSecret,
-    });
+    const { clientId, clientSecret } = credentials;
+    return comoPublico(() => completarViaConvite({ request, platform, plataforma, binding, code, clientId, clientSecret }));
   }
 
   const sessao = await currentUser();
@@ -264,3 +260,5 @@ export async function GET(
     outcome.value.pendentesDeOutraConta,
   );
 }
+
+export const GET = tratarGet;

@@ -1,7 +1,9 @@
 import type { MemberRole } from '@/modules/identity/domain/user';
 import type { Convite, PapelConvidavel } from '@/modules/team/domain/convite';
 import type { Membro } from '@/modules/team/domain/membro';
-import { withTenant, withoutTenant } from '@/shared/db/tenant';
+import type { EscopoDoVinculo, ModoDoRecorte } from '@/modules/team/domain/recorte';
+import { idsDoRecorte } from '@/modules/team/domain/recorte';
+import { comoUsuarioAutenticado, withTenant } from '@/shared/db/tenant';
 
 type ConviteRow = {
   id: string;
@@ -14,6 +16,7 @@ type ConviteRow = {
   revoked_at: Date | null;
   created_at: Date;
   client_ids: string[] | null;
+  escopo: EscopoDoVinculo;
 };
 
 type MembroRow = {
@@ -25,6 +28,7 @@ type MembroRow = {
   revoked_at: Date | null;
   created_at: Date;
   client_ids: string[] | null;
+  escopo: EscopoDoVinculo;
 };
 
 const toConvite = (row: ConviteRow): Convite => ({
@@ -38,6 +42,7 @@ const toConvite = (row: ConviteRow): Convite => ({
   revokedAt: row.revoked_at,
   createdAt: row.created_at,
   clientIds: row.client_ids ?? [],
+  escopo: row.escopo,
 });
 
 const toMembro = (row: MembroRow): Membro => ({
@@ -48,6 +53,7 @@ const toMembro = (row: MembroRow): Membro => ({
   role: row.role,
   revokedAt: row.revoked_at,
   clientIds: row.client_ids ?? [],
+  escopo: row.escopo,
   createdAt: row.created_at,
 });
 
@@ -63,7 +69,8 @@ export type TeamRepository = {
   countOwners(organizationId: string): Promise<number>;
   revokeMember(organizationId: string, memberId: string, byUserId: string): Promise<void>;
   changeRole(organizationId: string, memberId: string, role: MemberRole): Promise<void>;
-  replaceScope(organizationId: string, memberId: string, clientIds: readonly string[]): Promise<void>;
+  clientesVivosDaOrganizacao(organizationId: string, clientIds: readonly string[]): Promise<number>;
+  replaceScope(organizationId: string, memberId: string, recorte: ModoDoRecorte): Promise<void>;
 
   listInvitations(organizationId: string): Promise<readonly Convite[]>;
   openInvitationFor(organizationId: string, email: string): Promise<Convite | null>;
@@ -74,11 +81,11 @@ export type TeamRepository = {
     role: PapelConvidavel;
     invitedBy: string;
     expiresAt: Date;
-    clientIds: readonly string[];
+    recorte: ModoDoRecorte;
   }): Promise<Convite>;
   revokeInvitation(organizationId: string, invitationId: string): Promise<Convite | null>;
 
-  pendingFor(email: string): Promise<readonly PendingInvitation[]>;
+  pendingFor(userId: string, email: string): Promise<readonly PendingInvitation[]>;
   accept(invitationId: string, userId: string): Promise<boolean>;
 };
 
@@ -88,8 +95,10 @@ export function createTeamRepository(): TeamRepository {
       return withTenant(organizationId, async (tx) => {
         const rows = (await tx`
           SELECT m.id AS member_id, m.user_id, u.email, u.name, m.role, m.revoked_at, m.created_at,
+                 m.escopo,
                  (SELECT array_agg(mc.client_id)
                     FROM core.member_clients mc
+                    JOIN core.clients cl ON cl.id = mc.client_id AND cl.excluido_em IS NULL
                    WHERE mc.member_id = m.id AND mc.revoked_at IS NULL) AS client_ids
           FROM core.members m
           JOIN core.users u ON u.id = m.user_id
@@ -103,8 +112,10 @@ export function createTeamRepository(): TeamRepository {
       return withTenant(organizationId, async (tx) => {
         const rows = (await tx`
           SELECT m.id AS member_id, m.user_id, u.email, u.name, m.role, m.revoked_at, m.created_at,
+                 m.escopo,
                  (SELECT array_agg(mc.client_id)
                     FROM core.member_clients mc
+                    JOIN core.clients cl ON cl.id = mc.client_id AND cl.excluido_em IS NULL
                    WHERE mc.member_id = m.id AND mc.revoked_at IS NULL) AS client_ids
           FROM core.members m
           JOIN core.users u ON u.id = m.user_id
@@ -140,20 +151,43 @@ export function createTeamRepository(): TeamRepository {
       });
     },
 
-    async replaceScope(organizationId, memberId, clientIds) {
+    async clientesVivosDaOrganizacao(organizationId, clientIds) {
+      return withTenant(organizationId, async (tx) => {
+        const rows = (await tx`
+          SELECT count(*)::int AS total FROM core.clients
+          WHERE organization_id = ${organizationId}
+            AND excluido_em IS NULL
+            AND id = ANY (${clientIds as string[]}::uuid[])`) as unknown as { total: number }[];
+        return rows[0]?.total ?? 0;
+      });
+    },
+
+    async replaceScope(organizationId, memberId, recorte) {
+      const clientIds = idsDoRecorte(recorte) as string[];
       await withTenant(organizationId, async (tx) => {
+        await tx`
+          SELECT 1 FROM core.members
+          WHERE organization_id = ${organizationId} AND id = ${memberId}
+          FOR UPDATE`;
+        if (recorte.modo === 'clientes') {
+          await tx`
+            INSERT INTO core.member_clients (member_id, client_id)
+            SELECT ${memberId}::uuid, c.id
+            FROM core.clients c
+            WHERE c.id = ANY (${clientIds}::uuid[])
+              AND c.organization_id = ${organizationId}
+              AND c.excluido_em IS NULL
+            ON CONFLICT (member_id, client_id) DO UPDATE SET revoked_at = NULL`;
+        }
+
         await tx`
           UPDATE core.member_clients SET revoked_at = now()
           WHERE member_id = ${memberId} AND revoked_at IS NULL
-            AND NOT (client_id = ANY (${clientIds as string[]}::uuid[]))`;
+            AND NOT (client_id = ANY (${clientIds}::uuid[]))`;
 
         await tx`
-          INSERT INTO core.member_clients (member_id, client_id)
-          SELECT ${memberId}::uuid, c.id
-          FROM core.clients c
-          WHERE c.id = ANY (${clientIds as string[]}::uuid[])
-            AND c.organization_id = ${organizationId}
-          ON CONFLICT (member_id, client_id) DO UPDATE SET revoked_at = NULL`;
+          UPDATE core.members SET escopo = ${recorte.modo}
+          WHERE organization_id = ${organizationId} AND id = ${memberId}`;
       });
     },
 
@@ -183,7 +217,7 @@ export function createTeamRepository(): TeamRepository {
       return withTenant(organizationId, async (tx) => {
         const rows = (await tx`
           SELECT m.id AS member_id, m.user_id, u.email, u.name, m.role, m.revoked_at, m.created_at,
-                 NULL::uuid[] AS client_ids
+                 m.escopo, NULL::uuid[] AS client_ids
           FROM core.members m
           JOIN core.users u ON u.id = m.user_id
           WHERE m.organization_id = ${organizationId}
@@ -196,9 +230,9 @@ export function createTeamRepository(): TeamRepository {
     async insertInvitation(input) {
       return withTenant(input.organizationId, async (tx) => {
         const rows = (await tx`
-          INSERT INTO core.invitations (organization_id, email, role, invited_by, expires_at, client_ids)
+          INSERT INTO core.invitations (organization_id, email, role, invited_by, expires_at, client_ids, escopo)
           VALUES (${input.organizationId}, ${input.email}, ${input.role}, ${input.invitedBy},
-                  ${input.expiresAt}, ${input.clientIds as string[]}::uuid[])
+                  ${input.expiresAt}, ${idsDoRecorte(input.recorte) as string[]}::uuid[], ${input.recorte.modo})
           RETURNING *`) as unknown as ConviteRow[];
         return toConvite(rows[0]!);
       });
@@ -215,8 +249,8 @@ export function createTeamRepository(): TeamRepository {
       });
     },
 
-    async pendingFor(email) {
-      return withoutTenant(async (tx) => {
+    async pendingFor(userId, email) {
+      return comoUsuarioAutenticado(userId, async (tx) => {
         const rows = (await tx`
           SELECT invitation_id, organization_id, role FROM core.pending_invitations_for(${email})
         `) as unknown as { invitation_id: string; organization_id: string; role: MemberRole }[];
@@ -229,7 +263,7 @@ export function createTeamRepository(): TeamRepository {
     },
 
     async accept(invitationId, userId) {
-      return withoutTenant(async (tx) => {
+      return comoUsuarioAutenticado(userId, async (tx) => {
         const rows = (await tx`
           SELECT core.accept_invitation(${invitationId}::uuid, ${userId}::uuid) AS aceito
         `) as unknown as { aceito: boolean }[];

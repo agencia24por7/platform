@@ -142,6 +142,7 @@ jobs:
             sudo docker pull '$IMAGE:${{ github.sha }}'
             sudo env APP_IMAGE='$IMAGE:${{ github.sha }}' docker compose -f /opt/tria/docker-compose.prod.yml --project-directory /opt/tria up -d postgres
             until sudo docker exec orla-postgres pg_isready -U postgres -d tria > /dev/null 2>&1; do sleep 2; done
+            sudo docker stop orla-app > /dev/null 2>&1 || true
             sudo env RELEASE_ID='$RELEASE_ID' RELEASE_CORTE_AUTORIZADO='$RELEASE_CORTE_AUTORIZADO' CORTE_GATE_ARQUIVO=/opt/tria/corte-gate.txt sh /opt/tria/migrar.sh
           "
 

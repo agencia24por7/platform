@@ -1,12 +1,15 @@
+import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
 import { montarSnapshotDoCliente } from '@/../app/clientes/[id]/_brain/fonte';
 import { modules } from '@/composition';
+import { deveRegistrarLeitura, registrarLeituraDeCliente } from '@/modules/clients/application/registrarLeituraDeCliente';
 import { canAdminister, canOperate } from '@/modules/identity/domain/user';
 import { idValido } from '@/modules/clients/domain/painel/enderecos';
 import { ROTULO_DA_PLATAFORMA, precisaReautorizar } from '@/modules/connections/domain/connection';
 import { acoesComConexoesDoCliente, prontidaoDoCliente, type ProntidaoDoCliente } from '@/modules/clients/domain/painel/prontidao';
 import { requireContext } from '@/shared/http/currentOrganization';
+import { CABECALHO_DO_REQUEST_ID, resolverRequestId } from '@/shared/http/requestId';
 
 export const carregarPainel = cache(async (id: string) => {
   const ctx = await requireContext();
@@ -14,6 +17,14 @@ export const carregarPainel = cache(async (id: string) => {
   if (ctx.clientIds !== null && !ctx.clientIds.includes(id)) notFound();
   const encontrado = await modules().clients.byId(ctx.organization.id, id);
   if (!encontrado.ok) notFound();
+  if (deveRegistrarLeitura(ctx.session.user.id, encontrado.value.id)) {
+    await registrarLeituraDeCliente(modules().audit, {
+      organizationId: ctx.organization.id,
+      userId: ctx.session.user.id,
+      clientId: encontrado.value.id,
+      requestId: resolverRequestId((await headers()).get(CABECALHO_DO_REQUEST_ID)),
+    });
+  }
   return {
     ctx,
     cliente: encontrado.value,

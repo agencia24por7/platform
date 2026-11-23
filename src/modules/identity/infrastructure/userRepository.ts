@@ -1,7 +1,7 @@
 import type { FederatedIdentity, MemberRole, Membership, User } from '@/modules/identity/domain/user';
 import { displayName, normalizeEmail } from '@/modules/identity/domain/user';
 import { sql } from '@/shared/db/client';
-import { withTenant, withoutTenant } from '@/shared/db/tenant';
+import { comoUsuarioAutenticado, withTenant, withoutTenant } from '@/shared/db/tenant';
 
 type Row = {
   id: string;
@@ -48,7 +48,7 @@ export function createUserRepository(): UserRepository {
     },
 
     async encerrarSessoes(userId, em) {
-      await withoutTenant(async (tx) => {
+      await comoUsuarioAutenticado(userId, async (tx) => {
         await tx`SELECT core.encerrar_sessoes(${userId}, ${em})`;
       });
     },
@@ -61,14 +61,14 @@ export function createUserRepository(): UserRepository {
     },
 
     async findById(id) {
-      return withoutTenant(async (tx) => {
+      return comoUsuarioAutenticado(id, async (tx) => {
         const rows = (await tx`SELECT * FROM core.users WHERE id = ${id}`) as unknown as Row[];
         return rows[0] ? toUser(rows[0]) : null;
       });
     },
 
     async membershipsOf(userId) {
-      return withoutTenant(async (tx) => {
+      return comoUsuarioAutenticado(userId, async (tx) => {
         const rows = (await tx`
           SELECT organization_id, role FROM core.memberships_of(${userId})
         `) as unknown as { organization_id: string; role: MemberRole }[];
