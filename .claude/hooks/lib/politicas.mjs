@@ -161,10 +161,14 @@ export function avaliarLeitura({ caminho, tamanho, comRecorte }) {
   return null
 }
 
-export function avaliarEscrita({ caminho, conteudo, existeVersionado }) {
+export function avaliarEscrita({ caminho, conteudo, existeVersionado, modoDePermissao }) {
   const alvo = String(caminho ?? '')
   if (arquivoSensivel(alvo)) return { decisao: 'deny', motivo: 'Não grave em arquivo de segredo (.env, chave, credencial). Segredo é criado pelo humano ou por pipe sem eco.' }
-  if (/(^|[/\\])\.config[/\\]gh[/\\]/.test(alvo) || /(^|[/\\])\.claude[/\\]settings[^/\\]*\.json$/.test(alvo)) return { decisao: 'deny', motivo: 'A configuração do gh e os settings do Claude Code definem o que a guarda confia: só o humano altera (ADR 0048).' }
+  const alvoUnificado = alvo.replace(/\\/g, '/')
+  if (/(^|[/])\.config[/]gh[/]/i.test(alvoUnificado)) return { decisao: 'deny', motivo: 'A configuração do gh define o que a guarda verifica: só o humano altera (ADR 0048).' }
+  if (/(^|[/])(?:\.claude[/]hooks[/]|\.githooks[/]|\.claude[/]settings[^/]*\.json$)/i.test(alvoUnificado)) {
+    return { decisao: MODOS_SEM_CONFIRMACAO.has(modoDePermissao) ? 'deny' : 'ask', motivo: MOTIVO_AUTOPROTECAO }
+  }
   if (/(^|[/])(node_modules|\.next)[/]/.test(alvo)) return { decisao: 'deny', motivo: 'Diretório gerado: não edite à mão.' }
   if (/(^|[/])package-lock\.json$/.test(alvo)) return { decisao: 'deny', motivo: 'O lockfile só muda pelo npm (npm install / npm ci).' }
   const achados = detectarSegredo(conteudo)
@@ -174,6 +178,11 @@ export function avaliarEscrita({ caminho, conteudo, existeVersionado }) {
   }
   return null
 }
+
+const ALVO_PROTEGIDO = String.raw`\S*(?:\.claude/hooks|\.claude/settings|\.githooks|\.config/gh)\S*`
+const MOTIVO_AUTOPROTECAO = 'Gravar na guarda do projeto, nos settings do Claude Code ou na configuração do gh muda aquilo em que a guarda confia: só com autorização explícita, em sessão interativa do humano (ADR 0048).'
+
+const regraDeGravacao = (fonte) => ({ padrao: new RegExp(fonte, 'i'), decisao: 'ask', producao: true, motivo: MOTIVO_AUTOPROTECAO })
 
 const REGRAS_DE_COMANDO = [
   { padrao: /\bcurl\b[^|;&]*\|\s*(sudo\s+)?(ba|z)?sh\b|\bwget\b[^|;&]*\|\s*(sudo\s+)?(ba|z)?sh\b/, decisao: 'deny', motivo: 'Baixar e executar script direto no shell é proibido. Baixe, leia e só então execute.' },
@@ -196,6 +205,13 @@ const REGRAS_DE_COMANDO = [
   { padrao: /\bgh\s+(workflow\s+run|run\s+rerun|pr\s+merge|release\s+create)\b/, decisao: 'ask', producao: true, motivo: 'Dispara workflow, merge ou release: ação externa que o humano autoriza para esta operação (ADR 0046). Merge em main exige autorização nomeando o PR e o roteiro de docs/release/ cumprido (ADR 0034, ADR 0047).' },
   { padrao: /\bgh\s+pr\s+edit\b[^\n]*(?:--base\b|\s-B)/, decisao: 'ask', producao: true, motivo: 'Trocar a base de um PR muda para onde o merge vai (inclusive main): ação que o humano autoriza (ADR 0046, ADR 0047, ADR 0048).' },
   { padrao: /\bgh\s+alias\s+(set|import|delete)\b/, decisao: 'ask', producao: true, motivo: 'Alias do gh pode redefinir comandos e contornar as regras desta guarda: só com autorização explícita do humano (ADR 0048).' },
+  regraDeGravacao(String.raw`(?<![-=])>>?(?!&)\s*["']?${ALVO_PROTEGIDO}`),
+  regraDeGravacao(String.raw`\btee\b[^;&|\n]*\s["']?${ALVO_PROTEGIDO}`),
+  regraDeGravacao(String.raw`\b(?:cp|mv|ln|install)\b[^;&|\n]*\s["']?${ALVO_PROTEGIDO}["']?(?:\s+\d?>&?\S*)*\s*(?:$|[;&|])`),
+  regraDeGravacao(String.raw`\b(?:cp|mv|ln|install)\b[^;&|\n]*\s(?:-t\s*|--target-directory[= ]\s*)["']?${ALVO_PROTEGIDO}`),
+  regraDeGravacao(String.raw`\bdd\b[^;&|\n]*\bof=["']?${ALVO_PROTEGIDO}`),
+  regraDeGravacao(String.raw`\b(?:sed|perl)\b(?=[^;&|\n]*\s(?:-[a-zA-Z]*i|--in-place))[^;&|\n]*\s["']?${ALVO_PROTEGIDO}`),
+  regraDeGravacao(String.raw`\b(?:rm|unlink|truncate|rmdir)\b[^;&|\n]*\s["']?${ALVO_PROTEGIDO}`),
   { padrao: /\bgh\s+config\s+set\b/, decisao: 'ask', producao: true, motivo: 'Configuração do gh (socket, browser, protocolo) pode desviar o que a guarda verifica: só com autorização explícita do humano (ADR 0048).' },
   { padrao: /\bgit\s+(reset\s+--hard|clean\s+-[a-z]*f|checkout\s+--\s|checkout\s+\.|restore\s+\.|branch\s+-D|worktree\s+remove)/, decisao: 'ask', motivo: 'Pode descartar trabalho não commitado ou de outro agente.' },
   { padrao: /\bgit\s+(?:commit|push|merge|am|cherry-pick)\b[^;&|]*--no-verify|\bgit\s+commit\b[^;&|]*\s-n\b/, decisao: 'deny', motivo: 'Contornar os hooks de segurança do git é proibido. Corrija o achado ou registre a exceção na allowlist por PR.' },
@@ -223,22 +239,10 @@ const LIMITE_SAIDA_GH = 1024 * 1024
 const PATH_MINIMO_GH = '/usr/bin:/bin'
 const VARIAVEIS_REPASSADAS_AO_GH = ['LANG', 'GH_TOKEN', 'GITHUB_TOKEN']
 const MOTIVO_SEM_TOKEN = 'sem GH_TOKEN no ambiente do hook; a exceção de merge exige token no ambiente do Claude Code'
-const CAMINHOS_QUE_DEFINEM_O_CI_E_A_GUARDA = [
-  '.github/',
-  '.claude/',
-  '.githooks/',
-  'scripts/',
-  'infra/',
-  'package.json',
-  'package-lock.json',
-  'Dockerfile',
-  '.dockerignore',
-  'next.config.mjs',
-  'tsconfig.json',
-  'CODEOWNERS',
-  '.npmrc',
-  '.nvmrc',
-]
+const PASTAS_DO_CI_DA_GUARDA_E_DA_INFRA = ['.github/', '.claude/', '.githooks/', 'scripts/', 'infra/']
+const CAMINHOS_ONDE_O_AGENTE_PODE_MESCLAR = ['src/', 'app/', 'db/migrations/', 'docs/', 'tests/', 'public/']
+const PASTA_DE_RELEASE = 'docs/release/'
+const MUDANCAS_ACEITAS_NO_ARQUIVO = new Set(['ADDED', 'CHANGED', 'DELETED', 'MODIFIED'])
 const EXECUCAO_DO_WORKFLOW = new RegExp('/actions/runs/([0-9]+)/')
 
 export const TIMEOUT_GH_MS = 5000
@@ -265,22 +269,29 @@ export function consultarPRNoGitHub(numero, dependencias = {}) {
   } = dependencias
   const gh = CAMINHOS_GH.find((caminho) => existe(caminho))
   if (!gh) throw new ErroDeConsulta(`gh não encontrado em ${CAMINHOS_GH.join(', ')}`)
-  const env = { PATH: PATH_MINIMO_GH }
+  const env = { PATH: PATH_MINIMO_GH, GH_NO_UPDATE_NOTIFIER: '1', GH_PROMPT_DISABLED: '1', NO_COLOR: '1' }
   for (const nome of VARIAVEIS_REPASSADAS_AO_GH) if (ambiente[nome]) env[nome] = ambiente[nome]
   if (!env.GH_TOKEN && !env.GITHUB_TOKEN) throw new ErroDeConsulta(MOTIVO_SEM_TOKEN)
-  const diretorioDeConfiguracao = criarDiretorio()
-  env.GH_CONFIG_DIR = diretorioDeConfiguracao
+  const base = criarDiretorio()
+  Object.assign(env, {
+    HOME: base,
+    GH_CONFIG_DIR: join(base, 'config'),
+    XDG_STATE_HOME: join(base, 'state'),
+    XDG_CACHE_HOME: join(base, 'cache'),
+    XDG_CONFIG_HOME: join(base, 'xdg-config'),
+  })
   try {
     const saida = executar(gh, ['pr', 'view', numero, '--repo', REPOSITORIO_PR, '--json', CAMPOS_PR], {
       encoding: 'utf8',
       timeout: TIMEOUT_GH_MS,
       maxBuffer: LIMITE_SAIDA_GH,
+      stdio: ['ignore', 'pipe', 'ignore'],
       cwd: ambiente.CLAUDE_PROJECT_DIR ?? process.cwd(),
       env,
     })
     return JSON.parse(saida)
   } finally {
-    removerDiretorio(diretorioDeConfiguracao)
+    removerDiretorio(base)
   }
 }
 
@@ -289,12 +300,15 @@ function caminhoNormalizado(caminho) {
   return posix.normalize(unificado).replace(/^(?:[.]?\/)+/, '')
 }
 
-function definePartesDoCIOuDaGuarda(caminho) {
+function comecaPorAlgum(normalizado, prefixos) {
+  return prefixos.some((prefixo) => normalizado.startsWith(prefixo))
+}
+
+function problemaDoCaminho(caminho) {
   const normalizado = caminhoNormalizado(caminho)
-  if (normalizado.startsWith('../')) return true
-  const nome = posix.basename(normalizado)
-  if (nome.startsWith('dockerfile')) return true
-  return CAMINHOS_QUE_DEFINEM_O_CI_E_A_GUARDA.some((item) => (item.endsWith('/') ? normalizado.startsWith(item) : nome === item.toLowerCase()))
+  if (comecaPorAlgum(normalizado, PASTAS_DO_CI_DA_GUARDA_E_DA_INFRA)) return 'PR que muda o CI, a guarda, scripts ou infra é do humano'
+  const dentroDaAllowlist = comecaPorAlgum(normalizado, CAMINHOS_ONDE_O_AGENTE_PODE_MESCLAR) && !normalizado.startsWith(PASTA_DE_RELEASE)
+  return dentroDaAllowlist ? null : 'PR que toca fora das pastas de aplicação é do humano'
 }
 
 function itemVerde(item) {
@@ -348,7 +362,11 @@ function problemaDosArquivos(pr) {
   if (!Array.isArray(pr.files) || !Number.isInteger(pr.changedFiles)) return 'a lista de arquivos do PR está ausente ou malformada'
   if (pr.files.length !== pr.changedFiles) return 'a lista de arquivos do PR veio truncada'
   if (pr.files.some((arquivo) => !arquivo || typeof arquivo.path !== 'string')) return 'a lista de arquivos do PR tem item malformado'
-  if (pr.files.some((arquivo) => definePartesDoCIOuDaGuarda(arquivo.path))) return 'PR que muda o CI ou a guarda é do humano: o CI verde só vale se o PR não altera o que roda no CI nem a própria guarda'
+  if (pr.files.some((arquivo) => !MUDANCAS_ACEITAS_NO_ARQUIVO.has(arquivo.changeType))) return 'o PR renomeia ou copia arquivos, ou o changeType de algum arquivo é ausente ou desconhecido'
+  for (const arquivo of pr.files) {
+    const problema = problemaDoCaminho(arquivo.path)
+    if (problema) return problema
+  }
   return null
 }
 
