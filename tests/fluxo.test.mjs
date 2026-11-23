@@ -225,7 +225,7 @@ describe('cadastro de cliente e contas', { concurrency: false }, () => {
     const actions = query(
       "select string_agg(distinct action, ',' order by action) from audit.audit_log where actor_type = 'user'",
     );
-    assert.equal(actions, 'ad_account.link,client.create,identity.became_owner,organization.create');
+    assert.equal(actions, 'ad_account.link,client.create,cliente.leitura,identity.became_owner,organization.create');
   });
 
   it('não grava segredo na auditoria', async () => {
