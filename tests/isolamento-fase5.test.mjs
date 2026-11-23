@@ -7,6 +7,16 @@ import { BASE, appIsUp, ensureOperador, ensureUser, portariaToken, sessionCookie
 import { PG_CONTAINER } from './apoio/pgContainer.mjs';
 import { FUNCOES_DEFINER_DO_APP, SQL_FUNCOES_DEFINER_DO_APP } from './apoio/funcoesDefinerDoApp.mjs';
 
+async function postarSemConexaoReaproveitada(url, init) {
+  try {
+    return await fetch(url, init);
+  } catch (erro) {
+    const motivo = erro?.cause?.code ?? erro?.cause?.message ?? 'desconhecido';
+    if (motivo !== 'UND_ERR_SOCKET') throw new Error(`fetch falhou: ${motivo}`, { cause: erro });
+    return fetch(url, init);
+  }
+}
+
 function valorDoEnv(chave) {
   return readFileSync('.env', 'utf8')
     .split('\n')
@@ -742,7 +752,7 @@ describe('fase 5: regressão dos achados de tenant', { concurrency: false }, () 
   describe('B5 exclusão da Meta: a assinatura é conferida na rota', () => {
     it('B5: assinatura inválida (401) ou app Meta sem configuração (503) nunca registra pedido', async () => {
       const antes = dono(`SELECT count(*) FROM privacidade.pedidos_de_exclusao`);
-      const resposta = await fetch(`${BASE}/api/meta/exclusao`, {
+      const resposta = await postarSemConexaoReaproveitada(`${BASE}/api/meta/exclusao`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ signed_request: `${'a'.repeat(43)}.${Buffer.from('{"user_id":"123","algorithm":"HMAC-SHA256"}').toString('base64url')}` }),

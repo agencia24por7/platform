@@ -7,7 +7,7 @@ owner: arquiteto
 Decisão e porquês: ADR 0037 (`docs/adr/0037-ambiente-de-agentes-claude-e-orca.md`) e ADR 0038 (`docs/adr/0038-economia-de-tokens-contexto-e-seguranca-dos-agentes.md`). Tudo aqui vale só para este repositório; nada é gravado em `~/.claude`.
 
 ## Como iniciar uma sessão
-- `scripts/start.sh [tarefa]` abre o Claude como agente `arquiteto` com o contexto já injetado e escolhe modelo e esforço pela tarefa (crítica: Opus; resto: Sonnet). `--opus`, `--modelo`, `--esforco` e `--sem-auto` forçam; `--worktree <nome>` isola pelo Orca; `--dry-run` mostra o comando.
+- `scripts/start.sh [tarefa]` abre o Claude como agente `arquiteto` com o contexto já injetado e escolhe modelo e esforço pela tarefa (crítica: Opus; resto: Sonnet). `--opus`, `--modelo`, `--esforco` e `--sem-auto` forçam; `--worktree <nome>` isola pelo Orca; `--dry-run` mostra o comando e não exige o binário `claude` (o CI roda os testes do ambiente sem ele).
 - Dentro de uma sessão aberta: `/start` recarrega o contexto; `/handoff` grava o estado em `HANDOFF.md`; depois `/clear`.
 - Uma tarefa = uma sessão = um worktree quando houver trabalho paralelo.
 

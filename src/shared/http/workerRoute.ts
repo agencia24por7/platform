@@ -6,8 +6,9 @@ import { logger } from '@/shared/logging/logger';
 import { failure, type Failure } from '@/shared/result/failure';
 import type { Result } from '@/shared/result/result';
 import { consume } from '@/shared/security/rateLimit';
-import { fingerprint, newRequestId, secureCompare } from '@/shared/security/tokens';
+import { fingerprint, secureCompare } from '@/shared/security/tokens';
 import { problem, success } from '@/shared/http/problem';
+import { CABECALHO_DO_REQUEST_ID, resolverRequestId } from '@/shared/http/requestId';
 import { CorpoAcimaDoLimite, declaradoAcimaDoLimite, lerCorpoLimitado } from '@/shared/http/corpoLimitado';
 
 const MAX_BODY_BYTES = 1_000_000;
@@ -61,12 +62,12 @@ function handle<I, O>(
   readPayload: () => unknown | Promise<unknown>,
 ): Promise<NextResponse> {
   return (async (): Promise<NextResponse> => {
-    const requestId = request.headers.get('x-request-id') ?? newRequestId();
+    const requestId = resolverRequestId(request.headers.get(CABECALHO_DO_REQUEST_ID));
     const sourceIp = clientIp(request);
 
     const token = readBearer(request);
     if (!token || !secureCompare(token, env().TRIA_WORKER_TOKEN)) {
-      logger.warn('worker.unauthorized', { requestId, sourceIp, path: request.nextUrl.pathname });
+      logger.warn('worker.unauthorized', { requestId, path: request.nextUrl.pathname });
       return problem(failure('unauthorized', 'Credencial de worker ausente ou inválida.'), requestId);
     }
 
