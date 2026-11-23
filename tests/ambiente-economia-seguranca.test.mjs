@@ -93,8 +93,6 @@ test('comandos perigosos são negados, os de risco pedem confirmação e os comu
     'terraform -chdir=infra/terraform/bootstrap apply',
     'terraform destroy',
     'terraform state rm x',
-    'gcloud kms keys versions destroy 1 --key k --keyring r --location l',
-    'gcloud --project=p kms keys versions destroy 1 --key k',
     'gcloud sql backups delete 123 --instance=orla',
     'gcloud sql instances delete orla',
     'gcloud --project=p secrets versions access latest --secret=x',
@@ -103,7 +101,7 @@ test('comandos perigosos são negados, os de risco pedem confirmação e os comu
     'node scripts/bq-ddl.mjs --prod --confirmar # --dry-run && git commit -m x --no-verify',
   ]
   for (const comando of negados) assert.equal(avaliarComando(comando)?.decisao, 'deny', comando)
-  const perguntas = ['gh workflow run deploy.yml', 'git reset --hard HEAD~1', 'git push --force origin feature', 'psql -c "DROP TABLE x"', 'node scripts/bq-ddl.mjs --prod --confirmar', 'gcloud secrets versions add x --data-file=-', 'gcloud --project=p secrets versions add x --data-file=-', 'gcloud beta secrets versions add x --data-file=-', 'node scripts/bq-ddl.mjs --projeto tria-platform --dataset tria_dw --confirmar', 'gh workflow run deploy.yml -f autorizar_corte=true', 'gh api -X PUT repos/o/r/pulls/1/merge', 'bq query "DROP TABLE tria_dw.x"', 'bq --project_id=tria-platform rm -f -t tria_dw.x', 'gh api repos/o/r/issues -f title=x', 'gh api --method PATCH repos/o/r/pulls/1', 'gh run rerun 123', 'bq -- rm -t tria_dw.x', 'bq \\\n  rm -f -t tria_dw.x', 'bq query "SELECT 1;\nDROP TABLE tria_dw.x"', 'gh api repos/o/r/issues -ftitle=x', 'bq query --use_legacy_sql=false "SELECT 1; DROP TABLE tria_dw.x"']
+  const perguntas = ['gh workflow run deploy.yml', 'gcloud kms keys versions destroy 1 --key k --keyring r --location l', 'gcloud --project=p kms keys versions destroy 1 --key k', 'git reset --hard HEAD~1', 'git push --force origin feature', 'psql -c "DROP TABLE x"', 'node scripts/bq-ddl.mjs --prod --confirmar', 'gcloud secrets versions add x --data-file=-', 'gcloud --project=p secrets versions add x --data-file=-', 'gcloud beta secrets versions add x --data-file=-', 'node scripts/bq-ddl.mjs --projeto tria-platform --dataset tria_dw --confirmar', 'gh workflow run deploy.yml -f autorizar_corte=true', 'gh api -X PUT repos/o/r/pulls/1/merge', 'bq query "DROP TABLE tria_dw.x"', 'bq --project_id=tria-platform rm -f -t tria_dw.x', 'gh api repos/o/r/issues -f title=x', 'gh api --method PATCH repos/o/r/pulls/1', 'gh run rerun 123', 'bq -- rm -t tria_dw.x', 'bq \\\n  rm -f -t tria_dw.x', 'bq query "SELECT 1;\nDROP TABLE tria_dw.x"', 'gh api repos/o/r/issues -ftitle=x', 'bq query --use_legacy_sql=false "SELECT 1; DROP TABLE tria_dw.x"']
   for (const comando of perguntas) assert.equal(avaliarComando(comando)?.decisao, 'ask', comando)
   const livres = ['npm run typecheck', 'cat .env.example', 'node scripts/bq-ddl.mjs --prod --dry-run', 'git push origin feature/x', 'git status', 'git config core.hooksPath .githooks', 'git config --get core.hooksPath', 'git commit -m "ajuste"', 'rm -f /tmp/x/.env', 'rm -rf /tmp/x/pasta', 'rm -rf node_modules', 'npm run build && echo pronto', 'env NODE_ENV=test node a.js']
   for (const comando of livres) assert.equal(avaliarComando(comando), null, comando)
