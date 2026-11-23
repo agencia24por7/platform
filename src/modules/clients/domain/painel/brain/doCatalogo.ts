@@ -1,4 +1,4 @@
-import type { Snapshot } from '../../../../brain/application/construirCatalogo.ts';
+import type { Snapshot } from '../../../../brain/domain/snapshot.ts';
 import type { AcaoRecomendada } from '../../../../brain/domain/diagnostico.ts';
 import type { Acesso, Cobertura, EntradaDoCatalogo } from '../../../../brain/domain/entrada.ts';
 import { renderizarCatalogoMd } from '../../../../brain/domain/markdown.ts';

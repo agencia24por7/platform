@@ -11,6 +11,7 @@ import { env } from '@/shared/config/env';
 import { logger } from '@/shared/logging/logger';
 import { enderecoConfiavel } from '@/modules/audit/domain/actor';
 import { newRequestId, secureCompare } from '@/shared/security/tokens';
+import { entradaPublica } from '@/shared/http/entradaPublica';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,7 +26,7 @@ function clearTransientCookies(response: NextResponse): NextResponse {
   return response;
 }
 
-export async function GET(request: NextRequest): Promise<NextResponse> {
+async function tratarGet(request: NextRequest): Promise<NextResponse> {
   const configuration = env();
   const base = configuration.TRIA_APP_BASE_URL;
   const requestId = newRequestId();
@@ -126,3 +127,5 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   logger.info('auth.callback.signed_in', { requestId, userId: user.id, convitesAceitos: aceitos.length });
   return response;
 }
+
+export const GET = entradaPublica(tratarGet);

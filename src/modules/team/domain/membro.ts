@@ -1,4 +1,5 @@
 import type { MemberRole } from '../../identity/domain/user.ts';
+import type { EscopoDoVinculo } from './recorte.ts';
 import { canAdminister } from '../../identity/domain/user.ts';
 
 export type Membro = {
@@ -9,6 +10,7 @@ export type Membro = {
   readonly role: MemberRole;
   readonly revokedAt: Date | null;
   readonly clientIds: readonly string[];
+  readonly escopo: EscopoDoVinculo;
   readonly createdAt: Date;
 };
 

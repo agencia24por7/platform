@@ -33,31 +33,26 @@ type AuditEvent = import('../../audit/domain/auditEvent.ts').AuditEvent;
 const trabalhador = { requestId: 'r1', callerFingerprint: 'fp', sourceIp: null };
 const recebido = { workflowId: 'wf', workflowNome: 'ORLA · coleta', no: 'Abrir', mensagem: 'erro com access_token=SEGREDO12345 e maria@x.com' };
 
-function montar(opcoes: { deduplicado?: boolean; podeCriar?: boolean } = {}) {
+function montar(opcoes: { deduplicado?: boolean; podeCriar?: boolean; operadores?: string[] } = {}) {
   const auditoria: AuditEvent[] = [];
   const notificacoes: string[] = [];
-  let expurgos = 0;
   const repositorio: AlertaRepository = {
     registrar: async () => ({ id: 'id-1', deduplicado: opcoes.deduplicado === true }),
     contarAbertos: async () => 2,
-    resolverAbertos: async () => 2,
-    expurgarAntigos: async () => {
-      expurgos += 1;
-      return 0;
-    },
   };
   const servico = createAlertaService(
     repositorio,
     { record: async (evento: AuditEvent) => void auditoria.push(evento), list: async () => [], search: async () => [] },
     async (texto) => void notificacoes.push(texto),
     () => opcoes.podeCriar !== false,
+    async (userId) => (opcoes.operadores ?? []).includes(userId),
   );
-  return { servico, auditoria, notificacoes, expurgos: () => expurgos };
+  return { servico, auditoria, notificacoes };
 }
 
 describe('serviço de alertas de falha', () => {
   it('alerta novo grava auditoria plataforma.alerta sem segredo e notifica', async () => {
-    const { servico, auditoria, notificacoes, expurgos } = montar();
+    const { servico, auditoria, notificacoes } = montar();
     const resultado = await servico.registrar(recebido, trabalhador);
     assert.deepEqual(resultado.ok && resultado.value, { id: 'id-1', deduplicado: false, limitado: false });
     assert.equal(auditoria.length, 1);
@@ -66,7 +61,6 @@ describe('serviço de alertas de falha', () => {
     const serializado = JSON.stringify([auditoria, notificacoes]);
     assert.ok(!serializado.includes('SEGREDO12345') && !serializado.includes('maria@'));
     assert.equal(notificacoes.length, 1);
-    assert.equal(expurgos(), 1);
   });
 
   it('repetição na janela só incrementa: sem auditoria nem notificação', async () => {
@@ -81,5 +75,11 @@ describe('serviço de alertas de falha', () => {
     const resultado = await servico.registrar(recebido, trabalhador);
     assert.deepEqual(resultado.ok && resultado.value, { id: null, deduplicado: false, limitado: true });
     assert.equal(auditoria.length, 0);
+  });
+
+  it('contagem de alertas só vale para quem o serviço confirma como operador', async () => {
+    const { servico } = montar({ operadores: ['op-1'] });
+    assert.equal(await servico.contarAbertosParaOperador('op-1'), 2);
+    assert.equal(await servico.contarAbertosParaOperador('admin-2'), 0);
   });
 });

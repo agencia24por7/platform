@@ -1,6 +1,7 @@
 import type { Ator } from '@/modules/audit/domain/actor';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import type { FederatedIdentity, MemberRole, Membership, User } from '@/modules/identity/domain/user';
+import { eOperadorDaPlataforma } from '@/modules/identity/domain/operador';
 import { sessaoAindaValida } from '@/modules/identity/domain/user';
 import type { UserRepository } from '@/modules/identity/infrastructure/userRepository';
 import { failure, type Failure } from '@/shared/result/failure';
@@ -17,6 +18,7 @@ export type IdentityService = {
   encerrarSessoes(userId: string): Promise<void>;
   sessaoValida(userId: string, sessaoEmitidaEm: number): Promise<boolean>;
   membershipsOf(userId: string): Promise<readonly Membership[]>;
+  operadorDaPlataforma(userId: string, listaDeOperadores: string | undefined): Promise<boolean>;
   joinAsOwner(organizationId: string, ator: Ator): Promise<Result<void, Failure>>;
   grantMembership(organizationId: string, userId: string, role: MemberRole, ator: Ator): Promise<Result<void, Failure>>;
 };
@@ -56,6 +58,13 @@ export function createIdentityService(users: UserRepository, audit: AuditRecorde
     },
 
     membershipsOf: (userId) => users.membershipsOf(userId),
+
+    async operadorDaPlataforma(userId, listaDeOperadores) {
+      if (!listaDeOperadores) return false;
+      const user = await users.findById(userId);
+      if (!user) return false;
+      return eOperadorDaPlataforma({ email: user.email, emailVerificado: true }, listaDeOperadores);
+    },
 
     async resolve(userId, sessaoEmitidaEm) {
       const user = await users.findById(userId);

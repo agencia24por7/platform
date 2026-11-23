@@ -46,6 +46,7 @@ conferir "rota do worker sem token recusa" 401 "$BASE/api/v0/sync/queue"
 conferir "cofre: /api/v0/coleta/token não passa pelo proxy (GET)" 404 "$BASE/api/v0/coleta/token"
 conferir "cofre: /api/v0/coleta/token não passa pelo proxy (POST)" 404 -X POST -H 'Content-Type: application/json' --data '{}' "$BASE/api/v0/coleta/token"
 conferir "cofre: /api/v0/tokens/renovar-proativo não passa pelo proxy" 404 -X POST -H 'Content-Type: application/json' --data '{}' "$BASE/api/v0/tokens/renovar-proativo"
+conferir "cofre: /api/v0/tokens/recifrar não passa pelo proxy" 404 -X POST -H 'Content-Type: application/json' --data '{}' "$BASE/api/v0/tokens/recifrar"
 conferir "cofre: /api/v0/tarefas/token não passa pelo proxy" 404 -X POST -H 'Content-Type: application/json' --data '{}' "$BASE/api/v0/tarefas/token"
 
 if [ -z "$falhas" ]; then

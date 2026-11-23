@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
 const dono = (sql) =>
-  execFileSync('docker', ['exec', '-i', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
+  execFileSync('docker', ['exec', '-i', process.env.TRIA_TEST_PG ?? 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
     encoding: 'utf8',
   }).trim();
 
@@ -129,8 +129,11 @@ describe('o segredo não mora aqui', { concurrency: false }, () => {
 
   it('o worker não tem privilégio de objeto e o app não cria objeto', () => {
     assert.equal(
-      dono(`SELECT count(*) FROM information_schema.table_privileges WHERE grantee = 'orla_worker'`),
-      '0',
+      dono(
+        `SELECT table_schema || '.' || table_name || ':' || string_agg(privilege_type, ',' ORDER BY privilege_type)
+           FROM information_schema.table_privileges WHERE grantee = 'orla_worker' GROUP BY table_schema, table_name`,
+      ),
+      'automation.alertas:INSERT,SELECT,UPDATE',
     );
     assert.equal(
       dono(`SELECT count(*) FROM pg_namespace WHERE nspname IN ('public','core','integrations','metrics','automation','audit') AND has_schema_privilege('orla_app', nspname, 'CREATE')`),

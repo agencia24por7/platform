@@ -12,3 +12,4 @@ paths:
 - Página do cliente: dois blocos, Conexões (Fontes, Pedir ao cliente) e Contexto (Perfil, Brain). Decisão e critérios no ADR 0036; uma mudança de estrutura ali pede ADR novo.
 - Página pública por token não vaza dado de outro cliente nem de outra organização.
 - Acessibilidade: tela principal nova passa por axe sem violação.
+- Cor, tipografia e azulejo vêm da identidade (`docs/marca/LEIA-ME.md`): azul só em ação e foco, laranja só em oportunidade, estado sempre com ícone e texto.

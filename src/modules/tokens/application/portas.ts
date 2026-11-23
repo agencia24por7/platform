@@ -86,6 +86,7 @@ export type RepositorioDeTokens = {
   liberarRenovacao(alvo: Alvo, concessao: Concessao, falha?: string | null): Promise<void>;
   apagar(alvo: Alvo): Promise<boolean>;
   aRenovar(antes: Date, limite: number): Promise<readonly Alvo[]>;
+  comChaveAntiga(versaoPrimaria: string, limite: number): Promise<readonly Alvo[]>;
 };
 
 export type MarcadorDeReautorizacao = {

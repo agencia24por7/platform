@@ -3,9 +3,10 @@ import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { before, describe, it } from 'node:test';
 import { BASE, acessoDeTeste, appIsUp, envelopeLocal, ensureUser, makeOwner, post, signIn, get, sqlDeConexao, submitForm, workerHeaders } from './helpers.mjs';
+import { PG_CONTAINER } from './apoio/pgContainer.mjs';
 
 const query = (sql) =>
-  execFileSync('docker', ['exec', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
+  execFileSync('docker', ['exec', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
     .toString()
     .trim()
     .split('\n')[0]
@@ -93,6 +94,8 @@ describe('cofre de tokens: rota do worker', { concurrency: false }, () => {
     assert.equal(resposta.status, 401);
     const proativa = await fetch(`${BASE}/api/v0/tokens/renovar-proativo`, { method: 'POST', body: '{}' });
     assert.equal(proativa.status, 401);
+    const recifragem = await fetch(`${BASE}/api/v0/tokens/recifrar`, { method: 'POST', body: '{}' });
+    assert.equal(recifragem.status, 401);
   });
 
   it('pelo proxy público a rota não existe: X-Forwarded-For de fora, Forwarded ou https encaminhado viram 404', async () => {
@@ -104,7 +107,7 @@ describe('cofre de tokens: rota do worker', { concurrency: false }, () => {
       { 'X-Forwarded-Proto': 'https' },
     ];
     for (const extra of cabecalhos) {
-      for (const rota of ['/api/v0/coleta/token', '/api/v0/tokens/renovar-proativo']) {
+      for (const rota of ['/api/v0/coleta/token', '/api/v0/tokens/renovar-proativo', '/api/v0/tokens/recifrar']) {
         const resposta = await fetch(`${BASE}${rota}`, {
           method: 'POST',
           headers: { ...workerHeaders(), ...extra },
@@ -231,5 +234,13 @@ describe('cofre de tokens: rota do worker', { concurrency: false }, () => {
     assert.equal(resposta.status, 200);
     const resumo = await resposta.json();
     for (const campo of ['avaliadas', 'renovadas', 'reautorizar', 'falhas']) assert.equal(typeof resumo[campo], 'number');
+  });
+
+  it('a recifragem responde com o resumo e a versão primária da chave', async () => {
+    const resposta = await post('/api/v0/tokens/recifrar', { limite: 10 });
+    assert.equal(resposta.status, 200);
+    const resumo = await resposta.json();
+    for (const campo of ['avaliadas', 'recifradas', 'falhas']) assert.equal(typeof resumo[campo], 'number');
+    assert.equal(typeof resumo.versaoPrimaria, 'string');
   });
 });

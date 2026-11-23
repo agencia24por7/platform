@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync, execFileSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -31,7 +31,9 @@ test('start.sh rejeita opção desconhecida e ajuda sai com sucesso', () => {
 test('bootstrap-context injeta ADRs, regras e respeita o limite de tamanho', () => {
   const saida = execFileSync(hook('bootstrap-context.sh'), { cwd: raiz, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: raiz } })
   assert.match(saida, /## ADRs/)
-  assert.match(saida, /0037-ambiente-de-agentes/)
+  const adrs = readdirSync(join(raiz, 'docs', 'adr')).filter((nome) => nome.endsWith('.md')).sort()
+  assert.match(saida, new RegExp(`## ADRs \\(${adrs.length} em docs/adr`))
+  for (const recente of adrs.slice(-5)) assert.ok(saida.includes(`docs/adr/${recente}`), `ADR recente ausente do contexto: ${recente}`)
   assert.match(saida, /\.claude\/rules/)
   assert.ok(saida.length <= 10000, `contexto inicial com ${saida.length} caracteres`)
 })

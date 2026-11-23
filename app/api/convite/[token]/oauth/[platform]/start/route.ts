@@ -17,6 +17,7 @@ import {
 import { credenciaisDaPlataforma } from '@/modules/connections/application/credenciaisOauth';
 import { modules } from '@/composition';
 import type { Platform } from '@/modules/connections/domain/connection';
+import { entradaPublica } from '@/shared/http/entradaPublica';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +31,7 @@ function sourceIp(request: NextRequest): string {
   return enderecoConfiavel(request.headers.get('x-forwarded-for')) ?? 'desconhecido';
 }
 
-export async function GET(
+async function tratarGet(
   request: NextRequest,
   context: { params: Promise<{ token: string; platform: string }> },
 ): Promise<NextResponse> {
@@ -100,3 +101,5 @@ export async function GET(
 
   return response;
 }
+
+export const GET = entradaPublica(tratarGet);

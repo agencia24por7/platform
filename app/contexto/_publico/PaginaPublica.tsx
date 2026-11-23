@@ -7,6 +7,7 @@ import { modules } from '@/composition';
 import { enderecoConfiavel } from '@/modules/audit/domain/actor';
 import type { CredencialPublica } from '@/modules/clients/application/contextoService';
 import { requestId } from '@/shared/http/actions';
+import { comoPublico } from '@/shared/db/client';
 
 export function MolduraPublica({ organizacao, children }: { readonly organizacao?: string; readonly children: ReactNode }) {
   return (
@@ -45,11 +46,12 @@ export function EstadoDoLink({ titulo, texto, organizacao }: { readonly titulo: 
 }
 
 export async function PaginaPublica({ credencial, voltarPara }: { readonly credencial: CredencialPublica; readonly voltarPara?: string }) {
-  const resultado = await modules().contexto.carregarPeloLink({
+  const pedido = {
     credencial,
     ip: enderecoConfiavel((await headers()).get('x-forwarded-for')),
     requestId: await requestId(),
-  });
+  };
+  const resultado = await comoPublico(() => modules().contexto.carregarPeloLink(pedido));
 
   if (!resultado.ok) {
     if (resultado.error.code === 'rate_limited') {

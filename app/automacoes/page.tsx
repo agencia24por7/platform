@@ -2,10 +2,8 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Shell } from '@/../app/_components/Shell';
 import { modules } from '@/composition';
-import { BotaoDeEnvio } from '@/../app/_components/BotaoDeEnvio';
-import { resolverAlertasDaPlataforma } from '@/../app/automacoes/acoes';
-import { canAdminister } from '@/modules/identity/domain/user';
 import { requireContext } from '@/shared/http/currentOrganization';
+import { operadorDaPlataforma } from '@/shared/http/operador';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,10 +17,11 @@ const runTone: Record<string, string> = {
 export default async function AutomationsPage() {
   const contexto = await requireContext();
   const organization = contexto.organization;
-  const administra = canAdminister(contexto.role);
+  const operador = await operadorDaPlataforma(contexto.session.user.id);
+  if (!operador) redirect('/clientes');
 
   const runs = await modules().ingestion.recentRuns(organization.id, 25);
-  const alertasAbertos = administra ? await modules().alertas.contarAbertos() : 0;
+  const alertasAbertos = await modules().alertas.contarAbertosParaOperador(contexto.session.user.id);
 
   return (
     <Shell title="Coletas" organization={organization} active="/automacoes">
@@ -35,12 +34,7 @@ export default async function AutomationsPage() {
           </div>
         </div>
         {alertasAbertos > 0 ? (
-          <form action={resolverAlertasDaPlataforma}>
-            <span className="pill pill--danger">{alertasAbertos} alerta(s) de falha da plataforma</span>{' '}
-            <BotaoDeEnvio className="btn" pendente="Resolvendo…">
-              Marcar como resolvidos
-            </BotaoDeEnvio>
-          </form>
+          <span className="pill pill--danger">{alertasAbertos} alerta(s) de falha da plataforma</span>
         ) : null}
       </div>
 

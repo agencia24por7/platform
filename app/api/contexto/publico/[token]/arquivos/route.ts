@@ -13,10 +13,11 @@ import { modules } from '@/composition';
 import { enderecoConfiavel } from '@/modules/audit/domain/actor';
 import { requestId } from '@/shared/http/actions';
 import { comRequestId } from '@/shared/http/comRequestId';
+import { entradaPublica } from '@/shared/http/entradaPublica';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(request: Request, { params }: { params: Promise<{ token: string }> }) {
+async function tratarPost(request: Request, { params }: { params: Promise<{ token: string }> }) {
   const id = await requestId();
   return comRequestId(id, receberArquivo(request, params, id));
 }
@@ -55,3 +56,5 @@ async function receberArquivo(request: Request, params: Promise<{ token: string 
     });
   });
 }
+
+export const POST = entradaPublica(tratarPost);

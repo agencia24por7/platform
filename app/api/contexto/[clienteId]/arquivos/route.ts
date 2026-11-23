@@ -9,7 +9,7 @@ import {
   responderOk,
 } from '@/../app/api/contexto/_upload';
 import { modules } from '@/composition';
-import { idValido } from '@/modules/clients/domain/painel/enderecos';
+import { clienteNoEscopo } from '@/../app/clientes/[id]/_escopo';
 import { requestId } from '@/shared/http/actions';
 import { comRequestId } from '@/shared/http/comRequestId';
 import { atorAtual } from '@/shared/http/ator';
@@ -33,7 +33,7 @@ async function receberArquivo(request: Request, params: Promise<{ clienteId: str
     descartarCorpo(request);
     return responderErro(401, 'Sua sessão expirou. Entre de novo.');
   }
-  if (!idValido(clienteId) || (ctx.clientIds !== null && !ctx.clientIds.includes(clienteId))) {
+  if (!(await clienteNoEscopo(ctx, clienteId))) {
     descartarCorpo(request);
     return responderErro(404, 'Cliente não encontrado.');
   }

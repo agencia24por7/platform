@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { headers } from 'next/headers';
-import { notFound } from 'next/navigation';
 import { EstadoDoLink, MolduraPublica } from '@/../app/contexto/_publico/PaginaPublica';
 import { modules } from '@/composition';
 import { enderecoConfiavel } from '@/modules/audit/domain/actor';
@@ -11,6 +10,7 @@ import { MARCA_DA_PLATAFORMA, ROTULO_DA_PLATAFORMA } from '@/modules/connections
 import { Icone, type NomeDoIcone } from '@/../app/clientes/[id]/_componentes/Icones';
 import { FocoNaConta } from '@/../app/convite/[token]/FocoNaConta';
 import { avisoDoConvite, plataformasQueNaoUso, situacaoDoItem } from '@/modules/connections/domain/conviteVisao';
+import { comoPublico } from '@/shared/db/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,15 +46,17 @@ export default async function PaginaDoConvite({
     return <EstadoDoLink titulo="Muitas tentativas" texto="Espere um pouco e tente de novo." />;
   }
 
-  const convite = await modules().connectionInvites.forDisplay(token);
-  if (!convite) notFound();
+  const convite = await comoPublico(() => modules().connectionInvites.forDisplay(token));
+  if (!convite) {
+    return <EstadoDoLink titulo="Convite indisponível" texto="Este convite não está disponível. Peça um novo a quem enviou." />;
+  }
 
   const agora = new Date();
   const expirado = convite.status === 'pending' && convite.expiresAt <= agora;
   const ativo = convite.status === 'pending' && !expirado;
 
   const mapa = ativo
-    ? await modules().contexto.carregarPeloLink({ credencial: { tipo: 'convite', token }, ip: sourceIp, requestId: await requestId() })
+    ? await comoPublico(async () => modules().contexto.carregarPeloLink({ credencial: { tipo: 'convite', token }, ip: sourceIp, requestId: await requestId() }))
     : null;
   const comMapa = mapa?.ok ? mapa.value : null;
   const naoUso = plataformasQueNaoUso(unico(busca['nao']), convite.items.map((i) => i.platform));

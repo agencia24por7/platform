@@ -3,6 +3,8 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { before, describe, it } from 'node:test';
 import { appIsUp, ensureUser } from './helpers.mjs';
+import { PG_CONTAINER } from './apoio/pgContainer.mjs';
+import { FUNCOES_DEFINER_DO_APP, SQL_FUNCOES_DEFINER_DO_APP } from './apoio/funcoesDefinerDoApp.mjs';
 
 function senhaDoApp() {
   return readFileSync('.env', 'utf8')
@@ -11,17 +13,15 @@ function senhaDoApp() {
     .slice('APP_DB_PASSWORD='.length);
 }
 
-const CONTAINER = process.env.TRIA_TEST_PG ?? 'orla-postgres';
-
 const dono = (sql) =>
-  execFileSync('docker', ['exec', '-i', CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
+  execFileSync('docker', ['exec', '-i', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
     encoding: 'utf8',
   }).trim();
 
 const comoApp = (sql) =>
   execFileSync(
     'docker',
-    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoApp()}`, CONTAINER,
+    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoApp()}`, PG_CONTAINER,
      'psql', '-U', 'orla_app', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
     { encoding: 'utf8' },
   ).trim();
@@ -36,7 +36,7 @@ function senhaDoWorker() {
 const comoWorker = (sql) =>
   execFileSync(
     'docker',
-    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoWorker()}`, CONTAINER,
+    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoWorker()}`, PG_CONTAINER,
      'psql', '-U', 'orla_worker', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
     { encoding: 'utf8' },
   ).trim();
@@ -344,10 +344,14 @@ describe('fronteiras entre inquilinos', { concurrency: false }, () => {
     );
   });
 
-  it('o papel do worker não tem privilégio de tabela próprio: herda o do app, sob as mesmas políticas', () => {
+  it('o papel do worker não tem privilégio de tabela próprio (salvo alertas, ADR 0043): herda o do app, sob as mesmas políticas', () => {
     assert.equal(
-      umaLinha(dono(`SELECT count(*) FROM information_schema.table_privileges WHERE grantee = 'orla_worker'`)),
-      '0',
+      dono(
+        `SELECT table_schema || '.' || table_name || ':' || string_agg(privilege_type, ',' ORDER BY privilege_type)
+           FROM information_schema.table_privileges WHERE grantee = 'orla_worker' GROUP BY table_schema, table_name`,
+      ),
+      'automation.alertas:INSERT,SELECT,UPDATE',
+      'exceção única do ADR 0043: o worker só tem SELECT, INSERT e UPDATE em automation.alertas',
     );
     assert.equal(umaLinha(dono(`SELECT pg_has_role('orla_worker', 'orla_app', 'USAGE')::text`)), 'true');
     assert.equal(umaLinha(dono(`SELECT pg_has_role('orla_app', 'orla_worker', 'USAGE')::text`)), 'false');
@@ -360,7 +364,7 @@ describe('fronteiras entre inquilinos', { concurrency: false }, () => {
   it('a web não executa função SECURITY DEFINER que atravessa inquilinos; o worker executa', () => {
     const daWeb = dono(
       `SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-        WHERE p.prosecdef AND (n.nspname = 'automation' OR (n.nspname = 'core' AND p.proname IN ('aplicar_retencao', 'contexto_brains_pendentes', 'contexto_clientes_para_reconstruir')))
+        WHERE p.prosecdef AND (n.nspname = 'automation' OR (n.nspname = 'core' AND p.proname IN ('aplicar_retencao', 'contexto_brains_pendentes', 'contexto_clientes_para_reconstruir')) OR (n.nspname = 'integrations' AND p.proname IN ('tokens_a_renovar', 'tokens_com_chave_antiga')))
           AND has_function_privilege('orla_app', p.oid, 'EXECUTE')`,
     );
     assert.equal(umaLinha(daWeb), '0', 'função de worker voltou a ser executável pela web (ADR 0028)');
@@ -369,7 +373,7 @@ describe('fronteiras entre inquilinos', { concurrency: false }, () => {
       `SELECT bool_and(has_function_privilege('orla_worker', p.oid, 'EXECUTE'))::text FROM pg_proc p
          JOIN pg_namespace n ON n.oid = p.pronamespace
         WHERE p.prosecdef AND p.prorettype <> 'trigger'::regtype
-          AND (n.nspname = 'automation' OR (n.nspname = 'core' AND p.proname IN ('aplicar_retencao', 'contexto_brains_pendentes', 'contexto_clientes_para_reconstruir')))`,
+          AND (n.nspname = 'automation' OR (n.nspname = 'core' AND p.proname IN ('aplicar_retencao', 'contexto_brains_pendentes', 'contexto_clientes_para_reconstruir')) OR (n.nspname = 'integrations' AND p.proname IN ('tokens_a_renovar', 'tokens_com_chave_antiga')))`,
     );
     assert.equal(umaLinha(doWorker), 'true');
 
@@ -442,5 +446,39 @@ describe('fronteiras entre inquilinos', { concurrency: false }, () => {
         AND p.prosecdef
         AND has_function_privilege('public', p.oid, 'EXECUTE')`);
     assert.equal(umaLinha(abertas), '', `definer aberta ao público: ${abertas}`);
+  });
+
+  it('o worker lê e atualiza automation.alertas sob RLS e o app não lê (ADR 0043)', () => {
+    assert.match(comoWorker('SELECT count(*) FROM automation.alertas'), /^\d+$/);
+    assert.equal(comoWorker("UPDATE automation.alertas SET resolvido_em = resolvido_em WHERE false RETURNING 1"), '');
+    assert.match(recusa(() => comoApp('SELECT count(*) FROM automation.alertas')) ?? '', /permission denied/);
+  });
+
+  it('as funções SECURITY DEFINER executáveis pelo app são exatamente a allowlist (ADR 0045)', () => {
+    const reais = dono(SQL_FUNCOES_DEFINER_DO_APP).split('\n').filter(Boolean);
+    assert.deepEqual(reais, [...FUNCOES_DEFINER_DO_APP].sort(), 'função definer executável pelo app fora da allowlist, ou allowlist com função que perdeu o GRANT');
+  });
+
+  it('tabela temporária pg_roles criada pelo app não falsifica sessão de worker nem de superusuário', () => {
+    const tinhaTemp = umaLinha(dono("SELECT has_database_privilege('orla_app', 'tria', 'TEMP')")) === 't';
+    dono('GRANT TEMP ON DATABASE tria TO orla_app');
+    try {
+      const resposta = comoApp(`
+        CREATE TEMP TABLE pg_roles (rolname name, oid oid, rolsuper boolean);
+        INSERT INTO pg_roles SELECT 'orla_worker', (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = 'orla_app'), true;
+        INSERT INTO pg_roles SELECT session_user, 0, true;
+        SELECT core.sessao_do_worker() || ',' || core.sessao_de_superusuario()`);
+      assert.equal(umaLinha(resposta.split('\n').at(-1)), 'false,false');
+    } finally {
+      if (!tinhaTemp) dono('REVOKE TEMP ON DATABASE tria FROM orla_app');
+    }
+  });
+
+  it('o app não atualiza created_by, created_at nem id de organizations', () => {
+    for (const coluna of ['created_by', 'created_at', 'id']) {
+      const privilegio = dono(`SELECT has_column_privilege('orla_app', 'core.organizations', '${coluna}', 'UPDATE')`);
+      assert.equal(umaLinha(privilegio), 'f', `orla_app ainda atualiza core.organizations.${coluna}`);
+    }
+    assert.equal(umaLinha(dono("SELECT has_column_privilege('orla_app', 'core.organizations', 'type', 'UPDATE')")), 't');
   });
 });

@@ -178,6 +178,8 @@ export const renovacaoProativaBody = z.object({
   limite: z.coerce.number().int().min(1).max(200).default(50),
 }).strict();
 
+export const recifragemDeTokensBody = renovacaoProativaBody;
+
 export const expurgarArmazenamentoBody = z
   .object({
     organizationId: uuid,

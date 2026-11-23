@@ -29,7 +29,7 @@ test('convite aceito, revogado ou vencido não vale mais', () => {
   const vivo = {
     id: 'i', organizationId: 'o', email: 'a@b.com', role: 'viewer' as const,
     invitedBy: null, expiresAt: new Date('2026-01-08T00:00:00Z'),
-    acceptedAt: null, revokedAt: null, createdAt: agora, clientIds: [],
+    acceptedAt: null, revokedAt: null, createdAt: agora, clientIds: [], escopo: 'organizacao' as const,
   };
   assert.equal(conviteVivo(vivo, agora), true);
   assert.equal(conviteVivo({ ...vivo, acceptedAt: agora }, agora), false);

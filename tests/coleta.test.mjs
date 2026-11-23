@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
 import { BASE, appIsUp, ensureUser, get, makeOwner, post, signIn, sqlDeConexao, submitForm, workerHeaders } from './helpers.mjs';
+import { PG_CONTAINER } from './apoio/pgContainer.mjs';
 
 const query = (sql) =>
-  execFileSync('docker', ['exec', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
+  execFileSync('docker', ['exec', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
     .toString()
     .trim()
     .split('\n')[0]
@@ -37,7 +38,7 @@ async function ensureAccount(userId) {
       platform: 'google',
       grantType: 'mcc',
       label: 'MCC de coleta',
-      externalId: `10948872${Math.floor(Math.random() * 90 + 10)}`,
+      externalId: `109${Date.now()}${Math.floor(Math.random() * 900 + 100)}`,
       scopes: ['https://www.googleapis.com/auth/adwords'],
     }).sql,
   );
@@ -369,7 +370,7 @@ describe('camada de coleta', { concurrency: false }, () => {
     assert.equal(fechada.status, 200);
     assert.equal(query(`select pausa_motivo || ':' || pausa_escopo || ':' || (pausa_ate > now()) from automation.coletas where id = '${aberta.id}'`), 'cota_diaria:plataforma:true');
     const fontes = await get('/api/v0/coleta/fontes?limit=200&modo=incremental').then((r) => r.json());
-    assert.ok(!fontes.fontes.some((fonte) => fonte.platform === 'google'));
+    assert.ok(!fontes.fontes.some((fonte) => fonte.platform === 'google' && [accountId, contaLivre.accountId].includes(fonte.fonteId)));
     query(`update automation.coletas set pausa_ate = null where id = '${aberta.id}'`);
   });
 
