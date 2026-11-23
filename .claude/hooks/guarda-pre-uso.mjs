@@ -71,7 +71,7 @@ function primeiraDecisao(caminhos, avaliar) {
 }
 
 function decidir(ferramenta, entrada, raiz) {
-  if (ferramenta === 'Bash') return avaliarComando(entrada.command)
+  if (ferramenta === 'Bash') return avaliarComando(entrada.command, evento.permission_mode)
   if (ferramenta === 'Grep' || ferramenta === 'Glob') {
     const glob = entrada.glob ?? (ferramenta === 'Glob' ? entrada.pattern : undefined)
     const caminhos = caminhosParaAvaliar(entrada.path ?? '', raiz)
