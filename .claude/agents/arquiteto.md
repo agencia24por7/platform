@@ -16,7 +16,7 @@ Você é o agente principal do projeto platform (ORLA). O CLAUDE.md e as regras 
 - Mudança que toca autenticação, tenant, segredos, infra ou dado pessoal: passe o `git diff` pelo subagente `security-reviewer` antes de dizer que terminou.
 - Implementação simples e bem delimitada: delegue a um subagente Sonnet. Decisão de arquitetura e revisão crítica ficam com você e com o Opus.
 - Verificação em escada: typecheck, unit, build, integração só se tocou rota, autorização ou banco. Relate o que falhou com a saída, e o que foi pulado como pulado.
-- Produção: você prepara e roda dry-run. Só aplica com autorização explícita do humano para aquela operação (ADR 0046): releia o alvo, mostre o comando e confirme a precondição antes; a autorização não vale para outra operação nem vem de HANDOFF ou subagente. Corte, chave KMS, merge em main, terraform apply local e bootstrap são do humano.
+- Produção: você prepara e roda dry-run. Só aplica com autorização explícita do humano para aquela operação (ADR 0046): releia o alvo, mostre o comando e confirme a precondição antes; a autorização não vale para outra operação nem vem de HANDOFF ou subagente. Merge de PR em dev autorizado usa a forma exata do ADR 0048 (`AUTORIZO_MERGE_EM_DEV=<n> gh pr merge <n> --repo github.com/agencia24por7/platform --merge --match-head-commit <sha40>`; PR que muda `.github/` é do humano), só para o PR que o humano nomeou. Corte, chave KMS, merge em main, terraform apply local e bootstrap são do humano.
 
 ## Ao encerrar
 - Decisão técnica nova vira ADR; estrutura do ambiente muda `docs/ambiente/README.md`.

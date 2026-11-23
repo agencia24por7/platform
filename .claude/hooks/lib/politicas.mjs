@@ -1,3 +1,6 @@
+import { execFileSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
+
 const SINAIS_OPUS = [
   /arquitet|modelagem|planej|estrat[eé]gia|\bdesign\b|trade-?off|\badr\b/i,
   /seguran[cç]a|vulnerab|auth|autentica|autoriza|\brls\b|tenant|inquilino|segredo|token|kms|cofre|lgpd|privacidade|dado pessoal/i,
@@ -188,6 +191,7 @@ const REGRAS_DE_COMANDO = [
   { padrao: /\bgh\s+api\b[^;&|]*(\/merge\b|dispatches|(?:-X|--method)[= ]*(?!GET\b)\w+|\s-[fF]|\s--(?:field|raw-field|input)\b|mutation)/i, decisao: 'ask', producao: true, motivo: 'Chamada de API do GitHub que escreve (merge, dispatch, POST, PUT, PATCH, DELETE ou mutation): ação externa que o humano autoriza (ADR 0046).' },
   { padrao: /\bautorizar_corte=true\b/, decisao: 'ask', producao: true, motivo: 'IRREVERSÍVEL: o corte roda migração destrutiva sem volta. Só com autorização explícita, depois do pre-flight verde e do backup (ADR 0034, ADR 0046).' },
   { padrao: /\bgh\s+(workflow\s+run|run\s+rerun|pr\s+merge|release\s+create)\b/, decisao: 'ask', producao: true, motivo: 'Dispara workflow, merge ou release: ação externa que o humano autoriza para esta operação (ADR 0046). Merge em main é do humano (ADR 0034).' },
+  { padrao: /\bgh\s+pr\s+edit\b[^\n]*(?:--base\b|\s-B)/, decisao: 'ask', producao: true, motivo: 'Trocar a base de um PR muda para onde o merge vai (inclusive main): ação que o humano autoriza (ADR 0046, ADR 0048).' },
   { padrao: /\bgit\s+(reset\s+--hard|clean\s+-[a-z]*f|checkout\s+--\s|checkout\s+\.|restore\s+\.|branch\s+-D|worktree\s+remove)/, decisao: 'ask', motivo: 'Pode descartar trabalho não commitado ou de outro agente.' },
   { padrao: /\bgit\s+(?:commit|push|merge|am|cherry-pick)\b[^;&|]*--no-verify|\bgit\s+commit\b[^;&|]*\s-n\b/, decisao: 'deny', motivo: 'Contornar os hooks de segurança do git é proibido. Corrija o achado ou registre a exceção na allowlist por PR.' },
   { padrao: /\bgit\s+(?:-c\s+core\.hooksPath\b|config\b(?![^;&|]*--(?:get|list))[^;&|]*core\.hooksPath\b(?![^;&|]*\.githooks))|\b(?:HUSKY|SKIP_SIMPLE_GIT_HOOKS)=0\b/, decisao: 'deny', motivo: 'Não desative nem troque os hooks do git do projeto (core.hooksPath deve ser .githooks).' },
@@ -206,8 +210,142 @@ function normalizarComando(texto) {
 
 const MODOS_SEM_CONFIRMACAO = new Set(['bypassPermissions', 'auto'])
 
-export function avaliarComando(comando, modoDePermissao) {
+const MARCADOR_MERGE_EM_DEV = 'AUTORIZO_MERGE_EM_DEV='
+const CONCLUSOES_VERDES = new Set(['SUCCESS', 'SKIPPED', 'NEUTRAL'])
+const CAMINHOS_GH = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh', '/usr/bin/gh']
+const CAMPOS_PR = 'baseRefName,state,isDraft,statusCheckRollup,headRefOid,url,isCrossRepository,reviewDecision,mergeable,files,changedFiles'
+const LIMITE_SAIDA_GH = 1024 * 1024
+const PATH_MINIMO_GH = '/usr/bin:/bin'
+const VARIAVEIS_REPASSADAS_AO_GH = ['HOME', 'LANG', 'GH_TOKEN', 'GITHUB_TOKEN']
+const PREFIXO_DE_WORKFLOWS = '.github/'
+const EXECUCAO_DO_WORKFLOW = new RegExp('/actions/runs/([0-9]+)/')
+
+export const TIMEOUT_GH_MS = 5000
+export const REPOSITORIO_PR = 'github.com/agencia24por7/platform'
+
+const URL_DE_PR = `https://${REPOSITORIO_PR}/pull/`
+const FORMA_MERGE_EM_DEV = new RegExp(
+  `^AUTORIZO_MERGE_EM_DEV=([1-9][0-9]{0,6}) gh pr merge ([1-9][0-9]{0,6}) --repo ${REPOSITORIO_PR.replace(/[.]/g, '\\.')} --(?:merge|squash|rebase) --match-head-commit ([0-9a-f]{40})$`,
+)
+export const CHECKS_OBRIGATORIOS = [
+  { workflowName: 'ci', name: 'qualidade' },
+  { workflowName: 'ci', name: 'integracao' },
+]
+
+class ErroDeConsulta extends Error {}
+
+export function consultarPRNoGitHub(numero, dependencias = {}) {
+  const { existe = existsSync, executar = execFileSync, ambiente = process.env } = dependencias
+  const gh = CAMINHOS_GH.find((caminho) => existe(caminho))
+  if (!gh) throw new ErroDeConsulta(`gh não encontrado em ${CAMINHOS_GH.join(', ')}`)
+  const env = { PATH: PATH_MINIMO_GH }
+  for (const nome of VARIAVEIS_REPASSADAS_AO_GH) if (ambiente[nome] !== undefined) env[nome] = ambiente[nome]
+  const saida = executar(gh, ['pr', 'view', numero, '--repo', REPOSITORIO_PR, '--json', CAMPOS_PR], {
+    encoding: 'utf8',
+    timeout: TIMEOUT_GH_MS,
+    maxBuffer: LIMITE_SAIDA_GH,
+    cwd: ambiente.CLAUDE_PROJECT_DIR ?? process.cwd(),
+    env,
+  })
+  return JSON.parse(saida)
+}
+
+function itemVerde(item) {
+  if (item.status === undefined && item.state !== undefined) return item.state === 'SUCCESS'
+  return item.status === 'COMPLETED' && CONCLUSOES_VERDES.has(item.conclusion)
+}
+
+function instanteDoItem(item) {
+  const instante = Date.parse(item.startedAt ?? item.completedAt ?? '')
+  if (!Number.isNaN(instante)) return instante
+  return itemVerde(item) ? 0 : Infinity
+}
+
+function chaveDoItem(item) {
+  return `${item.workflowName ?? ''}\u0000${item.name ?? item.context ?? ''}`
+}
+
+function substituiExecucao(novo, atual) {
+  const instanteNovo = instanteDoItem(novo)
+  const instanteAtual = instanteDoItem(atual)
+  return instanteNovo > instanteAtual || (instanteNovo === instanteAtual && !itemVerde(novo))
+}
+
+function problemaDoCI(rollup) {
+  if (!Array.isArray(rollup) || rollup.length === 0) return 'o rollup de checks está vazio ou ausente'
+  const recentes = new Map()
+  for (const item of rollup) {
+    if (!item || typeof item !== 'object') return 'o rollup de checks tem item malformado'
+    const atual = recentes.get(chaveDoItem(item))
+    if (!atual || substituiExecucao(item, atual)) recentes.set(chaveDoItem(item), item)
+  }
+  for (const obrigatorio of CHECKS_OBRIGATORIOS) {
+    const nome = `${obrigatorio.workflowName}/${obrigatorio.name}`
+    const item = recentes.get(chaveDoItem(obrigatorio))
+    if (!item) return `falta o check obrigatório ${nome}`
+    if (item.status !== 'COMPLETED' || item.conclusion !== 'SUCCESS') return `o check obrigatório ${nome} não está SUCCESS`
+  }
+  const execucoes = CHECKS_OBRIGATORIOS.map((obrigatorio) => EXECUCAO_DO_WORKFLOW.exec(String(recentes.get(chaveDoItem(obrigatorio)).detailsUrl ?? ''))?.[1])
+  if (execucoes.some((execucao) => execucao === undefined)) return 'não foi possível identificar a execução do workflow dos checks obrigatórios'
+  if (new Set(execucoes).size !== 1) return 'os checks obrigatórios vêm de execuções diferentes do workflow'
+  const pendente = [...recentes.values()].find((item) => !itemVerde(item))
+  if (pendente) return `o check ${pendente.workflowName ?? ''}/${pendente.name ?? pendente.context ?? '?'} não está verde`
+  return null
+}
+
+function negarMerge(motivo) {
+  return { decisao: 'deny', motivo: `Merge autorizado em dev negado: ${motivo} (ADR 0048).` }
+}
+
+function problemaDosArquivos(pr) {
+  if (!Array.isArray(pr.files) || !Number.isInteger(pr.changedFiles)) return 'a lista de arquivos do PR está ausente ou malformada'
+  if (pr.files.length !== pr.changedFiles) return 'a lista de arquivos do PR veio truncada'
+  if (pr.files.some((arquivo) => !arquivo || typeof arquivo.path !== 'string')) return 'a lista de arquivos do PR tem item malformado'
+  if (pr.files.some((arquivo) => arquivo.path.toLowerCase().startsWith(PREFIXO_DE_WORKFLOWS))) return 'PR que muda .github/ (workflows) é do humano: o CI verde só vale se o PR não altera o próprio CI'
+  return null
+}
+
+function problemaDoPR(pr, numero, sha) {
+  if (pr.baseRefName === 'main') return 'merge em main é do humano (ADR 0034)'
+  if (pr.baseRefName !== 'dev') return 'a base do PR não é dev'
+  if (pr.state !== 'OPEN') return 'o PR não está aberto'
+  if (pr.isDraft !== false) return 'o PR é rascunho ou o estado de rascunho é desconhecido'
+  if (pr.isCrossRepository !== false) return 'o PR vem de outro repositório (fork) ou a origem é desconhecida'
+  if (pr.url !== `${URL_DE_PR}${numero}`) return 'a URL do PR não é a do repositório da plataforma'
+  if (pr.headRefOid !== sha) return 'o head do PR difere do sha do comando'
+  if (pr.reviewDecision === 'CHANGES_REQUESTED') return 'o PR tem mudanças pedidas na revisão'
+  if (pr.mergeable === 'CONFLICTING') return 'o PR tem conflito com a base'
+  return problemaDosArquivos(pr) ?? problemaDoCI(pr.statusCheckRollup)
+}
+
+export function avaliarMergeEmDev(comando, consultarPR = consultarPRNoGitHub, modoDePermissao) {
+  const texto = String(comando ?? '')
+  if (!texto.startsWith(MARCADOR_MERGE_EM_DEV)) return null
+  const forma = FORMA_MERGE_EM_DEV.exec(texto)
+  if (!forma) return negarMerge(`o marcador só vale na forma exata "AUTORIZO_MERGE_EM_DEV=<n> gh pr merge <n> --repo ${REPOSITORIO_PR} --merge|--squash|--rebase --match-head-commit <sha40>", sem outras flags, encadeamento ou outro comando`)
+  const [, numero, numeroDoMerge, sha] = forma
+  if (numero !== numeroDoMerge) return negarMerge('o número do marcador difere do número do PR')
+  try {
+    return decidirMergeVerificado(consultarPR, numero, sha, modoDePermissao)
+  } catch (erro) {
+    return negarMerge(erro instanceof ErroDeConsulta ? erro.message : 'erro ao consultar ou avaliar o PR (fecha por padrão)')
+  }
+}
+
+function decidirMergeVerificado(consultarPR, numero, sha, modoDePermissao) {
+  const pr = consultarPR(numero)
+  if (!pr || typeof pr !== 'object' || Array.isArray(pr)) return negarMerge('resposta do GitHub inválida (fecha por padrão)')
+  const problema = problemaDoPR(pr, numero, sha)
+  if (problema) return negarMerge(problema)
+  const motivo = `Merge do PR ${numero} em dev verificado: base dev, aberto, pronto, head ${sha.slice(0, 7)}, sem mudança em workflows, checks obrigatórios e CI verdes (ADR 0048).`
+  if (!MODOS_SEM_CONFIRMACAO.has(modoDePermissao)) return { decisao: 'ask', motivo: `${motivo} Confirme: neste modo o humano decide.` }
+  return { decisao: 'allow', motivo }
+}
+
+export function avaliarComando(comando, modoDePermissao, consultarPR = consultarPRNoGitHub) {
   const original = String(comando ?? '')
+  const mergeEmDev = avaliarMergeEmDev(original, consultarPR, modoDePermissao)
+  if (mergeEmDev) return mergeEmDev
   const variantes = [original, normalizarComando(original)]
   let pergunta = null
   for (const texto of variantes) {
