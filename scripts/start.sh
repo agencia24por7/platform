@@ -48,7 +48,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-command -v claude > /dev/null || { echo "claude não encontrado no PATH" >&2; exit 1; }
+[ "$simulado" = 1 ] || command -v claude > /dev/null || { echo "claude não encontrado no PATH" >&2; exit 1; }
 [ -f .claude/agents/arquiteto.md ] || { echo "falta .claude/agents/arquiteto.md" >&2; exit 1; }
 
 git config core.hooksPath .githooks

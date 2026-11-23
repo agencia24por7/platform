@@ -106,7 +106,7 @@ jobs:
 
       - name: App
         run: |
-          npx next dev --port 3000 > app.log 2>&1 &
+          PLATAFORMA_OPERADORES=operador@tria.local npx next dev --port 3000 > app.log 2>&1 &
           for tentativa in $(seq 1 60); do
             curl -sf http://localhost:3000/api/health > /dev/null && exit 0
             sleep 2
