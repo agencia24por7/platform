@@ -9,7 +9,7 @@ export async function atorAtual(): Promise<Ator> {
 
   return {
     userId: sessao?.user.id ?? null,
-    requestId: requestId(),
+    requestId: await requestId(),
     sourceIp: enderecoConfiavel(cabecalhos.get('x-forwarded-for')),
   };
 }

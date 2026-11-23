@@ -11,15 +11,17 @@ function senhaDoApp() {
     .slice('APP_DB_PASSWORD='.length);
 }
 
+const CONTAINER = process.env.TRIA_TEST_PG ?? 'orla-postgres';
+
 const dono = (sql) =>
-  execFileSync('docker', ['exec', '-i', 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
+  execFileSync('docker', ['exec', '-i', CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
     encoding: 'utf8',
   }).trim();
 
 const comoApp = (sql) =>
   execFileSync(
     'docker',
-    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoApp()}`, 'orla-postgres',
+    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoApp()}`, CONTAINER,
      'psql', '-U', 'orla_app', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
     { encoding: 'utf8' },
   ).trim();
@@ -34,7 +36,7 @@ function senhaDoWorker() {
 const comoWorker = (sql) =>
   execFileSync(
     'docker',
-    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoWorker()}`, 'orla-postgres',
+    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoWorker()}`, CONTAINER,
      'psql', '-U', 'orla_worker', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
     { encoding: 'utf8' },
   ).trim();
@@ -44,6 +46,11 @@ const naSessao = (org, clientIds, userId, sql) =>
     `SET app.organization_id = '${org}'; SET app.client_ids = '${clientIds}'; ` +
       `SET app.user_id = '${userId}'; ${sql}`,
   );
+
+const noContexto = (org, clientIds, userId, sql) =>
+  `SET app.organization_id = '${org}'; SET app.client_ids = '${clientIds}'; SET app.user_id = '${userId}'; ${sql}`;
+
+const naSessaoDoWorker = (org, clientIds, userId, sql) => comoWorker(noContexto(org, clientIds, userId, sql));
 
 const umaLinha = (texto) => texto.split('\n')[0].trim();
 
@@ -163,6 +170,138 @@ describe('fronteiras entre inquilinos', { concurrency: false }, () => {
       umaLinha(dono(`SELECT count(*) FROM audit.audit_log WHERE action = 'forjado'`)),
       '0',
     );
+  });
+
+  const forjar = (sessao, minhaOrg, orgAlheia, pessoa) =>
+    recusa(() =>
+      sessao(
+        minhaOrg,
+        '*',
+        pessoa,
+        `INSERT INTO audit.audit_log (organization_id, actor_type, action)
+         VALUES ('${orgAlheia}', 'user', 'forjado')`,
+      ),
+    );
+
+  it('a trilha recusa evento forjado nos dois sentidos e pelo papel do worker', () => {
+    const recusas = {
+      'app, B forjando A': forjar(naSessao, orgB, orgA, pessoaB),
+      'worker, A forjando B': forjar(naSessaoDoWorker, orgA, orgB, pessoaA),
+      'worker, B forjando A': forjar(naSessaoDoWorker, orgB, orgA, pessoaB),
+    };
+    for (const [cenario, erro] of Object.entries(recusas)) {
+      assert.ok(erro, `${cenario}: a política devia ter recusado o evento forjado`);
+      assert.ok(/row-level security|policy|política/i.test(erro), `${cenario}: ${erro}`);
+    }
+    assert.equal(umaLinha(dono(`SELECT count(*) FROM audit.audit_log WHERE action = 'forjado'`)), '0');
+
+    naSessao(orgA, '*', pessoaA,
+      `INSERT INTO audit.audit_log (organization_id, actor_type, action) VALUES ('${orgA}', 'user', 'proprio_app')`);
+    naSessaoDoWorker(orgB, '*', pessoaB,
+      `INSERT INTO audit.audit_log (organization_id, actor_type, action) VALUES ('${orgB}', 'user', 'proprio_worker')`);
+    assert.equal(
+      umaLinha(dono(`SELECT count(*) FROM audit.audit_log WHERE action IN ('proprio_app', 'proprio_worker')`)),
+      '2',
+      'o evento da própria organização devia ser aceito (controle positivo)',
+    );
+  });
+
+  const PAPEIS_DA_TRILHA = {
+    app: ['orla_app', 'tria_app'],
+    worker: ['orla_worker', 'tria_worker'],
+  };
+
+  const nomeDoPapel = (candidatos) =>
+    umaLinha(dono(
+      `SELECT rolname FROM pg_roles WHERE rolname IN (${candidatos.map((n) => `'${n}'`).join(',')}) ORDER BY rolname LIMIT 1`,
+    ));
+
+  it('app e worker não têm UPDATE, DELETE nem TRUNCATE direto na trilha', () => {
+    for (const [rotulo, candidatos] of Object.entries(PAPEIS_DA_TRILHA)) {
+      const papel = nomeDoPapel(candidatos);
+      assert.ok(papel, `papel ${rotulo} não existe`);
+      for (const privilegio of ['UPDATE', 'DELETE', 'TRUNCATE']) {
+        assert.equal(
+          umaLinha(dono(`SELECT has_table_privilege('${papel}', 'audit.audit_log', '${privilegio}')`)),
+          'f',
+          `${papel} não podia ter ${privilegio} em audit.audit_log`,
+        );
+      }
+    }
+  });
+
+  it('UPDATE e DELETE reais na trilha falham por permissão nos dois papéis e a linha fica intacta', () => {
+    dono(`INSERT INTO audit.audit_log (organization_id, actor_type, action) VALUES ('${orgA}', 'user', 'alvo_imutavel')`);
+    const sessoes = { app: naSessao, worker: naSessaoDoWorker };
+
+    for (const [rotulo, sessao] of Object.entries(sessoes)) {
+      for (const comando of [
+        `UPDATE audit.audit_log SET action = 'adulterado' WHERE action = 'alvo_imutavel'`,
+        `DELETE FROM audit.audit_log WHERE action = 'alvo_imutavel'`,
+        `TRUNCATE audit.audit_log`,
+      ]) {
+        const erro = recusa(() => sessao(orgA, '*', pessoaA, comando));
+        assert.match(erro ?? '', /permission denied/, `${rotulo}: ${comando}`);
+      }
+    }
+    assert.equal(
+      umaLinha(dono(`SELECT count(*) FROM audit.audit_log WHERE action = 'alvo_imutavel'`)),
+      '1',
+      'a linha da trilha foi alterada ou apagada',
+    );
+    assert.equal(umaLinha(dono(`SELECT count(*) FROM audit.audit_log WHERE action = 'adulterado'`)), '0');
+  });
+
+  it('a organização B não enxerga a trilha de A, nem pelo app nem pelo worker', () => {
+    dono(`INSERT INTO audit.audit_log (organization_id, actor_type, action) VALUES ('${orgA}', 'user', 'so_da_org_a')`);
+    dono(`INSERT INTO audit.audit_log (organization_id, actor_type, action) VALUES ('${orgB}', 'user', 'so_da_org_b')`);
+
+    for (const sessao of [naSessao, naSessaoDoWorker]) {
+      assert.equal(
+        umaLinha(sessao(orgB, '*', pessoaB, `SELECT count(*) FROM audit.audit_log WHERE action = 'so_da_org_a'`)),
+        '0',
+        'a trilha de A apareceu para B',
+      );
+      assert.equal(
+        umaLinha(sessao(orgB, '*', pessoaB,
+          `SELECT count(*) FROM audit.audit_log WHERE organization_id <> '${orgB}'`)),
+        '0',
+        'B enxergou linha de outra organização',
+      );
+      assert.equal(
+        umaLinha(sessao(orgB, '*', pessoaB, `SELECT count(*) FROM audit.audit_log WHERE action = 'so_da_org_b'`)),
+        '1',
+      );
+      assert.equal(
+        umaLinha(sessao(orgA, '*', pessoaA, `SELECT count(*) FROM audit.audit_log WHERE action = 'so_da_org_a'`)),
+        '1',
+      );
+    }
+    assert.equal(
+      umaLinha(naSessao('', '', pessoaA, `SELECT count(*) FROM audit.audit_log`)),
+      '0',
+      'sem contexto a trilha não podia ser legível',
+    );
+  });
+
+  const MUTA_A_TRILHA = String.raw`(update\s+(only\s+)?audit\.audit_log|delete\s+from\s+(only\s+)?audit\.audit_log|truncate\s+(table\s+)?(only\s+)?audit\.audit_log)`;
+
+  it('função que altera a trilha não é executável pelo app (descoberta pelo catálogo)', () => {
+    const mutadoras = dono(
+      `SELECT string_agg(n.nspname||'.'||p.proname, ', ' ORDER BY n.nspname, p.proname)
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE p.prosrc ~* '${MUTA_A_TRILHA}'`,
+    );
+    assert.match(mutadoras, /core\.aplicar_retencao/, 'o catálogo devia achar ao menos a retenção');
+
+    const papelApp = nomeDoPapel(PAPEIS_DA_TRILHA.app);
+    const expostas = dono(
+      `SELECT coalesce(string_agg(n.nspname||'.'||p.proname, ', '), '')
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE p.prosrc ~* '${MUTA_A_TRILHA}'
+          AND has_function_privilege('${papelApp}', p.oid, 'EXECUTE')`,
+    );
+    assert.equal(umaLinha(expostas), '', `função que altera a trilha executável pelo app: ${expostas}`);
   });
 
   it('a faxina de passagens não alcança passagem viva', () => {

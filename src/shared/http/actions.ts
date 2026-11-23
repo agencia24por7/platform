@@ -1,4 +1,5 @@
-import { newRequestId } from '@/shared/security/tokens';
+import { headers } from 'next/headers';
+import { CABECALHO_DO_REQUEST_ID, resolverRequestId } from '@/shared/http/requestId';
 import type { Failure } from '@/shared/result/failure';
 
 export type ActionState = { readonly error?: string; readonly fieldErrors?: Record<string, string> };
@@ -7,8 +8,8 @@ export function toActionState(failure: Failure): ActionState {
   return failure.details ? { error: failure.message, fieldErrors: failure.details } : { error: failure.message };
 }
 
-export function requestId(): string {
-  return newRequestId();
+export async function requestId(): Promise<string> {
+  return resolverRequestId((await headers()).get(CABECALHO_DO_REQUEST_ID));
 }
 
 export function text(form: FormData, key: string): string {

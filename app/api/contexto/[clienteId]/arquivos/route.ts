@@ -10,12 +10,19 @@ import {
 } from '@/../app/api/contexto/_upload';
 import { modules } from '@/composition';
 import { idValido } from '@/modules/clients/domain/painel/enderecos';
+import { requestId } from '@/shared/http/actions';
+import { comRequestId } from '@/shared/http/comRequestId';
 import { atorAtual } from '@/shared/http/ator';
 import { activeContext } from '@/shared/http/currentOrganization';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request, { params }: { params: Promise<{ clienteId: string }> }) {
+  const id = await requestId();
+  return comRequestId(id, receberArquivo(request, params, id));
+}
+
+async function receberArquivo(request: Request, params: Promise<{ clienteId: string }>, id: string) {
   const { clienteId } = await params;
   if (!mesmaOrigem(request)) {
     descartarCorpo(request);
@@ -41,7 +48,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ cli
     const resultado = await modules().contexto.anexarArquivo(
       { organizationId: ctx.organization.id, clientId: clienteId, papelDeQuemAge: ctx.role, ...lido.pedido },
       leitorDoCorpo(request),
-      await atorAtual(),
+      { ...(await atorAtual()), requestId: id },
     );
     if (!resultado.ok) {
       descartarCorpo(request);

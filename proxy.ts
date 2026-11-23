@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { SESSION_COOKIE } from '@/modules/identity/domain/sessionCookie';
 import { CABECALHO_DO_NONCE, novoNonce, politicaDeSeguranca } from '@/shared/http/csp';
+import { CABECALHO_DO_REQUEST_ID, resolverRequestId } from '@/shared/http/requestId';
 
 function enderecoPublico(): string {
   const configurado = process.env['TRIA_APP_BASE_URL'];
@@ -29,32 +30,37 @@ const ROTAS_ABERTAS = [
   '/exclusao-de-dados',
 ];
 
-function seguirComNonce(request: NextRequest): NextResponse {
+function seguirComNonce(request: NextRequest, requestId: string): NextResponse {
   const nonce = novoNonce();
   const politica = politicaDeSeguranca(nonce, process.env.NODE_ENV === 'development');
 
   const cabecalhos = new Headers(request.headers);
   cabecalhos.set(CABECALHO_DO_NONCE, nonce);
   cabecalhos.set('Content-Security-Policy', politica);
+  cabecalhos.set(CABECALHO_DO_REQUEST_ID, requestId);
 
   const resposta = NextResponse.next({ request: { headers: cabecalhos } });
   resposta.headers.set('Content-Security-Policy', politica);
+  resposta.headers.set(CABECALHO_DO_REQUEST_ID, requestId);
   return resposta;
 }
 
 export function proxy(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
+  const requestId = resolverRequestId(request.headers.get(CABECALHO_DO_REQUEST_ID));
 
   if (ROTAS_ABERTAS.some((rota) => pathname === rota || pathname.startsWith(`${rota}/`))) {
-    return seguirComNonce(request);
+    return seguirComNonce(request, requestId);
   }
 
-  if (request.cookies.get(SESSION_COOKIE)?.value) return seguirComNonce(request);
+  if (request.cookies.get(SESSION_COOKIE)?.value) return seguirComNonce(request, requestId);
 
   const destino = new URL('/api/auth/google/start', enderecoPublico());
   if (pathname !== '/') destino.searchParams.set('returnTo', pathname);
 
-  return NextResponse.redirect(destino);
+  const redirecionamento = NextResponse.redirect(destino);
+  redirecionamento.headers.set(CABECALHO_DO_REQUEST_ID, requestId);
+  return redirecionamento;
 }
 
 export const config = {

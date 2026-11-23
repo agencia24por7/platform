@@ -54,7 +54,7 @@ export default async function PaginaDoConvite({
   const ativo = convite.status === 'pending' && !expirado;
 
   const mapa = ativo
-    ? await modules().contexto.carregarPeloLink({ credencial: { tipo: 'convite', token }, ip: sourceIp, requestId: requestId() })
+    ? await modules().contexto.carregarPeloLink({ credencial: { tipo: 'convite', token }, ip: sourceIp, requestId: await requestId() })
     : null;
   const comMapa = mapa?.ok ? mapa.value : null;
   const naoUso = plataformasQueNaoUso(unico(busca['nao']), convite.items.map((i) => i.platform));

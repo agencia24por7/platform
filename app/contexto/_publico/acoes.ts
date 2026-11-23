@@ -36,7 +36,7 @@ async function acesso(credencial: CredencialPublica): Promise<AcessoPublico | nu
   return {
     credencial: valida,
     ip: enderecoConfiavel((await headers()).get('x-forwarded-for')),
-    requestId: requestId(),
+    requestId: await requestId(),
   };
 }
 

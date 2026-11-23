@@ -48,7 +48,7 @@ export async function PaginaPublica({ credencial, voltarPara }: { readonly crede
   const resultado = await modules().contexto.carregarPeloLink({
     credencial,
     ip: enderecoConfiavel((await headers()).get('x-forwarded-for')),
-    requestId: requestId(),
+    requestId: await requestId(),
   });
 
   if (!resultado.ok) {

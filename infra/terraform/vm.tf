@@ -85,6 +85,9 @@ resource "google_compute_instance" "app" {
       n8n_hostname    = var.n8n_hostname
       acme_email      = var.acme_email
       contexto_bucket = google_storage_bucket.contexto.name
+
+      logs_na_nuvem_habilitado          = var.logs_na_nuvem_habilitado
+      logs_na_nuvem_chave_apt_impressao = var.logs_na_nuvem_chave_apt_impressao
     })
   }
 
