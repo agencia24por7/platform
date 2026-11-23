@@ -116,6 +116,10 @@ jobs:
       - name: Testes de integração
         run: npm run test:integration
 
+      - name: Log do app quando a integração falha
+        if: failure()
+        run: tail -n 120 app.log
+
       - name: Smoke do build de produção (next start)
         run: |
           npm run build
