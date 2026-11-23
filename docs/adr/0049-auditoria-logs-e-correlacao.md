@@ -1,10 +1,10 @@
-# 0047 — Auditoria, logs e correlação: falha de observabilidade, imutabilidade e ciclo de vida
+# 0049 — Auditoria, logs e correlação: falha de observabilidade, imutabilidade e ciclo de vida
 
 - Status: aceito
 - Data: 2026-11-22
 - Issue: 24K-112
 - Relacionado: ADR 0008 (auditoria append-only), 0010 (logs e retenção), 0028 (papel `orla_worker`)
-- Numeração: 0040–0046 já existem em `dev` (fase5 e a aplicação em produção com autorização); este ADR usa 0047.
+- Numeração: o 0047 de `dev` é "agente executa os passos antes do humano" e o 0048 é o merge em dev autorizado no hook; este ADR, escrito como 0047, ficou com 0049.
 
 ## Contexto
 

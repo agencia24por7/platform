@@ -1,12 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { Readable } from 'node:stream'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   avaliarComando,
+  avaliarEscrita,
   avaliarMergeEmDev,
   consultarPRNoGitHub,
   TIMEOUT_GH_MS,
@@ -142,20 +144,47 @@ test('nega quando o head do PR difere do sha do comando', () => {
   for (const headRefOid of ['', null, undefined, SHA.toUpperCase()]) assert.equal(avaliar({ headRefOid }).decisao, 'deny', String(headRefOid))
 })
 
-test('PR que toca .github/ é do humano: o CI verde só vale se o PR não muda workflows', () => {
-  const casos = [
-    [{ path: '.github/workflows/ci.yml' }],
-    [{ path: '.github/workflows/novo.yml' }],
-    [{ path: '.github/CODEOWNERS' }],
-    [{ path: '.GITHUB/workflows/ci.yml' }],
-    [{ path: 'src/a.ts' }, { path: '.github/workflows/ci.yml' }],
+test('PR que muda o CI ou a guarda é do humano: um caso por prefixo e por arquivo da lista', () => {
+  const negados = [
+    '.github/workflows/ci.yml',
+    '.github/workflows/novo.yml',
+    '.github/CODEOWNERS',
+    '.claude/hooks/lib/politicas.mjs',
+    '.claude/settings.json',
+    '.githooks/pre-commit',
+    'scripts/ambiente-verificar.mjs',
+    'infra/terraform/main.tf',
+    'package.json',
+    'package-lock.json',
+    'Dockerfile',
+    'Dockerfile.prod',
+    'infra/docker/Dockerfile',
+    '.dockerignore',
+    'next.config.mjs',
+    'tsconfig.json',
+    'CODEOWNERS',
+    'docs/CODEOWNERS',
+    '.npmrc',
+    '.nvmrc',
+    './scripts/x.sh',
+    './/.claude/x',
+    '.GITHUB/workflows/ci.yml',
+    '.CLAUDE/hooks/x',
+    'SCRIPTS/x.sh',
+    'PACKAGE.JSON',
+    'a/../.github/workflows/ci.yml',
+    '/scripts/x.sh',
+    'scripts//x.sh',
+    '.github\\workflows\\ci.yml',
+    '../fora.txt',
   ]
-  for (const files of casos) {
-    const resultado = avaliar({ files, changedFiles: files.length })
-    assert.equal(resultado.decisao, 'deny', JSON.stringify(files))
-    assert.match(resultado.motivo, /\.github|workflow/)
+  for (const path of negados) {
+    const resultado = avaliar({ files: [{ path: 'src/a.ts' }, { path }], changedFiles: 2 })
+    assert.equal(resultado.decisao, 'deny', path)
+    assert.match(resultado.motivo, /muda o CI ou a guarda é do humano/, path)
   }
-  assert.equal(avaliar({ files: [{ path: 'docs/.github/x.md' }], changedFiles: 1 }).decisao, 'allow')
+  const comuns = ['src/x.ts', 'docs/a.md', 'tests/a.test.mjs', 'app/x.tsx', 'db/migrations/0001.sql', 'docs/.github/x.md', 'src/scripts/x.ts', 'n8n/workflows/a.json']
+  for (const path of comuns) assert.equal(avaliar({ files: [{ path }], changedFiles: 1 }).decisao, 'allow', path)
 })
 
 test('lista de arquivos truncada, ausente ou malformada é negada', () => {
@@ -413,12 +442,28 @@ test('o timeout do gh cabe na metade do timeout do hook em settings.json', () =>
   assert.ok(TIMEOUT_GH_MS <= (guarda.timeout * 1000) / 2, `timeout do gh (${TIMEOUT_GH_MS} ms) maior que a metade do hook (${guarda.timeout} s)`)
 })
 
-test('consultarPRNoGitHub fixa o repositório, usa caminho absoluto, ambiente mínimo e limites', () => {
+function ambienteDoGh(extra = {}) {
+  const criados = []
+  const removidos = []
+  return {
+    criados,
+    removidos,
+    criarDiretorio: () => {
+      criados.push('/tmp/gh-guarda-x')
+      return '/tmp/gh-guarda-x'
+    },
+    removerDiretorio: (caminho) => removidos.push(caminho),
+    ...extra,
+  }
+}
+
+test('consultarPRNoGitHub fixa o repositório, usa caminho absoluto, config vazia, ambiente mínimo e limites', () => {
   const chamadas = []
   const executar = (programa, argumentos, opcoes) => {
     chamadas.push({ programa, argumentos, opcoes })
     return JSON.stringify(pr(9))
   }
+  const diretorios = ambienteDoGh()
   const ambiente = {
     PATH: '/tmp/gravavel',
     HOME: '/home/u',
@@ -435,7 +480,7 @@ test('consultarPRNoGitHub fixa o repositório, usa caminho absoluto, ambiente m�
     CLAUDE_PROJECT_DIR: '/projeto',
   }
   const existe = (caminho) => caminho === '/usr/local/bin/gh' || caminho === '/usr/bin/gh'
-  const dados = consultarPRNoGitHub('9', { existe, executar, ambiente })
+  const dados = consultarPRNoGitHub('9', { existe, executar, ambiente, ...diretorios })
   assert.equal(dados.baseRefName, 'dev')
   assert.equal(chamadas.length, 1)
   const [{ programa, argumentos, opcoes }] = chamadas
@@ -449,10 +494,33 @@ test('consultarPRNoGitHub fixa o repositório, usa caminho absoluto, ambiente m�
   assert.equal(opcoes.cwd, '/projeto')
   assert.equal(opcoes.encoding, 'utf8')
   assert.equal(opcoes.shell, undefined)
-  assert.deepEqual(opcoes.env, { HOME: '/home/u', PATH: '/usr/bin:/bin', LANG: 'pt_BR.UTF-8', GH_TOKEN: 'x', GITHUB_TOKEN: 'y' })
-  const semToken = []
-  consultarPRNoGitHub('9', { existe, executar: (p, a, o) => (semToken.push(o.env), JSON.stringify(pr(9))), ambiente: { HOME: '/home/u', GH_REPO: 'x' } })
-  assert.deepEqual(semToken[0], { HOME: '/home/u', PATH: '/usr/bin:/bin' })
+  assert.deepEqual(opcoes.env, { PATH: '/usr/bin:/bin', LANG: 'pt_BR.UTF-8', GH_CONFIG_DIR: '/tmp/gh-guarda-x', GH_TOKEN: 'x', GITHUB_TOKEN: 'y' })
+  assert.equal('HOME' in opcoes.env, false)
+  assert.deepEqual(diretorios.criados, ['/tmp/gh-guarda-x'])
+  assert.deepEqual(diretorios.removidos, ['/tmp/gh-guarda-x'])
+  const soGithubToken = []
+  consultarPRNoGitHub('9', { existe, executar: (p, a, o) => (soGithubToken.push(o.env), JSON.stringify(pr(9))), ambiente: { HOME: '/home/u', GITHUB_TOKEN: 'z' }, ...ambienteDoGh() })
+  assert.deepEqual(soGithubToken[0], { PATH: '/usr/bin:/bin', GH_CONFIG_DIR: '/tmp/gh-guarda-x', GITHUB_TOKEN: 'z' })
+})
+
+test('sem token no ambiente do hook a consulta nega com motivo claro, sem rodar o gh nem criar diretório', () => {
+  const diretorios = ambienteDoGh()
+  const ambiente = { HOME: '/home/u', GH_TOKEN: '', GITHUB_TOKEN: undefined }
+  assert.throws(() => consultarPRNoGitHub('9', { existe: () => true, executar: resolvedorProibido, ambiente, ...diretorios }), /sem GH_TOKEN no ambiente do hook/)
+  assert.deepEqual(diretorios.criados, [])
+  const ausente = () => consultarPRNoGitHub('9', { existe: () => true, executar: resolvedorProibido, ambiente, ...diretorios })
+  const resultado = avaliarMergeEmDev(comando(9), () => ausente(), 'auto')
+  assert.equal(resultado.decisao, 'deny')
+  assert.match(resultado.motivo, /exige token no ambiente do Claude Code/)
+})
+
+test('o diretório de configuração temporário é removido mesmo quando o gh falha', () => {
+  const diretorios = ambienteDoGh()
+  const executar = () => {
+    throw new Error('timeout')
+  }
+  assert.throws(() => consultarPRNoGitHub('9', { existe: () => true, executar, ambiente: { GH_TOKEN: 'x' }, ...diretorios }), /timeout/)
+  assert.deepEqual(diretorios.removidos, ['/tmp/gh-guarda-x'])
 })
 
 test('consultarPRNoGitHub tenta homebrew primeiro e nega quando nenhum gh absoluto existe', () => {
@@ -461,7 +529,7 @@ test('consultarPRNoGitHub tenta homebrew primeiro e nega quando nenhum gh absolu
     tentados.push(programa)
     return JSON.stringify(pr(9))
   }
-  consultarPRNoGitHub('9', { existe: () => true, executar, ambiente: {} })
+  consultarPRNoGitHub('9', { existe: () => true, executar, ambiente: { GH_TOKEN: 'x' }, ...ambienteDoGh() })
   assert.deepEqual(tentados, ['/opt/homebrew/bin/gh'])
   const ausente = () => consultarPRNoGitHub('9', { existe: () => false, executar: resolvedorProibido, ambiente: {} })
   assert.throws(ausente, /gh não encontrado/)
@@ -548,4 +616,90 @@ test('o hook real (CLI) nega sem consultar o GitHub: sem marcador, forma inváli
   assert.equal(rodar(`${MARCADOR}=9 gh pr merge 9 --admin --repo ${REPO} --merge --match-head-commit ${SHA}`, 'default').permissionDecision, 'deny')
   assert.equal(rodar('gh pr edit 9 -Bmain').permissionDecision, 'deny')
   assert.equal(rodar('gh pr edit 9 -Bmain', 'default').permissionDecision, 'ask')
+})
+
+test('gh alias e gh config set podem contornar a guarda: ask com confirmação, deny sem', () => {
+  const comandos = ['gh alias set pe "pr edit"', 'gh alias import aliases.yml', 'gh alias delete pe', 'gh config set http_unix_socket /tmp/s', 'gh config set browser x']
+  for (const texto of comandos) {
+    assert.equal(avaliarComando(texto, 'default', resolvedorProibido)?.decisao, 'ask', texto)
+    assert.equal(avaliarComando(texto, 'auto', resolvedorProibido)?.decisao, 'deny', texto)
+    assert.equal(avaliarComando(`${MARCADOR}=1 ${texto}`, 'auto', resolvedorProibido)?.decisao, 'deny', texto)
+  }
+  for (const leitura of ['gh alias list', 'gh config get editor', 'gh config list']) assert.equal(avaliarComando(leitura, 'auto', resolvedorProibido), null, leitura)
+})
+
+test('avaliarEscrita nega a configuração do gh e os settings do Claude Code', () => {
+  const negados = [
+    '/Users/u/.config/gh/config.yml',
+    '/Users/u/.config/gh/hosts.yml',
+    '.config/gh/config.yml',
+    '/Users/u/.claude/settings.json',
+    '.claude/settings.json',
+    '.claude/settings.local.json',
+    '/repo/.claude/settings.local.json',
+  ]
+  for (const caminho of negados) {
+    assert.equal(avaliarEscrita({ caminho, conteudo: '{}', existeVersionado: false })?.decisao, 'deny', caminho)
+  }
+  for (const caminho of ['/repo/src/config/gh.ts', '/repo/docs/ambiente/README.md', '/repo/.claude/rules/testes.md', '/repo/.claude/settings-notas.md']) {
+    assert.equal(avaliarEscrita({ caminho, conteudo: 'x', existeVersionado: false }), null, caminho)
+  }
+})
+
+test('integração com o ADR 0047 de dev: main e KMS continuam ask, e o marcador nunca vale para main', () => {
+  const kms = ['gcloud kms keys versions disable 1 --key=k --keyring=r --location=l', 'gcloud kms keys versions destroy 1 --key=k --keyring=r --location=l']
+  for (const texto of kms) {
+    assert.equal(avaliarComando(texto, 'default', resolvedorProibido)?.decisao, 'ask', texto)
+    assert.equal(avaliarComando(texto, 'auto', resolvedorProibido)?.decisao, 'deny', texto)
+    assert.equal(avaliarComando(`${MARCADOR}=1 ${texto}`, 'default', resolvedorProibido)?.decisao, 'deny', texto)
+  }
+  for (const modo of ['default', 'auto', 'bypassPermissions']) {
+    const paraMain = avaliarComando(comando(9), modo, resolvedor(pr(9, { baseRefName: 'main' })))
+    assert.equal(paraMain.decisao, 'deny', modo)
+    assert.match(paraMain.motivo, /ADR 0034/)
+  }
+  const semMarcador = avaliarComando('gh pr merge 9 --merge', 'default', resolvedorProibido)
+  assert.equal(semMarcador.decisao, 'ask')
+  assert.match(semMarcador.motivo, /ADR 0047/)
+  assert.equal(avaliarComando('gh pr merge 9 --merge', 'auto', resolvedorProibido).decisao, 'deny')
+  assert.equal(avaliarComando(falso('git push origin ', 'main'), 'default', resolvedorProibido).decisao, 'deny')
+})
+
+test('o CLI do guarda fecha por padrão: se a guarda não carrega, sai com código 2 e não deixa nada passar', () => {
+  const cli = readFileSync(join(raiz, '.claude', 'hooks', 'guarda-pre-uso.mjs'), 'utf8')
+  const escreverGuarda = (pasta, conteudo) => writeFileSync(join(pasta, 'lib', 'guarda.mjs'), conteudo)
+  const casos = {
+    'erro de sintaxe': (pasta) => escreverGuarda(pasta, 'export function ((\n'),
+    'marcador de conflito': (pasta) => escreverGuarda(pasta, `${'<'.repeat(7)} HEAD\nexport const a = 1\n${'='.repeat(7)}\nexport const a = 2\n${'>'.repeat(7)} dev\n`),
+    'import quebrado': (pasta) => escreverGuarda(pasta, "import './nao-existe.mjs'\nexport const lerEvento = 1\n"),
+    'módulo ausente': () => {},
+  }
+  for (const [nome, preparar] of Object.entries(casos)) {
+    const pasta = mkdtempSync(join(tmpdir(), 'guarda-falha-'))
+    try {
+      mkdirSync(join(pasta, 'lib'))
+      writeFileSync(join(pasta, 'guarda-pre-uso.mjs'), cli)
+      preparar(pasta)
+      const resultado = spawnSync('node', [join(pasta, 'guarda-pre-uso.mjs')], {
+        cwd: pasta,
+        encoding: 'utf8',
+        input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'ls' }, permission_mode: 'auto' }),
+      })
+      assert.equal(resultado.status, 2, `${nome}: ${resultado.stderr}`)
+      assert.equal(resultado.stdout, '', nome)
+      assert.match(resultado.stderr, /guarda do projeto/, nome)
+    } finally {
+      rmSync(pasta, { recursive: true, force: true })
+    }
+  }
+})
+
+test('o CLI com a guarda real carrega e decide (sanidade do import dinâmico)', () => {
+  const resultado = spawnSync('node', [join(raiz, '.claude', 'hooks', 'guarda-pre-uso.mjs')], {
+    cwd: raiz,
+    encoding: 'utf8',
+    input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'gh pr merge 9 --merge' }, permission_mode: 'auto' }),
+  })
+  assert.equal(resultado.status, 0)
+  assert.equal(JSON.parse(resultado.stdout).hookSpecificOutput.permissionDecision, 'deny')
 })

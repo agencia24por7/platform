@@ -17,7 +17,7 @@ O papel `roles/storage.admin` da conta `tria-terraform` (bootstrap) já cobre cr
 definir IAM de bucket; nenhuma permissão nova é necessária. A conta de plano (`tria-terraform-plan`) lê
 com `roles/viewer`.
 
-## Logs na nuvem (opt-in) (ADR 0047, decisão 6)
+## Logs na nuvem (opt-in) (ADR 0049, decisão 6)
 
 Desligado por padrão (`logs_na_nuvem_habilitado = false`). Com a variável em `false` o `plan` não mostra
 mudança alguma: o script de inicialização renderiza byte a byte igual ao anterior e nenhum recurso novo é criado.
@@ -87,7 +87,7 @@ oficial de instalação só descreve o script `add-google-cloud-ops-agent-repo.s
 ### Privacidade
 
 Os logs saem da VM para o Cloud Logging do projeto, legível por quem tem `roles/viewer`. Só a linha da aplicação sai
-(ver acima), e o logger redige segredo e e-mail (ADR 0047, decisão 4). Logs de Postgres, Caddy e n8n não saem. Mesmo
+(ver acima), e o logger redige segredo e e-mail (ADR 0049, decisão 4). Logs de Postgres, Caddy e n8n não saem. Mesmo
 assim, revise amostras no Logs Explorer logo após ligar: se o contexto de alguma linha da aplicação trouxer dado de
 cliente, ele ficará 30 dias no `_Default`. A cópia na nuvem usa a retenção do bucket `_Default` (30 dias); esta
 mudança não altera a retenção. A cópia local continua nos limites atuais (docker 10m x 3, journald 200M/1 mês).

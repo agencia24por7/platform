@@ -1,9 +1,17 @@
 #!/usr/bin/env node
-import { executarGuarda, lerEvento } from './lib/guarda.mjs'
+function bloquear(motivo) {
+  process.stderr.write(`[guarda do projeto] a guarda falhou e a ferramenta foi bloqueada por padrão: ${motivo}\n`)
+  process.exit(2)
+}
 
-const evento = await lerEvento(process.stdin)
-process.exitCode = executarGuarda({
-  evento,
-  saida: (texto) => process.stdout.write(texto),
-  erro: (texto) => process.stderr.write(texto),
-})
+try {
+  const guarda = await import('./lib/guarda.mjs')
+  const evento = await guarda.lerEvento(process.stdin)
+  process.exitCode = guarda.executarGuarda({
+    evento,
+    saida: (texto) => process.stdout.write(texto),
+    erro: (texto) => process.stderr.write(texto),
+  })
+} catch (erro) {
+  bloquear(erro instanceof Error ? erro.message : 'erro desconhecido')
+}

@@ -1,5 +1,7 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, posix } from 'node:path'
 
 const SINAIS_OPUS = [
   /arquitet|modelagem|planej|estrat[eé]gia|\bdesign\b|trade-?off|\badr\b/i,
@@ -162,6 +164,7 @@ export function avaliarLeitura({ caminho, tamanho, comRecorte }) {
 export function avaliarEscrita({ caminho, conteudo, existeVersionado }) {
   const alvo = String(caminho ?? '')
   if (arquivoSensivel(alvo)) return { decisao: 'deny', motivo: 'Não grave em arquivo de segredo (.env, chave, credencial). Segredo é criado pelo humano ou por pipe sem eco.' }
+  if (/(^|[/\\])\.config[/\\]gh[/\\]/.test(alvo) || /(^|[/\\])\.claude[/\\]settings[^/\\]*\.json$/.test(alvo)) return { decisao: 'deny', motivo: 'A configuração do gh e os settings do Claude Code definem o que a guarda confia: só o humano altera (ADR 0048).' }
   if (/(^|[/])(node_modules|\.next)[/]/.test(alvo)) return { decisao: 'deny', motivo: 'Diretório gerado: não edite à mão.' }
   if (/(^|[/])package-lock\.json$/.test(alvo)) return { decisao: 'deny', motivo: 'O lockfile só muda pelo npm (npm install / npm ci).' }
   const achados = detectarSegredo(conteudo)
@@ -186,12 +189,14 @@ const REGRAS_DE_COMANDO = [
   { padrao: /^(?=[\s\S]*\bbq\b)(?=[\s\S]*\b(?:rm|mk|update|cp|load|DROP|TRUNCATE|DELETE|ALTER|CREATE|INSERT|MERGE)\b)/i, decisao: 'ask', producao: true, motivo: 'Comando cita bq junto de verbo ou SQL que muda objeto: só com autorização explícita do humano (ADR 0046). Falso positivo é aceito; o erro para o outro lado não.' },
   { padrao: /\bterraform\b(?:\s+-\S+)*\s+(apply|destroy|import|state\s+(rm|mv|push))\b/, decisao: 'deny', motivo: 'Terraform em produção só pelo caminho do CI (infra.yml na main). O agente aciona o workflow; apply local e o bootstrap são do humano (ADR 0046).' },
   { padrao: /\bgcloud\s+secrets\s+(versions\s+(add|destroy|disable)|delete|create|update|add-iam-policy-binding)\b/, decisao: 'ask', producao: true, motivo: 'Muda segredo em produção: só com autorização explícita; o valor vem do humano ou é gerado sem eco e nunca é impresso (ADR 0046).' },
-  { padrao: /\bgcloud\s+kms\s+keys\s+(versions\s+(destroy|disable)|update)\b/, decisao: 'deny', motivo: 'Desativar ou destruir versão de chave KMS não tem volta e é do humano, depois da recifragem com avaliadas = 0 e falhas = 0 (ADR 0042).' },
+  { padrao: /\bgcloud\s+kms\s+keys\s+(versions\s+(destroy|disable)|update)\b/, decisao: 'ask', producao: true, motivo: 'Desativar ou destruir versão de chave KMS não tem volta: só com autorização nomeando a chave e depois da recifragem com avaliadas = 0 e falhas = 0 provada (ADR 0042, ADR 0047).' },
   { padrao: /\bgcloud\s+sql\s+(backups\s+delete|instances\s+delete)\b/, decisao: 'deny', motivo: 'Apagar backup ou instância do Postgres é proibido.' },
   { padrao: /\bgh\s+api\b[^;&|]*(\/merge\b|dispatches|(?:-X|--method)[= ]*(?!GET\b)\w+|\s-[fF]|\s--(?:field|raw-field|input)\b|mutation)/i, decisao: 'ask', producao: true, motivo: 'Chamada de API do GitHub que escreve (merge, dispatch, POST, PUT, PATCH, DELETE ou mutation): ação externa que o humano autoriza (ADR 0046).' },
   { padrao: /\bautorizar_corte=true\b/, decisao: 'ask', producao: true, motivo: 'IRREVERSÍVEL: o corte roda migração destrutiva sem volta. Só com autorização explícita, depois do pre-flight verde e do backup (ADR 0034, ADR 0046).' },
-  { padrao: /\bgh\s+(workflow\s+run|run\s+rerun|pr\s+merge|release\s+create)\b/, decisao: 'ask', producao: true, motivo: 'Dispara workflow, merge ou release: ação externa que o humano autoriza para esta operação (ADR 0046). Merge em main é do humano (ADR 0034).' },
-  { padrao: /\bgh\s+pr\s+edit\b[^\n]*(?:--base\b|\s-B)/, decisao: 'ask', producao: true, motivo: 'Trocar a base de um PR muda para onde o merge vai (inclusive main): ação que o humano autoriza (ADR 0046, ADR 0048).' },
+  { padrao: /\bgh\s+(workflow\s+run|run\s+rerun|pr\s+merge|release\s+create)\b/, decisao: 'ask', producao: true, motivo: 'Dispara workflow, merge ou release: ação externa que o humano autoriza para esta operação (ADR 0046). Merge em main exige autorização nomeando o PR e o roteiro de docs/release/ cumprido (ADR 0034, ADR 0047).' },
+  { padrao: /\bgh\s+pr\s+edit\b[^\n]*(?:--base\b|\s-B)/, decisao: 'ask', producao: true, motivo: 'Trocar a base de um PR muda para onde o merge vai (inclusive main): ação que o humano autoriza (ADR 0046, ADR 0047, ADR 0048).' },
+  { padrao: /\bgh\s+alias\s+(set|import|delete)\b/, decisao: 'ask', producao: true, motivo: 'Alias do gh pode redefinir comandos e contornar as regras desta guarda: só com autorização explícita do humano (ADR 0048).' },
+  { padrao: /\bgh\s+config\s+set\b/, decisao: 'ask', producao: true, motivo: 'Configuração do gh (socket, browser, protocolo) pode desviar o que a guarda verifica: só com autorização explícita do humano (ADR 0048).' },
   { padrao: /\bgit\s+(reset\s+--hard|clean\s+-[a-z]*f|checkout\s+--\s|checkout\s+\.|restore\s+\.|branch\s+-D|worktree\s+remove)/, decisao: 'ask', motivo: 'Pode descartar trabalho não commitado ou de outro agente.' },
   { padrao: /\bgit\s+(?:commit|push|merge|am|cherry-pick)\b[^;&|]*--no-verify|\bgit\s+commit\b[^;&|]*\s-n\b/, decisao: 'deny', motivo: 'Contornar os hooks de segurança do git é proibido. Corrija o achado ou registre a exceção na allowlist por PR.' },
   { padrao: /\bgit\s+(?:-c\s+core\.hooksPath\b|config\b(?![^;&|]*--(?:get|list))[^;&|]*core\.hooksPath\b(?![^;&|]*\.githooks))|\b(?:HUSKY|SKIP_SIMPLE_GIT_HOOKS)=0\b/, decisao: 'deny', motivo: 'Não desative nem troque os hooks do git do projeto (core.hooksPath deve ser .githooks).' },
@@ -216,8 +221,24 @@ const CAMINHOS_GH = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh', '/usr/bin/gh']
 const CAMPOS_PR = 'baseRefName,state,isDraft,statusCheckRollup,headRefOid,url,isCrossRepository,reviewDecision,mergeable,files,changedFiles'
 const LIMITE_SAIDA_GH = 1024 * 1024
 const PATH_MINIMO_GH = '/usr/bin:/bin'
-const VARIAVEIS_REPASSADAS_AO_GH = ['HOME', 'LANG', 'GH_TOKEN', 'GITHUB_TOKEN']
-const PREFIXO_DE_WORKFLOWS = '.github/'
+const VARIAVEIS_REPASSADAS_AO_GH = ['LANG', 'GH_TOKEN', 'GITHUB_TOKEN']
+const MOTIVO_SEM_TOKEN = 'sem GH_TOKEN no ambiente do hook; a exceção de merge exige token no ambiente do Claude Code'
+const CAMINHOS_QUE_DEFINEM_O_CI_E_A_GUARDA = [
+  '.github/',
+  '.claude/',
+  '.githooks/',
+  'scripts/',
+  'infra/',
+  'package.json',
+  'package-lock.json',
+  'Dockerfile',
+  '.dockerignore',
+  'next.config.mjs',
+  'tsconfig.json',
+  'CODEOWNERS',
+  '.npmrc',
+  '.nvmrc',
+]
 const EXECUCAO_DO_WORKFLOW = new RegExp('/actions/runs/([0-9]+)/')
 
 export const TIMEOUT_GH_MS = 5000
@@ -235,19 +256,45 @@ export const CHECKS_OBRIGATORIOS = [
 class ErroDeConsulta extends Error {}
 
 export function consultarPRNoGitHub(numero, dependencias = {}) {
-  const { existe = existsSync, executar = execFileSync, ambiente = process.env } = dependencias
+  const {
+    existe = existsSync,
+    executar = execFileSync,
+    ambiente = process.env,
+    criarDiretorio = () => mkdtempSync(join(tmpdir(), 'gh-guarda-')),
+    removerDiretorio = (caminho) => rmSync(caminho, { recursive: true, force: true }),
+  } = dependencias
   const gh = CAMINHOS_GH.find((caminho) => existe(caminho))
   if (!gh) throw new ErroDeConsulta(`gh não encontrado em ${CAMINHOS_GH.join(', ')}`)
   const env = { PATH: PATH_MINIMO_GH }
-  for (const nome of VARIAVEIS_REPASSADAS_AO_GH) if (ambiente[nome] !== undefined) env[nome] = ambiente[nome]
-  const saida = executar(gh, ['pr', 'view', numero, '--repo', REPOSITORIO_PR, '--json', CAMPOS_PR], {
-    encoding: 'utf8',
-    timeout: TIMEOUT_GH_MS,
-    maxBuffer: LIMITE_SAIDA_GH,
-    cwd: ambiente.CLAUDE_PROJECT_DIR ?? process.cwd(),
-    env,
-  })
-  return JSON.parse(saida)
+  for (const nome of VARIAVEIS_REPASSADAS_AO_GH) if (ambiente[nome]) env[nome] = ambiente[nome]
+  if (!env.GH_TOKEN && !env.GITHUB_TOKEN) throw new ErroDeConsulta(MOTIVO_SEM_TOKEN)
+  const diretorioDeConfiguracao = criarDiretorio()
+  env.GH_CONFIG_DIR = diretorioDeConfiguracao
+  try {
+    const saida = executar(gh, ['pr', 'view', numero, '--repo', REPOSITORIO_PR, '--json', CAMPOS_PR], {
+      encoding: 'utf8',
+      timeout: TIMEOUT_GH_MS,
+      maxBuffer: LIMITE_SAIDA_GH,
+      cwd: ambiente.CLAUDE_PROJECT_DIR ?? process.cwd(),
+      env,
+    })
+    return JSON.parse(saida)
+  } finally {
+    removerDiretorio(diretorioDeConfiguracao)
+  }
+}
+
+function caminhoNormalizado(caminho) {
+  const unificado = caminho.toLowerCase().replace(/\\/g, '/')
+  return posix.normalize(unificado).replace(/^(?:[.]?\/)+/, '')
+}
+
+function definePartesDoCIOuDaGuarda(caminho) {
+  const normalizado = caminhoNormalizado(caminho)
+  if (normalizado.startsWith('../')) return true
+  const nome = posix.basename(normalizado)
+  if (nome.startsWith('dockerfile')) return true
+  return CAMINHOS_QUE_DEFINEM_O_CI_E_A_GUARDA.some((item) => (item.endsWith('/') ? normalizado.startsWith(item) : nome === item.toLowerCase()))
 }
 
 function itemVerde(item) {
@@ -301,7 +348,7 @@ function problemaDosArquivos(pr) {
   if (!Array.isArray(pr.files) || !Number.isInteger(pr.changedFiles)) return 'a lista de arquivos do PR está ausente ou malformada'
   if (pr.files.length !== pr.changedFiles) return 'a lista de arquivos do PR veio truncada'
   if (pr.files.some((arquivo) => !arquivo || typeof arquivo.path !== 'string')) return 'a lista de arquivos do PR tem item malformado'
-  if (pr.files.some((arquivo) => arquivo.path.toLowerCase().startsWith(PREFIXO_DE_WORKFLOWS))) return 'PR que muda .github/ (workflows) é do humano: o CI verde só vale se o PR não altera o próprio CI'
+  if (pr.files.some((arquivo) => definePartesDoCIOuDaGuarda(arquivo.path))) return 'PR que muda o CI ou a guarda é do humano: o CI verde só vale se o PR não altera o que roda no CI nem a própria guarda'
   return null
 }
 
