@@ -2,13 +2,12 @@ import { NextResponse } from 'next/server';
 import { currentUser } from '@/shared/http/currentUser';
 import { consumeAll } from '@/shared/security/rateLimit';
 import { enderecoConfiavel } from '@/modules/audit/domain/actor';
+import { caminhoDaOrigem, textoDoCliente } from '@/shared/http/relatoDoCliente';
 import { logger } from '@/shared/logging/logger';
-import { redactText } from '@/shared/logging/redact';
 
 export const dynamic = 'force-dynamic';
 
 const LIMITE_MENSAGEM = 2_000;
-const LIMITE_PILHA = 8_000;
 const LIMITE_DIGEST = 200;
 const LIMITE_CORPO_BYTES = 32_000;
 
@@ -45,20 +44,6 @@ async function corpoAteOLimite(request: Request): Promise<string | null> {
   return new TextDecoder().decode(bytes);
 }
 
-function textoLimpo(valor: unknown, limite: number): string | null {
-  if (typeof valor !== 'string' || valor.length === 0) return null;
-  return redactText(valor.slice(0, limite));
-}
-
-function caminhoDaOrigem(referer: string | null): string | null {
-  if (!referer) return null;
-  try {
-    return new URL(referer).pathname;
-  } catch {
-    return null;
-  }
-}
-
 const RELATOS_POR_MINUTO = 10;
 const RELATOS_GLOBAIS_POR_MINUTO = 120;
 
@@ -88,9 +73,9 @@ export async function POST(request: Request): Promise<NextResponse> {
   const session = await currentUser();
 
   logger.error('client.erro', {
-    clientMessage: textoLimpo(corpo?.['message'], LIMITE_MENSAGEM),
-    clientDigest: textoLimpo(corpo?.['digest'], LIMITE_DIGEST),
-    clientStack: textoLimpo(corpo?.['stack'], LIMITE_PILHA),
+    clientMessage: textoDoCliente(corpo?.['message'], LIMITE_MENSAGEM),
+    clientDigest: textoDoCliente(corpo?.['digest'], LIMITE_DIGEST),
+    clientStack: textoDoCliente(corpo?.['stack']),
     userId: session?.user.id ?? null,
     path: caminhoDaOrigem(request.headers.get('referer')),
   });

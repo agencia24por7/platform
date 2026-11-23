@@ -1,4 +1,7 @@
-import { type NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse, after } from 'next/server';
+import { enderecoConfiavel } from '@/modules/audit/domain/actor';
+import { createAuditRepository } from '@/modules/audit/infrastructure/auditRepository';
+import { auditarPortaria, type ResultadoDaPortaria } from '@/modules/identity/application/auditarPortaria';
 import { createHandoffRepository } from '@/modules/identity/infrastructure/handoffRepository';
 import { abrirSessaoNaAutomacao } from '@/modules/identity/infrastructure/n8nSession';
 import { isSafeReturnPath } from '@/modules/connections/domain/oauth';
@@ -12,7 +15,14 @@ import {
 } from '@/modules/identity/domain/handoff';
 import { env } from '@/shared/config/env';
 import { podeEntrarNaAutomacao } from '@/../app/api/portaria/_acesso';
+import { CABECALHO_DO_REQUEST_ID, resolverRequestId } from '@/shared/http/requestId';
 import { logger } from '@/shared/logging/logger';
+
+function agendarAuditoria(request: NextRequest, resultado: ResultadoDaPortaria, userId: string): void {
+  const requestId = resolverRequestId(request.headers.get(CABECALHO_DO_REQUEST_ID));
+  const sourceIp = enderecoConfiavel(request.headers.get('x-forwarded-for'));
+  after(() => auditarPortaria(createAuditRepository(), { resultado, userId, requestId, sourceIp }));
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -39,6 +49,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   if (!(await createHandoffRepository().consume(passagem.jti, passagem.expiresAt))) {
     logger.warn('portaria.recusada', { motivo: 'reuso', userId: passagem.userId });
+    agendarAuditoria(request, 'reuso', passagem.userId);
     return NextResponse.redirect(new URL('/entrar?erro=estado', configuration.TRIA_APP_BASE_URL));
   }
 
@@ -72,6 +83,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     });
   }
 
+  agendarAuditoria(request, automacaoAberta.tipo === 'aberta' ? 'aberta' : 'indisponivel', passagem.userId);
   logger.info('portaria.aceita', { userId: passagem.userId, automacao: automacaoAberta.tipo });
   return response;
 }

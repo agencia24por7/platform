@@ -1,22 +1,17 @@
-import { env } from '@/shared/config/env';
-import { redact } from '@/shared/logging/redact';
-
-type Level = 'debug' | 'info' | 'warn' | 'error';
+import { env } from '../config/env.ts';
+import { serializarLinha, type Level } from './linha.ts';
 
 const severity: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40 };
 
 function emit(level: Level, message: string, context?: Record<string, unknown>): void {
-  if (severity[level] < severity[env().LOG_LEVEL]) return;
-
-  const line = JSON.stringify({
-    level,
-    message,
-    at: new Date().toISOString(),
-    ...(context ? (redact(context) as Record<string, unknown>) : {}),
-  });
-
-  if (level === 'error') process.stderr.write(`${line}\n`);
-  else process.stdout.write(`${line}\n`);
+  try {
+    if (severity[level] < severity[env().LOG_LEVEL]) return;
+    const line = serializarLinha(level, message, context);
+    if (level === 'error') process.stderr.write(`${line}\n`);
+    else process.stdout.write(`${line}\n`);
+  } catch {
+    return;
+  }
 }
 
 export const logger = {

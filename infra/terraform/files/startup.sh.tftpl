@@ -144,6 +144,140 @@ UNIDADE
 
 configurar_limpeza
 
+%{ if logs_na_nuvem_habilitado ~}
+readonly OPS_AGENT_CONFIG=/etc/google-cloud-ops-agent/config.yaml
+readonly OPS_AGENT_LISTA=/etc/apt/sources.list.d/google-cloud-ops-agent.list
+readonly OPS_AGENT_CHAVEIRO=/etc/apt/keyrings/google-cloud-ops-agent.gpg
+readonly OPS_AGENT_IMPRESSAO='${logs_na_nuvem_chave_apt_impressao}'
+TEMPORARIOS_OPS_AGENT=""
+
+limpar_temporarios_ops_agent() {
+  if [ -n "$TEMPORARIOS_OPS_AGENT" ]; then
+    rm -rf $TEMPORARIOS_OPS_AGENT
+  fi
+}
+trap limpar_temporarios_ops_agent EXIT
+
+remover_repositorio_ops_agent() {
+  rm -f "$OPS_AGENT_LISTA" "$OPS_AGENT_CHAVEIRO"
+}
+
+impressao_ops_agent_valida() {
+  if [ -z "$OPS_AGENT_IMPRESSAO" ]; then
+    echo "Impressao digital da chave apt do Ops Agent nao informada; instalacao recusada."
+    return 1
+  fi
+  if ! printf '%s\n' "$OPS_AGENT_IMPRESSAO" | grep -qE '^[0-9A-Fa-f]{40}$'; then
+    echo "Impressao digital da chave apt do Ops Agent em formato invalido; instalacao recusada."
+    return 1
+  fi
+}
+
+gravar_chave_ops_agent_conferida() {
+  local arquivo="$1" esperado atual gnupghome
+  esperado=$(printf '%s' "$OPS_AGENT_IMPRESSAO" | tr '[:lower:]' '[:upper:]')
+  atual=$(gpg --batch --show-keys --with-colons "$arquivo" | awk -F: '$1 == "pub" { p = 1; next } $1 == "sub" { p = 0 } $1 == "fpr" && p { print $10; p = 0 }') || return 1
+  if ! printf '%s\n' "$atual" | grep -qxF "$esperado"; then
+    echo "Impressao digital da chave apt do Ops Agent nao confere; instalacao recusada."
+    return 1
+  fi
+  gnupghome=$(mktemp -d) || return 1
+  TEMPORARIOS_OPS_AGENT="$TEMPORARIOS_OPS_AGENT $gnupghome"
+  GNUPGHOME="$gnupghome" gpg --batch --import "$arquivo" || return 1
+  GNUPGHOME="$gnupghome" gpg --batch --yes --export --output "$OPS_AGENT_CHAVEIRO" "$esperado" || return 1
+  [ -s "$OPS_AGENT_CHAVEIRO" ] || return 1
+  chmod a+r "$OPS_AGENT_CHAVEIRO" || return 1
+}
+
+adicionar_repositorio_ops_agent() {
+  local chave codename
+  apt-get update || return 1
+  apt-get install -y ca-certificates curl gnupg || return 1
+  install -m 0755 -d /etc/apt/keyrings || return 1
+  chave=$(mktemp) || return 1
+  TEMPORARIOS_OPS_AGENT="$TEMPORARIOS_OPS_AGENT $chave"
+  curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg -o "$chave" || return 1
+  gravar_chave_ops_agent_conferida "$chave" || return 1
+  codename=$(. /etc/os-release && echo "$VERSION_CODENAME") || return 1
+  echo "deb [signed-by=$OPS_AGENT_CHAVEIRO] https://packages.cloud.google.com/apt google-cloud-ops-agent-$codename-all main" > "$OPS_AGENT_LISTA" || return 1
+  apt-get update || return 1
+}
+
+aplicar_config_ops_agent() {
+  local nova
+  nova=$(mktemp) || return 1
+  TEMPORARIOS_OPS_AGENT="$TEMPORARIOS_OPS_AGENT $nova"
+  cat > "$nova" <<'CONFIG' || return 1
+logging:
+  receivers:
+    containers_docker:
+      type: files
+      include_paths:
+        - /var/lib/docker/containers/*/*-json.log
+  processors:
+    docker_envelope:
+      type: parse_json
+      time_key: time
+      time_format: "%Y-%m-%dT%H:%M:%S.%LZ"
+    docker_para_mensagem:
+      type: modify_fields
+      fields:
+        jsonPayload.message:
+          move_from: jsonPayload.log
+    app_json:
+      type: parse_json
+    so_linha_da_app:
+      type: exclude_logs
+      match_any:
+        - 'NOT (jsonPayload.at =~ "^[0-9]{4}-[0-9]{2}-[0-9]{2}T" AND jsonPayload.level =~ "^(debug|info|warn|error)$")'
+    app_severidade:
+      type: modify_fields
+      fields:
+        severity:
+          move_from: jsonPayload.level
+          map_values:
+            debug: DEBUG
+            info: INFO
+            warn: WARNING
+            error: ERROR
+  service:
+    pipelines:
+      default_pipeline:
+        receivers: []
+      containers:
+        receivers: [containers_docker]
+        processors: [docker_envelope, docker_para_mensagem, app_json, so_linha_da_app, app_severidade]
+metrics:
+  service:
+    pipelines:
+      default_pipeline:
+        receivers: []
+CONFIG
+  if ! cmp -s "$nova" "$OPS_AGENT_CONFIG"; then
+    install -m 0644 "$nova" "$OPS_AGENT_CONFIG" || return 1
+    systemctl restart google-cloud-ops-agent || return 1
+  fi
+  systemctl enable google-cloud-ops-agent || return 1
+}
+
+instalar_ops_agent() {
+  if ! dpkg -s google-cloud-ops-agent > /dev/null 2>&1; then
+    impressao_ops_agent_valida || return 1
+    if ! adicionar_repositorio_ops_agent; then
+      remover_repositorio_ops_agent
+      return 1
+    fi
+    if ! apt-get install -y google-cloud-ops-agent; then
+      remover_repositorio_ops_agent
+      return 1
+    fi
+  fi
+  aplicar_config_ops_agent
+}
+
+instalar_ops_agent || echo "Ops Agent nao instalado; a pilha segue sem logs na nuvem."
+
+%{ endif ~}
 if [ -f /var/lib/tria-provisioned ]; then
   echo "Ja provisionado. Ambiente regravado a partir dos segredos. Subindo a pilha."
   cd "$STACK" && docker compose -f docker-compose.prod.yml up -d

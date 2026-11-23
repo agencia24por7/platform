@@ -105,6 +105,8 @@ jobs:
         run: sh scripts/smoke-limite-de-corpo.sh
 
       - name: App
+        env:
+          PLATAFORMA_OPERADORES: operador@tria.local
         run: |
           npx next dev --port 3000 > app.log 2>&1 &
           for tentativa in $(seq 1 60); do
