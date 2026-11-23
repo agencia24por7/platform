@@ -125,7 +125,7 @@ variable "backup_retention_days" {
 }
 
 variable "logs_na_nuvem_habilitado" {
-  description = "Liga o pacote opcional de logs na nuvem (ADR 0047, decisão 6): instala o Ops Agent na VM só para logs dos containers, cria a métrica de erros e a política de alerta por e-mail. Desligado por padrão; ver a seção Logs na nuvem do README antes de ligar."
+  description = "Liga o pacote opcional de logs na nuvem (ADR 0049, decisão 6): instala o Ops Agent na VM só para logs dos containers, cria a métrica de erros e a política de alerta por e-mail. Desligado por padrão; ver a seção Logs na nuvem do README antes de ligar."
   type        = bool
   default     = false
 }
