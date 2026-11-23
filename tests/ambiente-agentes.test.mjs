@@ -18,7 +18,7 @@ test('start.sh --dry-run monta o comando do agente arquiteto com a tarefa', () =
   const saida = execFileSync('bash', ['scripts/start.sh', '--opus', '--dry-run', 'ajustar', 'o', 'painel'], { cwd: raiz, encoding: 'utf8' })
   assert.match(saida, /--agent arquiteto/)
   assert.match(saida, /--model opus/)
-  assert.match(saida, /ajustar o painel/)
+  assert.match(saida.replaceAll('\\', ''), /ajustar o painel/)
 })
 
 test('start.sh rejeita opção desconhecida e ajuda sai com sucesso', () => {
