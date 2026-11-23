@@ -30,6 +30,8 @@ const naSessao = (organizationId, clientIds, sql) =>
     `SET app.organization_id = '${organizationId}'; SET app.client_ids = '${clientIds}'; ${sql}`,
   );
 
+const comoUsuario = (userId, sql) => comoApp(`SET app.user_id = '${userId}'; ${sql}`);
+
 const umaLinha = (texto) => texto.split('\n')[0].trim();
 
 describe('equipe, convites e recorte por cliente', { concurrency: false }, () => {
@@ -77,12 +79,18 @@ describe('equipe, convites e recorte por cliente', { concurrency: false }, () =>
        RETURNING id`,
     ));
 
-    const pendentes = umaLinha(dono(
+    const pendentes = umaLinha(comoUsuario(
+      convidada,
       `SELECT count(*) FROM core.pending_invitations_for('convidada@tria.local')`,
     ));
+    assert.equal(
+      umaLinha(comoUsuario(dona, `SELECT count(*) FROM core.pending_invitations_for('convidada@tria.local')`)),
+      '0',
+      'outra pessoa não lista convite alheio',
+    );
     assert.equal(pendentes, '1');
 
-    assert.equal(umaLinha(dono(`SELECT core.accept_invitation('${convite}', '${convidada}')`)), 't');
+    assert.equal(umaLinha(comoUsuario(convidada, `SELECT core.accept_invitation('${convite}', '${convidada}')`)), 't');
 
     const papel = umaLinha(dono(
       `SELECT role::text FROM core.members WHERE organization_id = '${org}' AND user_id = '${convidada}'`,
@@ -106,7 +114,7 @@ describe('equipe, convites e recorte por cliente', { concurrency: false }, () =>
        RETURNING id`,
     ));
 
-    assert.equal(umaLinha(dono(`SELECT core.accept_invitation('${convite}', '${intrusa}')`)), 'f');
+    assert.equal(umaLinha(comoUsuario(intrusa, `SELECT core.accept_invitation('${convite}', '${intrusa}')`)), 'f');
     assert.equal(
       umaLinha(dono(`SELECT count(*) FROM core.members WHERE user_id = '${intrusa}'`)),
       '0',
@@ -118,15 +126,15 @@ describe('equipe, convites e recorte por cliente', { concurrency: false }, () =>
     const convite = umaLinha(dono(
       `SELECT id FROM core.invitations WHERE organization_id = '${org}' AND accepted_at IS NOT NULL LIMIT 1`,
     ));
-    assert.equal(umaLinha(dono(`SELECT core.accept_invitation('${convite}', '${convidada}')`)), 'f');
+    assert.equal(umaLinha(comoUsuario(convidada, `SELECT core.accept_invitation('${convite}', '${convidada}')`)), 'f');
   });
 
   it('o recorte resolvido é o que o banco aplica', () => {
-    const escopo = umaLinha(dono(`SELECT core.client_scope_of('${convidada}', '${org}')`));
+    const escopo = umaLinha(comoUsuario(convidada, `SELECT core.client_scope_of('${convidada}', '${org}')`));
     assert.ok(escopo.includes(clienteA), `esperava o cliente A no recorte, veio ${escopo}`);
     assert.ok(!escopo.includes(clienteB), 'o cliente B não podia estar no recorte');
 
-    assert.equal(umaLinha(dono(`SELECT core.client_scope_of('${dona}', '${org}')`)), '');
+    assert.equal(umaLinha(comoUsuario(dona, `SELECT core.client_scope_of('${dona}', '${org}')`)), '');
   });
 
   it('com recorte, a sessão enxerga só o cliente do recorte', () => {
@@ -170,13 +178,13 @@ describe('equipe, convites e recorte por cliente', { concurrency: false }, () =>
   });
 
   it('revogar o vínculo tira a pessoa da lista de organizações', () => {
-    const antes = umaLinha(dono(`SELECT count(*) FROM core.memberships_of('${convidada}')`));
+    const antes = umaLinha(comoUsuario(convidada, `SELECT count(*) FROM core.memberships_of('${convidada}')`));
     assert.equal(antes, '1');
 
     dono(`UPDATE core.members SET revoked_at = now(), revoked_by = '${dona}'
           WHERE organization_id = '${org}' AND user_id = '${convidada}'`);
 
-    assert.equal(umaLinha(dono(`SELECT count(*) FROM core.memberships_of('${convidada}')`)), '0');
+    assert.equal(umaLinha(comoUsuario(convidada, `SELECT count(*) FROM core.memberships_of('${convidada}')`)), '0');
     assert.equal(
       umaLinha(dono(`SELECT count(*) FROM core.members WHERE user_id = '${convidada}'`)),
       '1',
@@ -302,6 +310,7 @@ describe('a equipe pela tela', { concurrency: false }, () => {
     const resultado = await submitAction('/config', convidar, {
       email: 'nova@tria.local',
       role: 'viewer',
+      modo: 'clientes',
       clientIds: [cliente],
     });
 
@@ -324,7 +333,7 @@ describe('a equipe pela tela', { concurrency: false }, () => {
 
   it('o mesmo e-mail não recebe dois convites abertos', async () => {
     const convidar = await acaoComCampo('/config', 'email');
-    await submitAction('/config', convidar, { email: 'nova@tria.local', role: 'viewer' });
+    await submitAction('/config', convidar, { email: 'nova@tria.local', role: 'viewer', modo: 'organizacao' });
 
     const abertos = umaLinha(dono(
       `SELECT count(*) FROM core.invitations
@@ -462,5 +471,76 @@ describe('a equipe pela tela', { concurrency: false }, () => {
       !cookies.some((valor) => valor.includes(outra)),
       'a troca para uma organização sem vínculo não podia gravar cookie',
     );
+  });
+
+  describe('modo explícito do recorte (ADR 0044)', () => {
+    let alvoUser = '';
+    let alvoMembro = '';
+
+    const acaoDeEscopo = async () => {
+      const html = await fetch(`${BASE}/config`, { headers: { Cookie: sessionCookie(dona) } }).then((r) => r.text());
+      for (const pedaco of html.split('<form').slice(1)) {
+        const formulario = pedaco.slice(0, pedaco.indexOf('</form>'));
+        if (!formulario.includes('name="modo"') || !formulario.includes(`value="${alvoMembro}"`)) continue;
+        const id = formulario.match(/name="\$ACTION_ID_([a-f0-9]+)"/)?.[1];
+        if (id) return id;
+      }
+      throw new Error('formulário de escopo do membro não encontrado');
+    };
+
+    const escopoDoMembro = () => umaLinha(dono(
+      `SELECT escopo || '|' || (SELECT count(*) FROM core.member_clients mc WHERE mc.member_id = '${alvoMembro}' AND mc.revoked_at IS NULL)
+         FROM core.members WHERE id = '${alvoMembro}'`,
+    ));
+
+    before(() => {
+      alvoUser = ensureUser('modo@tria.local');
+      alvoMembro = umaLinha(dono(
+        `INSERT INTO core.members (organization_id, user_id, role) VALUES ('${org}', '${alvoUser}', 'viewer')
+         ON CONFLICT (organization_id, user_id) DO UPDATE SET role = 'viewer', revoked_at = NULL RETURNING id`,
+      ));
+      signIn(dona);
+    });
+
+    it('modo clientes com lista vazia é recusado e não altera nada', async () => {
+      const acao = await acaoDeEscopo();
+      await submitAction('/config', acao, { memberId: alvoMembro, modo: 'clientes' });
+      assert.equal(escopoDoMembro(), 'organizacao|0');
+    });
+
+    it('modo clientes com cliente da organização grava o modo e o vínculo', async () => {
+      const acao = await acaoDeEscopo();
+      await submitAction('/config', acao, { memberId: alvoMembro, modo: 'clientes', clientIds: [cliente] });
+      assert.equal(escopoDoMembro(), 'clientes|1');
+    });
+
+    it('cliente inexistente é recusado sem alterar o recorte', async () => {
+      const acao = await acaoDeEscopo();
+      await submitAction('/config', acao, {
+        memberId: alvoMembro,
+        modo: 'clientes',
+        clientIds: ['3f2504e0-4f89-11d3-9a0c-0305e82c3301'],
+      });
+      assert.equal(escopoDoMembro(), 'clientes|1');
+    });
+
+    it('membro em modo clientes sem clientes vivos aparece como sem acesso', async () => {
+      dono(`UPDATE core.member_clients SET revoked_at = now() WHERE member_id = '${alvoMembro}'`);
+      const html = await fetch(`${BASE}/config`, { headers: { Cookie: sessionCookie(dona) } }).then((r) => r.text());
+      assert.match(html, /sem acesso a clientes/i);
+    });
+
+    it('voltar para organização inteira revoga os vínculos e grava o modo', async () => {
+      const acao = await acaoDeEscopo();
+      await submitAction('/config', acao, { memberId: alvoMembro, modo: 'organizacao' });
+      assert.equal(escopoDoMembro(), 'organizacao|0');
+    });
+
+    it('formulário sem modo não vira organização inteira', async () => {
+      const acao = await acaoDeEscopo();
+      await submitAction('/config', acao, { memberId: alvoMembro, modo: 'clientes', clientIds: [cliente] });
+      await submitAction('/config', acao, { memberId: alvoMembro });
+      assert.equal(escopoDoMembro(), 'clientes|1');
+    });
   });
 });

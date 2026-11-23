@@ -4,6 +4,7 @@ import { Shell } from '@/../app/_components/Shell';
 import { modules } from '@/composition';
 import { PAPEIS_CONVIDAVEIS, conviteVivo } from '@/modules/team/domain/convite';
 import { podeMexerNaEquipe } from '@/modules/team/domain/membro';
+import { MOTIVO_RECORTE, membroSemAcessoAClientes, recorteDoFormulario } from '@/modules/team/domain/recorte';
 import type { Organization } from '@/modules/organizations/domain/organization';
 import { vocabularioDe } from '@/modules/organizations/domain/vocabulario';
 import type { MemberRole } from '@/modules/identity/domain/user';
@@ -55,13 +56,16 @@ async function convidar(formData: FormData): Promise<void> {
   'use server';
   const ctx = await contexto();
 
+  const recorte = recorteDoFormulario(text(formData, 'modo'), list(formData, 'clientIds'));
+  if (!recorte) voltar(MOTIVO_RECORTE.modo_ausente, 'erro');
+
   const resultado = await modules().team.convidar(
     {
       organizationId: ctx.organization.id,
       papelDeQuemConvida: ctx.role,
       email: text(formData, 'email'),
       role: text(formData, 'role'),
-      clientIds: list(formData, 'clientIds'),
+      recorte,
     },
     await atorAtual(),
   );
@@ -120,22 +124,24 @@ async function definirEscopo(formData: FormData): Promise<void> {
   'use server';
   const ctx = await contexto();
 
-  const clientIds = list(formData, 'clientIds');
+  const recorte = recorteDoFormulario(text(formData, 'modo'), list(formData, 'clientIds'));
+  if (!recorte) voltar(MOTIVO_RECORTE.modo_ausente, 'erro');
+
   const resultado = await modules().team.definirEscopo(
     {
       organizationId: ctx.organization.id,
       papelDeQuemAge: ctx.role,
       memberId: text(formData, 'memberId'),
-      clientIds,
+      recorte,
     },
     await atorAtual(),
   );
 
   if (!resultado.ok) voltar(toActionState(resultado.error).error ?? 'Não deu para mudar o acesso.', 'erro');
   voltar(
-    clientIds.length === 0
+    recorte.modo === 'organizacao'
       ? 'Acesso aberto para a organização inteira.'
-      : `Acesso restrito a ${clientIds.length} cliente(s).`,
+      : `Acesso restrito a ${recorte.clientIds.length} cliente(s).`,
     'feito',
   );
 }
@@ -425,8 +431,17 @@ export default async function ConfiguracoesPage({
             </select>
             <span className="field__hint">{EFEITO_DO_PAPEL.operator}</span>
           </label>
+          <fieldset className="field">
+            <legend className="field__label">Acesso</legend>
+            <label>
+              <input type="radio" name="modo" value="organizacao" defaultChecked /> Organização inteira
+            </label>
+            <label>
+              <input type="radio" name="modo" value="clientes" /> Só os clientes escolhidos abaixo
+            </label>
+          </fieldset>
           <label className="field">
-            <span className="field__label">Enxerga</span>
+            <span className="field__label">Clientes</span>
             <select
               className="select"
               name="clientIds"
@@ -441,8 +456,7 @@ export default async function ConfiguracoesPage({
               ))}
             </select>
             <span className="field__hint">
-              Sem seleção, enxerga a organização inteira. Selecione clientes para abrir o acesso só a
-              eles — o recorte já vale no momento em que a pessoa entra.
+              Vale só no modo "clientes", que exige ao menos um. O recorte já vale no momento em que a pessoa entra.
             </span>
           </label>
           <button className="btn btn--primary" type="submit">
@@ -506,6 +520,9 @@ export default async function ConfiguracoesPage({
                     <td>
                       <span className="strong">{membro.name}</span>
                       <div className="muted small">{membro.email}</div>
+                      {vivo && membroSemAcessoAClientes(membro) ? (
+                        <span className="pill pill--warn">sem acesso a clientes</span>
+                      ) : null}
                       {vivo ? null : (
                         <span className="pill">
                           revogado em {membro.revokedAt!.toLocaleDateString('pt-BR')}
@@ -535,6 +552,12 @@ export default async function ConfiguracoesPage({
                       {vivo ? (
                         <form className="form--inline" action={definirEscopo}>
                           <input type="hidden" name="memberId" value={membro.memberId} />
+                          <label>
+                            <input type="radio" name="modo" value="organizacao" defaultChecked={membro.escopo === 'organizacao'} /> Organização inteira
+                          </label>
+                          <label>
+                            <input type="radio" name="modo" value="clientes" defaultChecked={membro.escopo === 'clientes'} /> Só clientes
+                          </label>
                           <select
                             className="select select--compacto"
                             name="clientIds"
@@ -553,10 +576,11 @@ export default async function ConfiguracoesPage({
                             Aplicar
                           </button>
                           <span className="field__hint">
-                            {membro.clientIds.length === 0
-                              ? 'Organização inteira'
-                              : `${membro.clientIds.length} cliente(s)`}
-                            . Sem nenhum selecionado, enxerga tudo.
+                            {membro.escopo === 'organizacao'
+                              ? 'Organização inteira.'
+                              : membroSemAcessoAClientes(membro)
+                                ? 'Sem acesso a clientes: escolha ao menos um ou abra a organização inteira.'
+                                : `${membro.clientIds.length} cliente(s).`}
                           </span>
                         </form>
                       ) : (

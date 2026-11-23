@@ -11,6 +11,7 @@ import {
   readHandoff,
 } from '@/modules/identity/domain/handoff';
 import { env } from '@/shared/config/env';
+import { podeEntrarNaAutomacao } from '@/../app/api/portaria/_acesso';
 import { logger } from '@/shared/logging/logger';
 
 export const dynamic = 'force-dynamic';
@@ -29,6 +30,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   if (!passagem) {
     logger.warn('portaria.recusada', { motivo: 'assinatura' });
     return NextResponse.redirect(new URL('/entrar?erro=estado', configuration.TRIA_APP_BASE_URL));
+  }
+
+  if (!(await podeEntrarNaAutomacao(passagem.userId))) {
+    logger.warn('portaria.recusada', { motivo: 'nao_operador', userId: passagem.userId });
+    return NextResponse.redirect(new URL('/clientes?erro=n8n_sem_permissao', configuration.TRIA_APP_BASE_URL));
   }
 
   if (!(await createHandoffRepository().consume(passagem.jti, passagem.expiresAt))) {

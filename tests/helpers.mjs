@@ -70,6 +70,12 @@ export function ensureUser(email = 'teste@tria.local') {
   return psql(`SELECT id FROM core.users WHERE email = '${email}'`);
 }
 
+export const EMAIL_DO_OPERADOR = (process.env.PLATAFORMA_OPERADORES ?? 'operador@tria.local').split(',')[0].trim().toLowerCase();
+
+export function ensureOperador() {
+  return ensureUser(EMAIL_DO_OPERADOR);
+}
+
 export function makeOwner(userId, organizationId) {
   psql(
     `INSERT INTO core.members (organization_id, user_id, role)

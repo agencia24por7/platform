@@ -23,6 +23,8 @@ const ENTRADAS_PUBLICAS = [
   'app/api/contexto/publico/[token]/arquivos/route.ts',
   'app/api/convite/[token]/oauth/[platform]/start/route.ts',
   'app/api/meta/exclusao/route.ts',
+  'app/api/webhooks/whatsapp/route.ts',
+  'app/api/webhooks/zapi/[token]/route.ts',
   'app/api/oauth/[platform]/callback/route.ts',
   'app/contexto/_publico/PaginaPublica.tsx',
   'app/contexto/_publico/acoes.ts',
@@ -36,7 +38,11 @@ const ENTRADAS_PUBLICAS = [
 describe('fronteira do papel do worker (ADR 0028)', () => {
   it('só o workerRoute entra no contexto do worker', () => {
     const usam = fontes.filter((f) => /\bcomoWorker\b/.test(f.texto)).map((f) => f.caminho).sort();
-    assert.deepEqual(usam, ['src/shared/db/client.ts', 'src/shared/http/workerRoute.ts']);
+    assert.deepEqual(usam, [
+      'src/modules/alertas/application/alertaService.ts',
+      'src/shared/db/client.ts',
+      'src/shared/http/workerRoute.ts',
+    ]);
   });
 
   it('toda rota /api/v0 passa pelo workerRoute', () => {

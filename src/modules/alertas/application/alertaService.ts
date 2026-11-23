@@ -1,3 +1,4 @@
+import { comoWorker } from '@/shared/db/client';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import { limparAlerta, limparTexto, type AlertaRecebido } from '@/modules/alertas/domain/alerta';
 import type { AlertaRepository } from '@/modules/alertas/infrastructure/alertaRepository';
@@ -10,10 +11,11 @@ export type ResumoDoAlerta = { readonly id: string | null; readonly deduplicado:
 
 export type Notificador = (texto: string) => Promise<void>;
 export type LimiteDeNovos = () => boolean;
+export type ConfirmaOperador = (userId: string) => Promise<boolean>;
 
 export type AlertaService = {
   registrar(recebido: AlertaRecebido, worker: WorkerIdentity): Promise<Result<ResumoDoAlerta, Failure>>;
-  contarAbertos(): Promise<number>;
+  contarAbertosParaOperador(userId: string): Promise<number>;
 };
 
 export function createAlertaService(
@@ -21,6 +23,7 @@ export function createAlertaService(
   audit: AuditRecorder,
   notificar: Notificador,
   podeCriarNovo: LimiteDeNovos,
+  ehOperador: ConfirmaOperador,
 ): AlertaService {
   return {
     async registrar(recebido, worker) {
@@ -45,6 +48,9 @@ export function createAlertaService(
       return ok({ id, deduplicado: false, limitado: false });
     },
 
-    contarAbertos: () => alertas.contarAbertos(),
+    async contarAbertosParaOperador(userId) {
+      if (!(await ehOperador(userId))) return 0;
+      return comoWorker(() => alertas.contarAbertos());
+    },
   };
 }

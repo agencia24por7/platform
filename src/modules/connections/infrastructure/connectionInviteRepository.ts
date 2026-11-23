@@ -71,8 +71,8 @@ export type ConnectionInviteRepository = {
   listByClient(organizationId: string, clientId: string): Promise<readonly IntegrationInvite[]>;
   resolveByToken(token: string, platform: Platform): Promise<ResolvedInviteItem | null>;
   forDisplay(token: string): Promise<PublicInviteView | null>;
-  stillPending(itemId: string): Promise<{ readonly organizationId: string; readonly clientId: string } | null>;
-  completeItem(itemId: string, connectionId: string): Promise<CompletedInviteItem | null>;
+  stillPending(organizationId: string, itemId: string): Promise<{ readonly organizationId: string; readonly clientId: string } | null>;
+  completeItem(organizationId: string, itemId: string, connectionId: string): Promise<CompletedInviteItem | null>;
   revoke(organizationId: string, inviteId: string): Promise<{ readonly clientId: string } | null>;
 };
 
@@ -197,8 +197,8 @@ export function createConnectionInviteRepository(): ConnectionInviteRepository {
       });
     },
 
-    async stillPending(itemId) {
-      return withoutTenant(async (tx) => {
+    async stillPending(organizationId, itemId) {
+      return withTenant(organizationId, async (tx) => {
         const rows = (await tx`
           SELECT * FROM integrations.invite_item_still_pending(${itemId})
         `) as unknown as { organization_id: string; client_id: string }[];
@@ -208,8 +208,8 @@ export function createConnectionInviteRepository(): ConnectionInviteRepository {
       });
     },
 
-    async completeItem(itemId, connectionId) {
-      return withoutTenant(async (tx) => {
+    async completeItem(organizationId, itemId, connectionId) {
+      return withTenant(organizationId, async (tx) => {
         const rows = (await tx`
           SELECT * FROM integrations.complete_invite_item(${itemId}, ${connectionId})
         `) as unknown as { client_id: string; organization_id: string }[];

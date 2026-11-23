@@ -1,5 +1,5 @@
 import { sql } from '@/shared/db/client';
-import { withTenant, withoutTenant } from '@/shared/db/tenant';
+import { comoUsuarioAutenticado, withTenant, withoutTenant } from '@/shared/db/tenant';
 import { redact } from '@/shared/logging/redact';
 import type { AuditFilter, AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import type { AuditEntry, AuditEvent } from '@/modules/audit/domain/auditEvent';
@@ -51,6 +51,7 @@ export function createAuditRepository(): AuditRecorder {
       };
 
       if (event.organizationId) await withTenant(event.organizationId, insert);
+      else if (event.actorType === 'user' && event.actorId) await comoUsuarioAutenticado(event.actorId, insert);
       else await withoutTenant(insert);
     },
 

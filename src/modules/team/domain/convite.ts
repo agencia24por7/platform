@@ -1,6 +1,8 @@
 import type { MemberRole } from '../../identity/domain/user.ts';
 import { canAdminister, isUsableEmail, normalizeEmail } from '../../identity/domain/user.ts';
 
+import type { EscopoDoVinculo } from './recorte.ts';
+
 export const EXPIRACAO_DIAS = 7;
 
 export const PAPEIS_CONVIDAVEIS = ['admin', 'operator', 'viewer'] as const;
@@ -17,6 +19,7 @@ export type Convite = {
   readonly revokedAt: Date | null;
   readonly createdAt: Date;
   readonly clientIds: readonly string[];
+  readonly escopo: EscopoDoVinculo;
 };
 
 export const MOTIVO_RECUSA = {

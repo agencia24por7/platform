@@ -27,6 +27,7 @@ locals {
     "rdstation-client-secret",
     "meta-exclusao-pepper",
     "alert-webhook-url",
+    "plataforma-operadores",
   ]
 
   all_secret_names = concat(local.app_secret_names, local.oauth_secret_names)

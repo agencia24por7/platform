@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { headers } from 'next/headers';
-import { notFound } from 'next/navigation';
 import { EstadoDoLink, MolduraPublica } from '@/../app/contexto/_publico/PaginaPublica';
 import { modules } from '@/composition';
 import { enderecoConfiavel } from '@/modules/audit/domain/actor';
@@ -48,7 +47,9 @@ export default async function PaginaDoConvite({
   }
 
   const convite = await comoPublico(() => modules().connectionInvites.forDisplay(token));
-  if (!convite) notFound();
+  if (!convite) {
+    return <EstadoDoLink titulo="Convite indisponível" texto="Este convite não está disponível. Peça um novo a quem enviou." />;
+  }
 
   const agora = new Date();
   const expirado = convite.status === 'pending' && convite.expiresAt <= agora;

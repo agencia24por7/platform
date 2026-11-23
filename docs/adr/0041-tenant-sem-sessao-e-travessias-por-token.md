@@ -4,6 +4,8 @@ date: 2026-11-21
 ---
 # ADR-0041: Tenant sem sessão falha alto e as travessias por token são exceção documentada
 
+> Item 4 e Limites superados parcialmente pelo ADR 0045: a exceção de `GRANT` ao app vale agora pela allowlist exata do ADR 0045 (lista em `tests/apoio/funcoesDefinerDoApp.mjs`), e a sessão em entrada pública passa a ser ignorada.
+
 Complementa os ADRs 0021, 0026, 0028 e 0036. Vale para o app e para o banco.
 
 ## Contexto

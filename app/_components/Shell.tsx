@@ -9,23 +9,30 @@ import type { Organization } from '@/modules/organizations/domain/organization';
 import { modules } from '@/composition';
 import { ORGANIZACAO_INTEIRA, escopoDeCliente } from '@/shared/db/escopo';
 import { currentUser } from '@/shared/http/currentUser';
+import { operadorDaPlataforma } from '@/shared/http/operador';
 
 type NavEntry = { href: string; label: string; icone?: ComponentType<{ className?: string }> };
 
-function navFor(organization: Organization | null, recortado: boolean, negocioUnico: boolean): readonly NavEntry[] {
+function navFor(
+  organization: Organization | null,
+  recortado: boolean,
+  negocioUnico: boolean,
+  operador: boolean,
+): readonly NavEntry[] {
+  const coletas: readonly NavEntry[] = operador ? [{ href: '/automacoes', label: 'Coletas', icone: IconeColetas }] : [];
   const clientsLabel = organization ? vocabularioDe(organization.type).clientes : 'Clientes';
 
   if (recortado) {
     return [
       { href: '/clientes', label: clientsLabel, icone: IconeClientes },
-      { href: '/automacoes', label: 'Coletas', icone: IconeColetas },
+      ...coletas,
     ];
   }
 
   return [
     { href: '/clientes', label: clientsLabel, icone: IconeClientes },
     ...(negocioUnico ? [] : [{ href: '/integracoes', label: 'Conexões', icone: IconeConexoes }]),
-    { href: '/automacoes', label: 'Coletas', icone: IconeColetas },
+    ...coletas,
     { href: '/auditoria', label: 'Auditoria', icone: IconeAuditoria },
   ];
 }
@@ -47,7 +54,8 @@ export async function Shell({ title, organization, active, children }: Props) {
     organization?.type === 'advertiser' && !recortado
       ? (await modules().clients.list(organization.id)).length === 1
       : false;
-  const entradas = navFor(organization, recortado, negocioUnico);
+  const operador = session ? await operadorDaPlataforma(session.user.id) : false;
+  const entradas = navFor(organization, recortado, negocioUnico, operador);
   const modo = organization ? (organization.type === 'agency' ? 'Modo agência' : 'Modo anunciante') : null;
 
   function navegacao(sufixo: string) {

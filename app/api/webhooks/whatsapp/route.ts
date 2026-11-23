@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/shared/config/env';
-import { sql } from '@/shared/db/client';
+import { comoPublico } from '@/shared/db/client';
+import { withoutTenant } from '@/shared/db/tenant';
 import { logger } from '@/shared/logging/logger';
 import { consume } from '@/shared/security/rateLimit';
 import { secureCompare } from '@/shared/security/tokens';
@@ -73,9 +74,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const externalRef = referenciaExternaDoWhatsapp(payload) ?? 'desconhecido';
 
-  await sql()`
-    SELECT integrations.record_whatsapp_inbound(NULL, 'cloud_api', ${externalRef}, ${sql().json(resumirAvisoDoWhatsapp(payload, env().TRIA_SESSION_SECRET) as never)})
-  `;
+  const resumo = resumirAvisoDoWhatsapp(payload, env().TRIA_SESSION_SECRET);
+  try {
+    await comoPublico(() =>
+      withoutTenant(async (tx) => {
+        await tx`
+          SELECT integrations.record_whatsapp_inbound(NULL, 'cloud_api', ${externalRef}, ${tx.json(resumo as never)})
+        `;
+      }),
+    );
+  } catch (erro) {
+    logger.error('webhook.whatsapp.gravacao_falhou', { erro: String(erro) });
+    return NextResponse.json({ error: 'gravacao_falhou' }, { status: 503, headers: { 'Retry-After': '30' } });
+  }
 
   return NextResponse.json({ recebido: true });
 }

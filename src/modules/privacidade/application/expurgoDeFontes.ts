@@ -23,7 +23,7 @@ export type FilaDeExpurgo = {
   enfileirarDaConexao(organizationId: string, connectionId: string): Promise<readonly ExpurgoPendente[]>;
   prepararConformidadeDoYoutube(): Promise<ResumoDaPreparacao>;
   vencidos(limite: number): Promise<readonly ExpurgoPendente[]>;
-  registrarResultado(id: string, erro: string | null): Promise<void>;
+  registrarResultado(organizationId: string, id: string, erro: string | null): Promise<void>;
 };
 
 export type ExpurgoNoBigQuery = {
@@ -64,11 +64,11 @@ export function createExpurgoDeFontesService(
     if (!bigquery.disponivel) return false;
     try {
       await bigquery.expurgarFonte(pendente);
-      await fila.registrarResultado(pendente.id, null);
+      await fila.registrarResultado(pendente.organizationId, pendente.id, null);
       return true;
     } catch (erro) {
       logger.warn('privacidade.expurgo_de_fonte.falhou', { expurgoId: pendente.id, platform: pendente.platform, error: mensagemDe(erro) });
-      await fila.registrarResultado(pendente.id, mensagemDe(erro)).catch(() => undefined);
+      await fila.registrarResultado(pendente.organizationId, pendente.id, mensagemDe(erro)).catch(() => undefined);
       return false;
     }
   }

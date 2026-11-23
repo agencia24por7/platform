@@ -19,31 +19,10 @@ import {
   type ProvedorDeCatalogo,
   type StatusDoProvedor,
 } from '../domain/provedor.ts';
+import type { EstadoDoProvedor, Snapshot } from '../domain/snapshot.ts';
 import { lerUrn } from '../domain/urn.ts';
 
-export type EstadoDoProvedor = {
-  readonly id: string;
-  readonly versao: number;
-  readonly status: StatusDoProvedor;
-  readonly motivo: string | null;
-  readonly entradas: number;
-  readonly descartadas: number;
-};
-
-export type Snapshot = {
-  readonly schemaVersion: number;
-  readonly organizationId: string;
-  readonly clienteId: string;
-  readonly nomeDoCliente: string;
-  readonly geradoEm: string;
-  readonly entradas: readonly EntradaDoCatalogo[];
-  readonly omitidasPelaPolitica: number;
-  readonly restritasPelaPolitica: number;
-  readonly capacidades: readonly AvaliacaoDeCapacidade[];
-  readonly diagnostico: Diagnostico;
-  readonly provedores: readonly EstadoDoProvedor[];
-  readonly catalogHash: string;
-};
+export type { EstadoDoProvedor, Snapshot } from '../domain/snapshot.ts';
 
 export type EntradaDaConstrucao = {
   readonly organizationId: string;

@@ -68,6 +68,8 @@ function build() {
     armazenamento: adaptarArmazenamento(criarArmazenamentoDeContexto(env())),
   });
 
+  const identity = createIdentityService(createUserRepository(), audit);
+
   return {
     audit,
     discoveredAccounts,
@@ -75,7 +77,7 @@ function build() {
     connectionInvites: createConnectionInviteRepository(),
     tasks: createTaskRepository(),
     organizations,
-    identity: createIdentityService(createUserRepository(), audit),
+    identity,
     clients: createClientService(clientRepository, audit),
     contexto,
     team: createTeamService(createTeamRepository(), audit),
@@ -109,7 +111,8 @@ function build() {
     ),
     coleta: createColetaService(createColetaRepository(), audit, createBigQueryGravador()),
     retencao: createRetencaoService(createRetencaoRepository(), audit),
-    alertas: createAlertaService(createAlertaRepository(), audit, createNotificadorPorWebhook(), createLimiteDeAlertasNovos()),
+    alertas: createAlertaService(createAlertaRepository(), audit, createNotificadorPorWebhook(), createLimiteDeAlertasNovos(), (userId) =>
+      identity.operadorDaPlataforma(userId, env().PLATAFORMA_OPERADORES)),
     dimensoes,
     brain: criarBrain(audit, contexto),
     tokens,

@@ -122,14 +122,15 @@ describe('retenção: ex-membros, convites aceitos, alertas e WhatsApp', { concu
   });
 });
 
-describe('alertas: o papel do app só lê', { concurrency: false }, () => {
-  it('app não insere, atualiza nem apaga; o worker insere e atualiza', () => {
+describe('alertas: o app não toca; o worker lê, insere e atualiza (ADR 0043)', { concurrency: false }, () => {
+  it('app não lê, insere, atualiza nem apaga; o worker lê, insere e atualiza', () => {
     const assinatura = 'c'.repeat(64);
     assert.throws(() => comoApp(`INSERT INTO automation.alertas (workflow_nome, mensagem, assinatura) VALUES ('x', 'm', '${assinatura}')`), /permission denied/);
     const id = ultimaLinha(comoWorker(`INSERT INTO automation.alertas (workflow_nome, mensagem, assinatura) VALUES ('w ${sufixo}', 'm', '${assinatura}') RETURNING id`).split('\n')[0]);
     assert.throws(() => comoApp(`UPDATE automation.alertas SET resolvido_em = now() WHERE id = '${id}'`), /permission denied/);
     assert.throws(() => comoApp(`DELETE FROM automation.alertas WHERE id = '${id}'`), /permission denied/);
-    assert.doesNotThrow(() => comoApp(`SELECT count(*) FROM automation.alertas`));
+    assert.throws(() => comoApp(`SELECT count(*) FROM automation.alertas`), /permission denied/);
+    assert.doesNotThrow(() => comoWorker(`SELECT count(*) FROM automation.alertas`));
     assert.doesNotThrow(() => comoWorker(`UPDATE automation.alertas SET ocorrencias = ocorrencias + 1 WHERE id = '${id}'`));
     assert.throws(() => comoWorker(`DELETE FROM automation.alertas WHERE id = '${id}'`), /permission denied/);
   });

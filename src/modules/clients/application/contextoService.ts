@@ -68,7 +68,7 @@ import type {
   ResultadoPeloLink,
   RevisaoRegistrada,
 } from '@/modules/clients/infrastructure/contextoRepository';
-import { comoPublico } from '@/shared/db/client';
+import { comoPublico, foraDoContextoDeChamada } from '@/shared/db/client';
 import { logger } from '@/shared/logging/logger';
 
 export type SituacaoDoEstadoDoBrain = 'desativado' | 'nunca_publicado' | 'em_dia' | 'pendente' | 'com_erro';
@@ -424,7 +424,7 @@ export function criarAgendadorEmMemoria(esperaMs = ESPERA_DO_AGENDADOR_MS) {
         if (anterior) clearTimeout(anterior);
         const timer = setTimeout(() => {
           pendentes.delete(escopo.clientId);
-          comoPublico(() => publicar(escopo)).catch((erro: unknown) => {
+          foraDoContextoDeChamada(() => comoPublico(() => publicar(escopo))).catch((erro: unknown) => {
             logger.warn('contexto.brain.publicacao_adiada_falhou', { clientId: escopo.clientId, erro: mensagemDeErro(erro) });
           });
         }, esperaMs);

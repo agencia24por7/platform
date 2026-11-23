@@ -37,4 +37,38 @@ describe('camadas dos módulos', () => {
     );
     assert.deepEqual(violacoes, []);
   });
+
+  it('domain não importa application nem infrastructure', () => {
+    const dominio = modulos.filter((c) => c.includes('/domain/'));
+    assert.ok(dominio.length > 0);
+    const violacoes = dominio.flatMap((c) =>
+      importacoes(c)
+        .filter((i) => /\/(application|infrastructure)\//.test(i.origem))
+        .map((i) => `${c} -> ${i.origem}`),
+    );
+    assert.deepEqual(violacoes, []);
+  });
+});
+
+describe('contexto de usuário autodeclarado (ADR 0045)', () => {
+  const IMPORTADORES_PERMITIDOS = [
+    'src/modules/audit/infrastructure/auditRepository.ts',
+    'src/modules/identity/infrastructure/userRepository.ts',
+    'src/modules/organizations/infrastructure/organizationRepository.ts',
+    'src/modules/team/infrastructure/teamRepository.ts',
+    'src/shared/db/tenant.ts',
+  ];
+
+  it('só a lista exata de arquivos usa comoUsuarioAutenticado', () => {
+    const fontes = (pasta: string): string[] =>
+      readdirSync(join(RAIZ, pasta), { withFileTypes: true }).flatMap((entrada) => {
+        const caminho = join(pasta, entrada.name);
+        if (entrada.isDirectory()) return fontes(caminho);
+        return /\.(ts|tsx|mjs)$/.test(entrada.name) && !entrada.name.endsWith('.test.ts') ? [caminho] : [];
+      });
+    const usam = [...fontes('src'), ...fontes('app')]
+      .filter((c) => /\bcomoUsuarioAutenticado\b/.test(readFileSync(join(RAIZ, c), 'utf8')))
+      .sort();
+    assert.deepEqual(usam, IMPORTADORES_PERMITIDOS);
+  });
 });

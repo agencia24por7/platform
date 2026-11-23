@@ -36,8 +36,10 @@ export function createFilaDeExpurgo(): FilaDeExpurgo {
       return rows.map(paraPendente);
     },
 
-    async registrarResultado(id, erro) {
-      await sql()`SELECT privacidade.registrar_resultado_do_expurgo(${id}, ${erro})`;
+    async registrarResultado(organizationId, id, erro) {
+      await withTenant(organizationId, async (tx) => {
+        await tx`SELECT privacidade.registrar_resultado_do_expurgo(${id}, ${erro})`;
+      });
     },
   };
 }

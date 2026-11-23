@@ -71,23 +71,19 @@ describe('convite público: volta do OAuth, "não uso", erros e convite encerrad
     assert.ok(!(await pagina(token, '?autorizado=inexistente')).texto_simples.includes('conectada.'));
   });
 
-  it('convite expirado, revogado ou concluído não mostra item pendente como "Pendente"', async () => {
-    const expirado = await pagina(convite('pending', { expirado: true }));
-    assert.ok(expirado.texto_simples.includes('Expirada'));
-    assert.ok(!expirado.texto_simples.includes('Pendente'));
-    assert.ok(!expirado.texto.includes('/oauth/'), 'sem botão de conectar');
-
-    const revogado = await pagina(convite('revoked'));
-    assert.ok(revogado.texto_simples.includes('Revogada'));
-    assert.ok(!revogado.texto_simples.includes('Pendente'));
-
-    const concluido = await pagina(convite('completed', { itens: [['google', 'completed'], ['meta', 'pending']] }));
-    assert.ok(concluido.texto_simples.includes('Encerrada'));
-    assert.ok(!concluido.texto_simples.includes('Expirada'));
-    assert.ok(!concluido.texto_simples.includes('Pendente'));
-  });
-
-  it('convite desconhecido dá 404', async () => {
-    assert.equal((await pagina('cv-inexistente-000000000000')).status, 404);
+  it('convite expirado, revogado, concluído ou desconhecido dá a mesma mensagem genérica', async () => {
+    const casos = [
+      await pagina(convite('pending', { expirado: true })),
+      await pagina(convite('revoked')),
+      await pagina(convite('completed', { itens: [['google', 'completed'], ['meta', 'pending']] })),
+      await pagina('cv-inexistente-000000000000'),
+    ];
+    for (const caso of casos) {
+      assert.ok(caso.texto_simples.includes('Convite indisponível'));
+      for (const proibido of ['Pendente', 'Expirada', 'Revogada', 'Encerrada']) {
+        assert.ok(!caso.texto_simples.includes(proibido), `vazou o estado: ${proibido}`);
+      }
+      assert.ok(!caso.texto.includes('/oauth/'), 'sem botão de conectar');
+    }
   });
 });

@@ -2,8 +2,8 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Shell } from '@/../app/_components/Shell';
 import { modules } from '@/composition';
-import { canAdminister } from '@/modules/identity/domain/user';
 import { requireContext } from '@/shared/http/currentOrganization';
+import { operadorDaPlataforma } from '@/shared/http/operador';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,10 +17,11 @@ const runTone: Record<string, string> = {
 export default async function AutomationsPage() {
   const contexto = await requireContext();
   const organization = contexto.organization;
-  const administra = canAdminister(contexto.role);
+  const operador = await operadorDaPlataforma(contexto.session.user.id);
+  if (!operador) redirect('/clientes');
 
   const runs = await modules().ingestion.recentRuns(organization.id, 25);
-  const alertasAbertos = administra ? await modules().alertas.contarAbertos() : 0;
+  const alertasAbertos = await modules().alertas.contarAbertosParaOperador(contexto.session.user.id);
 
   return (
     <Shell title="Coletas" organization={organization} active="/automacoes">

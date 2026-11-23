@@ -83,3 +83,6 @@ Rode a skill `revisar-ambiente` quando:
 - 2026-11-21: criação do ambiente (ADR 0037). CLAUDE.md reescrito (a versão anterior era o texto de orientação, não instruções do projeto); a regra "primeira resposta sem código" passou a valer só para proposta nova de arquitetura.
 - 2026-11-21: camada de economia de tokens, escolha de potência (modelo e esforço), gestão de contexto e segurança (ADR 0038), com base em pesquisa nas documentações da Anthropic.
 - 2026-11-21: hooks do git (pre-commit e pre-push) com varredura e verificação de segurança, espelhados no CI (ADR 0039).
+
+## Identidade visual
+`CLAUDE.md` aponta para `docs/marca/LEIA-ME.md` (cor, tipografia, azulejo, link do Figma e referência visual da azulejaria). Material visual novo parte dali.
