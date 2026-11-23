@@ -739,6 +739,17 @@ test('avaliarEscrita ignora caixa e barras invertidas ao proteger a config do gh
   }
 })
 
+test('avaliarEscrita: o deny de conteúdo com aparência de segredo vale antes do ask da autoproteção', () => {
+  const comSegredo = `const k = '${falso('AKI', 'A', 'ABCDEFGHIJKLMNOP')}'`
+  for (const caminho of ['.githooks/pre-commit', '.claude/hooks/lib/x.mjs', '.claude/settings.json']) {
+    for (const modoDePermissao of ['default', 'plan', 'acceptEdits', 'auto', 'bypassPermissions', undefined]) {
+      assert.equal(avaliarEscrita({ caminho, conteudo: comSegredo, existeVersionado: false, modoDePermissao })?.decisao, 'deny', `${caminho} ${modoDePermissao}`)
+    }
+    assert.equal(avaliarEscrita({ caminho, conteudo: 'x', existeVersionado: false, modoDePermissao: 'default' })?.decisao, 'ask', caminho)
+    assert.equal(avaliarEscrita({ caminho, conteudo: 'x', existeVersionado: false, modoDePermissao: 'auto' })?.decisao, 'deny', caminho)
+  }
+})
+
 function rodarCli(entrada, { fechar = true, limiteMs = 20000 } = {}) {
   return new Promise((resolver) => {
     const inicio = Date.now()

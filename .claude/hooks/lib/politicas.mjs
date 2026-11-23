@@ -166,13 +166,13 @@ export function avaliarEscrita({ caminho, conteudo, existeVersionado, modoDePerm
   if (arquivoSensivel(alvo)) return { decisao: 'deny', motivo: 'Não grave em arquivo de segredo (.env, chave, credencial). Segredo é criado pelo humano ou por pipe sem eco.' }
   const alvoUnificado = alvo.replace(/\\/g, '/')
   if (/(^|[/])\.config[/]gh[/]/i.test(alvoUnificado)) return { decisao: 'deny', motivo: 'A configuração do gh define o que a guarda verifica: só o humano altera (ADR 0048).' }
-  if (/(^|[/])(?:\.claude[/]hooks[/]|\.githooks[/]|\.claude[/]settings[^/]*\.json$)/i.test(alvoUnificado)) {
-    return { decisao: MODOS_SEM_CONFIRMACAO.has(modoDePermissao) ? 'deny' : 'ask', motivo: MOTIVO_AUTOPROTECAO }
-  }
   if (/(^|[/])(node_modules|\.next)[/]/.test(alvo)) return { decisao: 'deny', motivo: 'Diretório gerado: não edite à mão.' }
   if (/(^|[/])package-lock\.json$/.test(alvo)) return { decisao: 'deny', motivo: 'O lockfile só muda pelo npm (npm install / npm ci).' }
   const achados = detectarSegredo(conteudo)
   if (achados.length > 0) return { decisao: 'deny', motivo: `Conteúdo com aparência de segredo (${achados.join(', ')}). Use variável de ambiente ou Secret Manager; nunca o valor no código.` }
+  if (/(^|[/])(?:\.claude[/]hooks[/]|\.githooks[/]|\.claude[/]settings[^/]*\.json$)/i.test(alvoUnificado)) {
+    return { decisao: MODOS_SEM_CONFIRMACAO.has(modoDePermissao) ? 'deny' : 'ask', motivo: MOTIVO_AUTOPROTECAO }
+  }
   if (existeVersionado && /(^|[/])db[/]migrations[/][^/]+\.sql$/.test(alvo)) {
     return { decisao: 'ask', motivo: 'Migração já versionada é imutável: o livro-razão pode ter aplicado a versão antiga. Crie uma migração nova, salvo exceção que o humano confirme.' }
   }
