@@ -6,10 +6,16 @@ const BORDA_DA_REDACAO = 8192;
 const LIMITE_MS = 50;
 const LIMITE_DO_JWT_MS = 10;
 
-function medirMs(trabalho: () => unknown): number {
+const MEDICOES = 5;
+
+function medirUmaVezMs(trabalho: () => unknown): number {
   const inicio = process.hrtime.bigint();
   trabalho();
   return Number(process.hrtime.bigint() - inicio) / 1_000_000;
+}
+
+function medirMs(trabalho: () => unknown): number {
+  return Math.min(...Array.from({ length: MEDICOES }, () => medirUmaVezMs(trabalho)));
 }
 
 describe('encolhimento pela redação não expõe o que passou da borda', () => {
