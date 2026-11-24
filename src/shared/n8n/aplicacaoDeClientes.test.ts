@@ -27,22 +27,40 @@ test('configuração enviada à API só leva as chaves aceitas', () => {
   });
 });
 
-test('casamento pelo nome: ausente, repetido e arquivado', () => {
+test('candidatos por nome para propor o manifesto: ausente, repetido, arquivado e da plataforma', () => {
   assert.deepEqual(escolherImplantado([], 'X'), { erro: 'ausente' });
   assert.deepEqual(escolherImplantado([{ id: '1', name: 'X' }, { id: '2', name: 'X' }], 'X'), { erro: 'repetido', ids: ['1', '2'] });
   assert.equal(escolherImplantado([{ id: '1', name: 'X', isArchived: true }, { id: '2', name: 'X' }], 'X').workflow.id, '2');
+  assert.deepEqual(escolherImplantado([{ id: '1', name: 'X', tags: [{ name: 'platform' }] }], 'X'), { erro: 'ausente' });
 });
+
+const ENTRADA = { id: 'w1', nome: 'Credaz · Teste' };
 
 test('planejar: igual, atualizar mantendo o estado ativo', () => {
   const implantado = { ...modelo(), id: 'w1', active: true };
-  assert.equal(planejar(modelo(), [implantado]).acao, 'igual');
+  assert.equal(planejar(modelo(), ENTRADA, implantado).acao, 'igual');
   const mudado = modelo({ nodes: [no({ parameters: { jsCode: 'return [1];' } })] });
-  assert.deepEqual(planejar(mudado, [implantado]), { acao: 'atualizar', nome: 'Credaz · Teste', id: 'w1', ativo: true });
+  assert.deepEqual(planejar(mudado, ENTRADA, implantado), { acao: 'atualizar', nome: 'Credaz · Teste', id: 'w1', ativo: true });
 });
 
 test('recusa arquivo com credencial de exemplo', () => {
   const comExemplo = modelo({ nodes: [no({ credentials: { facebookGraphApi: { id: 'a-definir-usuario', name: 'x' } } })] });
-  assert.deepEqual(planejar(comExemplo, [{ ...modelo(), id: 'w1' }]), { acao: 'credencial-de-exemplo', nome: 'Credaz · Teste', nos: ['Passo'] });
+  assert.deepEqual(planejar(comExemplo, ENTRADA, { ...modelo(), id: 'w1' }), { acao: 'credencial-de-exemplo', nome: 'Credaz · Teste', nos: ['Passo'] });
+});
+
+test('planejar recusa alvo com tag platform e com nome ORLA ·', () => {
+  const comTag = { ...modelo(), id: 'w1', tags: [{ id: 't', name: 'platform' }] };
+  assert.equal(planejar(modelo(), ENTRADA, comTag).acao, 'alvo-da-plataforma');
+  const orla = { ...modelo({ name: 'ORLA · Meta Ads · coletor' }), id: 'w1' };
+  assert.equal(planejar(orla, { id: 'w1', nome: orla.name }, orla).acao, 'alvo-da-plataforma');
+  assert.equal(planejar(modelo(), { id: 'w1', nome: orla.name }, orla).acao, 'alvo-da-plataforma');
+});
+
+test('planejar: fora do manifesto, id inexistente e nome divergente', () => {
+  assert.equal(planejar(modelo(), undefined, undefined).acao, 'fora-do-manifesto');
+  assert.equal(planejar(modelo(), ENTRADA, undefined).acao, 'id-inexistente');
+  assert.equal(planejar(modelo(), { id: 'w1', nome: 'Outro' }, { ...modelo(), id: 'w1' }).acao, 'nome-divergente');
+  assert.equal(planejar(modelo(), ENTRADA, { ...modelo({ name: 'Renomeado' }), id: 'w1' }).acao, 'nome-divergente');
 });
 
 test('webhookId gerado pelo n8n em nó comum não conta como diferença e é preservado', () => {

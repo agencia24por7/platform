@@ -87,7 +87,7 @@ jobs:
             return 1
           }
           mkdir -p /tmp/pilha && cp -a infra/compose/. /tmp/pilha/ && cp -a db/migrations /tmp/pilha/migrations && cp db/corte-gate.txt /tmp/pilha/corte-gate.txt
-          mkdir -p /tmp/pilha/n8n-clientes && cp -a n8n/workflows/clientes n8n/workflows/agencia /tmp/pilha/n8n-clientes/ && cp scripts/n8n-aplicar-clientes.mjs /tmp/pilha/n8n-clientes/
+          mkdir -p /tmp/pilha/n8n-clientes && cp -a n8n/workflows/clientes n8n/workflows/agencia /tmp/pilha/n8n-clientes/ && cp scripts/n8n-aplicar-clientes.mjs n8n/clientes-manifesto.json /tmp/pilha/n8n-clientes/
           tentar gcloud compute scp --recurse /tmp/pilha/* "$VM:/tmp/compose" \
             --zone "$ZONE" --tunnel-through-iap --quiet
           tentar gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet \
@@ -170,30 +170,48 @@ jobs:
           "
 
       - name: Aplicar fluxos do n8n de clientes e da agência
+        id: n8n_clientes
+        env:
+          IMAGEM_N8N_CLIENTES: ${{ vars.N8N_CLIENTES_IMAGEM }}
         run: |
-          tentar() {
+          if ! printf '%s' "$IMAGEM_N8N_CLIENTES" | grep -Eq '^[a-z0-9./_-]+(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}$'; then
+            echo "Defina a variável do repositório N8N_CLIENTES_IMAGEM com a imagem do Node fixada por @sha256 (ADR 0053)."
+            exit 1
+          fi
+          tentar_ssh() {
             for n in 1 2 3 4 5; do
-              "$@" && return 0
-              echo "tentativa $n falhou; o tunel IAP cai de vez em quando. repetindo em 15s"
+              rc=0
+              gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "$1" || rc=$?
+              if [ "$rc" -ne 255 ]; then return "$rc"; fi
+              echo "tentativa $n: o tunel IAP caiu. repetindo em 15s"
               sleep 15
             done
-            return 1
+            return 255
           }
-          tentar gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "
+          tentar_ssh "
             set -eu
+            sudo install -d -m 700 /var/backups/tria-n8n
             chave=\$(sudo sed -n 's/^N8N_API_KEY=//p' /opt/tria/.env | head -n 1)
             if [ -z \"\$chave\" ]; then echo 'N8N_API_KEY ausente no .env; fluxos de clientes não aplicados.'; exit 1; fi
+            umask 077
+            arq=\$(mktemp)
+            trap 'rm -f \"\$arq\"' EXIT
+            printf 'N8N_API_URL=http://n8n:5678\nN8N_API_KEY=%s\n' \"\$chave\" > \"\$arq\"
             for n in 1 2 3 4 5 6 7 8 9 10; do
-              sudo docker run --rm --network orla_interna -v /opt/tria/n8n-clientes:/w:ro \
-                -e N8N_API_URL=http://n8n:5678 -e N8N_API_KEY=\"\$chave\" \
-                node:22-alpine node /w/n8n-aplicar-clientes.mjs /w --aplicar && exit 0
-              echo \"n8n ainda não respondeu (tentativa \$n); nova tentativa em 15s\"
+              rc=0
+              sudo docker run --rm --network orla_interna --env-file \"\$arq\" \
+                -v /opt/tria/n8n-clientes:/w:ro -v /var/backups/tria-n8n:/backup \
+                $IMAGEM_N8N_CLIENTES node /w/n8n-aplicar-clientes.mjs /w --aplicar --backup-dir /backup || rc=\$?
+              if [ \"\$rc\" -eq 0 ]; then exit 0; fi
+              if [ \"\$rc\" -ne 2 ]; then exit \"\$rc\"; fi
+              echo \"n8n indisponível (tentativa \$n); nova tentativa em 15s\"
               sleep 15
             done
-            exit 1
+            exit 2
           "
 
       - name: Smoke pós-deploy (saúde, worker 401, cofre 404 pelo proxy)
+        if: ${{ !cancelled() && steps.n8n_clientes.conclusion != 'skipped' }}
         env:
           HOST: ${{ vars.APP_HOSTNAME }}
           ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}

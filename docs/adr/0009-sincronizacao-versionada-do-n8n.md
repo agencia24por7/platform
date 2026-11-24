@@ -113,6 +113,8 @@ npm run n8n:sincronizar -- --conexoes conexoes.json --aplicar  # grava
 - Vínculo pelo **nome exato** do workflow (esses fluxos não têm nota de origem). Nome ausente: o arquivo é ignorado
   com aviso, sem criar nada. Nome repetido ou credencial de exemplo (`a-definir…`): erro, o arquivo não é aplicado e
   o passo do deploy falha.
+- Substituído pelo ADR 0053: o vínculo passa a ser pelo id, no manifesto `n8n/clientes-manifesto.json`
+  (ver `docs/n8n-clientes-manifesto.md`); arquivo fora do manifesto é erro.
 - Só atualiza o que difere (nós, conexões e configuração aceita pela API pública; posição e id dos nós não contam).
   Workflow ativo é reativado. `webhookId` gerado pelo n8n em nó que não é gatilho de webhook é preservado.
 - A nota "Gerado pelo repositório" que a sincronização antiga deixou nesses fluxos sai na primeira aplicação: ela
