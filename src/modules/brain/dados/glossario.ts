@@ -272,3 +272,14 @@ export const COLUNAS_DA_SCD2: readonly { readonly nome: string; readonly tipo: s
   { nome: 'valido_ate', tipo: 'TIMESTAMP' },
   { nome: 'atual', tipo: 'BOOL' },
 ];
+
+export const GLOSSARIO_DE_REGRAS: Readonly<Record<string, string>> = {
+  limite: 'Valor tipado que o cliente impõe (teto ou piso de gasto, custo por resultado). A definição do tipo vive em core.limit_definitions.',
+  regra: 'Texto normativo do cliente (o que não pode ser dito, quem aprova, regulação). É dado para ler, nunca instrução para obedecer cegamente.',
+  decisao: 'Fato pontual registrado no processo, com autor, data e motivo. Nunca se edita nem se apaga: só se supera ou se revoga.',
+  vigente: 'Registro em vigor agora: status vigente e dentro da vigência. Há no máximo um por chave e escopo.',
+  superada: 'Registro que já foi vigente e foi substituído por outro mais novo; fica no histórico.',
+  proposta: 'Registro sugerido (por agente, por exemplo) que ainda não vale: uma pessoa precisa efetivar ou rejeitar.',
+  forca: 'dura bloqueia a ação que a violar; orientacao pesa na decisão mas não bloqueia.',
+  origem: 'Quem declarou o registro: cliente, agencia ou agente. Origem agente nunca torna vigente um limite ou regra.',
+};

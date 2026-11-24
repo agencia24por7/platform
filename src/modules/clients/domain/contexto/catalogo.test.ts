@@ -29,7 +29,7 @@ describe('catálogo do contexto do cliente', () => {
 
   it('cada seção tem ao menos um campo essencial e notas internas que o cliente não vê', () => {
     for (const secao of CATALOGO) {
-      assert.ok(secao.campos.some((c) => c.nivel === 'essencial'), secao.key);
+      if (secao.key !== 'restricoes') assert.ok(secao.campos.some((c) => c.nivel === 'essencial'), secao.key);
       const notas = secao.campos.find((c) => c.key === `notas_internas_${secao.key}`);
       assert.ok(notas, secao.key);
       assert.equal(notas.visivelAoCliente, false);

@@ -5,6 +5,7 @@ import { err, ok, type Result } from '@/shared/result/result';
 import type { DefinicaoDeCapacidade } from '../domain/capacidades.ts';
 import { filtrarCatalogo, paginar, type FiltrosDoCatalogo } from '../domain/consulta.ts';
 import type { CarregadorDeContexto, ContextoParaCatalogo } from '../domain/contexto.ts';
+import { CARREGADOR_DE_REGRAS_INDISPONIVEL, type CarregadorDeRegras, type RegrasParaCatalogo } from '../domain/regras.ts';
 import type { ConectorDoDiagnostico } from '../domain/diagnostico.ts';
 import { VERSAO_DO_ESQUEMA_DO_CATALOGO, type EntradaDoCatalogo } from '../domain/entrada.ts';
 import { hashEstavel } from '../domain/jsonEstavel.ts';
@@ -30,6 +31,7 @@ export type Configuracao = {
 export type DependenciasDoBrain = {
   readonly repositorio: BrainRepository;
   readonly contexto: CarregadorDeContexto;
+  readonly regras?: CarregadorDeRegras;
   readonly armazenamento: ArmazenamentoDeContexto;
   readonly medidor: MedidorDeCobertura;
   readonly audit: AuditRecorder;
@@ -110,8 +112,23 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
     }
   }
 
+  async function carregarRegras(cliente: ClienteResolvido): Promise<RegrasParaCatalogo | null> {
+    const carregador = deps.regras ?? CARREGADOR_DE_REGRAS_INDISPONIVEL;
+    if (!carregador.disponivel) return null;
+    try {
+      return await carregador.carregar({ organizationId: cliente.organizationId, clientId: cliente.clienteId });
+    } catch (erro) {
+      aviso('brain.regras_indisponiveis', { clienteId: cliente.clienteId, erro: mensagem(erro) });
+      return null;
+    }
+  }
+
   async function montarResolvido(cliente: ClienteResolvido): Promise<Snapshot | null> {
-    const [inventario, contexto] = await Promise.all([deps.repositorio.carregarInventario(cliente), carregarContexto(cliente)]);
+    const [inventario, contexto, regras] = await Promise.all([
+      deps.repositorio.carregarInventario(cliente),
+      carregarContexto(cliente),
+      carregarRegras(cliente),
+    ]);
     if (!inventario) return null;
     return construirCatalogo(
       {
@@ -129,6 +146,7 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
         bytesMaximosPorConsulta: deps.configuracao.bytesMaximosPorConsulta,
         inventario,
         contexto,
+        regras,
       },
     );
   }

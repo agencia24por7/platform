@@ -74,7 +74,7 @@ function frescorDoContexto(contexto: ContextoParaCatalogo, atualizadoEm: readonl
 }
 
 function entradaDaSecao(ctx: ContextoDeDescoberta, contexto: ContextoParaCatalogo, secao: SecaoDoContexto): EntradaSemSelo {
-  const valores = Object.values(contexto.campos).filter((v) => v.secao === secao.key);
+  const valores = Object.values(contexto.campos).filter((v) => v.secao === secao.key && secao.campos.some((c) => c.key === v.fieldKey));
   const simples = secao.campos.filter((c) => c.tipo !== 'lista');
   const listas = secao.campos.filter((c) => c.tipo === 'lista');
   const completude = contexto.completude.secoes.find((s) => s.secao === secao.key);
@@ -92,7 +92,7 @@ function entradaDaSecao(ctx: ContextoDeDescoberta, contexto: ContextoParaCatalog
     .slice(0, TAMANHO_DO_RESUMO);
   const essenciaisFaltando = completude ? completude.essenciaisTotal - completude.essenciaisPreenchidos : 0;
   const pessoal = secao.campos.some((c) => c.avisoDeDadoPessoal);
-  const arquivos = contexto.arquivos.filter((a) => a.secao === secao.key);
+  const arquivos = contexto.arquivos.filter((a) => a.secao === secao.key && secao.campos.some((c) => c.key === a.fieldKey));
   return {
     urn: ctx.urn('contexto_secao', idSeguro(secao.key)),
     tipo: 'contexto_secao',

@@ -1,4 +1,4 @@
-export const VERSAO_DO_CATALOGO = 1;
+export const VERSAO_DO_CATALOGO = 2;
 
 export const NIVEIS = ['essencial', 'aprofundar'] as const;
 export type Nivel = (typeof NIVEIS)[number];
@@ -313,7 +313,7 @@ const empresa: Secao = {
         ['servico', 'Serviço'],
         ['recorrencia', 'Recorrência / assinatura'],
       ]),
-      ESSENCIAL,
+      { ...ESSENCIAL, ajuda: 'Como a empresa vende. O tipo de operação (leads ou e-commerce) vem do cadastro do cliente.' },
     ),
     selecao(
       'tempo_de_mercado',
@@ -563,6 +563,18 @@ const marca: Secao = {
     texto('cores', 'Cores', { exemplo: '#0A3D62, #F6B93B', max: 200 }),
     texto('fontes', 'Fontes', { max: 200 }),
     arquivo('arquivos_de_fonte', 'Arquivos das fontes', ['fonte'], { ajuda: 'TTF, OTF ou WOFF2.', maxArquivos: 10 }),
+    arquivo('referencias_visuais', 'Referências visuais', ['imagem'], {
+      ajuda: 'Imagens de peças, sites ou campanhas, da marca ou de outras, que mostram o visual que o cliente quer seguir.',
+      maxArquivos: 20,
+    }),
+    arquivo('identidade_visual', 'Identidade visual', ['imagem'], {
+      ajuda: 'Paleta, padrões, aplicações da marca e exemplos de uso. O logo e o manual têm campos próprios acima.',
+      maxArquivos: 20,
+    }),
+    arquivo('criativos_historicos', 'Criativos históricos da marca', ['imagem', 'video'], {
+      ajuda: 'Anúncios e posts que a marca já publicou, principalmente os que mais funcionaram. Evite imagens com pessoas identificáveis sem autorização de uso.',
+      maxArquivos: 30,
+    }),
     selecao(
       'arquetipo',
       'Arquétipo',
@@ -856,7 +868,7 @@ const objetivos: Secao = {
   key: 'objetivos',
   letra: 'J',
   titulo: 'Objetivos e metas',
-  descricao: 'Aonde o cliente quer chegar, com quanto e quando.',
+  descricao: 'Aonde o cliente quer chegar e quando. Limites de orçamento ficam na aba Regras.',
   campos: [
     textoLongo('objetivo_90_dias', 'Objetivo principal para os próximos 90 dias', {
       ...ESSENCIAL,
@@ -866,7 +878,6 @@ const objetivos: Secao = {
     textoLongo('objetivo_12_meses', 'Objetivo principal para 12 meses', { ...ESSENCIAL, epistemico: 'desejo', max: 1000 }),
     texto('indicador_principal', 'Indicador principal', { ...ESSENCIAL, exemplo: 'Leads qualificados por mês' }),
     textoLongo('metas_em_numeros', 'Metas em números', { epistemico: 'desejo', max: 1000 }),
-    dinheiro('orcamento_mensal_total', 'Orçamento mensal total', ESSENCIAL),
     percentual('orcamento_marca_pct', 'Parte do orçamento em marca'),
     percentual('orcamento_performance_pct', 'Parte do orçamento em performance'),
     percentual('orcamento_comunidade_pct', 'Parte do orçamento em comunidade'),
@@ -900,15 +911,8 @@ const restricoes: Secao = {
   key: 'restricoes',
   letra: 'K',
   titulo: 'Restrições e operação',
-  descricao: 'O que não pode ser dito, quem aprova e o que já existe internamente.',
+  descricao: 'O que já existe internamente: recursos e mídia. Regras e limites ficam na aba Regras.',
   campos: [
-    textoLongo('regras_regulatorias', 'Regras jurídicas ou regulatórias', {
-      ...ESSENCIAL,
-      ajuda: 'Saúde, finanças, bebidas, conselhos profissionais…',
-    }),
-    textoLongo('o_que_nao_pode_ser_dito', 'O que não pode ser dito', { ...ESSENCIAL }),
-    texto('quem_aprova', 'Quem aprova as peças', ESSENCIAL),
-    texto('prazo_de_aprovacao', 'Em quanto tempo aprova', { exemplo: '48 horas úteis', max: 120 }),
     multipla(
       'recursos_internos',
       'O que existe internamente',

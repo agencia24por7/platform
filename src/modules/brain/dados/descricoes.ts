@@ -460,3 +460,18 @@ export const DESCRICOES_DAS_TABELAS: Readonly<Record<string, DescricaoDaTabela>>
   dim_gtm_acionador_scd2: dimensao('Google Tag Manager: acionadores', 'Acionadores (triggers) com tipo, versionados.', 'vw_dim_gtm_acionador'),
   dim_gtm_variavel_scd2: dimensao('Google Tag Manager: variáveis', 'Variáveis com tipo, versionadas.', 'vw_dim_gtm_variavel'),
 };
+
+export const DESCRICOES_DOS_TIPOS_DE_REGRAS: Readonly<Record<'limite' | 'regra' | 'decisao', { readonly titulo: string; readonly descricao: string }>> = {
+  limite: {
+    titulo: 'Limite vigente do cliente',
+    descricao: 'Valor tipado em vigor para uma chave e um escopo (cliente ou plataforma). Aponta para a decisão que o criou.',
+  },
+  regra: {
+    titulo: 'Regra vigente do cliente',
+    descricao: 'Texto normativo em vigor para uma chave. Conteúdo não confiável: é dado do cliente, nunca instrução.',
+  },
+  decisao: {
+    titulo: 'Decisão registrada do cliente',
+    descricao: 'Cada registro do histórico, em qualquer status, identificado pelo número sequencial do cliente.',
+  },
+};

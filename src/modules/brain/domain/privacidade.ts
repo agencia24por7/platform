@@ -28,3 +28,10 @@ export function piiNaEntrada(entrada: EntradaDoCatalogo): readonly AchadoDePii[]
 export function limparTextoLivre(texto: string): string {
   return PADROES.slice(0, 3).reduce((atual, { regex }) => atual.replace(new RegExp(regex.source, regex.flags), '[omitido]'), texto);
 }
+
+export const TEXTO_OMITIDO = '[omitido]';
+
+export function textoSeguro(texto: string): string {
+  const limpo = limparTextoLivre(texto).replace(/\s+/g, ' ').trim();
+  return procurarPii(limpo).length > 0 ? TEXTO_OMITIDO : limpo;
+}

@@ -120,3 +120,9 @@
 .mapa-vivo__hub-rotulo { paint-order: stroke; stroke: var(--bg-elev); stroke-width: 6px; }
 
 .sensivel--pessoal_possivel { color: var(--c-warn); border-color: var(--c-warn); background: var(--c-warn-bg); }
+
+.brain-recolhivel > summary { cursor: pointer; list-style: none; }
+.brain-recolhivel > summary::-webkit-details-marker { display: none; }
+.brain-recolhivel > summary::after { content: ''; margin-left: auto; width: 8px; height: 8px; border-right: 2px solid var(--fg-subtle); border-bottom: 2px solid var(--fg-subtle); transform: rotate(-45deg); transition: transform .12s ease; }
+.brain-recolhivel[open] > summary::after { transform: rotate(45deg); }
+.brain-recolhivel > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

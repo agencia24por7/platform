@@ -1,14 +1,8 @@
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
 import { env } from './helpers.mjs';
-import { PG_CONTAINER } from './apoio/pgContainer.mjs';
-
-const dono = (sql) =>
-  execFileSync('docker', ['exec', '-i', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], { encoding: 'utf8' })
-    .trim()
-    .split('\n')[0]
-    .trim();
+import { psqlDonoPrimeiraLinha as dono } from './apoio/psql.mjs';
 
 describe('cofre de tokens contra o Postgres de verdade (ADR 0032)', { concurrency: false }, () => {
   let resultado;

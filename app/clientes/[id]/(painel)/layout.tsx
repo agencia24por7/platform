@@ -5,17 +5,29 @@ import { Shell } from '@/../app/_components/Shell';
 import { AbasDoCliente } from '@/../app/clientes/[id]/_componentes/AbasDoCliente';
 import { Icone } from '@/../app/clientes/[id]/_componentes/Icones';
 import { MenuMais } from '@/../app/clientes/[id]/_componentes/MenuMais';
+import { modules } from '@/composition';
 import { carregarContexto, carregarPainel, carregarProntidao } from '@/../app/clientes/[id]/_dados';
 import { mudarSituacao } from '@/../app/clientes/[id]/(painel)/conexoes/acoes';
 import { EFEITO_DA_SITUACAO, ROTULO_DA_SITUACAO, SITUACOES, mudancaPermitida } from '@/modules/clients/domain/ciclo';
 import { tamanhoLegivel } from '@/modules/clients/domain/painel/formato';
 import { acaoPrincipal, ROTULO_DO_VEREDITO, type Veredito } from '@/modules/clients/domain/painel/prontidao';
 import { podeCadastrarCliente } from '@/modules/clients/domain/painel/permissoes';
+import { rotaDoCliente } from '@/modules/clients/domain/painel/enderecos';
+import { estadoDoBlocoDeRegras } from '@/modules/clients/domain/painel/regras';
 import { noVocabularioDe, vocabularioDe } from '@/modules/organizations/domain/vocabulario';
 
 export const dynamic = 'force-dynamic';
 
 const TOM_DA_SITUACAO = { active: 'pill--ok', paused: 'pill--warn', archived: '' } as const;
+async function carregarProntidaoDeRegras(organizationId: string, clientId: string) {
+  try {
+    const resultado = await modules().regras.prontidao({ organizationId, clientId });
+    return resultado.ok ? resultado.value : null;
+  } catch {
+    return null;
+  }
+}
+
 const CLASSE_DO_VEREDITO: Record<Veredito, string> = { sim: 'pill--ok', parcial: 'pill--warn', nao: 'pill--danger' };
 
 const ROTULO_DO_BRAIN: Record<string, string> = {
@@ -25,6 +37,43 @@ const ROTULO_DO_BRAIN: Record<string, string> = {
   pendente: 'Publicação pendente',
   com_erro: 'Última publicação falhou',
 };
+
+type Prontidao = NonNullable<Awaited<ReturnType<typeof carregarProntidao>>>;
+
+function FaixaDeProntidao({ prontidao }: { readonly prontidao: Prontidao }) {
+  const icone = prontidao.veredito === 'sim' ? 'ok' : prontidao.veredito === 'parcial' ? 'parcial' : 'nao';
+  const pill = (
+    <span className={`pill ${CLASSE_DO_VEREDITO[prontidao.veredito]}`}>
+      <Icone nome={icone} tamanho={14} />
+      {ROTULO_DO_VEREDITO[prontidao.veredito]}
+    </span>
+  );
+  const lacunas = prontidao.veredito !== 'sim' ? prontidao.lacunas : [];
+  if (lacunas.length === 0) {
+    return (
+      <section className="prontidao" aria-label="Pronto para planejar">
+        <span className="prontidao__titulo">Pronto para planejar</span>
+        {pill}
+      </section>
+    );
+  }
+  return (
+    <details className="prontidao prontidao--recolhivel">
+      <summary className="prontidao__resumo">
+        <span className="prontidao__titulo">Pronto para planejar</span>
+        {pill}
+        <span className="prontidao__contagem">
+          {lacunas.length} {lacunas.length === 1 ? 'sugestão' : 'sugestões'}
+        </span>
+      </summary>
+      <ul className="prontidao__lacunas" aria-label="O que falta">
+        {lacunas.map((lacuna) => (
+          <li key={lacuna.id}>{lacuna.titulo}</li>
+        ))}
+      </ul>
+    </details>
+  );
+}
 
 export default async function LayoutDoCliente({
   children,
@@ -36,6 +85,8 @@ export default async function LayoutDoCliente({
   const { id } = await params;
   const { ctx, cliente, podeEditar, podeAdministrar, organizacaoInteira } = await carregarPainel(id);
   const [prontidao, contexto] = await Promise.all([carregarProntidao(ctx.organization.id, cliente.id), carregarContexto(ctx.organization.id, cliente.id)]);
+  const regras = await carregarProntidaoDeRegras(ctx.organization.id, cliente.id);
+  const blocoDeRegras = regras ? estadoDoBlocoDeRegras(regras) : null;
   const principal = prontidao ? acaoPrincipal(prontidao.acoes, cliente.id, { podeEditar, organizacaoInteira, tipo: ctx.organization.type }) : null;
   const vocabulario = vocabularioDe(ctx.organization.type);
   const opcoes = SITUACOES.filter((valor) => mudancaPermitida(ctx.role, valor) === null);
@@ -55,17 +106,21 @@ export default async function LayoutDoCliente({
             </span>
             <div className="cliente-topo__textos">
               <h1 className="page__title">{cliente.name}</h1>
-              <ul className="cliente-topo__fatos" aria-label={vocabulario.resumoDoCliente}>
-                <li>
-                  <span className={`pill ${TOM_DA_SITUACAO[cliente.status]}`}>
-                    <span className="dot" />
-                    {ROTULO_DA_SITUACAO[cliente.status]}
-                  </span>
-                </li>
-                <li>{cliente.businessModel === 'ecommerce' ? 'E-commerce' : 'Geração de leads'}</li>
-                <li>{cliente.segment ?? 'Sem segmento'}</li>
-                {cliente.parentClientId ? <li>Unidade de uma rede</li> : null}
-              </ul>
+              <div className="cliente-topo__fatos" role="group" aria-label={vocabulario.resumoDoCliente}>
+                <span className={`pill ${TOM_DA_SITUACAO[cliente.status]}`}>
+                  <span className="dot" />
+                  {ROTULO_DA_SITUACAO[cliente.status]}
+                </span>
+                <span>
+                  {[
+                    cliente.businessModel === 'ecommerce' ? 'E-commerce' : 'Geração de leads',
+                    cliente.segment ?? 'Sem segmento',
+                    cliente.parentClientId ? 'Unidade de uma rede' : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+              </div>
             </div>
           </div>
           <div className="cliente-topo__direita">
@@ -124,24 +179,25 @@ export default async function LayoutDoCliente({
             <strong>{noVocabularioDe(ctx.organization.type, 'Cliente')} {ROTULO_DA_SITUACAO[cliente.status].toLowerCase()}.</strong> {noVocabularioDe(ctx.organization.type, EFEITO_DA_SITUACAO[cliente.status])}
           </div>
         ) : null}
-        {prontidao ? (
-          <section className="prontidao" aria-label="Pronto para planejar">
-            <span className="prontidao__titulo">Pronto para planejar</span>
-            <span className={`pill ${CLASSE_DO_VEREDITO[prontidao.veredito]}`}>
-              <Icone nome={prontidao.veredito === 'sim' ? 'ok' : prontidao.veredito === 'parcial' ? 'parcial' : 'nao'} tamanho={14} />
-              {ROTULO_DO_VEREDITO[prontidao.veredito]}
+        {prontidao ? <FaixaDeProntidao prontidao={prontidao} /> : null}
+        {regras && regras.essenciaisFaltando.length > 0 ? (
+          <section className="prontidao" aria-label="Lacunas em Regras">
+            <span className="prontidao__titulo">Regras</span>
+            <span className="pill pill--warn">
+              <Icone nome="atencao" tamanho={14} />
+              {blocoDeRegras?.rotulo ?? 'Parcial'}
             </span>
-            {prontidao.veredito !== 'sim' && prontidao.lacunas.length > 0 ? (
-              <ul className="prontidao__lacunas" aria-label="O que falta">
-                {prontidao.lacunas.map((lacuna) => (
-                  <li key={lacuna.id}>{lacuna.titulo}</li>
-                ))}
-              </ul>
-            ) : null}
+            <ul className="prontidao__lacunas" aria-label="Lacunas essenciais em Regras">
+              {regras.essenciaisFaltando.map((lacuna) => (
+                <li key={lacuna.chave}>
+                  <Link href={rotaDoCliente(cliente.id, 'regras', { secao: 'registrar', natureza: 'limite', definicao: lacuna.chave })}>{lacuna.nome}</Link>
+                </li>
+              ))}
+            </ul>
           </section>
         ) : null}
       </header>
-      <AbasDoCliente clienteId={cliente.id} blocos={{ conexoes: prontidao?.conexoes ?? null, contexto: prontidao?.contexto ?? null }} />
+      <AbasDoCliente clienteId={cliente.id} blocos={{ conexoes: prontidao?.conexoes ?? null, contexto: prontidao?.contexto ?? null, regras: blocoDeRegras }} />
       <div className="cliente-aba">{children}</div>
     </Shell>
   );

@@ -1,16 +1,14 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
 import { BASE, appIsUp, browse, ensureUser, signIn, signOut } from './helpers.mjs';
-import { PG_CONTAINER } from './apoio/pgContainer.mjs';
+import { psqlComoDono, psqlDonoPrimeiraLinha as query } from './apoio/psql.mjs';
 
 const follow = (path) => browse(path);
 
 const resetToFirstRun = () =>
-  execFileSync('docker', [
-    'exec', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-tAc',
+  psqlComoDono(
     'TRUNCATE metrics.metrics_restatements, metrics.metrics_daily, automation.sync_runs, integrations.connection_accounts, integrations.ad_accounts, integrations.connections, core.clients, audit.audit_log, core.organizations RESTART IDENTITY CASCADE',
-  ]);
+  );
 
 describe('tela de conexão e fluxo OAuth', { concurrency: false }, () => {
   before(async () => {
@@ -108,14 +106,6 @@ describe('tela de conexão e fluxo OAuth', { concurrency: false }, () => {
 
 describe('autorizar plataforma exige administrar a organização', { concurrency: false }, () => {
   let organizacao = '';
-
-  const query = (sql) =>
-    execFileSync('docker', ['exec', '-i', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
-      encoding: 'utf8',
-    })
-      .trim()
-      .split('\n')[0]
-      .trim();
 
   before(async () => {
     if (!(await appIsUp())) throw new Error('App não está no ar');

@@ -125,6 +125,9 @@ export function acaoDaVisao(acao: AcaoRecomendada, clienteId: string): ProximaAc
     case 'preencher_contexto':
     case 'confirmar_sugestoes':
       return { ...base, href: rotaDoCliente(clienteId, 'contexto', { secao: depoisDoPrefixo(acao.id) }), rotulo: 'Abrir' };
+    case 'definir_limite':
+    case 'decidir_propostas':
+      return { ...base, href: rotaDoCliente(clienteId, 'regras'), rotulo: 'Abrir' };
     case 'resolver_contradicao':
       return { ...base, href: rotaDoCliente(clienteId, 'contexto', { secao: depoisDoPrefixo(acao.id).split(':')[0] }), rotulo: 'Revisar' };
   }

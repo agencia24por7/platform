@@ -12,6 +12,7 @@ const { criarArmazenamentoNulo } = await import('../../../shared/storage/armazen
 const { criarUrn } = await import('../domain/urn.ts');
 const { carregadorDoServicoDeContexto } = await import('../infrastructure/carregadorDeContexto.ts');
 const { CARREGADOR_DE_CONTEXTO_INDISPONIVEL } = await import('../domain/contexto.ts');
+const { CARREGADOR_DE_REGRAS_INDISPONIVEL } = await import('../domain/regras.ts');
 
 type Chamadas = Record<string, number>;
 type Estado = { publicadoEm: Date | null; ultimoHash: string | null; pendente: boolean; ultimaTentativaEm: Date | null; ultimoErro: string | null; tentativas: number };
@@ -74,7 +75,7 @@ function auditoria() {
   return { eventos, audit: { record: async (e: { action: string; metadata?: Record<string, unknown> }) => { eventos.push(e); }, list: async () => [], search: async () => [] } };
 }
 
-function servico(opcoes: { repo?: ReturnType<typeof repositorio>; armazenamento?: ReturnType<typeof armazenamentoEmMemoria>['armazenamento'] | ReturnType<typeof criarArmazenamentoNulo>; medidorDisponivel?: boolean; contexto?: boolean } = {}) {
+function servico(opcoes: { repo?: ReturnType<typeof repositorio>; armazenamento?: ReturnType<typeof armazenamentoEmMemoria>['armazenamento'] | ReturnType<typeof criarArmazenamentoNulo>; medidorDisponivel?: boolean; contexto?: boolean; regras?: boolean } = {}) {
   const repo = opcoes.repo ?? repositorio();
   const { audit, eventos } = auditoria();
   const medidas: string[] = [];
@@ -83,6 +84,9 @@ function servico(opcoes: { repo?: ReturnType<typeof repositorio>; armazenamento?
     contexto: opcoes.contexto === false
       ? CARREGADOR_DE_CONTEXTO_INDISPONIVEL
       : carregadorDoServicoDeContexto({ carregar: async () => ({ ok: true as const, value: fx.contexto() }) }),
+    regras: opcoes.regras === false
+      ? CARREGADOR_DE_REGRAS_INDISPONIVEL
+      : { disponivel: true, carregar: async () => fx.regras() },
     armazenamento: opcoes.armazenamento ?? armazenamentoEmMemoria().armazenamento,
     medidor: {
       disponivel: opcoes.medidorDisponivel ?? true,
@@ -120,7 +124,7 @@ describe('API de leitura do brain (serviço)', () => {
     assert.ok(a.ok && b.ok);
     if (!a.ok || !b.ok) return;
     assert.equal(a.value.etag, b.value.etag);
-    assert.equal(a.value.corpo.schemaVersion, 1);
+    assert.equal(a.value.corpo.schemaVersion, 2);
     assert.equal(a.value.corpo.entradas.length, 5);
     assert.ok(a.value.corpo.total > 5);
     assert.ok(a.value.corpo.proximoCursor);

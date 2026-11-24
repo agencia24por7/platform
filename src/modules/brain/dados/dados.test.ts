@@ -5,6 +5,8 @@ import { describe, it } from 'node:test';
 
 await import('../testes/ganchos.ts');
 const { DESCRICOES_DAS_TABELAS } = await import('./descricoes.ts');
+const { GLOSSARIO_DE_REGRAS } = await import('./glossario.ts');
+const { DESCRICOES_DOS_TIPOS_DE_REGRAS } = await import('./descricoes.ts');
 const { GLOSSARIO_DE_COLUNAS, COLUNAS_DA_SCD2, COLUNAS_DA_VIEW, COLUNAS_INTERNAS } = await import('./glossario.ts');
 const { TABELAS_DO_REGISTRO, CONECTORES_POSSIVEIS } = await import('./registro.ts');
 const { DEFINICOES_DE_CAPACIDADES } = await import('./capacidades.ts');
@@ -89,5 +91,26 @@ describe('capacidades declarativas', () => {
   it('catálogo de conectores cobre todas as plataformas com rótulo e para que serve', () => {
     assert.ok(CONECTORES_POSSIVEIS.length >= 10);
     for (const c of CONECTORES_POSSIVEIS) assert.ok(c.rotulo && c.paraQueServe, c.plataforma);
+  });
+});
+
+describe('vocabulário de regras, limites e decisões', () => {
+  it('o glossário cobre os termos do ADR 0051 em frases curtas', () => {
+    for (const termo of ['limite', 'regra', 'decisao', 'vigente', 'superada', 'proposta', 'forca', 'origem']) {
+      const texto = GLOSSARIO_DE_REGRAS[termo];
+      assert.ok(texto && texto.length >= 20 && texto.length <= 400, termo);
+    }
+  });
+
+  it('todo tipo de entrada de regras tem título e descrição, sem dado pessoal', () => {
+    assert.deepEqual(Object.keys(DESCRICOES_DOS_TIPOS_DE_REGRAS).sort(), ['decisao', 'limite', 'regra']);
+    for (const [tipo, d] of Object.entries(DESCRICOES_DOS_TIPOS_DE_REGRAS)) {
+      assert.ok(d.titulo.length <= 160 && d.descricao.length >= 30 && d.descricao.length <= 400 && !/@/.test(d.descricao), tipo);
+    }
+  });
+
+  it('a capacidade planejar_com_limites existe e só pede o requisito de limites essenciais', () => {
+    const capacidade = DEFINICOES_DE_CAPACIDADES.find((c) => c.id === 'planejar_com_limites');
+    assert.deepEqual(capacidade?.requisitos.map((r) => r.tipo), ['limites_essenciais']);
   });
 });

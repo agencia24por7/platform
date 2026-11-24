@@ -172,3 +172,9 @@ select.selo { appearance: none; cursor: pointer; padding-right: 8px; }
 @media (prefers-reduced-motion: reduce) { .interruptor__trilho, .interruptor__trilho::after { transition: none; } }
 
 .nivel--essencial .campo__essencial { display: none; }
+
+.cadastro-herdado { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px 24px; margin: 0 0 var(--gap); padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-sunken); }
+.cadastro-herdado__item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cadastro-herdado dt { font-size: var(--fs-xs); font-weight: 650; color: var(--fg-muted); }
+.cadastro-herdado dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.cadastro-herdado__nota { grid-column: 1 / -1; margin: 0; }

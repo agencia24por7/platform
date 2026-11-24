@@ -22,6 +22,7 @@ Fonte da verdade dos prazos publicados em `/privacidade` (seção 8). Mudou um p
 | Métricas e dados de um cliente excluído | enquanto houver base legal (contrato, obrigação, exercício de direitos); a exclusão é lógica | `scripts/titular.mjs excluir-cliente` esconde do app e das views `vw_*` sem apagar (ADR 0022); `expurgar-cliente` elimina em até 30 dias do pedido quando a eliminação for obrigatória |
 | Histórico de dono das fontes e dos clientes no BigQuery (`dim_fonte_scd2`, `dim_cliente_scd2`; nomes de cliente e de fonte, dado de negócio) | enquanto houver base legal; cliente excluído ganha versão com `status = 'excluido'` | `expurgar-cliente`: apaga de toda tabela-base com `client_id` (ADR 0013, ADR 0022) |
 | Contexto do cliente (`core.client_context_*`, revisões incluídas, e o prefixo do cliente no bucket) | enquanto o cliente existir; exclusão lógica esconde do app e revoga os links | expurgo: `core.expurgar_cliente` apaga as linhas por `ON DELETE CASCADE`; `expurgarArmazenamento` apaga o prefixo `orgs/{org}/clientes/{cliente}/` no bucket, versões incluídas (ADR 0026) |
+| Regras, limites e decisões do cliente (`core.client_decisions` e `core.client_decision_events`) | enquanto o cliente existir; decisão nunca se edita nem se apaga pelo app | expurgo: `ON DELETE CASCADE` a partir de `core.clients`. Dado pessoal digitado por engano: `core.redigir_decisao` (só `orla_worker`) troca título, contexto, texto, evidência e "em nome de" (`on_behalf_of`) por `[redigido]`, troca o motivo livre dos eventos da decisão (`reason` de revogação, rejeição e efetivação) por `[redigido]`, percorre a cadeia de supersessão nos dois sentidos, mantém as linhas e grava um evento `redigida` com motivo por decisão afetada (ADR 0051 §7). Roteiro manual que a função não cobre: ver "Redação de regras e decisões" abaixo |
 | Link público do mapa de contexto | até vencer (padrão 30 dias, máx. 90) ou ser revogado; o registro fica com o cliente | só o hash do token é guardado |
 | Execuções das automações (n8n) | 14 dias | `EXECUTIONS_DATA_MAX_AGE=336`; fluxos de leads não salvam execução |
 | Staging do BigQuery (`stg_*`: linhas de uma chamada de gravação, sem `client_id`) | 7 dias | `partition_expiration_days = 7` no DDL; o expurgo de cliente e o de fonte também apagam a staging, por organização + chave da fonte (ADR 0029) |
@@ -44,3 +45,12 @@ O workflow `ORLA · privacidade · retenção diária` (`n8n/workflows/plataform
 `POST /api/v0/manutencao/retencao` às 03:30 (America/Sao_Paulo). A rota executa `core.aplicar_retencao()` com
 o papel `orla_worker` (a migração 0070 tirou a permissão do papel do app; só o worker executa) e grava `privacidade.retencao_aplicada` na
 auditoria com as contagens, sem dado pessoal. Falha dispara o alerta por e-mail.
+
+## Redação de regras e decisões: roteiro manual restante
+
+`core.redigir_decisao` cobre as tabelas de Regras. Para um pedido de titular sobre texto que também veio de outro lugar, o operador da plataforma completa à mão:
+
+1. **Decisão migrada do Contexto** (contexto ou evidência dizem "Migrado do Contexto (campo …)"): a linha de origem em `core.client_context_entries` (mesmo `client_id` e `field_key`) e as revisões em `core.client_context_revisions` ainda guardam o texto. Esses campos saíram do catálogo e não aparecem na tela: a limpeza é por SQL do operador, com autorização nomeada em produção (ADR 0046). O livro `core.regras_migracao_contexto` não guarda texto e garante que a migração não recrie a decisão.
+2. **Brain publicado no bucket** (`regras.md`, `decisoes.jsonl`): a redação marca o Brain do cliente como pendente e a próxima publicação sai sem o texto. As gerações anteriores no bucket expiram pelo ciclo de vida em 90 dias; para remover antes, o operador apaga as gerações do prefixo `brain/` do cliente.
+3. A evidência nunca é exportada ao Brain nem ao agente, então não há cópia dela fora do Postgres.
+

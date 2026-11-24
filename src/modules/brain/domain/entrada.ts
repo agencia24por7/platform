@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { hashEstavel } from './jsonEstavel.ts';
 import { PADRAO_DO_ID, PADRAO_DO_TIPO, lerUrn } from './urn.ts';
 
-export const VERSAO_DO_ESQUEMA_DO_CATALOGO = 1;
+export const VERSAO_DO_ESQUEMA_DO_CATALOGO = 2;
 
 export const TIPOS_NATIVOS = [
   'conexao',
@@ -12,6 +12,9 @@ export const TIPOS_NATIVOS = [
   'contexto_lista',
   'arquivo',
   'capacidade',
+  'limite',
+  'regra',
+  'decisao',
 ] as const;
 
 export const NIVEIS_DE_SENSIBILIDADE = ['publico', 'negocio', 'pessoal_possivel', 'restrito'] as const;
@@ -154,6 +157,7 @@ export const entradaSemSelo = z.object({
   sensibilidade,
   epistemico: epistemico.nullable(),
   valorResumido: z.string().max(600).nullable(),
+  conteudoNaoConfiavel: z.literal(true).optional(),
   tags: z.array(z.string().regex(/^[a-z0-9][a-z0-9_:-]{0,47}$/)).max(30),
   relacoes: z.array(relacao).max(200),
   versao: z.number().int().min(1),

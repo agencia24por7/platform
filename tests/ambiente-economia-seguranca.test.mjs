@@ -130,8 +130,9 @@ test('hook PreToolUse devolve a decisão no formato do Claude Code', () => {
   assert.equal(livre.status, 0)
   assert.equal(livre.stdout, '')
   const lixo = spawnSync('node', [hook('guarda-pre-uso.mjs')], { cwd: raiz, encoding: 'utf8', input: 'não é json' })
-  assert.equal(lixo.status, 0)
+  assert.equal(lixo.status, 2)
   assert.equal(lixo.stdout, '')
+  assert.match(lixo.stderr, /guarda do projeto/)
 })
 
 test('hook PreToolUse barra leitura inteira de arquivo grande e libera com recorte', () => {

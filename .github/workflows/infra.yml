@@ -65,6 +65,7 @@ jobs:
           TF_VAR_dns_zone_project: ${{ vars.DNS_ZONE_PROJECT }}
           TF_VAR_acme_email: ${{ vars.ACME_EMAIL }}
           TF_VAR_budget_notification_emails: '["${{ vars.ACME_EMAIL }}"]'
+          TF_VAR_logs_na_nuvem_habilitado: ${{ vars.LOGS_NA_NUVEM_HABILITADO || 'false' }}
 
       - name: Resumo do plano
         run: |
@@ -117,6 +118,7 @@ jobs:
           TF_VAR_dns_zone_project: ${{ vars.DNS_ZONE_PROJECT }}
           TF_VAR_acme_email: ${{ vars.ACME_EMAIL }}
           TF_VAR_budget_notification_emails: '["${{ vars.ACME_EMAIL }}"]'
+          TF_VAR_logs_na_nuvem_habilitado: ${{ vars.LOGS_NA_NUVEM_HABILITADO || 'false' }}
 
       - name: Plano no resumo do job
         run: |

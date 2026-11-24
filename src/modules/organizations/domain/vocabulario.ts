@@ -20,6 +20,9 @@ export type Vocabulario = {
   readonly seloInterno: string;
   readonly avisoDeCompartilhou: string;
   readonly avisoDeDescompartilhou: string;
+  readonly origemCliente: string;
+  readonly origemEquipe: string;
+  readonly semConfirmacaoDoAnunciante: string;
 };
 
 const AGENCIA: Vocabulario = {
@@ -42,6 +45,9 @@ const AGENCIA: Vocabulario = {
   seloInterno: 'só a equipe vê',
   avisoDeCompartilhou: 'O que já está preenchido nesta seção passa a aparecer para o cliente.',
   avisoDeDescompartilhou: 'Esta seção deixa de mostrar as respostas da equipe ao cliente.',
+  origemCliente: 'Cliente',
+  origemEquipe: 'Agência',
+  semConfirmacaoDoAnunciante: 'Sem confirmação do anunciante',
 };
 
 const ANUNCIANTE: Vocabulario = {
@@ -64,6 +70,9 @@ const ANUNCIANTE: Vocabulario = {
   seloInterno: 'só você vê',
   avisoDeCompartilhou: 'O que já está preenchido nesta seção passa a aparecer para quem você convidar.',
   avisoDeDescompartilhou: 'Esta seção deixa de mostrar o que já está preenchido a quem você convidar.',
+  origemCliente: 'Empresa',
+  origemEquipe: 'Equipe',
+  semConfirmacaoDoAnunciante: 'Sem confirmação do responsável pelo negócio',
 };
 
 export function vocabularioDe(tipo: OrganizationType): Vocabulario {

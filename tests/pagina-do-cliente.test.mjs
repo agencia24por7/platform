@@ -1,16 +1,8 @@
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { after, before, describe, it } from 'node:test';
 import { BASE, acaoComCampo, appIsUp, browse, ensureUser, signIn, signOut, submitAction } from './helpers.mjs';
-
-const dono = (sql) =>
-  execFileSync('docker', ['exec', '-i', process.env.TRIA_TEST_PG ?? 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
-    encoding: 'utf8',
-  })
-    .trim()
-    .split('\n')[0]
-    .trim();
+import { psqlDonoPrimeiraLinha as dono } from './apoio/psql.mjs';
 
 const sufixo = randomBytes(4).toString('hex');
 let org;
@@ -92,7 +84,7 @@ describe('página do cliente: abas, papéis e formulário público', { concurren
     const excluido = dono(`INSERT INTO core.clients (organization_id, name, business_model, excluido_em, excluido_por) VALUES ('${org}', 'Excluído ${sufixo}', 'ecommerce', now(), '${pessoas.owner}') RETURNING id`);
     signIn(pessoas.owner);
     for (const id of [alheio, excluido]) {
-      for (const rota of ['', '/conexoes', '/conexoes?secao=pedir', '/contexto', '/contexto?secao=brain', '/dados', '/acessos', '/brain', '/configuracoes']) {
+      for (const rota of ['', '/conexoes', '/conexoes?secao=pedir', '/contexto', '/contexto?secao=brain', '/regras', '/regras?secao=linha', '/dados', '/acessos', '/brain', '/configuracoes']) {
         assert.equal((await browse(`/clientes/${id}${rota}`)).status, 404, `${id}${rota}`);
       }
     }

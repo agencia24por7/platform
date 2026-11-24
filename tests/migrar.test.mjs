@@ -4,13 +4,13 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
+import { PG_CONTAINER } from './apoio/pgContainer.mjs';
 
-const CONTAINER = process.env.TRIA_TEST_PG ?? process.env.PG_CONTAINER ?? 'orla-postgres';
 const BANCO = `migrar_teste_${process.pid}`;
 const pasta = mkdtempSync(join(tmpdir(), 'migrar-'));
 
 const admin = (sql, banco = BANCO) =>
-  execFileSync('docker', ['exec', '-i', CONTAINER, 'psql', '-X', '-U', 'postgres', '-d', banco, '-qtAc', sql], {
+  execFileSync('docker', ['exec', '-i', PG_CONTAINER, 'psql', '-X', '-U', 'postgres', '-d', banco, '-qtAc', sql], {
     encoding: 'utf8',
   }).trim();
 
@@ -19,7 +19,7 @@ const escrever = (nome, sql) => writeFileSync(join(pasta, nome), sql);
 function migrar() {
   const r = spawnSync('sh', ['infra/compose/migrar.sh'], {
     encoding: 'utf8',
-    env: { ...process.env, PG_CONTAINER: CONTAINER, PG_USER: 'postgres', PG_DB: BANCO, MIGRACOES_DIR: pasta, SINCRONIZAR_SENHA_WORKER: '0' },
+    env: { ...process.env, PG_CONTAINER: PG_CONTAINER, PG_USER: 'postgres', PG_DB: BANCO, MIGRACOES_DIR: pasta, SINCRONIZAR_SENHA_WORKER: '0' },
   });
   return { status: r.status, saida: `${r.stdout}${r.stderr}` };
 }

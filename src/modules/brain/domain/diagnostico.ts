@@ -1,9 +1,10 @@
 import type { AvaliacaoDeCapacidade } from './capacidades.ts';
 import type { ContextoParaCatalogo, ItemDoContexto } from './contexto.ts';
 import type { EntradaDoCatalogo, StatusDeFrescor } from './entrada.ts';
+import { lacunasEssenciais, propostasPendentes, type LacunaEssencial, type RegrasParaCatalogo } from './regras.ts';
 import type { ConexaoDoInventario, InventarioDoCliente, ResumoDeColetas } from './inventario.ts';
 
-export const VERSAO_DO_DIAGNOSTICO = 1;
+export const VERSAO_DO_DIAGNOSTICO = 2;
 
 export type ConectorDoDiagnostico = {
   readonly plataforma: string;
@@ -71,7 +72,9 @@ export type TipoDeAcao =
   | 'recuperar_lacuna'
   | 'preencher_contexto'
   | 'confirmar_sugestoes'
-  | 'resolver_contradicao';
+  | 'resolver_contradicao'
+  | 'definir_limite'
+  | 'decidir_propostas';
 
 export type AcaoRecomendada = {
   readonly id: string;
@@ -80,6 +83,13 @@ export type AcaoRecomendada = {
   readonly titulo: string;
   readonly motivo: string;
   readonly alvo: string | null;
+};
+
+export type RegrasDiagnosticadas = {
+  readonly vigentes: number;
+  readonly propostasPendentes: number;
+  readonly aRevisar: number;
+  readonly lacunasEssenciais: readonly LacunaEssencial[];
 };
 
 export type Diagnostico = {
@@ -94,6 +104,7 @@ export type Diagnostico = {
   readonly conectores: readonly ConectorDiagnosticado[];
   readonly fontes: readonly FonteDiagnosticada[];
   readonly contexto: ContextoDiagnosticado | null;
+  readonly regras: RegrasDiagnosticadas | null;
   readonly qualidade: readonly AvisoDeQualidade[];
   readonly acoes: readonly AcaoRecomendada[];
 };
@@ -102,6 +113,7 @@ export type EntradaDoDiagnostico = {
   readonly entradas: readonly EntradaDoCatalogo[];
   readonly inventario: InventarioDoCliente;
   readonly contexto: ContextoParaCatalogo | null;
+  readonly regras?: RegrasParaCatalogo | null;
   readonly capacidades: readonly AvaliacaoDeCapacidade[];
   readonly conectores: readonly ConectorDoDiagnostico[];
 };
@@ -206,7 +218,7 @@ export function diagnosticarContexto(contexto: ContextoParaCatalogo): ContextoDi
   let pendentesTotal = 0;
   const secoes = contexto.catalogo.map((secao): SecaoDiagnosticada => {
     const completude = completudePorSecao.get(secao.key);
-    const valores = Object.values(contexto.campos).filter((v) => v.secao === secao.key);
+    const valores = Object.values(contexto.campos).filter((v) => v.secao === secao.key && secao.campos.some((c) => c.key === v.fieldKey));
     const itens = secao.campos.flatMap((campo) => (campo.tipo === 'lista' ? contexto.listas[campo.key] ?? [] : []));
     const essenciais = new Set(secao.campos.filter((c) => c.nivel === 'essencial').map((c) => c.key));
     const sugestoesPendentes = [...valores, ...itens].filter((m) => m.revisao === 'sugerido').length;
@@ -234,6 +246,15 @@ export function diagnosticarContexto(contexto: ContextoParaCatalogo): ContextoDi
   };
 }
 
+export function diagnosticarRegras(regras: RegrasParaCatalogo): RegrasDiagnosticadas {
+  return {
+    vigentes: regras.decisoes.filter((d) => d.vigente).length,
+    propostasPendentes: propostasPendentes(regras),
+    aRevisar: regras.decisoes.filter((d) => d.aRevisar && d.status !== 'rejeitada' && d.status !== 'revogada').length,
+    lacunasEssenciais: lacunasEssenciais(regras),
+  };
+}
+
 function avisosDeQualidade(entrada: EntradaDoDiagnostico): readonly AvisoDeQualidade[] {
   const urnPorFonte = new Map(entrada.entradas.filter((e) => e.tipo === 'fonte').map((e) => [e.id, e.urn]));
   const avisos: AvisoDeQualidade[] = [];
@@ -257,6 +278,7 @@ function acoesRecomendadas(
   conectores: readonly ConectorDiagnosticado[],
   fontes: readonly FonteDiagnosticada[],
   contexto: ContextoDiagnosticado | null,
+  regras: RegrasDiagnosticadas | null,
 ): readonly AcaoRecomendada[] {
   const acoes: AcaoRecomendada[] = [];
   const titulos = new Map(entrada.capacidades.map((c) => [c.id, c.titulo]));
@@ -356,6 +378,29 @@ function acoesRecomendadas(
     }
   }
 
+  if (regras) {
+    for (const lacuna of regras.lacunasEssenciais) {
+      acoes.push({
+        id: `definir_limite:${lacuna.chave}`,
+        tipo: 'definir_limite',
+        impacto: 45,
+        titulo: `Definir o limite: ${lacuna.nome}`,
+        motivo: 'Sem este limite vigente o agente não tem teto para planejar nem para agir; registre em Regras do cliente.',
+        alvo: null,
+      });
+    }
+    if (regras.propostasPendentes > 0) {
+      acoes.push({
+        id: 'decidir_propostas',
+        tipo: 'decidir_propostas',
+        impacto: 32,
+        titulo: `Decidir ${regras.propostasPendentes} proposta(s) de regra ou limite`,
+        motivo: 'Propostas de agentes não valem até uma pessoa efetivar ou rejeitar.',
+        alvo: null,
+      });
+    }
+  }
+
   const unicas = [...new Map(acoes.map((a) => [a.id, a])).values()];
   return unicas.sort((a, b) => b.impacto - a.impacto || a.id.localeCompare(b.id));
 }
@@ -364,7 +409,8 @@ export function diagnosticarCliente(entrada: EntradaDoDiagnostico): Diagnostico 
   const conectores = diagnosticarConectores(entrada);
   const fontes = diagnosticarFontes(entrada);
   const contexto = entrada.contexto ? diagnosticarContexto(entrada.contexto) : null;
-  const acoes = acoesRecomendadas(entrada, conectores, fontes, contexto);
+  const regras = entrada.regras ? diagnosticarRegras(entrada.regras) : null;
+  const acoes = acoesRecomendadas(entrada, conectores, fontes, contexto, regras);
   return {
     schemaVersion: VERSAO_DO_DIAGNOSTICO,
     resumo: {
@@ -381,6 +427,7 @@ export function diagnosticarCliente(entrada: EntradaDoDiagnostico): Diagnostico 
     conectores,
     fontes,
     contexto,
+    regras,
     qualidade: avisosDeQualidade(entrada),
     acoes,
   };

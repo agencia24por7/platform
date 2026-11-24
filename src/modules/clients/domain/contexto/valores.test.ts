@@ -51,9 +51,9 @@ describe('validação por tipo', () => {
   });
 
   it('dinheiro em texto vira centavos', () => {
-    assert.deepEqual(validarValor(campo('orcamento_mensal_total'), 'R$ 12.500,50'), { ok: true, valor: 1250050 });
-    assert.deepEqual(validarValor(campo('orcamento_mensal_total'), 999), { ok: true, valor: 999 });
-    assert.equal(validarValor(campo('orcamento_mensal_total'), -1).ok, false);
+    assert.deepEqual(validarValor(campo('ticket_medio_geral'), 'R$ 12.500,50'), { ok: true, valor: 1250050 });
+    assert.deepEqual(validarValor(campo('ticket_medio_geral'), 999), { ok: true, valor: 999 });
+    assert.equal(validarValor(campo('ticket_medio_geral'), -1).ok, false);
   });
 
   it('escala só de 1 a 5', () => {
