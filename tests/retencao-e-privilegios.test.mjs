@@ -1,30 +1,11 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { sqlDeConexao } from './helpers.mjs';
+import { psqlComoApp as comoApp, psqlComoDono as dono, psqlComoWorker as comoWorker } from './apoio/psql.mjs';
 
-const CONTAINER = process.env.TRIA_TEST_PG ?? 'orla-postgres';
 const sufixo = randomBytes(4).toString('hex');
 
-const variavel = (nome) =>
-  process.env[nome] ??
-  readFileSync('.env', 'utf8')
-    .split('\n')
-    .find((linha) => linha.startsWith(`${nome}=`))
-    .slice(nome.length + 1);
-
-const psql = (usuario, senha, sql) =>
-  execFileSync(
-    'docker',
-    ['exec', '-i', ...(senha ? ['-e', `PGPASSWORD=${senha}`] : []), CONTAINER, 'psql', '-U', usuario, ...(senha ? ['-h', '127.0.0.1'] : []), '-d', 'tria', '-qtAc', sql],
-    { encoding: 'utf8' },
-  ).trim();
-
-const dono = (sql) => psql('postgres', null, sql);
-const comoApp = (sql) => psql('orla_app', variavel('APP_DB_PASSWORD'), sql);
-const comoWorker = (sql) => psql('orla_worker', variavel('WORKER_DB_PASSWORD'), sql);
 const ultimaLinha = (texto) => texto.split('\n').at(-1).trim();
 
 const noContexto = (organizacao, clientes, consulta) =>

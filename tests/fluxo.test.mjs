@@ -1,15 +1,7 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
 import { appIsUp, BASE, browse, ensureUser, get, makeOwner, post, signIn, sqlDeConexao, submitForm } from './helpers.mjs';
-import { PG_CONTAINER } from './apoio/pgContainer.mjs';
-
-const query = (sql) =>
-  execFileSync('docker', ['exec', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
-    .toString()
-    .trim()
-    .split('\n')[0]
-    .trim();
+import { psqlDonoPrimeiraLinha as query, sufixoNumerico } from './apoio/psql.mjs';
 
 const reset = () =>
   query(
@@ -19,6 +11,8 @@ const reset = () =>
 describe('cadastro de cliente e contas', { concurrency: false }, () => {
   let clientId = '';
   let accountId = '';
+  const externalIdDaConta = `act_${sufixoNumerico()}`;
+  const externalIdDaOutraConta = `act_${sufixoNumerico()}`;
 
   before(async () => {
     if (!(await appIsUp())) throw new Error('App não está no ar');
@@ -127,7 +121,7 @@ describe('cadastro de cliente e contas', { concurrency: false }, () => {
 
   it('recusa hierarquia de dois níveis', async () => {
     const branchId = query(
-      `select id from core.clients where parent_client_id = '${clientId}' limit 1`,
+      `select id from core.clients where parent_client_id = '${clientId}' order by id limit 1`,
     );
     const result = await submitForm('/clientes/novo', {
       name: 'Neta de Teste',
@@ -142,7 +136,7 @@ describe('cadastro de cliente e contas', { concurrency: false }, () => {
   it('oferece apenas as contas que a plataforma liberou', async () => {
     const conexao = query(
       sqlDeConexao({
-        organizationId: query('select id from core.organizations limit 1'),
+        organizationId: query('select id from core.organizations order by id limit 1'),
         platform: 'meta',
         label: 'Meta de teste',
         externalId: 'grant-teste',
@@ -153,20 +147,20 @@ describe('cadastro de cliente e contas', { concurrency: false }, () => {
     query(
       `INSERT INTO integrations.connection_accounts
          (organization_id, connection_id, platform, external_id, name, currency, timezone, inactive)
-       VALUES ((select id from core.organizations limit 1), '${conexao}', 'meta', 'act_1234567890',
+       VALUES ((select id from core.organizations order by id limit 1), '${conexao}', 'meta', '${externalIdDaConta}',
                'Meta — Cliente de Teste', 'BRL', 'America/Sao_Paulo', false)`,
     );
 
     const html = await browse(`/clientes/${clientId}/contas/nova`).then((r) => r.text());
     assert.match(html, /Meta — Cliente de Teste/);
-    assert.match(html, /act_1234567890/);
+    assert.match(html, new RegExp(externalIdDaConta));
     assert.ok(!html.includes('name="externalId"'), 'não pode haver campo de digitação do id');
     assert.ok(!html.includes('name="credentialRef"'), 'não pode haver campo de credencial');
   });
 
   it('vincula a conta escolhida entre as descobertas', async () => {
     const descoberta = query(
-      `select id from integrations.connection_accounts where state = 'discovered' limit 1`,
+      `select id from integrations.connection_accounts where state = 'discovered' and external_id = '${externalIdDaConta}'`,
     );
 
     const result = await submitForm(`/clientes/${clientId}/contas/nova`, {
@@ -176,8 +170,8 @@ describe('cadastro de cliente e contas', { concurrency: false }, () => {
     });
 
     assert.equal(result.status, 303);
-    accountId = query('select id from integrations.ad_accounts limit 1');
-    assert.equal(query('select external_id from integrations.ad_accounts'), 'act_1234567890');
+    accountId = query(`select id from integrations.ad_accounts where external_id = '${externalIdDaConta}'`);
+    assert.equal(query(`select external_id from integrations.ad_accounts where id = '${accountId}'`), externalIdDaConta);
     assert.equal(
       query(`select state from integrations.connection_accounts where id = '${descoberta}'`),
       'linked',
@@ -188,9 +182,9 @@ describe('cadastro de cliente e contas', { concurrency: false }, () => {
     query(
       `INSERT INTO integrations.connection_accounts
          (organization_id, connection_id, platform, external_id, name, currency, timezone, inactive)
-       VALUES ((select id from core.organizations limit 1),
-               (select id from integrations.connections limit 1),
-               'meta', 'act_9999999999', 'Outra conta', 'BRL', 'America/Sao_Paulo', false)`,
+       VALUES ((select id from core.organizations order by id limit 1),
+               (select id from integrations.connections order by id limit 1),
+               'meta', '${externalIdDaOutraConta}', 'Outra conta', 'BRL', 'America/Sao_Paulo', false)`,
     );
 
     const result = await submitForm(`/clientes/${clientId}/contas/nova`, {

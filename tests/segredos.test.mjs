@@ -1,13 +1,8 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
-
-const dono = (sql) =>
-  execFileSync('docker', ['exec', '-i', process.env.TRIA_TEST_PG ?? 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
-    encoding: 'utf8',
-  }).trim();
+import { psqlComoDono as dono } from './apoio/psql.mjs';
 
 function arquivosDe(raiz, extensoes) {
   const encontrados = [];

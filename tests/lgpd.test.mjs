@@ -1,44 +1,7 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
 import { before, describe, it } from 'node:test';
 import { appIsUp, BASE, sqlDeConexao, workerHeaders } from './helpers.mjs';
-import { PG_CONTAINER } from './apoio/pgContainer.mjs';
-
-function senhaDoApp() {
-  return readFileSync('.env', 'utf8')
-    .split('\n')
-    .find((linha) => linha.startsWith('APP_DB_PASSWORD='))
-    .slice('APP_DB_PASSWORD='.length);
-}
-
-const dono = (sql) =>
-  execFileSync('docker', ['exec', '-i', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
-    encoding: 'utf8',
-  }).trim();
-
-const comoApp = (sql) =>
-  execFileSync(
-    'docker',
-    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoApp()}`, PG_CONTAINER,
-     'psql', '-U', 'orla_app', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
-    { encoding: 'utf8' },
-  ).trim();
-
-function senhaDoWorker() {
-  return readFileSync('.env', 'utf8')
-    .split('\n')
-    .find((linha) => linha.startsWith('WORKER_DB_PASSWORD='))
-    .slice('WORKER_DB_PASSWORD='.length);
-}
-
-const comoWorker = (sql) =>
-  execFileSync(
-    'docker',
-    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoWorker()}`, PG_CONTAINER,
-     'psql', '-U', 'orla_worker', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
-    { encoding: 'utf8' },
-  ).trim();
+import { psqlComoDono as dono, psqlComoApp as comoApp, psqlComoWorker as comoWorker } from './apoio/psql.mjs';
 
 const umaLinha = (saida) => saida.split('\n')[0].trim();
 const marca = Date.now();
