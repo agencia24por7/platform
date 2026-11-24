@@ -63,3 +63,55 @@ resource "google_monitoring_alert_policy" "erros_app" {
 
   depends_on = [google_project_service.required]
 }
+
+resource "google_logging_project_bucket_config" "retencao_minima" {
+  count = var.logs_na_nuvem_habilitado ? 1 : 0
+
+  project        = var.project_id
+  location       = "global"
+  bucket_id      = "_Default"
+  retention_days = var.logs_na_nuvem_retencao_dias
+
+  depends_on = [google_project_service.required, google_logging_project_exclusion.containers_fora_da_aplicacao]
+}
+
+resource "google_monitoring_alert_policy" "uso_de_logs" {
+  count = var.logs_na_nuvem_habilitado ? 1 : 0
+
+  display_name = "${local.prefix} · uso de logs perto do free tier"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "Logs ingeridos no mês acima do limite de alerta"
+
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/billing/monthly_bytes_ingested\" AND resource.type=\"global\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = var.logs_na_nuvem_alerta_uso_gib * 1073741824
+      duration        = "0s"
+
+      aggregations {
+        alignment_period     = "7200s"
+        per_series_aligner   = "ALIGN_MAX"
+        cross_series_reducer = "REDUCE_SUM"
+      }
+
+      trigger {
+        count = 1
+      }
+    }
+  }
+
+  notification_channels = [for canal in google_monitoring_notification_channel.budget : canal.id]
+
+  alert_strategy {
+    auto_close = "86400s"
+  }
+
+  documentation {
+    mime_type = "text/markdown"
+    content   = "O volume de logs ingeridos no mês passou do limite de alerta (${var.logs_na_nuvem_alerta_uso_gib} GiB; o free tier é de 50 GiB por projeto por mês, e o excedente custa US$ 0,50/GiB). Veja a página Logs Storage do console, identifique a origem do volume e, se preciso, aperte o filtro do agente na VM ou a exclusão do projeto. Esta mensagem não traz conteúdo de log."
+  }
+
+  depends_on = [google_project_service.required]
+}

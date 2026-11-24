@@ -53,6 +53,11 @@ não mostra mudança alguma: o script de inicialização renderiza byte a byte i
 - `google_monitoring_alert_policy.erros_app`: dispara com contagem maior que 0 em janela de 5 minutos e avisa
   os canais `google_monitoring_notification_channel.budget`. Sem e-mails em `budget_notification_emails` a política
   é criada sem canal (aparece no console, não notifica); a mensagem não carrega conteúdo de log.
+- `google_logging_project_bucket_config.retencao_minima`: define a retenção do bucket `_Default` em
+  `logs_na_nuvem_retencao_dias` (padrão 3). Vale para todo o projeto, não só para a aplicação; só o que chega ao
+  `_Default` é afetado, e o `_Required` (auditoria administrativa) não muda. Reduzir o prazo apaga o que for mais antigo.
+- `google_monitoring_alert_policy.uso_de_logs`: avisa por e-mail quando os logs ingeridos no mês passam de
+  `logs_na_nuvem_alerta_uso_gib` (padrão 40 GiB), para agir antes de estourar os 50 GiB grátis. Só avisa.
 - O script é idempotente: não reinstala o pacote se já existe e só reinicia o agente se o `config.yaml` mudou.
   Falha na instalação não derruba a subida da pilha (o script registra e segue).
 
@@ -66,13 +71,31 @@ não mostra mudança alguma: o script de inicialização renderiza byte a byte i
    aparece nas linhas da aplicação e que `jsonPayload` não traz o campo `log` duplicado.
 6. Gere um erro de teste na aplicação e confirme o e-mail do alerta.
 
-### Custos
+### Custos e retenção (ADR 0054)
 
-- Verificado (Google Cloud Observability): ingestão de log US$ 0,50/GiB, primeiros 50 GiB por projeto por mês
-  grátis; retenção além de 30 dias US$ 0,01/GiB/mês; consulta grátis.
-- Não verificado, conferir na tabela vigente antes de ligar: preço da métrica baseada em log e da política de alerta
-  (as fontes consultadas divergem). Não há estimativa nesta documentação.
-- O volume real não foi medido. Meça o tamanho dos logs docker na VM antes de ligar, para comparar com os 50 GiB.
+Meta: ficar dentro do free tier e guardar o mínimo necessário. Conferido em 2026-11-24 na documentação do Google Cloud
+([preços](https://cloud.google.com/products/observability/pricing), [free tier](https://docs.cloud.google.com/free/docs/free-cloud-features)):
+
+- Ingestão: os primeiros 50 GiB por projeto por mês são grátis; acima disso US$ 0,50/GiB. Consulta é grátis.
+- Retenção: o padrão de 30 dias já está incluído; acima de 30 dias custa US$ 0,01/GiB/mês. Por isso
+  `logs_na_nuvem_retencao_dias` vai de 1 a 30 e o padrão é **3 dias** (cobre um fim de semana entre o alerta por e-mail
+  e a investigação). Ele ajusta o bucket `_Default` do projeto. Os logs de auditoria de atividade administrativa ficam no
+  `_Required`, que não muda. Reduzir a retenção apaga o que for mais antigo que o novo prazo; ao desligar o pacote, a
+  retenção **não** volta a 30 dias sozinha.
+- Log excluído (a exclusão do projeto e a lista de permissão do agente) não é cobrado.
+- Alerta: sem cobrança hoje; o Google informa que passa a cobrar no mínimo a partir de 2027-09-01 (US$ 0,35 por mês por
+  referência de métrica). O alerta de uso do mês usa métrica de billing, que fica fora dessa cobrança.
+- Métrica de erros baseada em log: a única fonte encontrada (blog antigo) fala em 150 MiB grátis por conta de cobrança,
+  e um contador de linhas usa uma fração disso. **Não confirmado em página vigente**: conferir na primeira fatura.
+- Trava de uso: o alerta "uso de logs perto do free tier" avisa por e-mail quando os logs ingeridos no mês passam de
+  `logs_na_nuvem_alerta_uso_gib` (padrão 40 GiB, folga de 10 GiB sobre o free tier). A métrica é
+  `logging.googleapis.com/billing/monthly_bytes_ingested`, atualizada em lotes de hora em hora, por isso o alinhamento é de
+  2 horas. O alerta só avisa: não corta a ingestão.
+- Pior caso conhecido: `client.erro` (aberto a anônimo) aceita até 120 requisições por minuto de cerca de 6 KB, ou
+  perto de 1 GB por dia (cerca de 31 GB por mês) se alguém saturar o limite. Cabe no free tier, mas consome dois terços dele.
+- O volume real **não foi medido**: o agente não tem acesso à VM de produção. Antes de ligar, meça na VM
+  (`sudo du -sh /var/lib/docker/containers/*/*-json.log`) e compare com 50 GiB por mês. Depois de ligar, acompanhe a
+  página Logs Storage do console por um mês.
 
 ### Antes de ligar: impressão digital da chave apt
 
