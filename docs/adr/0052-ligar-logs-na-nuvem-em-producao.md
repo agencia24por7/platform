@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-11-24
 ---
-# ADR-0051: Ligar o pacote de logs na nuvem em produção
+# ADR-0052: Ligar o pacote de logs na nuvem em produção
 
 ## Contexto
 

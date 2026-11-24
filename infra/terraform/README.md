@@ -20,7 +20,7 @@ com `roles/viewer`.
 ## Logs na nuvem (opt-in) (ADR 0049, decisão 6)
 
 Desligado por padrão no Terraform (`logs_na_nuvem_habilitado = false`); em produção é ligado pela variável do GitHub
-`LOGS_NA_NUVEM_HABILITADO` (ADR 0051), que o `infra.yml` repassa ao `plan` e ao `apply`. Com a variável em `false` o `plan`
+`LOGS_NA_NUVEM_HABILITADO` (ADR 0052), que o `infra.yml` repassa ao `plan` e ao `apply`. Com a variável em `false` o `plan`
 não mostra mudança alguma: o script de inicialização renderiza byte a byte igual ao anterior e nenhum recurso novo é criado.
 
 ### O que liga
