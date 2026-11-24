@@ -265,7 +265,11 @@ export function ExploradorDoBrain({ clienteNome, entradas, mapa }: Props) {
             </select>
           </label>
         </div>
-        {filtradas.length === 0 ? (
+        {filtradas.length === 0 && base.length === 0 ? (
+          <div className="empty">
+            Nada preenchido ainda. <button type="button" className="linkish" onClick={() => setMostrarVazias(true)}>Mostrar o que falta</button>
+          </div>
+        ) : filtradas.length === 0 ? (
           <div className="empty">
             Nada com esses filtros. <button type="button" className="linkish" onClick={limpar}>Limpar filtros</button>
           </div>

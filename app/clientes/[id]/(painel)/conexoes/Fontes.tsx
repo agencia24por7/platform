@@ -170,7 +170,7 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
         <ul className="fontes fontes--grupos">
           {grupos.map((grupo) => (
             <li key={grupo.chave} className="grupo-fonte">
-              <details className="grupo-fonte__detalhes">
+              <details className="grupo-fonte__detalhes" open={grupo.linhas.some((l) => l.situacao.variacao === 'reautorizar' || l.situacao.variacao === 'erro')}>
                 <summary className="grupo-fonte__topo">
                   <Marca platform={grupo.plataforma} tamanho={24} />
                   <div className="grupo-fonte__quem">

@@ -21,7 +21,7 @@ Na prática o gestor via o mesmo texto três vezes (faixa de prontidão, cartõe
 - As abas deixam de ser cartões com o próximo passo repetido: viram abas compactas (rótulo e estado). O próximo passo fica no `title`, e a ação continua no cabeçalho (ADR 0036, "ação principal").
 
 ### Fontes
-- Uma linha por conexão: marca, nome do conector, quantidade, estado agregado (o pior da conexão) e seta. Contas, ID, frescor, "Pausar coleta", "Mais" e "Reautorizar" ficam dentro do `<details>` da conexão e só aparecem ao clicar. A ordem "problema primeiro" não muda.
+- Uma linha por conexão: marca, nome do conector, quantidade, estado agregado (o pior da conexão) e seta. Contas, ID, frescor, "Pausar coleta", "Mais" e "Reautorizar" ficam dentro do `<details>` da conexão e só aparecem ao clicar. A ordem "problema primeiro" não muda, e a conexão com linha em "Reautorizar" ou "Erro" já abre expandida, para o botão não ficar escondido.
 
 ### Brain
 - O catálogo mostra por padrão só o que está preenchido (`entradaPreenchida`, em `domain/painel/brain/preenchimento.ts`): conexão, fonte e arquivo sempre; tabela com linhas ou dias de dado; seção e lista do contexto com completude acima de zero; capacidade fora, por ser derivada do sistema. Um botão "Mostrar o que falta (N)" revela o resto, porque as lacunas alimentam o diagnóstico e não podem sumir.
