@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
 import { appIsUp, BASE, browse, ensureUser, get, makeOwner, post, signIn, sqlDeConexao, submitForm } from './helpers.mjs';
-import { psqlDonoPrimeiraLinha as query, sufixoUnico } from './apoio/psql.mjs';
+import { psqlDonoPrimeiraLinha as query, sufixoNumerico } from './apoio/psql.mjs';
 
 const reset = () =>
   query(
@@ -11,8 +11,8 @@ const reset = () =>
 describe('cadastro de cliente e contas', { concurrency: false }, () => {
   let clientId = '';
   let accountId = '';
-  const externalIdDaConta = `act_${sufixoUnico()}`;
-  const externalIdDaOutraConta = `act_${sufixoUnico()}`;
+  const externalIdDaConta = `act_${sufixoNumerico()}`;
+  const externalIdDaOutraConta = `act_${sufixoNumerico()}`;
 
   before(async () => {
     if (!(await appIsUp())) throw new Error('App não está no ar');
@@ -171,7 +171,7 @@ describe('cadastro de cliente e contas', { concurrency: false }, () => {
 
     assert.equal(result.status, 303);
     accountId = query(`select id from integrations.ad_accounts where external_id = '${externalIdDaConta}'`);
-    assert.equal(query(`select external_id from integrations.ad_accounts where id = '${accountId}'`), 'act_1234567890');
+    assert.equal(query(`select external_id from integrations.ad_accounts where id = '${accountId}'`), externalIdDaConta);
     assert.equal(
       query(`select state from integrations.connection_accounts where id = '${descoberta}'`),
       'linked',

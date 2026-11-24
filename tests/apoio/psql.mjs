@@ -47,6 +47,8 @@ export const primeiraLinha = (texto) => texto.split('\n')[0].trim();
 
 export const sufixoUnico = () => randomUUID().slice(0, 8);
 
+export const sufixoNumerico = () => String(Date.now()) + String(Math.floor(Math.random() * 1000)).padStart(3, '0');
+
 export const psqlComoApp = (sql) => psqlComoRole('orla_app', sql);
 
 export const psqlComoWorker = (sql) => psqlComoRole('orla_worker', sql);
