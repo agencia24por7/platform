@@ -155,9 +155,12 @@ export type Indicadores = {
 };
 
 const MS_POR_HORA = 3600_000;
+const AUTORES_AUTOMATIZADOS: ReadonlySet<string> = new Set(['agent', 'worker', 'system']);
 
-function ehAlertaOuFalha(action: string): boolean {
-  return action === 'plataforma.alerta' || /(^|[._])(failed|falha)$/.test(action);
+function ehAlertaOuFalha(entry: AuditEntry): boolean {
+  if (entry.action === 'plataforma.alerta') return true;
+  if (/(^|[._])(failed|falha)$/.test(entry.action)) return true;
+  return entry.metadata?.status === 'failed';
 }
 
 export function indicadoresDaTrilha(
@@ -171,7 +174,7 @@ export function indicadoresDaTrilha(
   const atores = new Set(
     naJanela.flatMap((entry) => (entry.actorId ? [`${entry.actorType}:${entry.actorId}`] : [])),
   );
-  const automatizados = naJanela.filter((entry) => entry.actorType !== 'user').length;
+  const automatizados = naJanela.filter((entry) => AUTORES_AUTOMATIZADOS.has(entry.actorType)).length;
   const ultimo = entries.reduce<Date | null>(
     (maisRecente, entry) =>
       maisRecente === null || entry.occurredAt > maisRecente ? entry.occurredAt : maisRecente,
@@ -184,7 +187,7 @@ export function indicadoresDaTrilha(
     automatizados,
     percentualAutomatizado:
       naJanela.length === 0 ? 0 : Math.round((automatizados / naJanela.length) * 100),
-    alertasEFalhas: naJanela.filter((entry) => ehAlertaOuFalha(entry.action)).length,
+    alertasEFalhas: naJanela.filter((entry) => ehAlertaOuFalha(entry)).length,
     ultimoEvento: ultimo,
     cobreJanelaInteira: entries.length < limiteDaConsulta,
   };

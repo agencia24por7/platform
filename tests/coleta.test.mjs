@@ -51,6 +51,7 @@ describe('camada de coleta', { concurrency: false }, () => {
   let connectionId = '';
   let clientId = '';
   let coletaId = '';
+  let auditoriaBase = '0';
   let contaLivre = { accountId: '', organizationId: '', clientId: '' };
 
   const liberar = (conta) => query(
@@ -75,6 +76,7 @@ describe('camada de coleta', { concurrency: false }, () => {
     if (!(await appIsUp())) throw new Error('App não está no ar');
     const usuario = ensureUser('coleta@tria.local');
     signIn(usuario);
+    auditoriaBase = query('select coalesce(max(id), 0) from audit.audit_log');
     const conta = await ensureAccount(usuario);
     accountId = conta.accountId;
     connectionId = conta.connectionId;
@@ -368,7 +370,7 @@ describe('camada de coleta', { concurrency: false }, () => {
 
   it('registra toda a trilha do worker', async () => {
     const actions = query(
-      "select string_agg(distinct action, ',' order by action) from audit.audit_log where actor_type = 'worker' and action like 'coleta.%'",
+      `select string_agg(distinct action, ',' order by action) from audit.audit_log where actor_type = 'worker' and action like 'coleta.%' and id > ${auditoriaBase}`,
     );
     assert.equal(actions, 'coleta.execucao.abrir,coleta.execucao.fechar,coleta.fontes.lidas');
   });

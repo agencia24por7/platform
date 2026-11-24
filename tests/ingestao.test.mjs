@@ -59,11 +59,13 @@ async function ensureAccount(userId) {
 describe('coleta com metadados e auditoria', { concurrency: false }, () => {
   let accountId = '';
   let runId = '';
+  let auditoriaBase = '0';
 
   before(async () => {
     if (!(await appIsUp())) throw new Error('App não está no ar');
     const usuario = ensureUser();
     signIn(usuario);
+    auditoriaBase = query('select coalesce(max(id), 0) from audit.audit_log');
     accountId = await ensureAccount(usuario);
     assert.match(accountId, /^[a-f0-9-]{36}$/);
   });
@@ -232,7 +234,7 @@ describe('coleta com metadados e auditoria', { concurrency: false }, () => {
 
   it('registra toda a trilha do worker', async () => {
     const actions = query(
-      "select string_agg(distinct action, ',' order by action) from audit.audit_log where actor_type = 'worker'",
+      `select string_agg(distinct action, ',' order by action) from audit.audit_log where actor_type = 'worker' and id > ${auditoriaBase}`,
     );
     assert.equal(actions, 'sync.metrics.ingest,sync.queue.read,sync.run.close,sync.run.open');
   });

@@ -170,6 +170,27 @@ describe('indicadores da trilha', () => {
     assert.equal(resultado.cobreJanelaInteira, true);
   });
 
+  it('conta execução encerrada com status failed, não a bem-sucedida nem a parcial', () => {
+    const resultado = indicadoresDaTrilha(
+      [
+        em(1, { action: 'coleta.execucao.fechar', metadata: { status: 'failed' } }),
+        em(2, { action: 'sync.run.close', metadata: { status: 'failed' } }),
+        em(3, { action: 'sync.run.close', metadata: { status: 'success' } }),
+        em(4, { action: 'coleta.execucao.fechar', metadata: { status: 'partial' } }),
+      ],
+      agora,
+    );
+    assert.equal(resultado.alertasEFalhas, 2);
+  });
+
+  it('acesso por link público é pessoa, não automação', () => {
+    const resultado = indicadoresDaTrilha(
+      [em(1, { actorType: 'invite', actorId: null }), em(2, { actorType: 'agent', actorId: 'a-1' }), em(3, {})],
+      agora,
+    );
+    assert.equal(resultado.automatizados, 1);
+  });
+
   it('sem eventos não divide por zero', () => {
     const resultado = indicadoresDaTrilha([], agora);
     assert.equal(resultado.percentualAutomatizado, 0);
