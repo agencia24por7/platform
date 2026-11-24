@@ -32,6 +32,7 @@ import {
 import { VERSAO_DO_BRAIN, construirBrain } from '@/modules/clients/domain/contexto/brain';
 import { calcularCompletude, proximosCampos, type CampoFaltando, type Completude } from '@/modules/clients/domain/contexto/completude';
 import { diferencasDeDados, type DiferencaDeChave } from '@/modules/clients/domain/contexto/diff';
+import type { ModeloDeOperacao } from '@/modules/clients/domain/contexto/heranca';
 import {
   MOTIVO_DO_LINK,
   estadoDoLink,
@@ -87,6 +88,7 @@ export type EstadoDoBrain = {
 
 export type ContextoCompleto = {
   readonly cliente: { readonly id: string; readonly nome: string };
+  readonly cadastro: { readonly modeloDeOperacao: ModeloDeOperacao; readonly temRede: boolean; readonly redeNome: string | null };
   readonly catalogoVersao: number;
   readonly catalogo: readonly Secao[];
   readonly campos: Readonly<Record<string, EntradaDeCampo>>;
@@ -853,6 +855,7 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
       const { contexto } = carregado;
       return ok({
         cliente: { id: escopo.clientId, nome: carregado.nome },
+        cadastro: { modeloDeOperacao: carregado.cadastro.modeloDeOperacao, temRede: carregado.cadastro.temRede, redeNome: carregado.cadastro.redeNome },
         catalogoVersao: VERSAO_DO_CATALOGO,
         catalogo: CATALOGO,
         campos: Object.fromEntries(contexto.campos.map((e) => [e.fieldKey, e])),
@@ -881,7 +884,7 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
           fieldKey: comando.fieldKey,
           versaoEsperada: comando.versaoEsperada,
         });
-        if (!apagado.ok && apagado.versaoAtual !== 0) return err(conflito(apagado.versaoAtual));
+        if (!apagado.ok) return apagado.versaoAtual !== 0 ? err(conflito(apagado.versaoAtual)) : ok(null);
         await registrar(comando, ator, 'client.context.field_cleared', { secao: achado.secao.key, chave: comando.fieldKey });
         mudou(comando);
         return ok(null);

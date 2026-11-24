@@ -34,7 +34,8 @@ import {
 import { calcularCompletude } from '@/modules/clients/domain/contexto/completude';
 import type { ArquivoDeContexto, EntradaDeCampo, ItemDeLista, Marcacao } from '@/modules/clients/domain/contexto/tipos';
 import type { OrganizationType } from '@/modules/organizations/domain/organization';
-import { vocabularioDe, type Vocabulario } from '@/modules/organizations/domain/vocabulario';
+import { noVocabularioDe, vocabularioDe, type Vocabulario } from '@/modules/organizations/domain/vocabulario';
+import { campoEhHerdado } from '@/modules/clients/domain/contexto/heranca';
 import { traduzirCatalogo } from '@/modules/clients/domain/contexto/vocabulario';
 import { barrasDaSecao } from '@/modules/clients/domain/painel/resumo';
 
@@ -386,9 +387,10 @@ export function EditorDeContexto({ tipo, clienteId, dados, podeEditar, secaoInic
         selos={
           <>
             {!campo.visivelAoCliente ? <span className="selo selo--interno">{vocabulario.seloInterno}</span> : null}
+            {entrada && campoEhHerdado(entrada) ? <span className="selo selo--fonte" title="Vem do cadastro. Ao editar aqui, o valor passa a ser deste contexto.">Do cadastro</span> : null}
             <Selos
               vocabulario={vocabulario}
-              marcacao={entrada ?? null}
+              marcacao={entrada && !campoEhHerdado(entrada) ? entrada : null}
               podeEditar={podeEditar}
               aoMarcar={(ep) => void marcarCampo(campo.key, ep)}
               aoConfirmar={() => void confirmarCampo(campo.key)}
@@ -511,6 +513,19 @@ export function EditorDeContexto({ tipo, clienteId, dados, podeEditar, secaoInic
           </header>
 
           <div className="secao-editor__campos" key={secao.key}>
+            {secao.key === 'empresa' ? (
+              <dl className="cadastro-herdado" aria-label={noVocabularioDe(tipo, 'Dados do cadastro do cliente')}>
+                <div className="cadastro-herdado__item">
+                  <dt>Modelo de negócio</dt>
+                  <dd>{dados.cadastro.modeloDeOperacao === 'ecommerce' ? 'E-commerce' : 'Geração de leads'}</dd>
+                </div>
+                <div className="cadastro-herdado__item">
+                  <dt>Pertence a uma rede</dt>
+                  <dd>{dados.cadastro.temRede ? (dados.cadastro.redeNome ? `Sim, filial de ${dados.cadastro.redeNome}` : 'Sim') : 'Não'}</dd>
+                </div>
+                <p className="cadastro-herdado__nota xsmall subtle">{noVocabularioDe(tipo, 'Vêm do cadastro do cliente e não se editam aqui.')}</p>
+              </dl>
+            ) : null}
             <div className="nivel nivel--essencial">
               <h3 className="nivel__titulo">Essencial</h3>
               {essenciais.map(renderizarCampo)}

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useDeferredValue, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { CopyButton } from '@/../app/_components/CopyButton';
 import { ALTURA_DO_MAPA, LARGURA_DO_MAPA, type Mapa, type NoDoMapa } from '@/modules/clients/domain/painel/brain/mapa';
+import { separarPorPreenchimento } from '@/modules/clients/domain/painel/brain/preenchimento';
 import {
   FRESCORES,
   NIVEIS_DE_SENSIBILIDADE,
@@ -44,13 +45,16 @@ export function ExploradorDoBrain({ clienteNome, entradas, mapa }: Props) {
   const [frescor, setFrescor] = useState('');
   const [listaAberta, setListaAberta] = useState(false);
   const [vista, setVista] = useState<'tabela' | 'cartoes'>('tabela');
+  const [mostrarVazias, setMostrarVazias] = useState(false);
   const termo = useDeferredValue(busca.trim().toLowerCase());
   const porUrn = useMemo(() => new Map(entradas.map((e) => [e.urn, e])), [entradas]);
+  const { preenchidas, vazias } = useMemo(() => separarPorPreenchimento(entradas), [entradas]);
+  const base = mostrarVazias ? entradas : preenchidas;
   const provedores = useMemo(() => [...new Set(entradas.map((e) => e.provedor).filter((p): p is string => Boolean(p)))], [entradas]);
 
   const filtradas = useMemo(
     () =>
-      entradas.filter((e) => {
+      base.filter((e) => {
         if (tipo && e.tipo !== tipo) return false;
         if (provedor && e.provedor !== provedor) return false;
         if (sensibilidade && e.sensibilidade.nivel !== sensibilidade) return false;
@@ -58,7 +62,7 @@ export function ExploradorDoBrain({ clienteNome, entradas, mapa }: Props) {
         if (!termo) return true;
         return [e.titulo, e.descricao, e.urn, ...e.tags, ...e.esquema.map((c) => c.nome)].some((t) => t.toLowerCase().includes(termo));
       }),
-    [entradas, tipo, provedor, sensibilidade, frescor, termo],
+    [base, tipo, provedor, sensibilidade, frescor, termo],
   );
 
   function abrir(urn: string) {
@@ -85,11 +89,11 @@ export function ExploradorDoBrain({ clienteNome, entradas, mapa }: Props) {
 
   return (
     <>
-      <section className="card mapa-vivo" aria-labelledby="t-mapa">
-        <div className="card__head">
+      <details className="card mapa-vivo brain-recolhivel">
+        <summary className="card__head">
           <h2 className="card__title" id="t-mapa">Mapa vivo</h2>
           <span className="card__sub">Tamanho = cobertura · cor = frescor · tracejado = ligação que falta</span>
-        </div>
+        </summary>
         <div className="mapa-vivo__palco">
           <svg
             className="mapa-vivo__svg"
@@ -208,15 +212,20 @@ export function ExploradorDoBrain({ clienteNome, entradas, mapa }: Props) {
             ))}
           </div>
         </div>
-      </section>
+      </details>
 
       <section className="card" aria-labelledby="t-catalogo">
         <div className="card__head">
           <h2 className="card__title" id="t-catalogo">Catálogo</h2>
           <span className="card__sub">
-            {filtradas.length} de {entradas.length} entradas
+            {filtradas.length} de {base.length} entradas
           </span>
           <span className="spacer" />
+          {vazias.length > 0 ? (
+            <button type="button" className="btn btn--compacto" aria-pressed={mostrarVazias} onClick={() => setMostrarVazias((atual) => !atual)}>
+              {mostrarVazias ? 'Só o preenchido' : `Mostrar o que falta (${vazias.length})`}
+            </button>
+          ) : null}
           <div className="segmentado" role="group" aria-label="Forma de exibir">
             <button type="button" aria-pressed={vista === 'tabela'} onClick={() => setVista('tabela')}>Tabela</button>
             <button type="button" aria-pressed={vista === 'cartoes'} onClick={() => setVista('cartoes')}>Cartões</button>

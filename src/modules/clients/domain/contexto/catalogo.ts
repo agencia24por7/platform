@@ -1,4 +1,4 @@
-export const VERSAO_DO_CATALOGO = 1;
+export const VERSAO_DO_CATALOGO = 2;
 
 export const NIVEIS = ['essencial', 'aprofundar'] as const;
 export type Nivel = (typeof NIVEIS)[number];
@@ -313,7 +313,7 @@ const empresa: Secao = {
         ['servico', 'Serviço'],
         ['recorrencia', 'Recorrência / assinatura'],
       ]),
-      ESSENCIAL,
+      { ...ESSENCIAL, ajuda: 'Como a empresa vende. O tipo de operação (leads ou e-commerce) vem do cadastro do cliente.' },
     ),
     selecao(
       'tempo_de_mercado',
@@ -563,6 +563,18 @@ const marca: Secao = {
     texto('cores', 'Cores', { exemplo: '#0A3D62, #F6B93B', max: 200 }),
     texto('fontes', 'Fontes', { max: 200 }),
     arquivo('arquivos_de_fonte', 'Arquivos das fontes', ['fonte'], { ajuda: 'TTF, OTF ou WOFF2.', maxArquivos: 10 }),
+    arquivo('referencias_visuais', 'Referências visuais', ['imagem'], {
+      ajuda: 'Imagens de peças, sites ou campanhas, da marca ou de outras, que mostram o visual que o cliente quer seguir.',
+      maxArquivos: 20,
+    }),
+    arquivo('identidade_visual', 'Identidade visual', ['imagem'], {
+      ajuda: 'Paleta, padrões, aplicações da marca e exemplos de uso. O logo e o manual têm campos próprios acima.',
+      maxArquivos: 20,
+    }),
+    arquivo('criativos_historicos', 'Criativos históricos da marca', ['imagem', 'video'], {
+      ajuda: 'Anúncios e posts que a marca já publicou, principalmente os que mais funcionaram. Evite imagens com pessoas identificáveis sem autorização de uso.',
+      maxArquivos: 30,
+    }),
     selecao(
       'arquetipo',
       'Arquétipo',
