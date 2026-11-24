@@ -4,11 +4,7 @@ import { readFileSync } from 'node:fs';
 import { before, describe, it } from 'node:test';
 import { BASE, acaoComCampo, appIsUp, browse, ensureUser, get, makeOwner, signIn, signOut, sqlDeConexao, submitAction } from './helpers.mjs';
 import { PG_CONTAINER } from './apoio/pgContainer.mjs';
-
-const dono = (sql) =>
-  execFileSync('docker', ['exec', '-i', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
-    encoding: 'utf8',
-  }).trim();
+import { psqlComoDono as dono, sufixoUnico } from './apoio/psql.mjs';
 
 const umaLinha = (saida) => saida.split('\n')[0].trim();
 
@@ -27,7 +23,7 @@ describe('remover uma conexão', { concurrency: false }, () => {
     if (!(await appIsUp())) throw new Error('App não está no ar');
 
     org = umaLinha(dono(
-      `INSERT INTO core.organizations (name, slug, type) VALUES ('Remoção', 'remocao-${Date.now()}', 'agency') RETURNING id`,
+      `INSERT INTO core.organizations (name, slug, type) VALUES ('Remoção', 'remocao-${sufixoUnico()}', 'agency') RETURNING id`,
     ));
     const pessoa = ensureUser('remove@tria.local');
     dono(`UPDATE core.members SET revoked_at = now() WHERE user_id = '${pessoa}' AND organization_id <> '${org}'`);
@@ -78,13 +74,16 @@ describe('sair encerra a sessão de verdade', { concurrency: false }, () => {
   it('um cookie copiado antes do logout deixa de valer depois dele', async () => {
     const pessoa = ensureUser('sair@tria.local');
     const org = umaLinha(dono(
-      `INSERT INTO core.organizations (name, slug, type) VALUES ('Sair', 'sair-${Date.now()}', 'agency') RETURNING id`,
+      `INSERT INTO core.organizations (name, slug, type) VALUES ('Sair', 'sair-${sufixoUnico()}', 'agency') RETURNING id`,
     ));
     makeOwner(pessoa, org);
     const cookie = signIn(pessoa);
-    await new Promise((resolver) => setTimeout(resolver, 20));
-
-    assert.equal((await browse('/clientes')).status, 200);
+    let antes = await browse('/clientes');
+    for (let tentativa = 0; tentativa < 50 && antes.status !== 200; tentativa += 1) {
+      await new Promise((resolver) => setTimeout(resolver, 20));
+      antes = await browse('/clientes');
+    }
+    assert.equal(antes.status, 200, 'sessão recém-emitida deve valer antes do logout');
 
     const saida = await fetch(`${BASE}/api/auth/sair`, {
       method: 'POST',
@@ -110,7 +109,7 @@ describe('conta do RD Station guardada por chave ganha cliente dono', { concurre
     if (!(await appIsUp())) throw new Error('App não está no ar');
 
     org = umaLinha(dono(
-      `INSERT INTO core.organizations (name, slug, type) VALUES ('Agência RD', 'agencia-rd-${Date.now()}', 'agency') RETURNING id`,
+      `INSERT INTO core.organizations (name, slug, type) VALUES ('Agência RD', 'agencia-rd-${sufixoUnico()}', 'agency') RETURNING id`,
     ));
     const pessoa = ensureUser('rdstation@tria.local');
     dono(`UPDATE core.members SET revoked_at = now() WHERE user_id = '${pessoa}' AND organization_id <> '${org}'`);
@@ -222,7 +221,7 @@ describe('erro na autorização volta para as conexões com o modal', { concurre
 
     const pessoa = ensureUser('modal@tria.local');
     const org = umaLinha(dono(
-      `INSERT INTO core.organizations (name, slug, type) VALUES ('Modal', 'modal-${Date.now()}', 'agency') RETURNING id`,
+      `INSERT INTO core.organizations (name, slug, type) VALUES ('Modal', 'modal-${sufixoUnico()}', 'agency') RETURNING id`,
     ));
     makeOwner(pessoa, org);
     signIn(pessoa);

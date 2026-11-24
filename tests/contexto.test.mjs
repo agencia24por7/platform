@@ -1,34 +1,13 @@
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { request as pedidoHttp } from 'node:http';
 import { before, describe, it } from 'node:test';
 import { BASE, appIsUp, env as ambiente } from './helpers.mjs';
-import { PG_CONTAINER } from './apoio/pgContainer.mjs';
+import { psqlComoDono as dono, psqlComoRole } from './apoio/psql.mjs';
 
 
-function senhaDoApp() {
-  if (process.env.APP_DB_PASSWORD) return process.env.APP_DB_PASSWORD;
-  if (!existsSync('.env')) throw new Error('Sem .env nem APP_DB_PASSWORD para entrar como o papel do app.');
-  return readFileSync('.env', 'utf8')
-    .split('\n')
-    .find((linha) => linha.startsWith('APP_DB_PASSWORD='))
-    .slice('APP_DB_PASSWORD='.length);
-}
-
-const dono = (sql) =>
-  execFileSync('docker', ['exec', '-i', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
-    encoding: 'utf8',
-  }).trim();
-
-const comoApp = (sql) =>
-  execFileSync(
-    'docker',
-    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoApp()}`, PG_CONTAINER,
-     'psql', '-U', 'orla_app', '-h', '127.0.0.1', '-d', 'tria', '-v', 'ON_ERROR_STOP=1', '-qtAc', sql],
-    { encoding: 'utf8' },
-  ).trim();
+const comoApp = (sql) => psqlComoRole('orla_app', sql, { pararNoErro: true });
 
 const naOrg = (org, sql) =>
   comoApp(`SET app.organization_id = '${org}'; SET app.client_ids = '*'; SET app.user_id = ''; ${sql}`);

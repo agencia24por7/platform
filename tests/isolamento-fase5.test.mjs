@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { after, before, describe, it } from 'node:test';
 import { BASE, appIsUp, ensureOperador, ensureUser, portariaToken, sessionCookie } from './helpers.mjs';
-import { PG_CONTAINER } from './apoio/pgContainer.mjs';
+import { psqlComoDono as dono, psqlComoApp as comoApp, psqlComoWorker as comoWorker } from './apoio/psql.mjs';
 import { FUNCOES_DEFINER_DO_APP, SQL_FUNCOES_DEFINER_DO_APP } from './apoio/funcoesDefinerDoApp.mjs';
 
 async function postarSemConexaoReaproveitada(url, init) {
@@ -16,54 +15,6 @@ async function postarSemConexaoReaproveitada(url, init) {
     return fetch(url, init);
   }
 }
-
-function valorDoEnv(chave) {
-  return readFileSync('.env', 'utf8')
-    .split('\n')
-    .find((linha) => linha.startsWith(`${chave}=`))
-    .slice(chave.length + 1);
-}
-
-const dono = (sql) => {
-  try {
-    return execFileSync('docker', ['exec', '-i', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
-  } catch (falha) {
-    throw new Error(`psql como dono falhou: ${String(falha.stderr ?? '').trim()}`);
-  }
-};
-
-const comoApp = (sql) => {
-  try {
-    return execFileSync(
-      'docker',
-      ['exec', '-i', '-e', `PGPASSWORD=${valorDoEnv('APP_DB_PASSWORD')}`, PG_CONTAINER,
-       'psql', '-U', 'orla_app', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
-      { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
-    ).trim();
-  } catch (falha) {
-    const erro = new Error(`psql como orla_app falhou: ${String(falha.stderr ?? '').trim()}`);
-    erro.stderr = String(falha.stderr ?? '');
-    throw erro;
-  }
-};
-
-const comoWorker = (sql) => {
-  try {
-    return execFileSync(
-      'docker',
-      ['exec', '-i', '-e', `PGPASSWORD=${valorDoEnv('WORKER_DB_PASSWORD')}`, PG_CONTAINER,
-       'psql', '-U', 'orla_worker', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
-      { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
-    ).trim();
-  } catch (falha) {
-    const erro = new Error(`psql como orla_worker falhou: ${String(falha.stderr ?? '').trim()}`);
-    erro.stderr = String(falha.stderr ?? '');
-    throw erro;
-  }
-};
 
 const comoUsuario = (userId, sql) => comoApp(`SET app.user_id = '${userId}'; ${sql}`);
 

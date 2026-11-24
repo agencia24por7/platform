@@ -1,29 +1,7 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
 import { before, describe, it } from 'node:test';
 import { acaoComCampo, appIsUp, BASE, browse, ensureUser, sessionCookie, signIn, signOut, sqlDeConexao, submitAction } from './helpers.mjs';
-import { PG_CONTAINER } from './apoio/pgContainer.mjs';
-
-function senhaDoApp() {
-  return readFileSync('.env', 'utf8')
-    .split('\n')
-    .find((linha) => linha.startsWith('APP_DB_PASSWORD='))
-    .slice('APP_DB_PASSWORD='.length);
-}
-
-const dono = (sql) =>
-  execFileSync('docker', ['exec', '-i', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
-    encoding: 'utf8',
-  }).trim();
-
-const comoApp = (sql) =>
-  execFileSync(
-    'docker',
-    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoApp()}`, PG_CONTAINER,
-     'psql', '-U', 'orla_app', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
-    { encoding: 'utf8' },
-  ).trim();
+import { psqlComoDono as dono, psqlComoApp as comoApp } from './apoio/psql.mjs';
 
 const naSessao = (organizationId, clientIds, sql) =>
   comoApp(
