@@ -142,7 +142,7 @@ variable "logs_na_nuvem_chave_apt_impressao" {
 }
 
 variable "logs_na_nuvem_retencao_dias" {
-  description = "Retenção, em dias, do bucket _Default do Cloud Logging, onde ficam os logs da aplicação (ADR 0054). O padrão de 3 dias cobre um fim de semana entre o alerta por e-mail e a investigação. Acima de 30 dias a retenção é cobrada (US$ 0,01/GiB/mês); por isso o limite é 30."
+  description = "Retenção, em dias, do bucket próprio dos logs da aplicação no Cloud Logging (ADR 0054). O _Default do projeto não é alterado e segue em 30 dias. O padrão de 3 dias cobre um fim de semana entre o alerta por e-mail e a investigação. Acima de 30 dias a retenção é cobrada (US$ 0,01/GiB/mês); por isso o limite é 30."
   type        = number
   default     = 3
 

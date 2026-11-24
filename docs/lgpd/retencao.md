@@ -6,6 +6,7 @@ Fonte da verdade dos prazos publicados em `/privacidade` (seção 8). Mudou um p
 |---|---|---|
 | IP na trilha de auditoria | 6 meses | `core.aplicar_retencao()` (diária) |
 | Registro da trilha de auditoria | 2 anos | `core.aplicar_retencao()` |
+| Logs da aplicação no Cloud Logging (linhas de erro e eventos, com `userId` pseudônimo em `client.erro`) | 3 dias por padrão, ajustável de 1 a 30 (`logs_na_nuvem_retencao_dias`); não consta em `/privacidade` | retenção do bucket `<prefixo>-aplicacao` no Terraform (ADR 0054); a trilha de auditoria do Postgres não é afetada |
 | Eventos de login de quem não tem organização | 30 dias | `core.aplicar_retencao()` |
 | E-mail de convite vencido ou cancelado | 90 dias após vencer/cancelar | `core.aplicar_retencao()` (vira `removido+<id>@invalid`) |
 | E-mail de convite aceito | 30 dias após o aceite | `core.aplicar_retencao()` (vira `removido+<id>@invalid`) |

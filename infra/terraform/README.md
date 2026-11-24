@@ -53,9 +53,14 @@ não mostra mudança alguma: o script de inicialização renderiza byte a byte i
 - `google_monitoring_alert_policy.erros_app`: dispara com contagem maior que 0 em janela de 5 minutos e avisa
   os canais `google_monitoring_notification_channel.budget`. Sem e-mails em `budget_notification_emails` a política
   é criada sem canal (aparece no console, não notifica); a mensagem não carrega conteúdo de log.
-- `google_logging_project_bucket_config.retencao_minima`: define a retenção do bucket `_Default` em
-  `logs_na_nuvem_retencao_dias` (padrão 3). Vale para todo o projeto, não só para a aplicação; só o que chega ao
-  `_Default` é afetado, e o `_Required` (auditoria administrativa) não muda. Reduzir o prazo apaga o que for mais antigo.
+- `google_logging_project_bucket_config.aplicacao`, `google_logging_project_sink.aplicacao` e
+  `google_project_iam_member.sink_aplicacao`: bucket próprio `<prefixo>-aplicacao` com retenção de
+  `logs_na_nuvem_retencao_dias` (padrão 3), que recebe só a linha da aplicação. O sink escreve com identidade própria e
+  o papel `logging.bucketWriter` restrito, por condição, a esse bucket. O `_Default` do projeto **não é alterado**: a
+  auditoria de acesso a dados do KMS e do Secret Manager (ADR 0032) e os demais logs ficam nos 30 dias padrão.
+- `google_logging_project_exclusion.aplicacao_no_bucket_proprio`: tira a linha da aplicação do `_Default` para não
+  guardá-la duas vezes nem contá-la em dobro nos 50 GiB. Só é criada depois do sink e do papel, para a linha nunca ficar
+  sem destino. Para investigar, no Logs Explorer use "Refinar escopo" e escolha o bucket `<prefixo>-aplicacao`.
 - `google_monitoring_alert_policy.uso_de_logs`: avisa por e-mail quando os logs ingeridos no mês passam de
   `logs_na_nuvem_alerta_uso_gib` (padrão 40 GiB), para agir antes de estourar os 50 GiB grátis. Só avisa.
 - O script é idempotente: não reinstala o pacote se já existe e só reinicia o agente se o `config.yaml` mudou.
@@ -79,9 +84,9 @@ Meta: ficar dentro do free tier e guardar o mínimo necessário. Conferido em 20
 - Ingestão: os primeiros 50 GiB por projeto por mês são grátis; acima disso US$ 0,50/GiB. Consulta é grátis.
 - Retenção: o padrão de 30 dias já está incluído; acima de 30 dias custa US$ 0,01/GiB/mês. Por isso
   `logs_na_nuvem_retencao_dias` vai de 1 a 30 e o padrão é **3 dias** (cobre um fim de semana entre o alerta por e-mail
-  e a investigação). Ele ajusta o bucket `_Default` do projeto. Os logs de auditoria de atividade administrativa ficam no
-  `_Required`, que não muda. Reduzir a retenção apaga o que for mais antigo que o novo prazo; ao desligar o pacote, a
-  retenção **não** volta a 30 dias sozinha.
+  e a investigação). Vale **só para o bucket da aplicação**: encurtar o `_Default` apagaria, em todo o projeto, a trilha de
+  acesso a dados do KMS, do Secret Manager e do BigQuery, que fica nele e não está no `_Required`. Reduzir o prazo do
+  bucket da aplicação apaga o que for mais antigo que o novo prazo.
 - Log excluído (a exclusão do projeto e a lista de permissão do agente) não é cobrado.
 - Alerta: sem cobrança hoje; o Google informa que passa a cobrar no mínimo a partir de 2027-09-01 (US$ 0,35 por mês por
   referência de métrica). O alerta de uso do mês usa métrica de billing, que fica fora dessa cobrança.
@@ -89,8 +94,10 @@ Meta: ficar dentro do free tier e guardar o mínimo necessário. Conferido em 20
   e um contador de linhas usa uma fração disso. **Não confirmado em página vigente**: conferir na primeira fatura.
 - Trava de uso: o alerta "uso de logs perto do free tier" avisa por e-mail quando os logs ingeridos no mês passam de
   `logs_na_nuvem_alerta_uso_gib` (padrão 40 GiB, folga de 10 GiB sobre o free tier). A métrica é
-  `logging.googleapis.com/billing/monthly_bytes_ingested`, atualizada em lotes de hora em hora, por isso o alinhamento é de
-  2 horas. O alerta só avisa: não corta a ingestão.
+  `logging.googleapis.com/billing/monthly_bytes_ingested`, atualizada em lotes de hora em hora (segundo a [página de buckets do Cloud Logging](https://docs.cloud.google.com/logging/docs/buckets); não testado
+  neste projeto), por isso o alinhamento é de 2 horas. O alerta só avisa: não corta a ingestão.
+- Os logs de acesso a dados (KMS: um por Encrypt ou Decrypt de cada coleta; Secret Manager; BigQuery) também entram nos
+  50 GiB e não estão na estimativa abaixo; o alerta de uso mede o projeto inteiro e os cobre.
 - Pior caso conhecido: `client.erro` (aberto a anônimo) aceita até 120 requisições por minuto de cerca de 6 KB, ou
   perto de 1 GB por dia (cerca de 31 GB por mês) se alguém saturar o limite. Cabe no free tier, mas consome dois terços dele.
 - O volume real **não foi medido**: o agente não tem acesso à VM de produção. Antes de ligar, meça na VM
@@ -117,8 +124,8 @@ Debian 13 não estão confirmados lá.
 Os logs saem da VM para o Cloud Logging do projeto, legível por quem tem `roles/viewer`. Só a linha da aplicação sai
 (ver acima), e o logger redige segredo e e-mail (ADR 0049, decisão 4). Logs de Postgres, Caddy e n8n não saem. Mesmo
 assim, revise amostras no Logs Explorer logo após ligar: se o contexto de alguma linha da aplicação trouxer dado de
-cliente, ele ficará 30 dias no `_Default`. A cópia na nuvem usa a retenção do bucket `_Default` (30 dias); esta
-mudança não altera a retenção. A cópia local continua nos limites atuais (docker 10m x 3, journald 200M/1 mês).
+cliente, ele ficará `logs_na_nuvem_retencao_dias` dias (padrão 3) no bucket `<prefixo>-aplicacao`, e não no `_Default`.
+A cópia local continua nos limites atuais (docker 10m x 3, journald 200M/1 mês).
 
 ### Memória da VM
 
@@ -149,4 +156,5 @@ nas primeiras horas, e o OOM kill em `journalctl -k`.
 3. Se a variável for desligada com o agente ainda vivo, ele continua enviando logs e a exclusão que descarta os
    containers fora da aplicação some do plano: os logs de Caddy, Postgres e n8n passam a ser guardados no `_Default`
    (30 dias, legível por `roles/viewer`) até o agente ser parado. Nesse caso pare o agente na VM imediatamente.
-4. Os logs já enviados ficam no `_Default` até vencerem os 30 dias.
+4. Os logs da aplicação já enviados ficam no bucket `<prefixo>-aplicacao` até vencer a retenção dele; o bucket, o sink e o papel
+   somem do plano ao desligar a variável e precisam ser removidos pelo `infra.yml` antes de qualquer outra mudança.
