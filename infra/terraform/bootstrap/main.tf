@@ -174,6 +174,8 @@ resource "google_project_iam_member" "terraform" {
     "roles/resourcemanager.projectIamAdmin",
     "roles/serviceusage.serviceUsageAdmin",
     "roles/monitoring.notificationChannelEditor",
+    "roles/monitoring.alertPolicyEditor",
+    "roles/logging.configWriter",
     "roles/dns.admin",
     "roles/bigquery.admin",
     "roles/storage.admin",
