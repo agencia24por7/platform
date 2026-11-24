@@ -4,8 +4,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
+import { PG_CONTAINER } from './apoio/pgContainer.mjs';
 
-const CONTAINER = process.env.TRIA_TEST_PG ?? process.env.PG_CONTAINER ?? 'orla-postgres';
 const BANCO = `corte_gate_teste_${process.pid}`;
 const pasta = mkdtempSync(join(tmpdir(), 'corte-gate-'));
 const migracoes = join(pasta, 'migracoes');
@@ -13,7 +13,7 @@ const portao = join(pasta, 'corte-gate.txt');
 const marca = join(pasta, '.preflight-ok');
 
 const admin = (sql, banco = BANCO) =>
-  execFileSync('docker', ['exec', '-i', CONTAINER, 'psql', '-X', '-U', 'postgres', '-d', banco, '-qtAc', sql], { encoding: 'utf8' }).trim();
+  execFileSync('docker', ['exec', '-i', PG_CONTAINER, 'psql', '-X', '-U', 'postgres', '-d', banco, '-qtAc', sql], { encoding: 'utf8' }).trim();
 const escrever = (nome, sql) => writeFileSync(join(migracoes, nome), sql);
 const livro = () => admin("SELECT coalesce(string_agg(nome, ',' ORDER BY nome), '') FROM public.schema_migrations");
 
@@ -22,7 +22,7 @@ function migrar(extra = {}) {
     encoding: 'utf8',
     env: {
       ...process.env,
-      PG_CONTAINER: CONTAINER,
+      PG_CONTAINER: PG_CONTAINER,
       PG_USER: 'postgres',
       PG_DB: BANCO,
       MIGRACOES_DIR: migracoes,

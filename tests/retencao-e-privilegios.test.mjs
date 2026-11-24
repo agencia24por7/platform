@@ -4,8 +4,8 @@ import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { sqlDeConexao } from './helpers.mjs';
+import { PG_CONTAINER } from './apoio/pgContainer.mjs';
 
-const CONTAINER = process.env.TRIA_TEST_PG ?? 'orla-postgres';
 const sufixo = randomBytes(4).toString('hex');
 
 const variavel = (nome) =>
@@ -18,7 +18,7 @@ const variavel = (nome) =>
 const psql = (usuario, senha, sql) =>
   execFileSync(
     'docker',
-    ['exec', '-i', ...(senha ? ['-e', `PGPASSWORD=${senha}`] : []), CONTAINER, 'psql', '-U', usuario, ...(senha ? ['-h', '127.0.0.1'] : []), '-d', 'tria', '-qtAc', sql],
+    ['exec', '-i', ...(senha ? ['-e', `PGPASSWORD=${senha}`] : []), PG_CONTAINER, 'psql', '-U', usuario, ...(senha ? ['-h', '127.0.0.1'] : []), '-d', 'tria', '-qtAc', sql],
     { encoding: 'utf8' },
   ).trim();
 
