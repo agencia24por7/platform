@@ -131,9 +131,9 @@ variable "logs_na_nuvem_habilitado" {
 }
 
 variable "logs_na_nuvem_chave_apt_impressao" {
-  description = "Impressão digital (40 hex) da chave do repositório apt do Ops Agent, conferida pelo humano na documentação oficial da Google. Vazia, a instalação do agente é recusada."
+  description = "Impressão digital (40 hex) da chave do repositório apt do Ops Agent (Artifact Registry Repository Signer). Proveniência e como conferir: seção Logs na nuvem do README. Vazia, a instalação do agente é recusada."
   type        = string
-  default     = ""
+  default     = "35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3"
 
   validation {
     condition     = can(regex("^([0-9A-Fa-f]{40})?$", var.logs_na_nuvem_chave_apt_impressao))
