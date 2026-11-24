@@ -1,3 +1,4 @@
+import { herdarDoCadastro, type CadastroDoCliente } from '../domain/contexto/heranca.ts';
 import { withTenant, withoutTenant } from '@/shared/db/tenant';
 import type { Epistemico, Fonte, Revisao, SecaoKey } from '@/modules/clients/domain/contexto/catalogo';
 import type {
@@ -131,7 +132,10 @@ export type NovoArquivo = {
 };
 
 export type ContextoRepository = {
-  carregar(organizationId: string, clientId: string): Promise<{ readonly nome: string; readonly contexto: ContextoBruto } | null>;
+  carregar(
+    organizationId: string,
+    clientId: string,
+  ): Promise<{ readonly nome: string; readonly cadastro: CadastroDoCliente; readonly contexto: ContextoBruto } | null>;
   lerEntrada(organizationId: string, clientId: string, fieldKey: string): Promise<EntradaDeCampo | null>;
   gravarEntrada(
     organizationId: string,
@@ -467,8 +471,22 @@ export function createContextoRepository(): ContextoRepository {
   return {
     async carregar(organizationId, clientId) {
       return withTenant(organizationId, async (tx) => {
-        const clientes = (await tx`SELECT name FROM core.clients WHERE id = ${clientId}`) as unknown as { name: string }[];
-        if (!clientes[0]) return null;
+        const clientes = (await tx`
+          SELECT c.name, c.segment, c.business_model::text AS business_model, c.created_at, c.parent_client_id IS NOT NULL AS tem_rede, p.name AS rede_nome
+          FROM core.clients c
+          LEFT JOIN core.clients p ON p.id = c.parent_client_id
+          WHERE c.id = ${clientId}
+        `) as unknown as { name: string; segment: string | null; business_model: string; created_at: Date; tem_rede: boolean; rede_nome: string | null }[];
+        const cliente = clientes[0];
+        if (!cliente) return null;
+        const cadastro: CadastroDoCliente = {
+          nome: cliente.name,
+          segmento: cliente.segment,
+          modeloDeOperacao: cliente.business_model === 'ecommerce' ? 'ecommerce' : 'leads',
+          temRede: cliente.tem_rede,
+          redeNome: cliente.rede_nome,
+          criadoEm: cliente.created_at,
+        };
 
         const [campos, itens, arquivos] = await Promise.all([
           tx`SELECT * FROM core.client_context_entries WHERE client_id = ${clientId} ORDER BY field_key`,
@@ -478,12 +496,16 @@ export function createContextoRepository(): ContextoRepository {
         ]);
 
         return {
-          nome: clientes[0].name,
-          contexto: {
-            campos: (campos as unknown as EntradaRow[]).map(paraEntrada),
-            itens: (itens as unknown as ItemRow[]).map(paraItem),
-            arquivos: (arquivos as unknown as ArquivoRow[]).map(paraArquivo),
-          },
+          nome: cliente.name,
+          cadastro,
+          contexto: herdarDoCadastro(
+            {
+              campos: (campos as unknown as EntradaRow[]).map(paraEntrada),
+              itens: (itens as unknown as ItemRow[]).map(paraItem),
+              arquivos: (arquivos as unknown as ArquivoRow[]).map(paraArquivo),
+            },
+            cadastro,
+          ),
         };
       });
     },

@@ -58,7 +58,7 @@ function montar(opcoes: OpcoesDoMontar = {}) {
 
   const repositorio = {
     async carregar() {
-      return { nome: 'Padaria', contexto: { campos: [...entradas.values()], itens: [...itens.values()], arquivos: [] } };
+      return { nome: 'Padaria', cadastro: { nome: 'Padaria', segmento: null, modeloDeOperacao: 'leads' as const, temRede: true, redeNome: 'Rede Pão', criadoEm: new Date(0) }, contexto: { campos: [...entradas.values()], itens: [...itens.values()], arquivos: [] } };
     },
     async lerEntrada(_o: string, _c: string, chave: string) {
       return entradas.get(chave) ?? null;
@@ -750,6 +750,12 @@ describe('publicação do brain', () => {
     const contexto = await servico.carregar({ organizationId: ORG, clientId: CLIENTE });
     assert.equal(contexto.ok && contexto.value.brain.situacao, 'desativado');
     assert.deepEqual(await servico.publicarPendentes(), { publicados: 0, inalterados: 0, falhas: 0, desativado: true });
+  });
+
+  it('carregar expõe o modelo de operação e a rede vindos do cadastro', async () => {
+    const { servico } = montar();
+    const r = await servico.carregar({ organizationId: ORG, clientId: CLIENTE });
+    assert.deepEqual(r.ok && r.value.cadastro, { modeloDeOperacao: 'leads', temRede: true, redeNome: 'Rede Pão' });
   });
 
   it('reconstruir força a regravação mesmo sem mudança', async () => {

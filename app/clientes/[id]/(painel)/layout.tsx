@@ -26,6 +26,43 @@ const ROTULO_DO_BRAIN: Record<string, string> = {
   com_erro: 'Última publicação falhou',
 };
 
+type Prontidao = NonNullable<Awaited<ReturnType<typeof carregarProntidao>>>;
+
+function FaixaDeProntidao({ prontidao }: { readonly prontidao: Prontidao }) {
+  const icone = prontidao.veredito === 'sim' ? 'ok' : prontidao.veredito === 'parcial' ? 'parcial' : 'nao';
+  const pill = (
+    <span className={`pill ${CLASSE_DO_VEREDITO[prontidao.veredito]}`}>
+      <Icone nome={icone} tamanho={14} />
+      {ROTULO_DO_VEREDITO[prontidao.veredito]}
+    </span>
+  );
+  const lacunas = prontidao.veredito !== 'sim' ? prontidao.lacunas : [];
+  if (lacunas.length === 0) {
+    return (
+      <section className="prontidao" aria-label="Pronto para planejar">
+        <span className="prontidao__titulo">Pronto para planejar</span>
+        {pill}
+      </section>
+    );
+  }
+  return (
+    <details className="prontidao prontidao--recolhivel">
+      <summary className="prontidao__resumo">
+        <span className="prontidao__titulo">Pronto para planejar</span>
+        {pill}
+        <span className="prontidao__contagem">
+          {lacunas.length} {lacunas.length === 1 ? 'sugestão' : 'sugestões'}
+        </span>
+      </summary>
+      <ul className="prontidao__lacunas" aria-label="O que falta">
+        {lacunas.map((lacuna) => (
+          <li key={lacuna.id}>{lacuna.titulo}</li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 export default async function LayoutDoCliente({
   children,
   params,
@@ -55,17 +92,21 @@ export default async function LayoutDoCliente({
             </span>
             <div className="cliente-topo__textos">
               <h1 className="page__title">{cliente.name}</h1>
-              <ul className="cliente-topo__fatos" aria-label={vocabulario.resumoDoCliente}>
-                <li>
-                  <span className={`pill ${TOM_DA_SITUACAO[cliente.status]}`}>
-                    <span className="dot" />
-                    {ROTULO_DA_SITUACAO[cliente.status]}
-                  </span>
-                </li>
-                <li>{cliente.businessModel === 'ecommerce' ? 'E-commerce' : 'Geração de leads'}</li>
-                <li>{cliente.segment ?? 'Sem segmento'}</li>
-                {cliente.parentClientId ? <li>Unidade de uma rede</li> : null}
-              </ul>
+              <div className="cliente-topo__fatos" role="group" aria-label={vocabulario.resumoDoCliente}>
+                <span className={`pill ${TOM_DA_SITUACAO[cliente.status]}`}>
+                  <span className="dot" />
+                  {ROTULO_DA_SITUACAO[cliente.status]}
+                </span>
+                <span>
+                  {[
+                    cliente.businessModel === 'ecommerce' ? 'E-commerce' : 'Geração de leads',
+                    cliente.segment ?? 'Sem segmento',
+                    cliente.parentClientId ? 'Unidade de uma rede' : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+              </div>
             </div>
           </div>
           <div className="cliente-topo__direita">
@@ -124,22 +165,7 @@ export default async function LayoutDoCliente({
             <strong>{noVocabularioDe(ctx.organization.type, 'Cliente')} {ROTULO_DA_SITUACAO[cliente.status].toLowerCase()}.</strong> {noVocabularioDe(ctx.organization.type, EFEITO_DA_SITUACAO[cliente.status])}
           </div>
         ) : null}
-        {prontidao ? (
-          <section className="prontidao" aria-label="Pronto para planejar">
-            <span className="prontidao__titulo">Pronto para planejar</span>
-            <span className={`pill ${CLASSE_DO_VEREDITO[prontidao.veredito]}`}>
-              <Icone nome={prontidao.veredito === 'sim' ? 'ok' : prontidao.veredito === 'parcial' ? 'parcial' : 'nao'} tamanho={14} />
-              {ROTULO_DO_VEREDITO[prontidao.veredito]}
-            </span>
-            {prontidao.veredito !== 'sim' && prontidao.lacunas.length > 0 ? (
-              <ul className="prontidao__lacunas" aria-label="O que falta">
-                {prontidao.lacunas.map((lacuna) => (
-                  <li key={lacuna.id}>{lacuna.titulo}</li>
-                ))}
-              </ul>
-            ) : null}
-          </section>
-        ) : null}
+        {prontidao ? <FaixaDeProntidao prontidao={prontidao} /> : null}
       </header>
       <AbasDoCliente clienteId={cliente.id} blocos={{ conexoes: prontidao?.conexoes ?? null, contexto: prontidao?.contexto ?? null }} />
       <div className="cliente-aba">{children}</div>
