@@ -1,16 +1,8 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
 import { BASE, appIsUp } from './helpers.mjs';
-
-const dono = (sql) =>
-  execFileSync('docker', ['exec', '-i', process.env.TRIA_TEST_PG ?? 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
-    encoding: 'utf8',
-  })
-    .trim()
-    .split('\n')[0]
-    .trim();
+import { psqlDonoPrimeiraLinha as dono } from './apoio/psql.mjs';
 
 const sufixo = randomBytes(4).toString('hex');
 let org;

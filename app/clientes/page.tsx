@@ -166,17 +166,18 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
                   <th className="num">Contas</th>
                   <th>Situação</th>
                   <th>Pronto para planejar</th>
-                  <th />
                 </tr>
               </thead>
               <tbody>
                 {clients.map((client) => {
                   const situacao = situacaoDe(client.status);
                   return (
-                    <tr key={client.id}>
+                    <tr key={client.id} className="linha-clicavel">
                       <td>
                         {client.parentClientId ? <span className="subtle">└ </span> : null}
-                        <span className="strong">{client.name}</span>
+                        <Link className="strong linha-clicavel__link" href={`/clientes/${client.id}`}>
+                          {client.name}
+                        </Link>
                       </td>
                       <td className="muted">{client.segment ?? '—'}</td>
                       <td>
@@ -200,11 +201,6 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
                         ) : (
                           <span className="subtle">—</span>
                         )}
-                      </td>
-                      <td>
-                        <Link className="btn" href={`/clientes/${client.id}`}>
-                          Abrir
-                        </Link>
                       </td>
                     </tr>
                   );

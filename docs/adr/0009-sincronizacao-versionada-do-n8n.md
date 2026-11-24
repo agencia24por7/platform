@@ -102,3 +102,20 @@ npm run n8n:sincronizar -- --conexoes conexoes.json --aplicar  # grava
   ignorados pela sincronização e removidos na limpeza de 2026-11-21 (script removido junto da 0123, ADR 0035).
 - O item "Coletores e executores por conexão: pelo ID do workflow gravado na conexão" do adendo anterior não vale
   mais: `coletor_ref`/`executor_ref` estão zerados desde o corte (0121) e saíram com a migração 0123 (ADR 0035).
+
+## Adendo (2026-11-24): fluxos de clientes e da agência aplicados no deploy
+
+- Decisão de quem opera esses fluxos: o arquivo em `n8n/workflows/clientes/` e `n8n/workflows/agencia/` é a fonte, e
+  ninguém edita esses fluxos pelo editor do n8n. Mudou o arquivo, abre PR; o merge na `main` aplica.
+- Quem aplica é `scripts/n8n-aplicar-clientes.mjs`, separado da sincronização da plataforma (que continua sem ler
+  essas pastas). O deploy copia as duas pastas e o script para `/opt/tria/n8n-clientes` e roda o script num
+  `node:22-alpine` na rede `orla_interna`, contra `http://n8n:5678`, com a `N8N_API_KEY` do `.env` da VM.
+- Vínculo pelo **nome exato** do workflow (esses fluxos não têm nota de origem). Nome ausente: o arquivo é ignorado
+  com aviso, sem criar nada. Nome repetido ou credencial de exemplo (`a-definir…`): erro, o arquivo não é aplicado e
+  o passo do deploy falha.
+- Só atualiza o que difere (nós, conexões e configuração aceita pela API pública; posição e id dos nós não contam).
+  Workflow ativo é reativado. `webhookId` gerado pelo n8n em nó que não é gatilho de webhook é preservado.
+- A nota "Gerado pelo repositório" que a sincronização antiga deixou nesses fluxos sai na primeira aplicação: ela
+  mandava rodar `npm run n8n:sincronizar`, o que não vale para eles.
+- Simulação manual, sem gravar: `scripts/tunel.sh n8n` e
+  `N8N_API_URL=http://localhost:15678 N8N_API_KEY=… node scripts/n8n-aplicar-clientes.mjs n8n/workflows`.

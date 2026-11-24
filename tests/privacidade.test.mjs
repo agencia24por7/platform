@@ -1,48 +1,9 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import { before, describe, it } from 'node:test';
 import { BASE, appIsUp, sqlDeConexao } from './helpers.mjs';
+import { psqlComoDono as dono, psqlComoApp as comoApp, psqlComoWorker as comoWorker } from './apoio/psql.mjs';
 
-const CONTAINER = process.env.TRIA_TEST_PG ?? process.env.ORLA_PG_CONTAINER ?? 'orla-postgres';
-
-function senhaDoApp() {
-  if (process.env.APP_DB_PASSWORD) return process.env.APP_DB_PASSWORD;
-  return readFileSync('.env', 'utf8')
-    .split('\n')
-    .find((linha) => linha.startsWith('APP_DB_PASSWORD='))
-    .slice('APP_DB_PASSWORD='.length);
-}
-
-const dono = (sql) =>
-  execFileSync('docker', ['exec', '-i', CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql], {
-    encoding: 'utf8',
-  }).trim();
-
-const comoApp = (sql) =>
-  execFileSync(
-    'docker',
-    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoApp()}`, CONTAINER,
-     'psql', '-U', 'orla_app', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
-    { encoding: 'utf8' },
-  ).trim();
-
-function senhaDoWorker() {
-  if (process.env.WORKER_DB_PASSWORD) return process.env.WORKER_DB_PASSWORD;
-  return readFileSync('.env', 'utf8')
-    .split('\n')
-    .find((linha) => linha.startsWith('WORKER_DB_PASSWORD='))
-    .slice('WORKER_DB_PASSWORD='.length);
-}
-
-const comoWorker = (sql) =>
-  execFileSync(
-    'docker',
-    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoWorker()}`, CONTAINER,
-     'psql', '-U', 'orla_worker', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
-    { encoding: 'utf8' },
-  ).trim();
 
 const naSessao = (organizationId, clientIds, sql) =>
   comoApp(`SET app.organization_id = '${organizationId}'; SET app.client_ids = '${clientIds}'; ${sql}`);

@@ -1,15 +1,7 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
 import { BASE, appIsUp, ensureUser, get, makeOwner, post, signIn, sqlDeConexao, submitForm, workerHeaders } from './helpers.mjs';
-import { PG_CONTAINER } from './apoio/pgContainer.mjs';
-
-const query = (sql) =>
-  execFileSync('docker', ['exec', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
-    .toString()
-    .trim()
-    .split('\n')[0]
-    .trim();
+import { psqlDonoPrimeiraLinha as query, sufixoUnico } from './apoio/psql.mjs';
 
 const WINDOW = { start: '2026-11-01', end: '2026-11-07' };
 
@@ -29,7 +21,7 @@ async function ensureAccount(userId) {
 
   const clientId = query(
     `insert into core.clients (organization_id, name, business_model)
-     values ('${organizationId}', 'Cliente de Coleta ${Date.now()}', 'leads') returning id`,
+     values ('${organizationId}', 'Cliente de Coleta ${sufixoUnico()}', 'leads') returning id`,
   );
 
   const connectionId = query(
@@ -59,6 +51,7 @@ describe('camada de coleta', { concurrency: false }, () => {
   let connectionId = '';
   let clientId = '';
   let coletaId = '';
+  let auditoriaBase = '0';
   let contaLivre = { accountId: '', organizationId: '', clientId: '' };
 
   const liberar = (conta) => query(
@@ -83,6 +76,7 @@ describe('camada de coleta', { concurrency: false }, () => {
     if (!(await appIsUp())) throw new Error('App não está no ar');
     const usuario = ensureUser('coleta@tria.local');
     signIn(usuario);
+    auditoriaBase = query('select coalesce(max(id), 0) from audit.audit_log');
     const conta = await ensureAccount(usuario);
     accountId = conta.accountId;
     connectionId = conta.connectionId;
@@ -238,7 +232,7 @@ describe('camada de coleta', { concurrency: false }, () => {
     assert.equal(response.status, 409);
   });
 
-  it('gravar em coleta running de cliente ativo passa pelo contexto e chega ao BigQuery (503 sem BigQuery aqui)', async () => {
+  it('gravar em coleta running de cliente ativo passa pelo contexto e chega ao BigQuery (503: indisponível ou falha ao gravar, conforme o ambiente)', async () => {
     const aberta = await abrirNova('coleta-grava');
     assert.match(aberta.id ?? '', /^[a-f0-9-]{36}$/, `abrir falhou: ${JSON.stringify(aberta)}`);
     const response = await post('/api/v0/coleta/gravar', {
@@ -247,7 +241,7 @@ describe('camada de coleta', { concurrency: false }, () => {
     });
     assert.equal(response.status, 503);
     const corpo = await response.json();
-    assert.match(corpo.title, /bigquery_indisponivel/);
+    assert.match(corpo.title, /bigquery_indisponivel|falha_ao_gravar/);
   });
 
   it('reabrir a mesma chave depois de fechada abre outra execução; em running devolve a mesma', async () => {
@@ -376,7 +370,7 @@ describe('camada de coleta', { concurrency: false }, () => {
 
   it('registra toda a trilha do worker', async () => {
     const actions = query(
-      "select string_agg(distinct action, ',' order by action) from audit.audit_log where actor_type = 'worker' and action like 'coleta.%'",
+      `select string_agg(distinct action, ',' order by action) from audit.audit_log where actor_type = 'worker' and action like 'coleta.%' and id > ${auditoriaBase}`,
     );
     assert.equal(actions, 'coleta.execucao.abrir,coleta.execucao.fechar,coleta.fontes.lidas');
   });

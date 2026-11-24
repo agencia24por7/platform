@@ -1,6 +1,7 @@
 import { createCipheriv, createHash, createHmac, hkdfSync, randomBytes, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { PG_CONTAINER } from './apoio/pgContainer.mjs';
 
 export const BASE = process.env.TRIA_TEST_BASE ?? 'http://localhost:3000';
 
@@ -54,7 +55,7 @@ const SESSION_COOKIE = 'tria_sessao';
 function psql(sql) {
   return execFileSync(
     'docker',
-    ['exec', '-i', process.env.TRIA_TEST_PG ?? 'orla-postgres', 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql],
+    ['exec', '-i', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql],
     { encoding: 'utf8' },
   )
     .trim()

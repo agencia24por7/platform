@@ -1,32 +1,11 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import { before, describe, it } from 'node:test';
 import { BASE, appIsUp, get, post, sqlDeConexao, workerHeaders } from './helpers.mjs';
-import { PG_CONTAINER } from './apoio/pgContainer.mjs';
+import { psqlDonoPrimeiraLinha as query, psqlComoApp } from './apoio/psql.mjs';
 
-const query = (sql) =>
-  execFileSync('docker', ['exec', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
-    .toString()
-    .trim()
-    .split('\n')[0]
-    .trim();
 
-function senhaDoApp() {
-  return readFileSync('.env', 'utf8')
-    .split('\n')
-    .find((linha) => linha.startsWith('APP_DB_PASSWORD='))
-    .slice('APP_DB_PASSWORD='.length);
-}
-
-const comoApp = (sql) =>
-  execFileSync(
-    'docker',
-    ['exec', '-i', '-e', `PGPASSWORD=${senhaDoApp()}`, PG_CONTAINER, 'psql', '-U', 'orla_app', '-h', '127.0.0.1', '-d', 'tria', '-qtAc', sql],
-    { encoding: 'utf8' },
-  ).trim().split('\n').pop().trim();
-
+const comoApp = (sql) => psqlComoApp(sql).split('\n').pop().trim();
 const sufixo = () => randomUUID().slice(0, 8);
 const catalogo = (cliente, resto = '') => `/api/v0/brain/clientes/${cliente}/catalogo${resto}`;
 

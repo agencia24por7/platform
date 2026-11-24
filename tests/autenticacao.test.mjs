@@ -1,15 +1,7 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
 import { acaoComCampo, appIsUp, BASE, browse, ensureOperador, ensureUser, handoffToken, portariaToken, makeOwner, sessionCookie, signIn, signOut, sqlDeConexao, submitAction, submitForm } from './helpers.mjs';
-import { PG_CONTAINER } from './apoio/pgContainer.mjs';
-
-const query = (sql) =>
-  execFileSync('docker', ['exec', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
-    .toString()
-    .trim()
-    .split('\n')[0]
-    .trim();
+import { psqlDonoPrimeiraLinha as query, sufixoUnico } from './apoio/psql.mjs';
 
 const PROTEGIDAS = ['/clientes', '/integracoes', '/automacoes', '/comecar', '/clientes/novo'];
 
@@ -206,7 +198,7 @@ describe('a ponte para o n8n não pode virar laço', { concurrency: false }, () 
   it('com a pausa marcada, a guarda deixa passar em vez de redirecionar', async () => {
     const usuario = ensureOperador();
     const organizacao = query(
-      `INSERT INTO core.organizations (name, slug, type) VALUES ('Laço', 'laco-${Date.now()}', 'agency') RETURNING id`,
+      `INSERT INTO core.organizations (name, slug, type) VALUES ('Laço', 'laco-${sufixoUnico()}', 'agency') RETURNING id`,
     );
     query(`UPDATE core.members SET revoked_at = now() WHERE user_id = '${usuario}'`);
     makeOwner(usuario, organizacao);
@@ -242,7 +234,7 @@ describe('a ponte para o n8n não pode virar laço', { concurrency: false }, () 
 
     assert.equal((await guarda()).status, 204, 'controle positivo: com o e-mail na lista a guarda libera');
 
-    query(`UPDATE core.users SET email = 'ex-operador-${Date.now()}@tria.local' WHERE id = '${operador}'`);
+    query(`UPDATE core.users SET email = 'ex-operador-${sufixoUnico()}@tria.local' WHERE id = '${operador}'`);
     try {
       assert.equal((await guarda()).status, 302, 'a próxima requisição, com a mesma sessão, precisa ser negada');
     } finally {

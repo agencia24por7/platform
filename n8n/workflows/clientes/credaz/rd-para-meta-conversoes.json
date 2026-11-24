@@ -17,7 +17,7 @@
         0,
         0
       ],
-      "webhookId": "credaz-rd-WQMJzJWbDcykuWO3qV8EU6E",
+      "webhookId": "credaz-rd-conversoes-c41d9e7a2b",
       "parameters": {
         "httpMethod": "POST",
         "path": "credaz-rd-conversoes-c41d9e7a2b",
@@ -103,12 +103,12 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        960,
-        -100
+        1760,
+        0
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const negociacao = $json;\nconst CAMPO_LEAD_ID = '6afe21ef2fbf58001fcfc746';\nconst ETAPAS_QUE_VIRAM_EVENTO = { 'Novo lead': 'Novo lead', 'Definição do produto': 'Definição do produto', 'Análise de crédito': 'Análise de crédito', 'Condições comerciais': 'Condições comerciais', 'Coleta de dados': 'Coleta de dados', 'Proposta no banco': 'Proposta no banco', 'Aprovado': 'Aprovado' };\nconst campos = negociacao.deal_custom_fields || [];\nconst campoLead = campos.find((c) => c.custom_field_id === CAMPO_LEAD_ID || (c.custom_field || {})._id === CAMPO_LEAD_ID || (c.custom_field || {}).id === CAMPO_LEAD_ID);\nconst leadId = campoLead && campoLead.value ? String(campoLead.value) : '';\nif (!leadId) return { json: { enviar: false, motivo: 'sem_lead_id_meta' } };\nconst ganha = negociacao.win === true;\nconst etapa = (negociacao.deal_stage || {}).name || '';\nconst nomeDoEvento = ganha ? 'Purchase' : ETAPAS_QUE_VIRAM_EVENTO[etapa];\nif (!nomeDoEvento) return { json: { enviar: false, motivo: 'etapa_sem_evento' } };\nconst dealId = String(negociacao.id || negociacao._id);\nconst chave = `${dealId}:${nomeDoEvento}`;\nconst memoria = $getWorkflowStaticData('global');\nmemoria.enviados = memoria.enviados || {};\nif (memoria.enviados[chave]) return { json: { enviar: false, motivo: 'ja_enviado', chave } };\nconst quando = ganha && negociacao.closed_at ? new Date(negociacao.closed_at) : new Date();\nconst evento = {\n  event_name: nomeDoEvento,\n  event_time: Math.floor(quando.getTime() / 1000),\n  event_id: `rdcrm_${chave}`,\n  action_source: 'system_generated',\n  user_data: { lead_id: Number(leadId) },\n  custom_data: { event_source: 'crm', lead_event_source: 'RD Station CRM' }\n};\nif (ganha) {\n  evento.custom_data.currency = 'BRL';\n  evento.custom_data.value = Number(negociacao.amount_total) || 0;\n}\nreturn { json: { enviar: true, chave, body: { data: [evento] } } };"
+        "jsCode": "const negociacao = $('Buscar negociação no RD').first().json;\nconst preparo = $json;\nconst CAMPO_LEAD_ID = '6afe21ef2fbf58001fcfc746';\nconst FONTE_DIGITAL = '6afe1e7f7d2654001dbc1dc1';\nconst ETAPAS_QUE_VIRAM_EVENTO = { 'Novo lead': 'Novo lead', 'Definição do produto': 'Definição do produto', 'Análise de crédito': 'Análise de crédito', 'Condições comerciais': 'Condições comerciais', 'Coleta de dados': 'Coleta de dados', 'Proposta no banco': 'Proposta no banco', 'Aprovado': 'Aprovado' };\nconst campos = negociacao.deal_custom_fields || [];\nconst campoLead = campos.find((c) => c.custom_field_id === CAMPO_LEAD_ID || (c.custom_field || {})._id === CAMPO_LEAD_ID || (c.custom_field || {}).id === CAMPO_LEAD_ID);\nconst leadId = campoLead && campoLead.value ? String(campoLead.value) : '';\nconst fonte = String((negociacao.deal_source || {}).id || (negociacao.deal_source || {})._id || negociacao.deal_source_id || '');\nconst canal = leadId ? 'formulario' : fonte === FONTE_DIGITAL ? 'whatsapp' : 'fora_de_anuncio';\nif (canal === 'fora_de_anuncio') return { json: { enviar: false, motivo: 'fonte_fora_de_anuncio' } };\nif (canal === 'whatsapp' && !preparo.telefone) return { json: { enviar: false, motivo: 'whatsapp_sem_telefone' } };\nconst ganha = negociacao.win === true;\nconst etapa = (negociacao.deal_stage || {}).name || '';\nconst nomeDoEvento = ganha ? 'Purchase' : ETAPAS_QUE_VIRAM_EVENTO[etapa];\nif (!nomeDoEvento) return { json: { enviar: false, motivo: 'etapa_sem_evento' } };\nconst dealId = preparo.dealId;\nconst chave = `${dealId}:${nomeDoEvento}`;\nconst memoria = $getWorkflowStaticData('global');\nmemoria.enviados = memoria.enviados || {};\nif (memoria.enviados[chave]) return { json: { enviar: false, motivo: 'ja_enviado', chave } };\nconst quando = ganha && negociacao.closed_at ? new Date(negociacao.closed_at) : new Date();\nconst userData = { external_id: [preparo.externo] };\nif (preparo.telefone) userData.ph = [preparo.ph];\nif (leadId) userData.lead_id = Number(leadId);\nconst evento = {\n  event_name: nomeDoEvento,\n  event_time: Math.floor(quando.getTime() / 1000),\n  event_id: `rdcrm_${chave}`,\n  action_source: canal === 'formulario' ? 'system_generated' : 'chat',\n  user_data: userData,\n  custom_data: canal === 'formulario' ? { event_source: 'crm', lead_event_source: 'RD Station CRM' } : { lead_event_source: 'RD Station CRM' }\n};\nif (ganha) {\n  evento.custom_data.currency = 'BRL';\n  evento.custom_data.value = Number(negociacao.amount_total) || 0;\n}\nconst body = { data: [evento] };\nif (/^teste/i.test(String(negociacao.name || ''))) body.test_event_code = 'TEST24CAPI';\nreturn { json: { enviar: true, chave, canal, body } };"
       }
     },
     {
@@ -117,8 +117,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1200,
-        -100
+        1980,
+        0
       ],
       "parameters": {
         "conditions": {
@@ -149,8 +149,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1440,
-        -200
+        2200,
+        -80
       ],
       "parameters": {
         "method": "POST",
@@ -178,12 +178,88 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1680,
-        -200
+        2420,
+        -80
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
         "jsCode": "const chave = $('Montar evento da Meta').item.json.chave;\nconst memoria = $getWorkflowStaticData('global');\nmemoria.enviados = memoria.enviados || {};\nmemoria.enviados[chave] = new Date().toISOString();\nreturn { json: { chave, eventos_recebidos: $json.events_received, fbtrace_id: $json.fbtrace_id } };"
+      }
+    },
+    {
+      "id": "buscar-contatos",
+      "name": "Buscar contatos da negociação",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://crm.rdstation.com/api/v1/deals/{{ $json.id || $json._id }}/contacts",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "options": {}
+      },
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "ZFOcin1thKRgcPkP",
+          "name": "Credaz · RD Station CRM"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "preparar-dados",
+      "name": "Preparar telefone",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const negociacao = $('Buscar negociação no RD').first().json;\nconst contatos = ($input.first().json.contacts || []);\nconst telefoneBruto = String((((contatos[0] || {}).phones || [])[0] || {}).phone || '');\nconst digitos = telefoneBruto.replace(/\\D/g, '');\nconst telefone = digitos.length === 10 || digitos.length === 11 ? `55${digitos}` : (digitos.length === 12 || digitos.length === 13) && digitos.startsWith('55') ? digitos : '';\nreturn [{ json: { dealId: String(negociacao.id || negociacao._id || ''), telefone } }];"
+      }
+    },
+    {
+      "id": "cripto-telefone",
+      "name": "Criptografar telefone",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        0
+      ],
+      "parameters": {
+        "action": "hash",
+        "type": "SHA256",
+        "value": "={{ $json.telefone || 'sem-telefone' }}",
+        "dataPropertyName": "ph",
+        "encoding": "hex"
+      }
+    },
+    {
+      "id": "cripto-negociacao",
+      "name": "Criptografar ID da negociação",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [
+        1540,
+        0
+      ],
+      "parameters": {
+        "action": "hash",
+        "type": "SHA256",
+        "value": "={{ $json.dealId }}",
+        "dataPropertyName": "externo",
+        "encoding": "hex"
       }
     }
   ],
@@ -226,7 +302,7 @@
       "main": [
         [
           {
-            "node": "Montar evento da Meta",
+            "node": "Buscar contatos da negociação",
             "type": "main",
             "index": 0
           }
@@ -261,6 +337,50 @@
         [
           {
             "node": "Registrar envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar contatos da negociação": {
+      "main": [
+        [
+          {
+            "node": "Preparar telefone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar telefone": {
+      "main": [
+        [
+          {
+            "node": "Criptografar telefone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Criptografar telefone": {
+      "main": [
+        [
+          {
+            "node": "Criptografar ID da negociação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Criptografar ID da negociação": {
+      "main": [
+        [
+          {
+            "node": "Montar evento da Meta",
             "type": "main",
             "index": 0
           }

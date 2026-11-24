@@ -170,18 +170,30 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
         <ul className="fontes fontes--grupos">
           {grupos.map((grupo) => (
             <li key={grupo.chave} className="grupo-fonte">
-              <div className="grupo-fonte__topo">
-                <Marca platform={grupo.plataforma} tamanho={28} />
-                <div className="grupo-fonte__quem">
-                  <span className="strong">{ROTULO_DA_PLATAFORMA[grupo.plataforma]}</span>
-                  <span className="subtle xsmall">{grupo.rotulo}</span>
-                </div>
+              <details className="grupo-fonte__detalhes" open={grupo.linhas.some((l) => l.situacao.variacao === 'reautorizar' || l.situacao.variacao === 'erro')}>
+                <summary className="grupo-fonte__topo">
+                  <Marca platform={grupo.plataforma} tamanho={24} />
+                  <div className="grupo-fonte__quem">
+                    <span className="strong">{ROTULO_DA_PLATAFORMA[grupo.plataforma]}</span>
+                    <span className="subtle xsmall">{grupo.rotulo}</span>
+                  </div>
+                  <span className="grupo-fonte__resumo">
+                    <span className="subtle xsmall">
+                      {grupo.linhas.length} {grupo.linhas.length === 1 ? 'item' : 'itens'}
+                    </span>
+                    <span className={`pill ${CLASSE_DA_VARIACAO[grupo.linhas[0]!.situacao.variacao]}`}>
+                      <Icone nome={ICONE_DA_VARIACAO[grupo.linhas[0]!.situacao.variacao]} tamanho={14} />
+                      {grupo.linhas[0]!.situacao.rotulo}
+                    </span>
+                    <span className="grupo-fonte__seta" aria-hidden="true" />
+                  </span>
+                </summary>
+                <div className="grupo-fonte__corpo">
                 {podeEditar && organizacaoInteira && grupo.reautorizar && grupo.conexaoId ? (
                   <Link className="btn btn--compacto btn--primary" href={`/integracoes/${grupo.conexaoId}`}>
                     Reautorizar
                   </Link>
                 ) : null}
-              </div>
               <ul className="fontes">
           {grupo.linhas.map((linha) => (
             <li key={linha.chave} className={`fonte fonte--${linha.situacao.variacao}`}>
@@ -265,6 +277,8 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
             </li>
           ))}
               </ul>
+                </div>
+              </details>
             </li>
           ))}
         </ul>

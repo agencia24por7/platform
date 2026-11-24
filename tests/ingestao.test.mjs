@@ -1,22 +1,13 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { before, describe, it } from 'node:test';
 import { appIsUp, browse, ensureUser, get, makeOwner, post, signIn, sqlDeConexao, submitForm } from './helpers.mjs';
-import { PG_CONTAINER } from './apoio/pgContainer.mjs';
-
-const query = (sql) =>
-  execFileSync('docker', ['exec', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
-    .toString()
-    .trim()
-    .split('\n')[0]
-    .trim();
-
-const WINDOW = { start: '2026-11-01', end: '2026-11-05' };
+import { psqlDonoPrimeiraLinha as query, sufixoUnico } from './apoio/psql.mjs';
+import { DIA_DENTRO_DA_JANELA, JANELA as WINDOW } from './apoio/janela.mjs';
 
 const row = (overrides = {}) => ({
   externalCampaignId: 'campanha-teste',
   campaignName: 'Campanha de teste',
-  metricDate: '2026-11-02',
+  metricDate: DIA_DENTRO_DA_JANELA,
   spend: 100,
   impressions: 1000,
   clicks: 20,
@@ -27,10 +18,7 @@ const row = (overrides = {}) => ({
 });
 
 async function ensureAccount(userId) {
-  const existing = query('select id from integrations.ad_accounts limit 1');
-  if (existing) return existing;
-
-  let organizationId = query('select id from core.organizations order by created_at limit 1');
+  let organizationId = query('select id from core.organizations order by created_at, id limit 1');
   if (!organizationId) {
     await submitForm('/organizacoes/nova?tipo=agency', {
       type: 'agency',
@@ -38,14 +26,14 @@ async function ensureAccount(userId) {
       managerAccountId: '812-445-9031',
       businessManagerId: '1094887233',
     });
-    organizationId = query('select id from core.organizations order by created_at limit 1');
+    organizationId = query('select id from core.organizations order by created_at, id limit 1');
   }
 
   makeOwner(userId, organizationId);
 
   const clientId = query(
     `insert into core.clients (organization_id, name, business_model)
-     values ('${organizationId}', 'Cliente de Ingestão ${Date.now()}', 'leads') returning id`,
+     values ('${organizationId}', 'Cliente de Ingestão ${sufixoUnico()}', 'leads') returning id`,
   );
 
   const connectionId = query(
@@ -63,7 +51,7 @@ async function ensureAccount(userId) {
     `insert into integrations.ad_accounts
        (organization_id, client_id, connection_id, platform, external_id, name, account_group)
      values ('${organizationId}', '${clientId}', '${connectionId}', 'meta',
-             'act_${String(Date.now()).slice(-10)}', 'Meta — Ingestão', 'Principal')
+             'act_${sufixoUnico()}', 'Meta — Ingestão', 'Principal')
      returning id`,
   );
 }
@@ -71,11 +59,13 @@ async function ensureAccount(userId) {
 describe('coleta com metadados e auditoria', { concurrency: false }, () => {
   let accountId = '';
   let runId = '';
+  let auditoriaBase = '0';
 
   before(async () => {
     if (!(await appIsUp())) throw new Error('App não está no ar');
     const usuario = ensureUser();
     signIn(usuario);
+    auditoriaBase = query('select coalesce(max(id), 0) from audit.audit_log');
     accountId = await ensureAccount(usuario);
     assert.match(accountId, /^[a-f0-9-]{36}$/);
   });
@@ -165,7 +155,7 @@ describe('coleta com metadados e auditoria', { concurrency: false }, () => {
     assert.equal(result.restated, 1);
 
     const restatement = query(
-      `select field || ':' || previous_value || '->' || new_value from metrics.metrics_restatements order by id desc limit 1`,
+      `select field || ':' || previous_value || '->' || new_value from metrics.metrics_restatements where ad_account_id = '${accountId}' order by id desc limit 1`,
     );
     assert.equal(restatement, 'spend:100.00->140.00');
   });
@@ -244,7 +234,7 @@ describe('coleta com metadados e auditoria', { concurrency: false }, () => {
 
   it('registra toda a trilha do worker', async () => {
     const actions = query(
-      "select string_agg(distinct action, ',' order by action) from audit.audit_log where actor_type = 'worker'",
+      `select string_agg(distinct action, ',' order by action) from audit.audit_log where actor_type = 'worker' and id > ${auditoriaBase}`,
     );
     assert.equal(actions, 'sync.metrics.ingest,sync.queue.read,sync.run.close,sync.run.open');
   });

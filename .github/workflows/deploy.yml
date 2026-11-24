@@ -87,6 +87,7 @@ jobs:
             return 1
           }
           mkdir -p /tmp/pilha && cp -a infra/compose/. /tmp/pilha/ && cp -a db/migrations /tmp/pilha/migrations && cp db/corte-gate.txt /tmp/pilha/corte-gate.txt
+          mkdir -p /tmp/pilha/n8n-clientes && cp -a n8n/workflows/clientes n8n/workflows/agencia /tmp/pilha/n8n-clientes/ && cp scripts/n8n-aplicar-clientes.mjs /tmp/pilha/n8n-clientes/
           tentar gcloud compute scp --recurse /tmp/pilha/* "$VM:/tmp/compose" \
             --zone "$ZONE" --tunnel-through-iap --quiet
           tentar gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet \
@@ -166,6 +167,30 @@ jobs:
             sudo docker compose -f docker-compose.prod.yml up -d --remove-orphans
             sudo docker compose -f docker-compose.prod.yml restart proxy
             sudo docker image prune -af
+          "
+
+      - name: Aplicar fluxos do n8n de clientes e da agência
+        run: |
+          tentar() {
+            for n in 1 2 3 4 5; do
+              "$@" && return 0
+              echo "tentativa $n falhou; o tunel IAP cai de vez em quando. repetindo em 15s"
+              sleep 15
+            done
+            return 1
+          }
+          tentar gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "
+            set -eu
+            chave=\$(sudo sed -n 's/^N8N_API_KEY=//p' /opt/tria/.env | head -n 1)
+            if [ -z \"\$chave\" ]; then echo 'N8N_API_KEY ausente no .env; fluxos de clientes não aplicados.'; exit 1; fi
+            for n in 1 2 3 4 5 6 7 8 9 10; do
+              sudo docker run --rm --network orla_interna -v /opt/tria/n8n-clientes:/w:ro \
+                -e N8N_API_URL=http://n8n:5678 -e N8N_API_KEY=\"\$chave\" \
+                node:22-alpine node /w/n8n-aplicar-clientes.mjs /w --aplicar && exit 0
+              echo \"n8n ainda não respondeu (tentativa \$n); nova tentativa em 15s\"
+              sleep 15
+            done
+            exit 1
           "
 
       - name: Smoke pós-deploy (saúde, worker 401, cofre 404 pelo proxy)

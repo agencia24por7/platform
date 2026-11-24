@@ -6,6 +6,7 @@ import { Anel } from '@/../app/clientes/[id]/_componentes/Anel';
 import { buscarBrainDoCliente } from '@/../app/clientes/[id]/_brain/fonte';
 import { carregarPainel } from '@/../app/clientes/[id]/_dados';
 import { ExploradorDoBrain } from '@/../app/clientes/[id]/(painel)/contexto/brain/ExploradorDoBrain';
+import { separarPorPreenchimento } from '@/modules/clients/domain/painel/brain/preenchimento';
 import { montarMapa } from '@/modules/clients/domain/painel/brain/mapa';
 import { ROTULO_DO_FRESCOR, type Capacidade } from '@/modules/clients/domain/painel/brain/tipos';
 import { tempoRelativo } from '@/modules/clients/domain/painel/resumo';
@@ -78,6 +79,7 @@ export async function BrainView({ clienteId }: { readonly clienteId: string }) {
   const brain = buscado.brain;
   const mapa = montarMapa(brain);
   const agora = new Date();
+  const totalPreenchidas = separarPorPreenchimento(brain.entradas).preenchidas.length;
   const tabelas = brain.entradas.filter((e) => e.tipo === 'tabela_de_dados' && e.cobertura.ultimos90Dias);
 
   return (
@@ -100,7 +102,7 @@ export async function BrainView({ clienteId }: { readonly clienteId: string }) {
             Tudo o que sabemos sobre {cliente.name}, num índice só.
           </h2>
           <p className="subtle small">
-            {brain.entradas.length} entradas · atualizado {tempoRelativo(new Date(brain.atualizadoEm), agora)} · versão{' '}
+            {totalPreenchidas} {totalPreenchidas === 1 ? 'entrada preenchida' : 'entradas preenchidas'} · atualizado {tempoRelativo(new Date(brain.atualizadoEm), agora)} · versão{' '}
             <span className="mono">{brain.versao}</span>
           </p>
           <dl className="pulso__medidas">
@@ -171,11 +173,11 @@ export async function BrainView({ clienteId }: { readonly clienteId: string }) {
         </section>
       </div>
 
-      <section className="card" aria-labelledby="t-cobertura">
-        <div className="card__head">
+      <details className="card brain-recolhivel">
+        <summary className="card__head">
           <h2 className="card__title" id="t-cobertura">Linha de cobertura</h2>
           <span className="card__sub">últimos 90 dias · cada traço é um dia</span>
-        </div>
+        </summary>
         {tabelas.length === 0 ? (
           <div className="empty">Nenhuma tabela coletada ainda.</div>
         ) : (
@@ -198,13 +200,14 @@ export async function BrainView({ clienteId }: { readonly clienteId: string }) {
             })}
           </ul>
         )}
-      </section>
+      </details>
 
-      <section className="card agente" aria-labelledby="t-agente">
-        <div className="card__head">
+      <details className="card agente brain-recolhivel">
+        <summary className="card__head">
           <h2 className="card__title" id="t-agente">Como um agente enxerga</h2>
           <span className="card__sub mono">catalogo.md · hash {brain.hash}</span>
-          <span className="spacer" />
+        </summary>
+        <div className="card__head">
           <CopyButton texto={brain.catalogoMd} rotulo="Copiar catalogo.md" />
         </div>
         <div className="card__body">
@@ -214,7 +217,7 @@ export async function BrainView({ clienteId }: { readonly clienteId: string }) {
             <pre className="receita">{brain.catalogoMd}</pre>
           </details>
         </div>
-      </section>
+      </details>
     </div>
   );
 }

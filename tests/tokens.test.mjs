@@ -1,16 +1,8 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { before, describe, it } from 'node:test';
 import { BASE, acessoDeTeste, appIsUp, envelopeLocal, ensureUser, makeOwner, post, signIn, get, sqlDeConexao, submitForm, workerHeaders } from './helpers.mjs';
-import { PG_CONTAINER } from './apoio/pgContainer.mjs';
-
-const query = (sql) =>
-  execFileSync('docker', ['exec', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'tria', '-qtAc', sql])
-    .toString()
-    .trim()
-    .split('\n')[0]
-    .trim();
+import { psqlDonoPrimeiraLinha as query } from './apoio/psql.mjs';
 
 const WINDOW = { start: '2026-11-01', end: '2026-11-07' };
 
