@@ -6,6 +6,7 @@ import {
   colunasDeMetadados,
   encurtarEscopo,
   familiaDe,
+  indicadoresDaTrilha,
   resumoPorFamilia,
   rotuloDe,
 } from './auditView.ts';
@@ -136,5 +137,47 @@ describe('famílias de evento', () => {
     ]);
 
     assert.deepEqual(acoes, ['client.create', 'connection.authorize']);
+  });
+});
+
+describe('indicadores da trilha', () => {
+  const agora = new Date('2026-11-08T12:00:00Z');
+  const em = (horasAtras: number, extra: Record<string, unknown>) => ({
+    ...entrada('client.create'),
+    id: `e-${horasAtras}-${JSON.stringify(extra)}`,
+    occurredAt: new Date(agora.getTime() - horasAtras * 3600_000),
+    ...extra,
+  });
+
+  it('conta só a janela, distingue atores e mede automação', () => {
+    const resultado = indicadoresDaTrilha(
+      [
+        em(1, {}),
+        em(2, { actorId: 'usuario-2' }),
+        em(3, { actorType: 'worker', actorId: 'w-1' }),
+        em(4, { actorType: 'system', actorId: null, action: 'plataforma.alerta' }),
+        em(30, {}),
+      ],
+      agora,
+    );
+
+    assert.equal(resultado.eventos, 4);
+    assert.equal(resultado.atoresDistintos, 3);
+    assert.equal(resultado.automatizados, 2);
+    assert.equal(resultado.percentualAutomatizado, 50);
+    assert.equal(resultado.alertasEFalhas, 1);
+    assert.equal(resultado.ultimoEvento?.getTime(), agora.getTime() - 3600_000);
+    assert.equal(resultado.cobreJanelaInteira, true);
+  });
+
+  it('sem eventos não divide por zero', () => {
+    const resultado = indicadoresDaTrilha([], agora);
+    assert.equal(resultado.percentualAutomatizado, 0);
+    assert.equal(resultado.ultimoEvento, null);
+  });
+
+  it('avisa quando a consulta bateu no limite', () => {
+    const cheia = Array.from({ length: 3 }, (_, i) => em(i + 1, { id: `x${i}` }));
+    assert.equal(indicadoresDaTrilha(cheia, agora, 24, 3).cobreJanelaInteira, false);
   });
 });
