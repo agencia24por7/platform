@@ -100,9 +100,12 @@ Meta: ficar dentro do free tier e guardar o mínimo necessário. Conferido em 20
   50 GiB e não estão na estimativa abaixo; o alerta de uso mede o projeto inteiro e os cobre.
 - Pior caso conhecido: `client.erro` (aberto a anônimo) aceita até 120 requisições por minuto de cerca de 6 KB, ou
   perto de 1 GB por dia (cerca de 31 GB por mês) se alguém saturar o limite. Cabe no free tier, mas consome dois terços dele.
-- O volume real **não foi medido**: o agente não tem acesso à VM de produção. Antes de ligar, meça na VM
-  (`sudo du -sh /var/lib/docker/containers/*/*-json.log`) e compare com 50 GiB por mês. Depois de ligar, acompanhe a
-  página Logs Storage do console por um mês.
+- Volume medido em 2026-11-24, pelo humano, na VM: o container `orla-app` escreveu **1.467 bytes em 24 horas**
+  (`docker logs --since 24h orla-app 2>&1 | wc -c`), cerca de 44 KB por mês, contra os 50 GiB do free tier. É uma amostra de
+  um dia, de um dia útil comum, e inclui linhas que não são do formato da aplicação, então é teto do que sai da VM. A
+  conta do free tier fica dominada pelos logs de acesso a dados (KMS, Secret Manager, BigQuery), que não estão nessa
+  medida, e pelo pior caso de `client.erro` acima. Depois de ligar, acompanhe a página Logs Storage do console por um mês.
+  Para repetir: `sudo docker logs --since 24h orla-app 2>&1 | wc -c` na VM, por IAP.
 
 ### Antes de ligar: impressão digital da chave apt
 
