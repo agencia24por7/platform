@@ -7,6 +7,7 @@ import {
   celulaDe,
   colunasDeMetadados,
   familiaDe,
+  indicadoresDaTrilha,
   resumoPorFamilia,
 } from '@/modules/audit/domain/auditView';
 import { requireContext } from '@/shared/http/currentOrganization';
@@ -73,6 +74,7 @@ export default async function Auditoria({ searchParams }: { searchParams: Promis
   const colunas = colunasDeMetadados(entradas);
   const eventos = acoesPresentes(universo);
   const familias = resumoPorFamilia(universo);
+  const indicadores = indicadoresDaTrilha(universo, new Date());
   const filtrando = Boolean(busca.evento || busca.familia || busca.autor || busca.periodo);
 
   return (
@@ -86,6 +88,41 @@ export default async function Auditoria({ searchParams }: { searchParams: Promis
           </p>
         </div>
       </div>
+
+      <section className="kpis" aria-label="Indicadores das últimas 24 horas">
+        <div className="kpi">
+          <span className="kpi__rotulo">Eventos em 24 h</span>
+          <span className="kpi__valor">
+            {indicadores.eventos}
+            {indicadores.cobreJanelaInteira ? '' : '+'}
+          </span>
+          <span className="kpi__nota">
+            {indicadores.ultimoEvento
+              ? `último em ${indicadores.ultimoEvento.toLocaleString('pt-BR')}`
+              : 'nenhum evento registrado'}
+          </span>
+        </div>
+        <div className="kpi">
+          <span className="kpi__rotulo">Atores distintos</span>
+          <span className="kpi__valor">{indicadores.atoresDistintos}</span>
+          <span className="kpi__nota">pessoas, agentes e rotinas</span>
+        </div>
+        <div className="kpi">
+          <span className="kpi__rotulo">Automação</span>
+          <span className="kpi__valor">{indicadores.percentualAutomatizado}%</span>
+          <span className="kpi__nota">{indicadores.automatizados} sem autor humano</span>
+        </div>
+        <div className="kpi">
+          <span className="kpi__rotulo">Alertas e falhas</span>
+          <span className="kpi__valor">{indicadores.alertasEFalhas}</span>
+          <span className={`pill ${indicadores.alertasEFalhas > 0 ? 'pill--warn' : 'pill--ok'}`}>
+            {indicadores.alertasEFalhas > 0 ? '⚠ requer atenção' : '✓ sem ocorrências'}
+          </span>
+        </div>
+      </section>
+      {indicadores.cobreJanelaInteira ? null : (
+        <p className="subtle">Os indicadores usam os 500 eventos mais recentes; o total pode ser maior.</p>
+      )}
 
       <div className="filtros">
         <div className="filtros__linha">

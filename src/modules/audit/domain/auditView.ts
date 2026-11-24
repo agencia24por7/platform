@@ -143,3 +143,49 @@ export function resumoPorFamilia(entries: readonly AuditEntry[]): readonly Resum
     .map(([familia, total]) => ({ familia, total }))
     .sort((a, b) => b.total - a.total || a.familia.localeCompare(b.familia));
 }
+
+export type Indicadores = {
+  readonly eventos: number;
+  readonly atoresDistintos: number;
+  readonly automatizados: number;
+  readonly percentualAutomatizado: number;
+  readonly alertasEFalhas: number;
+  readonly ultimoEvento: Date | null;
+  readonly cobreJanelaInteira: boolean;
+};
+
+const MS_POR_HORA = 3600_000;
+
+function ehAlertaOuFalha(action: string): boolean {
+  return action === 'plataforma.alerta' || /(^|[._])(failed|falha)$/.test(action);
+}
+
+export function indicadoresDaTrilha(
+  entries: readonly AuditEntry[],
+  agora: Date,
+  janelaEmHoras = 24,
+  limiteDaConsulta = 500,
+): Indicadores {
+  const inicio = agora.getTime() - janelaEmHoras * MS_POR_HORA;
+  const naJanela = entries.filter((entry) => entry.occurredAt.getTime() >= inicio);
+  const atores = new Set(
+    naJanela.flatMap((entry) => (entry.actorId ? [`${entry.actorType}:${entry.actorId}`] : [])),
+  );
+  const automatizados = naJanela.filter((entry) => entry.actorType !== 'user').length;
+  const ultimo = entries.reduce<Date | null>(
+    (maisRecente, entry) =>
+      maisRecente === null || entry.occurredAt > maisRecente ? entry.occurredAt : maisRecente,
+    null,
+  );
+
+  return {
+    eventos: naJanela.length,
+    atoresDistintos: atores.size,
+    automatizados,
+    percentualAutomatizado:
+      naJanela.length === 0 ? 0 : Math.round((automatizados / naJanela.length) * 100),
+    alertasEFalhas: naJanela.filter((entry) => ehAlertaOuFalha(entry.action)).length,
+    ultimoEvento: ultimo,
+    cobreJanelaInteira: entries.length < limiteDaConsulta,
+  };
+}
