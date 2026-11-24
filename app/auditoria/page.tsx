@@ -23,7 +23,7 @@ const PERIODOS = [
   { valor: '30d', rotulo: 'Últimos 30 dias', horas: 24 * 30 },
 ] as const;
 
-const AUTORES = ['user', 'agent', 'worker', 'system'] as const;
+const AUTORES = ['user', 'agent', 'worker', 'system', 'invite'] as const;
 const LIMITES = [50, 100, 250, 500] as const;
 
 type Busca = {
