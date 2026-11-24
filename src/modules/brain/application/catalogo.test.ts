@@ -21,7 +21,7 @@ const dependencias = (provedores: readonly Provedor[] = PROVEDORES) => ({
   plataformasDaTabela,
 });
 
-const montar = (opcoes: { provedores?: readonly Provedor[]; inventario?: Inventario; comContexto?: boolean; agora?: Date } = {}) =>
+const montar = (opcoes: { provedores?: readonly Provedor[]; inventario?: Inventario; comContexto?: boolean; comRegras?: boolean; agora?: Date } = {}) =>
   construirCatalogo(dependencias(opcoes.provedores), {
     organizationId: fx.ORG,
     clienteId: fx.CLIENTE,
@@ -30,6 +30,7 @@ const montar = (opcoes: { provedores?: readonly Provedor[]; inventario?: Inventa
     bytesMaximosPorConsulta: 10_000_000_000,
     inventario: opcoes.inventario ?? fx.inventario(),
     contexto: opcoes.comContexto === false ? null : fx.contexto(),
+    regras: opcoes.comRegras === false ? null : fx.regras(),
   });
 
 const urn = (tipo: string, id: string) => criarUrn(fx.ORG, fx.CLIENTE, tipo, id);
@@ -38,7 +39,7 @@ describe('construção do catálogo', () => {
   it('indexa conexões, fontes, tabelas, contexto, arquivos e capacidades do cliente', async () => {
     const s = await montar();
     const tipos = new Set(s.entradas.map((e) => e.tipo));
-    for (const tipo of ['conexao', 'fonte', 'tabela_de_dados', 'contexto_secao', 'contexto_lista', 'arquivo', 'capacidade']) assert.ok(tipos.has(tipo), tipo);
+    for (const tipo of ['conexao', 'fonte', 'tabela_de_dados', 'contexto_secao', 'contexto_lista', 'arquivo', 'capacidade', 'limite', 'regra', 'decisao']) assert.ok(tipos.has(tipo), tipo);
     const ids = new Set(s.entradas.map((e) => e.urn));
     assert.ok(ids.has(urn('fonte', fx.FONTE_META)));
     assert.ok(!ids.has(urn('fonte', fx.FONTE_DESVINCULADA)), 'fonte desvinculada não entra');
@@ -260,7 +261,7 @@ describe('artefatos publicados', () => {
     const s = await montar();
     const artefatos = artefatosDoCatalogo(s);
     const nomes = artefatos.map((a) => a.nome);
-    for (const nome of ['catalogo.json', 'catalogo.md', 'capacidades.json', 'diagnostico.json', 'manifest.json']) assert.ok(nomes.includes(nome), nome);
+    for (const nome of ['catalogo.json', 'catalogo.md', 'capacidades.json', 'diagnostico.json', 'regras.md', 'decisoes.jsonl', 'manifest.json']) assert.ok(nomes.includes(nome), nome);
     assert.equal(nomes.filter((n) => n.startsWith('entradas/')).length, s.entradas.length);
     assert.equal(nomes[nomes.length - 1], 'manifest.json');
     const manifesto = JSON.parse(artefatos.find((a) => a.nome === 'manifest.json')!.conteudo);

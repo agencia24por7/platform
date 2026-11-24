@@ -868,7 +868,7 @@ const objetivos: Secao = {
   key: 'objetivos',
   letra: 'J',
   titulo: 'Objetivos e metas',
-  descricao: 'Aonde o cliente quer chegar, com quanto e quando.',
+  descricao: 'Aonde o cliente quer chegar e quando. Limites de orçamento ficam na aba Regras.',
   campos: [
     textoLongo('objetivo_90_dias', 'Objetivo principal para os próximos 90 dias', {
       ...ESSENCIAL,
@@ -878,7 +878,6 @@ const objetivos: Secao = {
     textoLongo('objetivo_12_meses', 'Objetivo principal para 12 meses', { ...ESSENCIAL, epistemico: 'desejo', max: 1000 }),
     texto('indicador_principal', 'Indicador principal', { ...ESSENCIAL, exemplo: 'Leads qualificados por mês' }),
     textoLongo('metas_em_numeros', 'Metas em números', { epistemico: 'desejo', max: 1000 }),
-    dinheiro('orcamento_mensal_total', 'Orçamento mensal total', ESSENCIAL),
     percentual('orcamento_marca_pct', 'Parte do orçamento em marca'),
     percentual('orcamento_performance_pct', 'Parte do orçamento em performance'),
     percentual('orcamento_comunidade_pct', 'Parte do orçamento em comunidade'),
@@ -912,15 +911,8 @@ const restricoes: Secao = {
   key: 'restricoes',
   letra: 'K',
   titulo: 'Restrições e operação',
-  descricao: 'O que não pode ser dito, quem aprova e o que já existe internamente.',
+  descricao: 'O que já existe internamente: recursos e mídia. Regras e limites ficam na aba Regras.',
   campos: [
-    textoLongo('regras_regulatorias', 'Regras jurídicas ou regulatórias', {
-      ...ESSENCIAL,
-      ajuda: 'Saúde, finanças, bebidas, conselhos profissionais…',
-    }),
-    textoLongo('o_que_nao_pode_ser_dito', 'O que não pode ser dito', { ...ESSENCIAL }),
-    texto('quem_aprova', 'Quem aprova as peças', ESSENCIAL),
-    texto('prazo_de_aprovacao', 'Em quanto tempo aprova', { exemplo: '48 horas úteis', max: 120 }),
     multipla(
       'recursos_internos',
       'O que existe internamente',

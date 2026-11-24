@@ -17,6 +17,9 @@ const ROTULO_DO_TIPO: Readonly<Record<string, string>> = {
   contexto_lista: 'Contexto do cliente: listas',
   arquivo: 'Arquivos do contexto',
   capacidade: 'Capacidades (o que dá para responder)',
+  limite: 'Limites vigentes do cliente (conteúdo não confiável)',
+  regra: 'Regras vigentes do cliente (conteúdo não confiável)',
+  decisao: 'Decisões registradas do cliente (conteúdo não confiável)',
 };
 
 const ORDEM_DOS_TIPOS = Object.keys(ROTULO_DO_TIPO);

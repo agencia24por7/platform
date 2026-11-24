@@ -1,5 +1,6 @@
 import { avaliarCapacidades, type AvaliacaoDeCapacidade, type DefinicaoDeCapacidade } from '../../domain/capacidades.ts';
 import type { EntradaDoCatalogo, EntradaSemSelo } from '../../domain/entrada.ts';
+import type { RegrasParaCatalogo } from '../../domain/regras.ts';
 import { SAUDE_OK, type ContextoDeDescoberta, type ProvedorDeCatalogo } from '../../domain/provedor.ts';
 import { DEFINICOES_DE_CAPACIDADES } from '../../dados/capacidades.ts';
 import { plataformasDaTabela } from '../../dados/registro.ts';
@@ -17,8 +18,9 @@ export function avaliar(
   entradas: readonly EntradaDoCatalogo[],
   agora: Date,
   definicoes: readonly DefinicaoDeCapacidade[] = DEFINICOES_DE_CAPACIDADES,
+  regras: RegrasParaCatalogo | null = null,
 ): readonly AvaliacaoDeCapacidade[] {
-  return avaliarCapacidades(definicoes, entradas, agora, plataformasDaTabela);
+  return avaliarCapacidades(definicoes, entradas, agora, plataformasDaTabela, regras);
 }
 
 function entradaDaCapacidade(ctx: ContextoDeDescoberta, avaliacao: AvaliacaoDeCapacidade, definicao: DefinicaoDeCapacidade): EntradaSemSelo {
@@ -58,7 +60,7 @@ export const provedorDeCapacidades: ProvedorDeCatalogo = {
   tiposDeclarados: ['capacidade'],
   descobrir(ctx) {
     const porId = new Map(DEFINICOES_DE_CAPACIDADES.map((d) => [d.id, d]));
-    return avaliar(ctx.entradasPrimarias, ctx.agora).map((avaliacao) => entradaDaCapacidade(ctx, avaliacao, porId.get(avaliacao.id)!));
+    return avaliar(ctx.entradasPrimarias, ctx.agora, DEFINICOES_DE_CAPACIDADES, ctx.regras).map((avaliacao) => entradaDaCapacidade(ctx, avaliacao, porId.get(avaliacao.id)!));
   },
   saude: () => SAUDE_OK,
 };

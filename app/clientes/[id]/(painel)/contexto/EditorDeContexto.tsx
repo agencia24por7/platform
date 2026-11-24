@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CampoAutosalvo, type EstadoDoSalvar, type ResultadoDoSalvar } from '@/../app/_components/contexto/CampoAutosalvo';
 import { EnvioDeArquivo, type ArquivoEnviado } from '@/../app/_components/contexto/EnvioDeArquivo';
@@ -37,6 +38,7 @@ import type { OrganizationType } from '@/modules/organizations/domain/organizati
 import { noVocabularioDe, vocabularioDe, type Vocabulario } from '@/modules/organizations/domain/vocabulario';
 import { campoEhHerdado } from '@/modules/clients/domain/contexto/heranca';
 import { traduzirCatalogo } from '@/modules/clients/domain/contexto/vocabulario';
+import { rotaDoCliente } from '@/modules/clients/domain/painel/enderecos';
 import { barrasDaSecao } from '@/modules/clients/domain/painel/resumo';
 
 type Props = {
@@ -496,6 +498,11 @@ export function EditorDeContexto({ tipo, clienteId, dados, podeEditar, secaoInic
                 {secao.titulo}
               </h2>
               <p className="subtle small">{secao.descricao}</p>
+              {secao.key === 'objetivos' || secao.key === 'restricoes' ? (
+                <Link className="btn btn--compacto atalho-regras" href={rotaDoCliente(clienteId, 'regras')}>
+                  Ver em Regras
+                </Link>
+              ) : null}
             </div>
             {podeEditar ? (
               <label className="interruptor" title={vocabulario.dicaDeCompartilhar}>

@@ -1,6 +1,7 @@
 import type { ContextoParaCatalogo } from './contexto.ts';
 import type { EntradaDoCatalogo, EntradaSemSelo } from './entrada.ts';
 import type { InventarioDoCliente } from './inventario.ts';
+import type { RegrasParaCatalogo } from './regras.ts';
 import { criarUrn } from './urn.ts';
 
 export type ContextoDeDescoberta = {
@@ -11,6 +12,7 @@ export type ContextoDeDescoberta = {
   readonly bytesMaximosPorConsulta: number;
   readonly inventario: InventarioDoCliente;
   readonly contexto: ContextoParaCatalogo | null;
+  readonly regras: RegrasParaCatalogo | null;
   readonly entradasPrimarias: readonly EntradaDoCatalogo[];
   urn(tipo: string, id: string): string;
 };
@@ -37,11 +39,15 @@ export type ProvedorDeCatalogo = {
 export const SAUDE_OK: SaudeDoProvedor = { status: 'ok', motivo: null };
 
 export function contextoDeDescoberta(
-  base: Omit<ContextoDeDescoberta, 'urn' | 'entradasPrimarias'> & { readonly entradasPrimarias?: readonly EntradaDoCatalogo[] },
+  base: Omit<ContextoDeDescoberta, 'urn' | 'entradasPrimarias' | 'regras'> & {
+    readonly entradasPrimarias?: readonly EntradaDoCatalogo[];
+    readonly regras?: RegrasParaCatalogo | null;
+  },
 ): ContextoDeDescoberta {
   return {
     ...base,
     entradasPrimarias: base.entradasPrimarias ?? [],
+    regras: base.regras ?? null,
     urn: (tipo, id) => criarUrn(base.organizationId, base.clienteId, tipo, id),
   };
 }

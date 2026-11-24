@@ -13,11 +13,11 @@ type Props = {
 
 const ICONE_DO_TOM: Record<TomDoBloco, NomeDoIcone> = { ok: 'ok', atencao: 'atencao', critico: 'reautorizar', vazio: 'vazio' };
 const CLASSE_DO_TOM: Record<TomDoBloco, string> = { ok: 'pill--ok', atencao: 'pill--warn', critico: 'pill--danger', vazio: '' };
-const ABAS: readonly AbaDoCliente[] = ['conexoes', 'contexto'];
+const ABAS: readonly AbaDoCliente[] = ['conexoes', 'contexto', 'regras'];
 
 export function AbasDoCliente({ clienteId, blocos }: Props) {
   const segmento = useSelectedLayoutSegment();
-  const ativa: AbaDoCliente = segmento === 'contexto' ? 'contexto' : 'conexoes';
+  const ativa: AbaDoCliente = segmento === 'contexto' || segmento === 'regras' ? segmento : 'conexoes';
 
   return (
     <nav className="abas" aria-label="Blocos do cliente">

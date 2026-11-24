@@ -2,6 +2,7 @@ import type { AvaliacaoDeCapacidade } from './capacidades.ts';
 import type { Diagnostico } from './diagnostico.ts';
 import type { EntradaDoCatalogo } from './entrada.ts';
 import type { StatusDoProvedor } from './provedor.ts';
+import type { RegrasParaCatalogo } from './regras.ts';
 
 export type EstadoDoProvedor = {
   readonly id: string;
@@ -24,5 +25,6 @@ export type Snapshot = {
   readonly capacidades: readonly AvaliacaoDeCapacidade[];
   readonly diagnostico: Diagnostico;
   readonly provedores: readonly EstadoDoProvedor[];
+  readonly regras: RegrasParaCatalogo | null;
   readonly catalogHash: string;
 };

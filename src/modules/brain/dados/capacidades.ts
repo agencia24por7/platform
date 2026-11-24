@@ -187,4 +187,12 @@ export const DEFINICOES_DE_CAPACIDADES: readonly DefinicaoDeCapacidade[] = [
     ],
     tags: ['anuncios', 'vendas'],
   },
+  {
+    id: 'planejar_com_limites',
+    titulo: 'Planejar dentro dos limites do cliente',
+    descricao: 'Orçamento, custo máximo por resultado e regras do cliente vigentes, para planejar e agir sem ultrapassar o combinado.',
+    perguntas: ['Qual o teto de investimento do mês?', 'Posso aumentar este orçamento sem pedir aprovação?'],
+    requisitos: [{ tipo: 'limites_essenciais', rotulo: 'limites essenciais definidos pelo cliente' }],
+    tags: ['regras', 'limites'],
+  },
 ];

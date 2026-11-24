@@ -1,5 +1,6 @@
 import { herdarDoCadastro, type CadastroDoCliente } from '../domain/contexto/heranca.ts';
 import { withTenant, withoutTenant } from '@/shared/db/tenant';
+import { CATALOGO } from '@/modules/clients/domain/contexto/catalogo';
 import type { Epistemico, Fonte, Revisao, SecaoKey } from '@/modules/clients/domain/contexto/catalogo';
 import type {
   ArquivoDeContexto,
@@ -467,6 +468,10 @@ function json(tx: Tx, valor: unknown) {
   return tx.json(valor as Parameters<Tx['json']>[0]);
 }
 
+const CHAVES_VIGENTES: string[] = CATALOGO.flatMap((secao) =>
+  secao.campos.filter((campo) => campo.tipo !== 'lista').map((campo) => campo.key),
+);
+
 export function createContextoRepository(): ContextoRepository {
   return {
     async carregar(organizationId, clientId) {
@@ -489,7 +494,7 @@ export function createContextoRepository(): ContextoRepository {
         };
 
         const [campos, itens, arquivos] = await Promise.all([
-          tx`SELECT * FROM core.client_context_entries WHERE client_id = ${clientId} ORDER BY field_key`,
+          tx`SELECT * FROM core.client_context_entries WHERE client_id = ${clientId} AND field_key = ANY(${CHAVES_VIGENTES}) ORDER BY field_key`,
           tx`SELECT * FROM core.client_context_items WHERE client_id = ${clientId} ORDER BY list_key, position, id`,
           tx`SELECT * FROM core.client_context_files WHERE client_id = ${clientId} AND deleted_at IS NULL
              ORDER BY created_at, id`,

@@ -84,7 +84,7 @@ describe('página do cliente: abas, papéis e formulário público', { concurren
     const excluido = dono(`INSERT INTO core.clients (organization_id, name, business_model, excluido_em, excluido_por) VALUES ('${org}', 'Excluído ${sufixo}', 'ecommerce', now(), '${pessoas.owner}') RETURNING id`);
     signIn(pessoas.owner);
     for (const id of [alheio, excluido]) {
-      for (const rota of ['', '/conexoes', '/conexoes?secao=pedir', '/contexto', '/contexto?secao=brain', '/dados', '/acessos', '/brain', '/configuracoes']) {
+      for (const rota of ['', '/conexoes', '/conexoes?secao=pedir', '/contexto', '/contexto?secao=brain', '/regras', '/regras?secao=linha', '/dados', '/acessos', '/brain', '/configuracoes']) {
         assert.equal((await browse(`/clientes/${id}${rota}`)).status, 404, `${id}${rota}`);
       }
     }

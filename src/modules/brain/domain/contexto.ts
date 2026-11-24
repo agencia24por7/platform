@@ -108,6 +108,18 @@ export const CARREGADOR_DE_CONTEXTO_INDISPONIVEL: CarregadorDeContexto = {
   carregar: () => Promise.resolve(null),
 };
 
+export function restringirAoCatalogo(contexto: ContextoParaCatalogo): ContextoParaCatalogo {
+  const chavesDaSecao = new Map(contexto.catalogo.map((secao) => [secao.key, new Set(secao.campos.map((campo) => campo.key))]));
+  const listas = new Set(contexto.catalogo.flatMap((secao) => secao.campos.filter((c) => c.tipo === 'lista').map((c) => c.key)));
+  const conhecido = (secao: string, chave: string): boolean => chavesDaSecao.get(secao)?.has(chave) === true;
+  return {
+    ...contexto,
+    campos: Object.fromEntries(Object.entries(contexto.campos).filter(([chave, valor]) => chave === valor.fieldKey && conhecido(valor.secao, chave))),
+    listas: Object.fromEntries(Object.entries(contexto.listas).filter(([chave]) => listas.has(chave))),
+    arquivos: contexto.arquivos.filter((arquivo) => conhecido(arquivo.secao, arquivo.fieldKey)),
+  };
+}
+
 export function prefixoDoExportDoContexto(organizationId: string, clientId: string): string {
   return `orgs/${organizationId}/clientes/${clientId}/contexto/brain/`;
 }
