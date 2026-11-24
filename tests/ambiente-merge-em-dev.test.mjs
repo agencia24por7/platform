@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { spawn, spawnSync, execFileSync } from 'node:child_process'
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, existsSync, realpathSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { Readable } from 'node:stream'
 import { join, resolve, dirname } from 'node:path'
@@ -22,6 +22,7 @@ const MARCADOR = 'AUTORIZO_MERGE_EM_DEV'
 const REPO = 'github.com/agencia24por7/platform'
 const SHA = '0123456789abcdef0123456789abcdef01234567'
 const falso = (...partes) => partes.join('')
+const arq = (path, changeType = 'MODIFIED') => ({ path, changeType })
 
 const comando = (numero = 3, forma = 'merge', sha = SHA) => `${MARCADOR}=${numero} gh pr merge ${numero} --repo ${REPO} --${forma} --match-head-commit ${sha}`
 
@@ -52,7 +53,7 @@ function pr(numero = 3, sobrescritas = {}) {
     mergeable: 'MERGEABLE',
     headRefOid: SHA,
     url: `https://${REPO}/pull/${numero}`,
-    files: [{ path: 'src/a.ts' }, { path: 'docs/b.md' }],
+    files: [arq('src/a.ts'), arq('docs/b.md')],
     changedFiles: 2,
     statusCheckRollup: ciVerde(),
     ...sobrescritas,
@@ -144,55 +145,95 @@ test('nega quando o head do PR difere do sha do comando', () => {
   for (const headRefOid of ['', null, undefined, SHA.toUpperCase()]) assert.equal(avaliar({ headRefOid }).decisao, 'deny', String(headRefOid))
 })
 
-test('PR que muda o CI ou a guarda é do humano: um caso por prefixo e por arquivo da lista', () => {
-  const negados = [
+test('allowlist: o PR só é elegível se todo arquivo está nas pastas de aplicação', () => {
+  const permitidos = ['src/x.ts', 'app/x.tsx', 'db/migrations/0001_a.sql', 'docs/a.md', 'docs/adr/0050-x.md', 'tests/a.test.mjs', 'public/logo.svg', 'docs/.github/x.md', 'src/scripts/x.ts', './src/x.ts', 'SRC/X.ts', 'src//x.ts', 'src/../app/x.tsx']
+  for (const path of permitidos) assert.equal(avaliar({ files: [arq(path)], changedFiles: 1 }).decisao, 'allow', path)
+  const todos = permitidos.slice(0, 7).map((path) => arq(path))
+  assert.equal(avaliar({ files: todos, changedFiles: todos.length }).decisao, 'allow')
+})
+
+test('allowlist: qualquer arquivo fora das pastas de aplicação é do humano', () => {
+  const fora = [
+    'next.config.js',
+    'next.config.ts',
+    'next.config.mjs',
+    'CLAUDE.md',
+    'AGENTS.md',
+    'orca.yaml',
+    '.mcp.json',
+    'tsconfig.json',
+    'tsconfig.build.json',
+    'package.json',
+    'package-lock.json',
+    'Dockerfile',
+    'Dockerfile.prod',
+    '.env.example',
+    '.gitignore',
+    '.dockerignore',
+    '.npmrc',
+    '.nvmrc',
+    'CODEOWNERS',
+    'docs/release/roteiro.md',
+    'DOCS/RELEASE/roteiro.md',
+    './docs/release/x.md',
+    'docs/../docs/release/x.md',
+    'db/corte-gate.txt',
+    'db/outro/x.sql',
+    'n8n/workflows/a.json',
+    '../fora.txt',
+    '/etc/x',
+    '',
+  ]
+  for (const path of fora) {
+    const resultado = avaliar({ files: [arq('src/a.ts'), arq(path)], changedFiles: 2 })
+    assert.equal(resultado.decisao, 'deny', path)
+    assert.match(resultado.motivo, /fora das pastas de aplicação é do humano/, path)
+  }
+})
+
+test('allowlist: .github, .claude, .githooks, scripts e infra têm negação explícita com mensagem própria', () => {
+  const protegidos = [
     '.github/workflows/ci.yml',
-    '.github/workflows/novo.yml',
     '.github/CODEOWNERS',
     '.claude/hooks/lib/politicas.mjs',
     '.claude/settings.json',
     '.githooks/pre-commit',
     'scripts/ambiente-verificar.mjs',
     'infra/terraform/main.tf',
-    'package.json',
-    'package-lock.json',
-    'Dockerfile',
-    'Dockerfile.prod',
-    'infra/docker/Dockerfile',
-    '.dockerignore',
-    'next.config.mjs',
-    'tsconfig.json',
-    'CODEOWNERS',
-    'docs/CODEOWNERS',
-    '.npmrc',
-    '.nvmrc',
     './scripts/x.sh',
     './/.claude/x',
     '.GITHUB/workflows/ci.yml',
     '.CLAUDE/hooks/x',
     'SCRIPTS/x.sh',
-    'PACKAGE.JSON',
     'a/../.github/workflows/ci.yml',
     '/scripts/x.sh',
     'scripts//x.sh',
     '.github\\workflows\\ci.yml',
-    '../fora.txt',
   ]
-  for (const path of negados) {
-    const resultado = avaliar({ files: [{ path: 'src/a.ts' }, { path }], changedFiles: 2 })
+  for (const path of protegidos) {
+    const resultado = avaliar({ files: [arq('src/a.ts'), arq(path)], changedFiles: 2 })
     assert.equal(resultado.decisao, 'deny', path)
-    assert.match(resultado.motivo, /muda o CI ou a guarda é do humano/, path)
+    assert.match(resultado.motivo, /muda o CI, a guarda, scripts ou infra é do humano/, path)
   }
-  const comuns = ['src/x.ts', 'docs/a.md', 'tests/a.test.mjs', 'app/x.tsx', 'db/migrations/0001.sql', 'docs/.github/x.md', 'src/scripts/x.ts', 'n8n/workflows/a.json']
-  for (const path of comuns) assert.equal(avaliar({ files: [{ path }], changedFiles: 1 }).decisao, 'allow', path)
+})
+
+test('renomeação, cópia e changeType ausente ou desconhecido são negados; adição, modificação e remoção passam', () => {
+  for (const changeType of ['RENAMED', 'COPIED', 'renamed', undefined, null, '', 'DESCONHECIDO']) {
+    const resultado = avaliar({ files: [{ path: 'src/a.ts', changeType }], changedFiles: 1 })
+    assert.equal(resultado.decisao, 'deny', String(changeType))
+    assert.match(resultado.motivo, /changeType|renomeia|copia/, String(changeType))
+  }
+  for (const changeType of ['ADDED', 'MODIFIED', 'DELETED', 'CHANGED']) {
+    assert.equal(avaliar({ files: [arq('src/a.ts', changeType)], changedFiles: 1 }).decisao, 'allow', changeType)
+  }
 })
 
 test('lista de arquivos truncada, ausente ou malformada é negada', () => {
-  assert.equal(avaliar({ files: [{ path: 'a.ts' }], changedFiles: 150 }).decisao, 'deny')
-  assert.equal(avaliar({ files: [{ path: 'a.ts' }, { path: 'b.ts' }], changedFiles: 1 }).decisao, 'deny')
+  assert.equal(avaliar({ files: [arq('src/a.ts')], changedFiles: 150 }).decisao, 'deny')
+  assert.equal(avaliar({ files: [arq('src/a.ts'), arq('src/b.ts')], changedFiles: 1 }).decisao, 'deny')
   for (const files of [undefined, null, 'a.ts', {}]) assert.equal(avaliar({ files }).decisao, 'deny', String(files))
   for (const changedFiles of [undefined, null, '2', NaN]) assert.equal(avaliar({ changedFiles }).decisao, 'deny', String(changedFiles))
-  for (const item of [null, {}, { path: 5 }, 'a.ts']) assert.equal(avaliar({ files: [item], changedFiles: 1 }).decisao, 'deny', JSON.stringify(item))
+  for (const item of [null, {}, { path: 5, changeType: 'MODIFIED' }, 'a.ts']) assert.equal(avaliar({ files: [item], changedFiles: 1 }).decisao, 'deny', JSON.stringify(item))
 })
 
 test('CI: rollup só com SKIPPED ou sem os checks obrigatórios é negado e o motivo diz qual falta', () => {
@@ -292,7 +333,7 @@ test('exceção durante a verificação vira deny, não erro não capturado', ()
   const armadilha = { toString() { throw new TypeError('boom') }, valueOf() { throw new TypeError('boom') } }
   const rollup = [{ ...execucao('ci', 'qualidade'), workflowName: armadilha }, execucao('ci', 'integracao')]
   assert.equal(avaliar({ statusCheckRollup: rollup }).decisao, 'deny')
-  const arquivos = [{ path: armadilha }]
+  const arquivos = [{ path: armadilha, changeType: 'MODIFIED' }]
   assert.equal(avaliar({ files: arquivos, changedFiles: 1 }).decisao, 'deny')
   const raro = { get baseRefName() { throw new RangeError('boom') } }
   assert.equal(avaliarMergeEmDev(comando(), resolvedor(raro), 'auto').decisao, 'deny')
@@ -442,6 +483,18 @@ test('o timeout do gh cabe na metade do timeout do hook em settings.json', () =>
   assert.ok(TIMEOUT_GH_MS <= (guarda.timeout * 1000) / 2, `timeout do gh (${TIMEOUT_GH_MS} ms) maior que a metade do hook (${guarda.timeout} s)`)
 })
 
+const envDoGhEm = (base) => ({
+  PATH: '/usr/bin:/bin',
+  HOME: base,
+  GH_CONFIG_DIR: `${base}/config`,
+  XDG_STATE_HOME: `${base}/state`,
+  XDG_CACHE_HOME: `${base}/cache`,
+  XDG_CONFIG_HOME: `${base}/xdg-config`,
+  GH_NO_UPDATE_NOTIFIER: '1',
+  GH_PROMPT_DISABLED: '1',
+  NO_COLOR: '1',
+})
+
 function ambienteDoGh(extra = {}) {
   const criados = []
   const removidos = []
@@ -494,13 +547,38 @@ test('consultarPRNoGitHub fixa o repositório, usa caminho absoluto, config vazi
   assert.equal(opcoes.cwd, '/projeto')
   assert.equal(opcoes.encoding, 'utf8')
   assert.equal(opcoes.shell, undefined)
-  assert.deepEqual(opcoes.env, { PATH: '/usr/bin:/bin', LANG: 'pt_BR.UTF-8', GH_CONFIG_DIR: '/tmp/gh-guarda-x', GH_TOKEN: 'x', GITHUB_TOKEN: 'y' })
-  assert.equal('HOME' in opcoes.env, false)
+  assert.deepEqual(opcoes.stdio, ['ignore', 'pipe', 'ignore'])
+  assert.deepEqual(opcoes.env, { ...envDoGhEm('/tmp/gh-guarda-x'), LANG: 'pt_BR.UTF-8', GH_TOKEN: 'x', GITHUB_TOKEN: 'y' })
+  assert.notEqual(opcoes.env.HOME, '/home/u')
   assert.deepEqual(diretorios.criados, ['/tmp/gh-guarda-x'])
   assert.deepEqual(diretorios.removidos, ['/tmp/gh-guarda-x'])
   const soGithubToken = []
   consultarPRNoGitHub('9', { existe, executar: (p, a, o) => (soGithubToken.push(o.env), JSON.stringify(pr(9))), ambiente: { HOME: '/home/u', GITHUB_TOKEN: 'z' }, ...ambienteDoGh() })
-  assert.deepEqual(soGithubToken[0], { PATH: '/usr/bin:/bin', GH_CONFIG_DIR: '/tmp/gh-guarda-x', GITHUB_TOKEN: 'z' })
+  assert.deepEqual(soGithubToken[0], { ...envDoGhEm('/tmp/gh-guarda-x'), GITHUB_TOKEN: 'z' })
+})
+
+test('o gh nunca escreve no diretório de trabalho: HOME e XDG apontam para o temporário, removido no fim', () => {
+  const pasta = mkdtempSync(join(tmpdir(), 'gh-cwd-'))
+  const trabalho = join(pasta, 'trabalho')
+  mkdirSync(trabalho)
+  const falsoGh = join(pasta, 'gh-falso.sh')
+  writeFileSync(falsoGh, `#!/bin/sh\nmkdir -p "$HOME/.local/state/gh" "$XDG_STATE_HOME/gh" "$XDG_CACHE_HOME/gh" "$GH_CONFIG_DIR"\necho x > "$HOME/.local/state/gh/state.yml"\necho x > "$XDG_STATE_HOME/gh/state.yml"\necho '${JSON.stringify(pr(9))}'\n`)
+  chmodSync(falsoGh, 0o755)
+  const bases = []
+  try {
+    const executar = (programa, argumentos, opcoes) => {
+      bases.push(opcoes.env.HOME)
+      return execFileSync(falsoGh, argumentos, opcoes)
+    }
+    const dados = consultarPRNoGitHub('9', { existe: () => true, executar, ambiente: { GH_TOKEN: 'x', CLAUDE_PROJECT_DIR: trabalho } })
+    assert.equal(dados.baseRefName, 'dev')
+    assert.deepEqual(readdirSync(trabalho), [])
+    assert.equal(bases.length, 1)
+    assert.ok(bases[0].startsWith(tmpdir()) || bases[0].startsWith(realpathSync(tmpdir())), bases[0])
+    assert.equal(existsSync(bases[0]), false)
+  } finally {
+    rmSync(pasta, { recursive: true, force: true })
+  }
 })
 
 test('sem token no ambiente do hook a consulta nega com motivo claro, sem rodar o gh nem criar diretório', () => {
@@ -639,10 +717,190 @@ test('avaliarEscrita nega a configuração do gh e os settings do Claude Code', 
     '/repo/.claude/settings.local.json',
   ]
   for (const caminho of negados) {
-    assert.equal(avaliarEscrita({ caminho, conteudo: '{}', existeVersionado: false })?.decisao, 'deny', caminho)
+    assert.equal(avaliarEscrita({ caminho, conteudo: '{}', existeVersionado: false, modoDePermissao: 'auto' })?.decisao, 'deny', caminho)
   }
   for (const caminho of ['/repo/src/config/gh.ts', '/repo/docs/ambiente/README.md', '/repo/.claude/rules/testes.md', '/repo/.claude/settings-notas.md']) {
     assert.equal(avaliarEscrita({ caminho, conteudo: 'x', existeVersionado: false }), null, caminho)
+  }
+})
+
+test('avaliarEscrita ignora caixa e barras invertidas ao proteger a config do gh e os settings', () => {
+  const variantes = [
+    '/Users/u/.Config/GH/config.yml',
+    '/Users/u/.CONFIG/gh/hosts.yml',
+    '.config\\gh\\config.yml',
+    'C:\\Users\\u\\.config\\gh\\hosts.yml',
+    '.CLAUDE/Settings.json',
+    '/repo/.Claude/SETTINGS.local.JSON',
+    '.claude\\settings.json',
+  ]
+  for (const caminho of variantes) {
+    assert.equal(avaliarEscrita({ caminho, conteudo: '{}', existeVersionado: false, modoDePermissao: 'auto' })?.decisao, 'deny', caminho)
+  }
+})
+
+test('avaliarEscrita: o deny de conteúdo com aparência de segredo vale antes do ask da autoproteção', () => {
+  const comSegredo = `const k = '${falso('AKI', 'A', 'ABCDEFGHIJKLMNOP')}'`
+  for (const caminho of ['.githooks/pre-commit', '.claude/hooks/lib/x.mjs', '.claude/settings.json']) {
+    for (const modoDePermissao of ['default', 'plan', 'acceptEdits', 'auto', 'bypassPermissions', undefined]) {
+      assert.equal(avaliarEscrita({ caminho, conteudo: comSegredo, existeVersionado: false, modoDePermissao })?.decisao, 'deny', `${caminho} ${modoDePermissao}`)
+    }
+    assert.equal(avaliarEscrita({ caminho, conteudo: 'x', existeVersionado: false, modoDePermissao: 'default' })?.decisao, 'ask', caminho)
+    assert.equal(avaliarEscrita({ caminho, conteudo: 'x', existeVersionado: false, modoDePermissao: 'auto' })?.decisao, 'deny', caminho)
+  }
+})
+
+function rodarCli(entrada, { fechar = true, limiteMs = 20000 } = {}) {
+  return new Promise((resolver) => {
+    const inicio = Date.now()
+    const filho = spawn('node', [join(raiz, '.claude', 'hooks', 'guarda-pre-uso.mjs')], { cwd: raiz })
+    let stdout = ''
+    let stderr = ''
+    filho.stdout.on('data', (pedaco) => (stdout += pedaco))
+    filho.stderr.on('data', (pedaco) => (stderr += pedaco))
+    const limite = setTimeout(() => filho.kill('SIGKILL'), limiteMs)
+    filho.on('close', (codigo) => {
+      clearTimeout(limite)
+      resolver({ codigo, stdout, stderr, duracao: Date.now() - inicio })
+    })
+    if (entrada !== undefined) filho.stdin.write(entrada)
+    if (fechar) filho.stdin.end()
+  })
+}
+
+test('o CLI fecha por padrão com stdin vazio, JSON inválido ou evento sem tool_name', async () => {
+  for (const entrada of ['', 'não é json', '{}', '[]', 'null', JSON.stringify({ tool_input: { command: 'ls' } }), JSON.stringify({ tool_name: '' })]) {
+    const resultado = await rodarCli(entrada)
+    assert.equal(resultado.codigo, 2, JSON.stringify(entrada))
+    assert.equal(resultado.stdout, '', JSON.stringify(entrada))
+    assert.match(resultado.stderr, /guarda do projeto/, JSON.stringify(entrada))
+  }
+})
+
+test('o CLI bloqueia por tempo esgotado antes do timeout do hook em settings.json', async () => {
+  const resultado = await rodarCli(undefined, { fechar: false })
+  assert.equal(resultado.codigo, 2)
+  assert.match(resultado.stderr, /tempo/i)
+  assert.ok(resultado.duracao >= 7000, `bloqueou cedo demais: ${resultado.duracao} ms`)
+  assert.ok(resultado.duracao < 10000, `bloqueou depois do timeout do hook: ${resultado.duracao} ms`)
+})
+
+test('a mensagem de falha de carga ensina o humano a destravar', () => {
+  const cli = readFileSync(join(raiz, '.claude', 'hooks', 'guarda-pre-uso.mjs'), 'utf8')
+  const pasta = mkdtempSync(join(tmpdir(), 'guarda-falha-'))
+  try {
+    mkdirSync(join(pasta, 'lib'))
+    writeFileSync(join(pasta, 'guarda-pre-uso.mjs'), cli)
+    writeFileSync(join(pasta, 'lib', 'guarda.mjs'), 'export function ((\n')
+    const resultado = spawnSync('node', [join(pasta, 'guarda-pre-uso.mjs')], { cwd: pasta, encoding: 'utf8', input: '{}' })
+    assert.equal(resultado.status, 2)
+    assert.match(resultado.stderr, /git checkout -- \.claude\/hooks/)
+    assert.match(resultado.stderr, /\/hooks/)
+  } finally {
+    rmSync(pasta, { recursive: true, force: true })
+  }
+})
+
+test('autoproteção: escrever na guarda e nos settings é ask com confirmação e deny sem confirmação; config do gh é deny sempre', () => {
+  const protegidos = [
+    '/repo/.claude/hooks/lib/politicas.mjs',
+    '.claude/hooks/guarda-pre-uso.mjs',
+    '/repo/.githooks/pre-commit',
+    '.githooks/pre-push',
+    '.claude/settings.json',
+    '/repo/.claude/settings.local.json',
+    '/Users/u/.claude/settings.json',
+    '.CLAUDE/Hooks/x.mjs',
+    '.GITHOOKS/pre-commit',
+    '.claude\\hooks\\x.mjs',
+    '.claude/Settings.JSON',
+  ]
+  for (const caminho of protegidos) {
+    for (const modoDePermissao of ['default', 'plan', 'acceptEdits', undefined]) {
+      assert.equal(avaliarEscrita({ caminho, conteudo: 'x', existeVersionado: true, modoDePermissao })?.decisao, 'ask', `${caminho} (${modoDePermissao})`)
+    }
+    for (const modoDePermissao of ['auto', 'bypassPermissions']) {
+      assert.equal(avaliarEscrita({ caminho, conteudo: 'x', existeVersionado: true, modoDePermissao })?.decisao, 'deny', `${caminho} (${modoDePermissao})`)
+    }
+  }
+  for (const modoDePermissao of ['default', 'auto', undefined]) {
+    assert.equal(avaliarEscrita({ caminho: '/Users/u/.config/gh/config.yml', conteudo: 'x', existeVersionado: false, modoDePermissao })?.decisao, 'deny', String(modoDePermissao))
+  }
+  for (const caminho of ['/repo/.claude/rules/testes.md', '/repo/.claude/agents/arquiteto.md', '/repo/docs/ambiente/README.md', '/repo/.claude/settings-notas.md', '/repo/src/hooks/x.ts', '/repo/tests/ambiente-x.test.mjs']) {
+    assert.equal(avaliarEscrita({ caminho, conteudo: 'x', existeVersionado: false, modoDePermissao: 'auto' }), null, caminho)
+  }
+})
+
+test('autoproteção: o guarda emite ask ou deny para Write e Edit na própria guarda', () => {
+  const alvo = join(raiz, '.claude', 'hooks', 'lib', 'politicas.mjs')
+  const evento = (ferramenta, modo) => ({ tool_name: ferramenta, tool_input: { file_path: alvo, content: 'x', new_string: 'x', old_string: 'a' }, permission_mode: modo, cwd: raiz })
+  for (const ferramenta of ['Write', 'Edit']) {
+    assert.equal(rodarGuarda(evento(ferramenta, 'default')).resposta.permissionDecision, 'ask', ferramenta)
+    assert.equal(rodarGuarda(evento(ferramenta, 'auto')).resposta.permissionDecision, 'deny', ferramenta)
+    assert.equal(rodarGuarda(evento(ferramenta, 'bypassPermissions')).resposta.permissionDecision, 'deny', ferramenta)
+  }
+})
+
+test('autoproteção no Bash: gravar com destino na guarda, nos settings ou na config do gh é ask, e deny sem confirmação', () => {
+  const gravacoes = [
+    'echo x > .claude/hooks/a.mjs',
+    'echo x>>.githooks/pre-commit',
+    'printf x > .claude/settings.json',
+    'echo x > ~/.config/gh/config.yml',
+    'echo x > "$HOME/.config/gh/hosts.yml"',
+    'echo x 2> .claude/hooks/erro.log',
+    'tee .claude/hooks/a.mjs',
+    'echo a | tee -a .claude/settings.local.json',
+    'cp /tmp/x .claude/hooks/a.mjs',
+    'cp /tmp/x .claude/hooks/a.mjs 2>/dev/null',
+    'cp -t .claude/hooks /tmp/x',
+    'mv /tmp/x .githooks/pre-commit',
+    'ln -s /tmp/x .claude/hooks/y',
+    'install -m 755 x .claude/hooks/y',
+    'dd if=/tmp/x of=.claude/hooks/a',
+    "sed -i '' s/a/b/ .claude/hooks/x.mjs",
+    'sed -i.bak s/a/b/ .githooks/pre-commit',
+    'sed --in-place s/a/b/ .claude/settings.json',
+    "perl -pi -e 's/a/b/' .claude/hooks/x.mjs",
+    'rm .claude/hooks/x.mjs',
+    'rm -rf .githooks',
+    'truncate -s 0 .claude/settings.json',
+    'cp x .CLAUDE/HOOKS/a.mjs',
+    'cd /tmp && echo x > /repo/.claude/hooks/a.mjs',
+  ]
+  for (const texto of gravacoes) {
+    assert.equal(avaliarComando(texto, 'default', resolvedorProibido)?.decisao, 'ask', texto)
+    assert.equal(avaliarComando(texto, 'auto', resolvedorProibido)?.decisao, 'deny', texto)
+    assert.equal(avaliarComando(texto, 'bypassPermissions', resolvedorProibido)?.decisao, 'deny', texto)
+  }
+})
+
+test('autoproteção no Bash: leitura com esses caminhos como argumento continua permitida', () => {
+  const leituras = [
+    'node --test tests/ambiente-merge-em-dev.test.mjs',
+    'sed -n 1,5p .claude/hooks/lib/politicas.mjs',
+    'sed -n 1,5p .claude/settings.json',
+    'git add .claude',
+    'git add .claude/hooks/guarda-pre-uso.mjs',
+    'git diff -- .claude/hooks',
+    'rtk grep -n foo .claude/hooks',
+    'cat .claude/hooks/guarda-pre-uso.mjs',
+    'head -5 .githooks/pre-commit',
+    'ls .claude/hooks 2>&1',
+    'ls -la .claude/hooks > /tmp/lista.txt 2>&1',
+    'cp .claude/hooks/guarda-pre-uso.mjs /tmp/copia.mjs',
+    'cat .claude/hooks/x.mjs > /tmp/saida.txt',
+    'diff .claude/hooks/a.mjs .claude/hooks/b.mjs',
+    'grep foo .claude/settings.json 2>&1',
+    'node .claude/hooks/guarda-pre-uso.mjs < /tmp/evento.json',
+    'echo oi > /tmp/x',
+    'sed -i s/a/b/ src/x.ts',
+    'tee /tmp/log.txt',
+    'ls .config/gh 2>&1',
+    'gh config get editor',
+  ]
+  for (const texto of leituras) {
+    assert.equal(avaliarComando(texto, 'auto', resolvedorProibido), null, texto)
   }
 })
 

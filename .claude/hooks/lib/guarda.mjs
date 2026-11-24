@@ -90,7 +90,7 @@ function decidir(evento, raiz, consultarPR) {
   }
   const conteudo = conteudoDaEscrita(ferramenta, entrada)
   const completo = absoluto(caminho, raiz)
-  return primeiraDecisao(caminhos, (candidato) => avaliarEscrita({ caminho: candidato, conteudo, existeVersionado: versionado(completo, raiz) }))
+  return primeiraDecisao(caminhos, (candidato) => avaliarEscrita({ caminho: candidato, conteudo, existeVersionado: versionado(completo, raiz), modoDePermissao: evento.permission_mode }))
 }
 
 function comandoComMarcador(evento) {
