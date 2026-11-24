@@ -1,3 +1,7 @@
+locals {
+  filtro_linha_da_app = "resource.type=\"gce_instance\" AND logName=\"projects/${var.project_id}/logs/containers_docker\" AND jsonPayload.at:*"
+}
+
 resource "google_logging_metric" "erros_app" {
   count = var.logs_na_nuvem_habilitado ? 1 : 0
 
@@ -58,7 +62,98 @@ resource "google_monitoring_alert_policy" "erros_app" {
 
   documentation {
     mime_type = "text/markdown"
-    content   = "Houve linha de log com severidade ERROR ou acima nos containers da VM nos últimos 5 minutos. Abra o Logs Explorer com o filtro `logName=\"projects/${var.project_id}/logs/containers_docker\" AND severity>=ERROR` e investigue pelo `requestId`. Esta mensagem não traz conteúdo de log."
+    content   = "Houve linha de log com severidade ERROR ou acima nos containers da VM nos últimos 5 minutos. Abra o Logs Explorer, em Refinar escopo escolha o bucket `${local.prefix}-aplicacao`, filtre `severity>=ERROR` e investigue pelo `requestId`. Esta mensagem não traz conteúdo de log."
+  }
+
+  depends_on = [google_project_service.required]
+}
+
+resource "google_logging_project_bucket_config" "aplicacao" {
+  count = var.logs_na_nuvem_habilitado ? 1 : 0
+
+  project        = var.project_id
+  location       = "global"
+  bucket_id      = "${local.prefix}-aplicacao"
+  retention_days = var.logs_na_nuvem_retencao_dias
+  description    = "Logs da aplicação, com retenção mínima (ADR 0054). Não guarda auditoria nem logs de outros serviços."
+
+  depends_on = [google_project_service.required]
+}
+
+resource "google_logging_project_sink" "aplicacao" {
+  count = var.logs_na_nuvem_habilitado ? 1 : 0
+
+  name                   = "${local.prefix}-aplicacao"
+  destination            = "logging.googleapis.com/${google_logging_project_bucket_config.aplicacao[0].id}"
+  filter                 = local.filtro_linha_da_app
+  unique_writer_identity = true
+
+  depends_on = [google_project_service.required]
+}
+
+resource "google_project_iam_member" "sink_aplicacao" {
+  count = var.logs_na_nuvem_habilitado ? 1 : 0
+
+  project = var.project_id
+  role    = "roles/logging.bucketWriter"
+  member  = google_logging_project_sink.aplicacao[0].writer_identity
+
+  condition {
+    title       = "so-o-bucket-da-aplicacao"
+    description = "Limita a escrita do sink ao bucket de logs da aplicação."
+    expression  = "resource.name.endsWith(\"locations/global/buckets/${local.prefix}-aplicacao\")"
+  }
+}
+
+resource "google_logging_project_exclusion" "aplicacao_no_bucket_proprio" {
+  count = var.logs_na_nuvem_habilitado ? 1 : 0
+
+  name        = "${local.prefix}-aplicacao-no-bucket-proprio"
+  description = "Tira a linha da aplicação do _Default, onde ficaria 30 dias e seria cobrada em dobro, porque ela é guardada no bucket próprio com retenção mínima. O resto do _Default (auditoria, KMS, Secret Manager) não muda."
+  filter      = local.filtro_linha_da_app
+
+  depends_on = [
+    google_logging_project_sink.aplicacao,
+    google_project_iam_member.sink_aplicacao,
+  ]
+}
+
+resource "google_monitoring_alert_policy" "uso_de_logs" {
+  count = var.logs_na_nuvem_habilitado ? 1 : 0
+
+  display_name = "${local.prefix} · uso de logs perto do free tier"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "Logs ingeridos no mês acima do limite de alerta"
+
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/billing/monthly_bytes_ingested\" AND resource.type=\"global\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = var.logs_na_nuvem_alerta_uso_gib * 1073741824
+      duration        = "0s"
+
+      aggregations {
+        alignment_period     = "7200s"
+        per_series_aligner   = "ALIGN_MAX"
+        cross_series_reducer = "REDUCE_SUM"
+      }
+
+      trigger {
+        count = 1
+      }
+    }
+  }
+
+  notification_channels = [for canal in google_monitoring_notification_channel.budget : canal.id]
+
+  alert_strategy {
+    auto_close = "86400s"
+  }
+
+  documentation {
+    mime_type = "text/markdown"
+    content   = "O volume de logs ingeridos no mês passou do limite de alerta (${var.logs_na_nuvem_alerta_uso_gib} GiB; o free tier é de 50 GiB por projeto por mês, e o excedente custa US$ 0,50/GiB). Veja a página Logs Storage do console, identifique a origem do volume e, se preciso, aperte o filtro do agente na VM ou a exclusão do projeto. Esta mensagem não traz conteúdo de log."
   }
 
   depends_on = [google_project_service.required]
