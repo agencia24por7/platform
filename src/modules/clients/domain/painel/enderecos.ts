@@ -1,9 +1,10 @@
-export const ABAS_DO_CLIENTE = ['conexoes', 'contexto'] as const;
+export const ABAS_DO_CLIENTE = ['conexoes', 'contexto', 'regras'] as const;
 export type AbaDoCliente = (typeof ABAS_DO_CLIENTE)[number];
 
 export const ROTULO_DA_ABA: Record<AbaDoCliente, string> = {
   conexoes: 'Conexões',
   contexto: 'Contexto',
+  regras: 'Regras',
 };
 
 export const SECOES_DE_CONEXOES = ['fontes', 'pedir'] as const;

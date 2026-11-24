@@ -1,5 +1,6 @@
 import { avaliarCapacidades, type AvaliacaoDeCapacidade, type DefinicaoDeCapacidade } from '../domain/capacidades.ts';
-import type { ContextoParaCatalogo } from '../domain/contexto.ts';
+import { restringirAoCatalogo, type ContextoParaCatalogo } from '../domain/contexto.ts';
+import { sanearRegras, type RegrasParaCatalogo } from '../domain/regras.ts';
 import { diagnosticarCliente, type ConectorDoDiagnostico, type Diagnostico } from '../domain/diagnostico.ts';
 import {
   entradaSemSelo,
@@ -32,6 +33,7 @@ export type EntradaDaConstrucao = {
   readonly bytesMaximosPorConsulta: number;
   readonly inventario: InventarioDoCliente;
   readonly contexto: ContextoParaCatalogo | null;
+  readonly regras?: RegrasParaCatalogo | null;
 };
 
 export type DependenciasDaConstrucao = {
@@ -119,8 +121,10 @@ export function hashDoCatalogo(
   entradas: readonly EntradaDoCatalogo[],
   capacidades: readonly AvaliacaoDeCapacidade[],
   diagnostico: Diagnostico,
+  regras: RegrasParaCatalogo | null = null,
 ): string {
   return hashEstavel({
+    regras,
     schemaVersion: VERSAO_DO_ESQUEMA_DO_CATALOGO,
     entradas: entradas.map((e) => [e.urn, e.hash]),
     capacidades,
@@ -131,6 +135,8 @@ export function hashDoCatalogo(
 export async function construirCatalogo(dependencias: DependenciasDaConstrucao, entrada: EntradaDaConstrucao): Promise<Snapshot> {
   const tipos = new Set<string>([...TIPOS_NATIVOS, ...dependencias.provedores.flatMap((p) => p.tiposDeclarados)]);
   const aoDescartar = dependencias.aoDescartar ?? (() => undefined);
+  const contexto = entrada.contexto ? restringirAoCatalogo(entrada.contexto) : null;
+  const regras = entrada.regras ? sanearRegras(entrada.regras) : null;
   const base = {
     organizationId: entrada.organizationId,
     clienteId: entrada.clienteId,
@@ -138,7 +144,8 @@ export async function construirCatalogo(dependencias: DependenciasDaConstrucao, 
     conjuntoDeDados: entrada.conjuntoDeDados,
     bytesMaximosPorConsulta: entrada.bytesMaximosPorConsulta,
     inventario: entrada.inventario,
-    contexto: entrada.contexto,
+    contexto,
+    regras,
   };
   const ctxPrimario = contextoDeDescoberta(base);
   const primarios = dependencias.provedores.filter((p) => p.fase === 'primaria');
@@ -153,7 +160,7 @@ export async function construirCatalogo(dependencias: DependenciasDaConstrucao, 
   const politica = aplicarPoliticaDeUso(todas);
   const visiveis = new Set(politica.entradas.map((e) => e.urn));
 
-  const capacidades = avaliarCapacidades(dependencias.capacidades, entradasPrimarias, entrada.agora, dependencias.plataformasDaTabela).map(
+  const capacidades = avaliarCapacidades(dependencias.capacidades, entradasPrimarias, entrada.agora, dependencias.plataformasDaTabela, regras).map(
     (avaliacao) => ({
       ...avaliacao,
       evidencias: avaliacao.evidencias.filter((urn) => visiveis.has(urn)),
@@ -163,7 +170,8 @@ export async function construirCatalogo(dependencias: DependenciasDaConstrucao, 
   const diagnostico = diagnosticarCliente({
     entradas: politica.entradas,
     inventario: entrada.inventario,
-    contexto: entrada.contexto,
+    contexto,
+    regras,
     capacidades,
     conectores: dependencias.conectores,
   });
@@ -181,6 +189,7 @@ export async function construirCatalogo(dependencias: DependenciasDaConstrucao, 
     capacidades,
     diagnostico,
     provedores,
-    catalogHash: hashDoCatalogo(politica.entradas, capacidades, diagnostico),
+    regras,
+    catalogHash: hashDoCatalogo(politica.entradas, capacidades, diagnostico, regras),
   };
 }

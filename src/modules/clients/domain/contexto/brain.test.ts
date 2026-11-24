@@ -14,7 +14,7 @@ function contexto(): ContextoBruto {
       entrada('descricao_do_cliente', 'Faz pão.\nPara o bairro.'),
       entrada('posicionamento_desejado', 'A padaria do bairro', { epistemico: 'desejo' }),
       entrada('tom_formal_informal', 4),
-      entrada('orcamento_mensal_total', 1234567),
+      entrada('ticket_medio_geral', 1234567),
       entrada('segmento', 'sugestão da IA', { fonte: 'ia', revisao: 'sugerido' }),
     ],
     itens: [

@@ -1,6 +1,9 @@
+import { GLOSSARIO_DE_REGRAS } from '../dados/glossario.ts';
 import { prefixoDoExportDoContexto } from '../domain/contexto.ts';
 import { jsonEstavel, sha256 } from '../domain/jsonEstavel.ts';
 import { renderizarCatalogoMd } from '../domain/markdown.ts';
+import { ARQUIVO_DE_DECISOES, ARQUIVO_DE_REGRAS, prefixoDoBrain } from '../domain/regras.ts';
+import { renderizarDecisoesJsonl, renderizarRegrasMd } from '../domain/regrasArquivos.ts';
 import { nomeDeArquivoDaUrn } from '../domain/urn.ts';
 import type { Snapshot } from './construirCatalogo.ts';
 
@@ -33,9 +36,10 @@ export type ManifestoDoCatalogo = {
 
 const JSON_TIPO = 'application/json';
 const MARKDOWN = 'text/markdown; charset=utf-8';
+const JSONL = 'application/x-ndjson';
 
 export function prefixoDoCatalogo(organizationId: string, clienteId: string): string {
-  return `orgs/${organizationId}/clientes/${clienteId}/brain/`;
+  return prefixoDoBrain(organizationId, clienteId);
 }
 
 function json(valor: unknown): string {
@@ -89,6 +93,12 @@ export function artefatosDoCatalogo(snapshot: Snapshot): readonly Artefato[] {
     { nome: 'catalogo.md', contentType: MARKDOWN, conteudo: md },
     { nome: 'capacidades.json', contentType: JSON_TIPO, conteudo: json({ schemaVersion: snapshot.schemaVersion, capacidades: snapshot.capacidades }) },
     { nome: 'diagnostico.json', contentType: JSON_TIPO, conteudo: json(snapshot.diagnostico) },
+    ...(snapshot.regras
+      ? [
+          { nome: ARQUIVO_DE_REGRAS, contentType: MARKDOWN, conteudo: renderizarRegrasMd(snapshot.nomeDoCliente, snapshot.regras, GLOSSARIO_DE_REGRAS) },
+          { nome: ARQUIVO_DE_DECISOES, contentType: JSONL, conteudo: renderizarDecisoesJsonl(snapshot.regras) },
+        ]
+      : []),
     ...snapshot.entradas.map((e) => ({ nome: `${PASTA_DAS_ENTRADAS}${nomeDeArquivoDaUrn(e.urn)}`, contentType: JSON_TIPO, conteudo: json(e) })),
     { nome: 'manifest.json', contentType: JSON_TIPO, conteudo: json(manifestoDe(snapshot)) },
   ];

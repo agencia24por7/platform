@@ -1,4 +1,4 @@
-export type NomeDoIcone = 'ok' | 'atencao' | 'reautorizar' | 'vazio' | 'pausada' | 'erro' | 'parcial' | 'nao';
+export type NomeDoIcone = 'ok' | 'atencao' | 'reautorizar' | 'vazio' | 'pausada' | 'erro' | 'parcial' | 'nao' | 'bloqueia' | 'orienta' | 'pessoa' | 'agente' | 'cliente';
 
 const TRACOS: Record<NomeDoIcone, ReactNodeLike> = {
   ok: (
@@ -42,6 +42,36 @@ const TRACOS: Record<NomeDoIcone, ReactNodeLike> = {
     <>
       <circle cx="10" cy="10" r="7.2" />
       <path d="M6.8 10h6.4" />
+    </>
+  ),
+  bloqueia: (
+    <>
+      <rect x="4.6" y="9" width="10.8" height="7.4" rx="1.6" />
+      <path d="M7 9V6.8a3 3 0 0 1 6 0V9" />
+    </>
+  ),
+  orienta: (
+    <>
+      <circle cx="10" cy="10" r="7.2" />
+      <path d="M10 9v4.6M10 6.4v.2" />
+    </>
+  ),
+  pessoa: (
+    <>
+      <circle cx="10" cy="7" r="3" />
+      <path d="M4.2 16.4a5.8 5.8 0 0 1 11.6 0" />
+    </>
+  ),
+  agente: (
+    <>
+      <rect x="4" y="6.4" width="12" height="9" rx="2.4" />
+      <path d="M10 6.4V3.6M7.6 10.6v.4M12.4 10.6v.4" />
+    </>
+  ),
+  cliente: (
+    <>
+      <path d="M3.4 9L10 3.6 16.6 9" />
+      <path d="M5 8.4v8h10v-8" />
     </>
   ),
 };

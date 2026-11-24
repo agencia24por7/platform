@@ -3,6 +3,7 @@
 @import './estilos/contexto.css';
 @import './estilos/brain.css';
 @import './estilos/publico.css';
+@import './estilos/regras.css';
 
 *, *::before, *::after { box-sizing: border-box; }
 html, body { height: 100%; }

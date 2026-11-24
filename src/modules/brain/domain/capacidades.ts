@@ -1,10 +1,12 @@
 import type { EntradaDoCatalogo } from './entrada.ts';
+import { lacunasEssenciais, definicoesVigentesDoCatalogo, type RegrasParaCatalogo } from './regras.ts';
 import { hojeEmSaoPaulo, somarDias } from './tempo.ts';
 
 export type Requisito =
   | { readonly tipo: 'tabela_com_dado'; readonly rotulo: string; readonly tabelas: readonly string[]; readonly diasRecentes: number }
   | { readonly tipo: 'plataforma_vinculada'; readonly rotulo: string; readonly plataformas: readonly string[] }
   | { readonly tipo: 'contexto_secao'; readonly rotulo: string; readonly secao: string; readonly completudeMinima: number }
+  | { readonly tipo: 'limites_essenciais'; readonly rotulo: string }
   | { readonly tipo: 'algum'; readonly rotulo: string; readonly requisitos: readonly Requisito[] };
 
 export type DefinicaoDeCapacidade = {
@@ -43,21 +45,25 @@ type Indice = {
   readonly fontesPorPlataforma: ReadonlyMap<string, readonly EntradaDoCatalogo[]>;
   readonly secoes: ReadonlyMap<string, EntradaDoCatalogo>;
   readonly contextoDisponivel: boolean;
+  readonly regras: RegrasParaCatalogo | null;
+  readonly limitesVigentes: ReadonlyMap<string, string>;
   readonly hoje: string;
 };
 
-export function indexar(entradas: readonly EntradaDoCatalogo[], agora: Date): Indice {
+export function indexar(entradas: readonly EntradaDoCatalogo[], agora: Date, regras: RegrasParaCatalogo | null = null): Indice {
   const tabelas = new Map<string, EntradaDoCatalogo>();
   const fontesPorPlataforma = new Map<string, EntradaDoCatalogo[]>();
   const secoes = new Map<string, EntradaDoCatalogo>();
+  const limitesVigentes = new Map<string, string>();
   for (const entrada of entradas) {
+    if (entrada.tipo === 'limite') limitesVigentes.set(entrada.id, entrada.urn);
     if (entrada.tipo === 'tabela_de_dados') tabelas.set(entrada.id, entrada);
     if (entrada.tipo === 'contexto_secao') secoes.set(entrada.id, entrada);
     if (entrada.tipo === 'fonte' && entrada.plataforma) {
       fontesPorPlataforma.set(entrada.plataforma, [...(fontesPorPlataforma.get(entrada.plataforma) ?? []), entrada]);
     }
   }
-  return { tabelas, fontesPorPlataforma, secoes, contextoDisponivel: secoes.size > 0, hoje: hojeEmSaoPaulo(agora) };
+  return { tabelas, fontesPorPlataforma, secoes, contextoDisponivel: secoes.size > 0, regras, limitesVigentes, hoje: hojeEmSaoPaulo(agora) };
 }
 
 const ORDEM: readonly StatusDoRequisito[] = ['ausente', 'parcial', 'atendido'];
@@ -112,6 +118,18 @@ export function avaliarRequisito(requisito: Requisito, indice: Indice): Avaliaca
       const falta = `${rotulo}: ${Math.round(completude * 100)}% preenchido, mínimo ${Math.round(requisito.completudeMinima * 100)}%`;
       return { rotulo, status: completude > 0 ? 'parcial' : 'ausente', evidencias: completude > 0 ? [secao.urn] : [], faltando: [falta] };
     }
+    case 'limites_essenciais': {
+      if (!indice.regras) return { rotulo, status: 'ausente', evidencias: [], faltando: [`${rotulo} (regras do cliente indisponíveis)`] };
+      const essenciais = definicoesVigentesDoCatalogo(indice.regras.definicoes).filter((d) => d.essencial && d.ativo);
+      const faltam = lacunasEssenciais(indice.regras);
+      const evidencias = [...indice.limitesVigentes.entries()]
+        .filter(([id]) => essenciais.some((d) => id.startsWith(`${d.chave}--`)))
+        .map(([, urn]) => urn)
+        .sort();
+      if (faltam.length === 0) return { rotulo, status: 'atendido', evidencias, faltando: [] };
+      const falta = `${rotulo}: falta definir ${faltam.map((l) => l.chave).join(', ')}`;
+      return { rotulo, status: evidencias.length > 0 ? 'parcial' : 'ausente', evidencias, faltando: [falta] };
+    }
     case 'algum':
       return melhor(requisito.requisitos.map((filho) => avaliarRequisito(filho, indice)), rotulo);
   }
@@ -161,8 +179,9 @@ export function avaliarCapacidades(
   entradas: readonly EntradaDoCatalogo[],
   agora: Date,
   plataformasDaTabela: (tabela: string) => readonly string[],
+  regras: RegrasParaCatalogo | null = null,
 ): readonly AvaliacaoDeCapacidade[] {
-  const indice = indexar(entradas, agora);
+  const indice = indexar(entradas, agora, regras);
   return [...definicoes].sort((a, b) => a.id.localeCompare(b.id)).map((d) => avaliarCapacidade(d, indice, plataformasDaTabela));
 }
 
