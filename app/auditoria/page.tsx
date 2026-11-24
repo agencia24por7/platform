@@ -231,7 +231,7 @@ export default async function Auditoria({ searchParams }: { searchParams: Promis
         {entradas.length === 0 ? (
           <div className="empty">Nenhum evento com esses filtros.</div>
         ) : (
-          <div className="table-wrap">
+          <div className="table-wrap" role="region" aria-label="Eventos de auditoria" tabIndex={0}>
             <table className="table table--auditoria">
               <thead>
                 <tr>
