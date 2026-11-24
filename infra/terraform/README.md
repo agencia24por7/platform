@@ -75,14 +75,18 @@ mudança alguma: o script de inicialização renderiza byte a byte igual ao ante
 
 ### Antes de ligar: impressão digital da chave apt
 
-`logs_na_nuvem_chave_apt_impressao` fica vazia por padrão e, vazia, o script recusa instalar o agente sem tocar no apt
-(registra e segue, a pilha sobe). O valor é validado pelo Terraform (exatamente 40 hex, sem espaços, ou vazio), e só a
-chave com essa impressão é gravada no chaveiro do apt, não o arquivo inteiro. Não consegui confirmar na documentação oficial a impressão digital vigente da chave de
-`packages.cloud.google.com/apt/doc/apt-key.gpg` (o arquivo contém mais de uma chave e já foi rotacionado), então não
-há valor no repositório. O humano deve obter o valor numa fonte oficial da Google, conferir contra
-`gpg --show-keys --with-colons apt-key.gpg` (linhas `fpr`; basta uma conferir) e preencher os 40 hex. A documentação
-oficial de instalação só descreve o script `add-google-cloud-ops-agent-repo.sh`; o repositório manual com
-`google-cloud-ops-agent-<codename>-all` e o suporte a Debian 13 não estão confirmados lá.
+`logs_na_nuvem_chave_apt_impressao` vem preenchida com `35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3` (assinante "Artifact Registry
+Repository Signer", ID `C0BA5CE6DC6315A3`). Vazia, o script recusa instalar o agente sem tocar no apt (registra e segue,
+a pilha sobe). O valor é validado pelo Terraform (exatamente 40 hex, sem espaços, ou vazio), e só a chave com essa
+impressão é gravada no chaveiro do apt, não o arquivo inteiro.
+
+Proveniência, conferida em 2026-11-24: `packages.cloud.google.com/apt/doc/apt-key.gpg` baixado por TLS tinha uma única
+chave (`gpg --show-keys --with-colons`, linha `fpr`), com essa impressão. Duas fontes independentes a citam: a lista
+`SEC_KEYS_VALIDPGPKEYS` de um ebuild do Gentoo e o bug 1828775 do Mozilla (`NO_PUBKEY C0BA5CE6DC6315A3`). **Nenhuma é uma
+página oficial da Google**, e a conferência não protege contra comprometimento do próprio domínio da Google. Antes de ligar,
+o humano pode reconferir na documentação oficial vigente. A documentação oficial de instalação só descreve o script
+`add-google-cloud-ops-agent-repo.sh`; o repositório manual com `google-cloud-ops-agent-<codename>-all` e o suporte a
+Debian 13 não estão confirmados lá.
 
 ### Privacidade
 
