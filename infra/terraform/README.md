@@ -59,8 +59,8 @@ não mostra mudança alguma: o script de inicialização renderiza byte a byte i
   o papel `logging.bucketWriter` restrito, por condição, a esse bucket. O `_Default` do projeto **não é alterado**: a
   auditoria de acesso a dados do KMS e do Secret Manager (ADR 0032) e os demais logs ficam nos 30 dias padrão.
 - `google_logging_project_exclusion.aplicacao_no_bucket_proprio`: tira a linha da aplicação do `_Default` para não
-  guardá-la duas vezes nem contá-la em dobro nos 50 GiB. Só é criada depois do sink e do papel, para a linha nunca ficar
-  sem destino. Para investigar, no Logs Explorer use "Refinar escopo" e escolha o bucket `<prefixo>-aplicacao`.
+  guardá-la duas vezes nem contá-la em dobro nos 50 GiB. Só é criada depois do sink e do papel, mas o IAM propaga de forma
+  eventual: nos primeiros minutos do `apply` a linha pode ser descartada antes de a permissão valer. Para investigar, no Logs Explorer use "Refinar escopo" e escolha o bucket `<prefixo>-aplicacao`.
 - `google_monitoring_alert_policy.uso_de_logs`: avisa por e-mail quando os logs ingeridos no mês passam de
   `logs_na_nuvem_alerta_uso_gib` (padrão 40 GiB), para agir antes de estourar os 50 GiB grátis. Só avisa.
 - O script é idempotente: não reinstala o pacote se já existe e só reinicia o agente se o `config.yaml` mudou.
@@ -152,9 +152,13 @@ nas primeiras horas, e o OOM kill em `journalctl -k`.
 1. Primeiro, na VM, passo do humano: `sudo systemctl disable --now google-cloud-ops-agent` e
    `sudo apt-get remove -y google-cloud-ops-agent` (opcional: apagar `/etc/apt/sources.list.d/google-cloud-ops-agent.list`
    e `/etc/apt/keyrings/google-cloud-ops-agent.gpg`). O Terraform não remove o agente.
-2. Só então `logs_na_nuvem_habilitado = false` e aplicar pelo `infra.yml`: remove a métrica, a política e a exclusão do projeto.
-3. Se a variável for desligada com o agente ainda vivo, ele continua enviando logs e a exclusão que descarta os
-   containers fora da aplicação some do plano: os logs de Caddy, Postgres e n8n passam a ser guardados no `_Default`
-   (30 dias, legível por `roles/viewer`) até o agente ser parado. Nesse caso pare o agente na VM imediatamente.
-4. Os logs da aplicação já enviados ficam no bucket `<prefixo>-aplicacao` até vencer a retenção dele; o bucket, o sink e o papel
-   somem do plano ao desligar a variável e precisam ser removidos pelo `infra.yml` antes de qualquer outra mudança.
+2. Só então `logs_na_nuvem_habilitado = false` e aplicar pelo `infra.yml`: remove a métrica de erros, as duas políticas
+   de alerta (erros e uso), a exclusão do projeto que descarta o que não é da aplicação, a exclusão da linha da aplicação,
+   o papel `logging.bucketWriter`, o sink e o bucket `<prefixo>-aplicacao`. Os logs que estavam nesse bucket vão junto; sem
+   consulta, o bucket é purgado depois de cerca de 7 dias, e religar o pacote logo em seguida pode falhar até o nome do
+   bucket ser liberado (comportamento do Cloud Logging, não testado aqui).
+3. Se a variável for desligada com o agente ainda vivo, ele continua enviando logs e as exclusões somem do plano: os logs
+   de Caddy, Postgres e n8n e também a linha da aplicação (com `userId` em `client.erro`) passam a ser guardados no
+   `_Default` (30 dias, legível por `roles/viewer`) até o agente ser parado, o que contradiz os 3 dias de
+   `docs/lgpd/retencao.md`. Nesse caso pare o agente na VM imediatamente.
+4. A retenção do `_Default` nunca foi alterada por este pacote, então não há o que reverter nela.

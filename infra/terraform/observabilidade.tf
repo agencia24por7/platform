@@ -1,3 +1,7 @@
+locals {
+  filtro_linha_da_app = "resource.type=\"gce_instance\" AND logName=\"projects/${var.project_id}/logs/containers_docker\" AND jsonPayload.at:*"
+}
+
 resource "google_logging_metric" "erros_app" {
   count = var.logs_na_nuvem_habilitado ? 1 : 0
 
@@ -81,7 +85,7 @@ resource "google_logging_project_sink" "aplicacao" {
 
   name                   = "${local.prefix}-aplicacao"
   destination            = "logging.googleapis.com/${google_logging_project_bucket_config.aplicacao[0].id}"
-  filter                 = "resource.type=\"gce_instance\" AND logName=\"projects/${var.project_id}/logs/containers_docker\" AND jsonPayload.at:*"
+  filter                 = local.filtro_linha_da_app
   unique_writer_identity = true
 
   depends_on = [google_project_service.required]
@@ -97,7 +101,7 @@ resource "google_project_iam_member" "sink_aplicacao" {
   condition {
     title       = "so-o-bucket-da-aplicacao"
     description = "Limita a escrita do sink ao bucket de logs da aplicação."
-    expression  = "resource.name.endsWith(\"/buckets/${local.prefix}-aplicacao\")"
+    expression  = "resource.name.endsWith(\"locations/global/buckets/${local.prefix}-aplicacao\")"
   }
 }
 
@@ -106,7 +110,7 @@ resource "google_logging_project_exclusion" "aplicacao_no_bucket_proprio" {
 
   name        = "${local.prefix}-aplicacao-no-bucket-proprio"
   description = "Tira a linha da aplicação do _Default, onde ficaria 30 dias e seria cobrada em dobro, porque ela é guardada no bucket próprio com retenção mínima. O resto do _Default (auditoria, KMS, Secret Manager) não muda."
-  filter      = "resource.type=\"gce_instance\" AND logName=\"projects/${var.project_id}/logs/containers_docker\" AND jsonPayload.at:*"
+  filter      = local.filtro_linha_da_app
 
   depends_on = [
     google_logging_project_sink.aplicacao,
