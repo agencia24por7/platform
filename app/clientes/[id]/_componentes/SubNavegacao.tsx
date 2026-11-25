@@ -10,7 +10,7 @@ export function SubNavegacao({ itens, ativa, rotulo }: { readonly itens: readonl
           <li key={item.chave}>
             <Link className="subnav__link" href={item.href} aria-current={item.chave === ativa ? 'page' : undefined} scroll={false}>
               {item.rotulo}
-              {item.contador ? <span className="contador">{item.contador}</span> : null}
+              {item.contador ? <span className="selo-contagem">{item.contador}</span> : null}
             </Link>
           </li>
         ))}

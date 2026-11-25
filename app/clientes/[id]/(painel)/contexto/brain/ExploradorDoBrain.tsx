@@ -379,7 +379,7 @@ export function ExploradorDoBrain({ clienteNome, entradas, mapa }: Props) {
               ) : null}
               <div className="field">
                 <span className="field__label">Receita de acesso</span>
-                <pre className="receita">{aberta.acesso.receita}</pre>
+                <pre className="receita" tabIndex={0}>{aberta.acesso.receita}</pre>
                 <CopyButton texto={aberta.acesso.receita} rotulo={aberta.acesso.via === 'bigquery' ? 'Copiar SQL' : 'Copiar caminho'} />
               </div>
               {aberta.relacoes.length > 0 ? (

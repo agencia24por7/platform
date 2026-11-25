@@ -170,11 +170,12 @@ select.selo { appearance: none; cursor: pointer; padding-right: 8px; }
 
 .nivel--essencial .campo__essencial { display: none; }
 
-.cadastro-herdado { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px 24px; margin: 0 0 var(--gap); padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-sunken); }
+.cadastro-herdado { display: flex; flex-direction: column; gap: 10px; margin: 0 0 var(--gap); padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-sunken); }
 .cadastro-herdado__item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .cadastro-herdado dt { font-size: var(--fs-xs); font-weight: 650; color: var(--fg-muted); }
 .cadastro-herdado dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
-.cadastro-herdado__nota { grid-column: 1 / -1; margin: 0; }
+.cadastro-herdado__lista { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px 24px; margin: 0; }
+.cadastro-herdado__nota { margin: 0; }
 
 .selo--unico { height: auto; min-height: 22px; gap: 6px; }
 .selo__escolha { appearance: none; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; padding: 0; }

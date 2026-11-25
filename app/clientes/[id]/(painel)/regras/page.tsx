@@ -124,7 +124,7 @@ export default async function Regras({ params, searchParams }: { readonly params
             : grupos.map((g) => (
                 <section key={g.categoria} aria-labelledby={`grupo-${g.categoria}`} className="regras-grupo">
                   <h3 id={`grupo-${g.categoria}`} className="regras-grupo__titulo">
-                    {g.rotulo} <span className="contador">{g.decisoes.length}</span>
+                    {g.rotulo} <span className="selo-contagem">{g.decisoes.length}</span>
                   </h3>
                   <div className="regras-lista">{g.decisoes.map((d) => cartao(d, 'vigente', nomes, 'h4'))}</div>
                 </section>
