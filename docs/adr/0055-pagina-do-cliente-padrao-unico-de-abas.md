@@ -58,3 +58,11 @@ Auditoria do código e da página ao vivo (24K-113) mostrou cada aba desenhada d
 - A subseção "Perfil" passa a se chamar "Mapa de contexto" (chave `perfil` e URL iguais).
 - A barra de cada passo mostra o progresso do essencial; sem campo essencial, mostra o percentual da seção. O aprofundar aparece só dentro da seção. Antes, seção sem essencial mostrava barra cheia com 0%, e o percentual ao lado (ponderado) divergia da barra.
 - `VERSAO_DO_CATALOGO` sobe de 2 para 3 (ajuda de "Modelo de negócio" reescrita). Brains já publicados ficam no catálogo 2 até a próxima edição; depois do deploy, rodar `scripts/contexto-reconstruir-brain.mjs` (ADR 0028, leia o `--help` e o alvo antes).
+
+## Fase 2b (Regras)
+- Formulário: natureza vira escolha segmentada (radio, mesmo `name="natureza"`). Antes de "Detalhes opcionais" ficam natureza, tipo de limite, valor e escopo (lado a lado), título ou texto, e força. Evidência, "em nome de", "por quê" e vigência ficam recolhidos e o grupo abre sozinho com valor inicial ou erro. No modo alterar o motivo continua obrigatório e visível, fora do recolhido.
+- O aviso de dado pessoal (LGPD) sai do topo e fica junto dos campos de texto; em limite, que não tem título nem texto, fica dentro de "Detalhes opcionais", junto do "por quê".
+- Filtros da linha do tempo aplicam ao mudar (`FiltrosDaLinha`, `requestSubmit` do form GET). Sem JS, o botão "Filtrar" aparece via `noscript`.
+- Registrar e Alterar ganham item próprio na subnavegação, ativo, em vez de marcar "O que vale hoje". A descrição da seção vem do `CabecalhoDeSecao`; o título solto e os parágrafos de apoio saíram.
+- Cartão vira linha expansível (`details`): resumo com título, valor e escopo, força em pill com ícone e vigência; detalhe com por quê, evidência, quem decidiu e ações. Em Propostas e Revisar, Aceitar, Rejeitar e Converter ficam visíveis na linha. Revogar e Rejeitar passam por `ConfirmarAcao`, com o motivo dentro do diálogo.
+- "Superada por nova versão" vira "Substituída por nova versão" nos eventos. Os rótulos "Bloqueia" e "Orienta" já estavam no domínio.
