@@ -1,10 +1,10 @@
 ---
-status: proposed
+status: accepted
 date: 2026-11-24
 ---
 # ADR-0056: Strategy Plan é um registro versionado que lê o Brain por ponteiro e muda por revisão proposta
 
-Complementa os ADRs 0001, 0005, 0008, 0026, 0030, 0041, 0043 a 0046, 0049, 0051 e 0053. Não supera nenhum. Issue 24K-116. Status `proposed` até o dono do produto aceitar; a numeração 0056 é a seguinte a 0055 em `dev` e deve ser conferida de novo antes do merge.
+Complementa os ADRs 0001, 0005, 0008, 0026, 0030, 0041, 0043 a 0046, 0049, 0051 e 0053. Não supera nenhum. Issue 24K-116. Aceito em 2026-11-24 pelo dono do produto.
 
 ## Contexto
 O diagrama do produto tem Brain, Strategy Plan, Comitê, Gate, Execução e Strategy Metrics. Em código existem Brain (ADR 0026, 0030, 0050), regras, limites e decisões imutáveis (ADR 0051), auditoria (ADR 0049) e a fila de tarefas de conta com executor por conexão (ADR 0005). Não existem plano, Comitê, Gate, registro de experimento nem agente de produto em execução.
@@ -128,8 +128,7 @@ Construir o serviço de pesquisa de mercado; novos coletores Apify e catálogo d
 - Risco residual: sem humano no laço, um erro do Comitê dentro da política executa antes de alguém ler o relatório. Mitigam: política estreita e com validade, `validateOnly` no primeiro uso de cada tipo, tetos, `avaliarAcao` no servidor, kill switch e a recusa de gasto novo sem listagem explícita. Revisão adversarial do `security-reviewer` é obrigatória na implementação.
 - Risco residual: a escrita em conta amplia a superfície de dano; o contrato do §6 reduz, mas não elimina, e o primeiro uso real exige autorização humana.
 
-## Perguntas abertas
-Decididas em 2026-11-24 pelo dono do produto: escrita em todas as plataformas que as conexões vinculadas ao cliente permitirem (limitada a tipos de ação registrados); Comitê sem humano, que só recebe relatórios (dentro de política de autonomia assinada por pessoa); todas as ordens são de agente.
-Também decidido: só `admin` assina a política de autonomia e define a validade junto; não há mínimo de Brain, o planning usa o que o cliente tiver e mostra o que falta.
-1. O nível Básico da Ads API comporta o volume de operações do piloto?
-2. Em que ordem entram os tipos de ação registrados (o executor de vínculo MCC existe; os de campanha e de orçamento do Google Ads e os da Meta não)?
+## Decisões finais
+Decididas em 2026-11-24 pelo dono do produto: escrita em todas as plataformas que as conexões vinculadas ao cliente permitirem (limitada a tipos de ação registrados); Comitê sem humano, que só recebe relatórios (dentro de política de autonomia assinada por pessoa); todas as ordens são de agente; só `admin` assina a política de autonomia e define a validade junto; não há mínimo de Brain, o planning usa o que o cliente tiver e mostra o que falta.
+- O nível Básico da Ads API comporta o volume de operações do piloto (confirmado pelo dono do produto).
+- Ordem de entrada dos tipos de ação registrados, do menos ao mais perigoso, cada degrau só depois do anterior provado em `validateOnly` e em uso real autorizado: (1) `leitura`; (2) `reversivel_dentro_do_teto` de menor dano (pausar e retomar campanha, ajustar orçamento diário dentro do limite vigente); (3) `irreversivel_ou_gasto_novo` (campanha nova, mudança de objetivo, acréscimo de verba), só com listagem explícita na política; (4) Meta, que depende de um executor que ainda não existe e fica fora da v1.
