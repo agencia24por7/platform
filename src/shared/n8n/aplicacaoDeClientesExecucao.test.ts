@@ -27,6 +27,10 @@ type Cenario = {
   statusDoPut?: number;
   putsQueGravamEFalham?: number;
   ativacaoSemEfeito?: boolean;
+  putDesativa?: boolean;
+  putTimeoutDepoisDeGravar?: boolean;
+  getIndisponivelAposPut?: boolean;
+  versoes?: 'iguais' | 'divergentes';
   statusPorId?: Record<string, number>;
   semRespostaPorId?: string[];
 };
@@ -62,6 +66,8 @@ async function servidorFalso(cenario: Cenario) {
   const fluxos = new Map(cenario.implantados.map((f) => [f.id, structuredClone(f)]));
   let ativacoesFalhas = cenario.ativacoesQueFalham ?? 0;
   let putsFalhos = cenario.putsQueGravamEFalham ?? 0;
+  let timeoutsPendentes = cenario.putTimeoutDepoisDeGravar ? 1 : 0;
+  let putJaOcorreu = false;
   const servidor: Server = createServer(async (req, res) => {
     const corpo = await lerCorpo(req);
     const caminho = (req.url ?? '').replace('/api/v1', '');
@@ -77,15 +83,28 @@ async function servidorFalso(cenario: Cenario) {
     if (req.method === 'GET' && statusForcado) return responder(statusForcado, { message: 'indisponível' });
     const fluxo = fluxos.get(id);
     if (!fluxo) return responder(404, { message: 'not found' });
-    if (req.method === 'GET') return responder(200, fluxo);
+    if (req.method === 'GET' && cenario.getIndisponivelAposPut && putJaOcorreu) return responder(503, { message: 'indisponível' });
+    if (req.method === 'GET') {
+      const versoes = cenario.versoes ? { versionId: 'v2', activeVersionId: cenario.versoes === 'iguais' ? 'v2' : 'v1' } : {};
+      return responder(200, { ...fluxo, ...versoes });
+    }
     if (req.method === 'PUT') {
+      putJaOcorreu = true;
       if (cenario.statusDoPut) return responder(cenario.statusDoPut, { message: 'recusado' });
       if (putsFalhos > 0) {
         putsFalhos -= 1;
         Object.assign(fluxo, corpo);
         return responder(400, { message: 'falha ao registrar os gatilhos' });
       }
-      Object.assign(fluxo, corpo, { active: false });
+      Object.assign(fluxo, corpo, cenario.putDesativa ? { active: false } : {});
+      if (timeoutsPendentes > 0) {
+        timeoutsPendentes -= 1;
+        return;
+      }
+      return responder(200, fluxo);
+    }
+    if (req.method === 'POST' && caminho.endsWith('/deactivate')) {
+      fluxo.active = false;
       return responder(200, fluxo);
     }
     if (req.method === 'POST' && caminho.endsWith('/activate')) {
@@ -131,7 +150,8 @@ async function rodar(cenario: Cenario, manifesto: object | null, args: (p: Pasta
   }
 }
 
-const aplicar = (p: Pasta) => [p.raiz, '--aplicar', '--backup-dir', p.backup];
+const DIR_NO_HOST = '/var/backups/tria-n8n';
+const aplicar = (p: Pasta) => [p.raiz, '--aplicar', '--backup-dir', p.backup, '--backup-dir-host', DIR_NO_HOST];
 const escritas = (r: { registros: Registro[] }) => r.registros.filter((x) => x.metodo !== 'GET');
 const comMudanca: Opcoes = { arquivo: mudado() };
 
@@ -143,7 +163,8 @@ test('aplica pelo id do manifesto, confere o resultado e grava backup 0600 sem p
     r.registros.map((x) => `${x.metodo} ${x.caminho}`),
     ['GET /workflows/w1', 'GET /workflows/w1', 'PUT /workflows/w1', 'POST /workflows/w1/activate', 'GET /workflows/w1'],
   );
-  assert.match(r.saida, /conferido/);
+  assert.match(r.saida, /conteúdo conferido; versão publicada não verificada/);
+  assert.ok(r.saida.includes(`cópia anterior ${DIR_NO_HOST}/w1-`), r.saida);
   const arquivos = readdirSync(r.pasta.backup);
   assert.equal(arquivos.length, 1);
   const [nomeDoBackup = ''] = arquivos;
@@ -154,6 +175,16 @@ test('aplica pelo id do manifesto, confere o resultado e grava backup 0600 sem p
   assert.deepEqual(Object.keys(guardado).sort(), ['active', 'connections', 'name', 'nodes', 'settings']);
   assert.equal(guardado.active, true);
   assert.deepEqual(guardado.nodes, [no()]);
+});
+
+test('versionId e activeVersionId: iguais confirmam a publicação, divergentes falham', async () => {
+  const iguais = await rodar({ implantados: [fluxoImplantado()], versoes: 'iguais' }, MANIFESTO, aplicar, comMudanca);
+  assert.equal(iguais.codigo, 0, iguais.saida);
+  assert.match(iguais.saida, /conteúdo e versão publicada conferidos/);
+  const divergentes = await rodar({ implantados: [fluxoImplantado()], versoes: 'divergentes' }, MANIFESTO, aplicar, comMudanca);
+  assert.equal(divergentes.codigo, 1);
+  assert.match(divergentes.saida, /versionId e activeVersionId diferem/);
+  assert.doesNotMatch(divergentes.saida, /^atualizado/m);
 });
 
 test('workflow inativo é aplicado sem ativar e confere que continua inativo', async () => {
@@ -252,7 +283,9 @@ test('manifesto ausente, inválido ou com id repetido é erro definitivo', async
   assert.match(r.saida, /mais de um arquivo/);
 });
 
-test('PUT que grava e devolve 400: detecta a mudança, restaura o backup e sai com 1', async () => {
+const chamadas = (r: { registros: Registro[] }, sufixo: string) => r.registros.filter((x) => x.metodo === 'POST' && x.caminho.endsWith(sufixo)).length;
+
+test('PUT que grava e devolve 400: detecta a mudança, restaura, reinicia o gatilho e sai com 1', async () => {
   const r = await rodar({ implantados: [fluxoImplantado()], putsQueGravamEFalham: 1 }, MANIFESTO, aplicar, comMudanca);
   assert.equal(r.codigo, 1, r.saida);
   const puts = r.registros.filter((x) => x.metodo === 'PUT');
@@ -260,40 +293,80 @@ test('PUT que grava e devolve 400: detecta a mudança, restaura o backup e sai c
   assert.deepEqual((puts[1]?.corpo as { nodes: unknown[] }).nodes, [no()]);
   assert.deepEqual(r.fluxos.get('w1')?.nodes, [no()]);
   assert.equal(r.fluxos.get('w1')?.active, true);
-  assert.match(r.saida, /restaurado/);
-  assert.doesNotMatch(r.saida, /conferido/);
+  assert.equal(chamadas(r, '/deactivate'), 1);
+  assert.equal(chamadas(r, '/activate'), 1);
+  assert.match(r.saida, /^restaurado/m);
+  assert.match(r.saida, /gatilho pode ter ficado fora do ar/);
+  assert.doesNotMatch(r.saida, /^atualizado/m);
 });
 
-test('PUT recusado sem gravar nada não dispara restauração', async () => {
+test('PUT recusado sem gravar nada: mantém o conteúdo mas ainda desativa e reativa o gatilho, e sai com 1', async () => {
   const r = await rodar({ implantados: [fluxoImplantado()], statusDoPut: 400 }, MANIFESTO, aplicar, comMudanca);
   assert.equal(r.codigo, 1);
   assert.equal(r.registros.filter((x) => x.metodo === 'PUT').length, 1);
-  assert.doesNotMatch(r.saida, /restaurado/);
+  assert.equal(chamadas(r, '/deactivate'), 1);
+  assert.equal(chamadas(r, '/activate'), 1);
+  assert.equal(r.fluxos.get('w1')?.active, true);
+  assert.match(r.saida, /conteúdo original mantido/);
+  assert.match(r.saida, /gatilho pode ter ficado fora do ar/);
+  assert.doesNotMatch(r.saida, /^restaurado/m);
 });
 
-test('ativação falha: restaura o JSON anterior, reativa e sai com 1', async () => {
+test('PUT recusado em workflow inativo não mexe na ativação', async () => {
+  const r = await rodar({ implantados: [fluxoImplantado({ active: false })], statusDoPut: 400 }, MANIFESTO, aplicar, comMudanca);
+  assert.equal(r.codigo, 1);
+  assert.equal(chamadas(r, '/deactivate'), 0);
+  assert.equal(chamadas(r, '/activate'), 0);
+});
+
+test('PUT que dá timeout depois de gravar: restaura, reinicia o gatilho e sai com 1 sem pedir repetição', async () => {
+  const r = await rodar({ implantados: [fluxoImplantado()], putTimeoutDepoisDeGravar: true }, MANIFESTO, aplicar, {
+    arquivo: mudado(),
+    ambiente: { N8N_API_TIMEOUT_MS: '300' },
+  });
+  assert.equal(r.codigo, 1, r.saida);
+  assert.match(r.saida, /falha de conexão, o estado no n8n é desconhecido/);
+  assert.equal(r.registros.filter((x) => x.metodo === 'PUT').length, 2);
+  assert.deepEqual(r.fluxos.get('w1')?.nodes, [no()]);
+  assert.equal(r.fluxos.get('w1')?.active, true);
+  assert.equal(chamadas(r, '/deactivate'), 1);
+  assert.equal(chamadas(r, '/activate'), 1);
+});
+
+test('GET que falha depois do erro no PUT: sai com 1 e manda restaurar à mão pelo caminho no host', async () => {
+  const r = await rodar({ implantados: [fluxoImplantado()], statusDoPut: 400, getIndisponivelAposPut: true }, MANIFESTO, aplicar, comMudanca);
+  assert.equal(r.codigo, 1, r.saida);
+  assert.match(r.saida, /restaurar à mão a partir de \/var\/backups\/tria-n8n\/w1-/);
+  assert.match(r.saida, /gatilho pode estar fora do ar|gatilho pode ter ficado fora do ar/);
+  assert.equal(chamadas(r, '/deactivate'), 0);
+  assert.equal(chamadas(r, '/activate'), 0);
+});
+
+test('ativação falha: restaura o JSON anterior, reinicia o gatilho e sai com 1', async () => {
   const r = await rodar({ implantados: [fluxoImplantado()], ativacoesQueFalham: 1 }, MANIFESTO, aplicar, comMudanca);
   assert.equal(r.codigo, 1);
   const puts = r.registros.filter((x) => x.metodo === 'PUT');
   assert.equal(puts.length, 2);
   assert.deepEqual((puts[1]?.corpo as { nodes: unknown[] }).nodes, [no()]);
-  assert.equal(r.registros.filter((x) => x.caminho.endsWith('/activate')).length, 2);
+  assert.equal(chamadas(r, '/activate'), 2);
+  assert.equal(chamadas(r, '/deactivate'), 1);
   assert.equal(r.fluxos.get('w1')?.active, true);
   assert.deepEqual(r.fluxos.get('w1')?.nodes, [no()]);
-  assert.match(r.saida, /restaurado/);
+  assert.match(r.saida, /^restaurado/m);
 });
 
-test('restauração que também falha sai com 1 e aponta o backup', async () => {
+test('restauração que também falha sai com 1 e aponta a cópia no host', async () => {
   const r = await rodar({ implantados: [fluxoImplantado()], ativacoesQueFalham: 2 }, MANIFESTO, aplicar, comMudanca);
   assert.equal(r.codigo, 1);
-  assert.match(r.saida, /restaurar à mão a partir de/);
+  assert.match(r.saida, /restaurar à mão a partir de \/var\/backups\/tria-n8n\/w1-/);
+  assert.doesNotMatch(r.saida, /\/backup\//);
 });
 
-test('ativação que responde 200 sem efeito é pega pela conferência, restaura e sai com 1', async () => {
-  const r = await rodar({ implantados: [fluxoImplantado()], ativacaoSemEfeito: true }, MANIFESTO, aplicar, comMudanca);
+test('ativação sem efeito e PUT que desativa: a conferência pega, restaura e sai com 1', async () => {
+  const r = await rodar({ implantados: [fluxoImplantado()], putDesativa: true, ativacaoSemEfeito: true }, MANIFESTO, aplicar, comMudanca);
   assert.equal(r.codigo, 1);
   assert.match(r.saida, /conferência após aplicar falhou/);
-  assert.doesNotMatch(r.saida, /conferido/);
+  assert.doesNotMatch(r.saida, /^atualizado/m);
 });
 
 for (const status of [502, 503, 504]) {
@@ -356,15 +429,17 @@ test('argumentos inválidos saem com 1', async () => {
   assert.equal(await executar(['--aplicar', '--backup-dir'], {}, saidaMuda()), 1);
 });
 
-test('retenção: mantém só os últimos backups de cada id e não toca em outros ids', () => {
+test('retenção: mantém a cópia mais antiga e as 20 mais recentes de cada id, sem tocar em outros ids', () => {
   const dir = join(mkdtempSync(join(tmpdir(), 'n8n-ret-')), 'cofre');
   const base = Date.UTC(2026, 10, 24, 12, 0, 0);
   for (let i = 0; i < RETENCAO_DE_BACKUPS + 2; i += 1) gravarBackup(dir, { id: 'w1', name: 'x', nodes: [], connections: {}, settings: {}, active: false }, new Date(base + i * 1000));
   gravarBackup(dir, { id: 'w2', name: 'y', nodes: [], connections: {}, settings: {}, active: false }, new Date(base));
   const arquivos = readdirSync(dir).sort();
-  assert.equal(arquivos.filter((n) => n.startsWith('w1-')).length, RETENCAO_DE_BACKUPS);
+  assert.equal(arquivos.filter((n) => n.startsWith('w1-')).length, RETENCAO_DE_BACKUPS + 1);
   assert.equal(arquivos.filter((n) => n.startsWith('w2-')).length, 1);
-  assert.ok(!arquivos.includes('w1-2026-11-24T12-00-00-000Z.json'));
+  assert.ok(arquivos.includes('w1-2026-11-24T12-00-00-000Z.json'), 'a mais antiga é a de antes da primeira aplicação');
+  assert.ok(!arquivos.includes('w1-2026-11-24T12-00-01-000Z.json'));
+  assert.ok(arquivos.includes('w1-2026-11-24T12-00-02-000Z.json'));
   assert.ok(arquivos.includes('w1-2026-11-24T12-00-21-000Z.json'));
 });
 
@@ -403,6 +478,11 @@ const imagemAceita = (valor: string): boolean => {
 test('deploy.yml valida a imagem do passo do n8n por digest', () => {
   assert.equal(imagemAceita(`node:22-alpine@sha256:${DIGEST}`), true);
   assert.equal(imagemAceita(`docker.io/library/node@sha256:${DIGEST}`), true);
+  assert.equal(imagemAceita(`node@sha256:${DIGEST}`), true);
+  assert.equal(imagemAceita(`ghcr.io/library/node@sha256:${DIGEST}`), false);
+  assert.equal(imagemAceita(`docker.io/outro/node@sha256:${DIGEST}`), false);
+  assert.equal(imagemAceita(`evil/node:22@sha256:${DIGEST}`), false);
+  assert.equal(imagemAceita(`alpine@sha256:${DIGEST}`), false);
   assert.equal(imagemAceita('node:22-alpine'), false);
   assert.equal(imagemAceita(''), false);
   assert.equal(imagemAceita(`node@sha256:${'a'.repeat(63)}`), false);
@@ -415,12 +495,47 @@ test('deploy.yml valida a imagem do passo do n8n por digest', () => {
   assert.equal(imagemAceita(`node @sha256:${DIGEST}`), false);
 });
 
-test('deploy.yml: timeout no passo do n8n, lock, trap completo e smoke condicionado ao passo', () => {
+const scriptRemoto = (): string => {
   const yml = readFileSync(join(process.cwd(), '.github/workflows/deploy.yml'), 'utf8');
+  const inicio = yml.indexOf("<<'EOS'\n");
+  const fim = yml.indexOf('\n          EOS\n', inicio);
+  assert.ok(inicio > 0 && fim > inicio, 'script remoto não encontrado no deploy.yml');
+  return yml
+    .slice(inicio + "<<'EOS'\n".length, fim)
+    .split('\n')
+    .map((linha) => linha.replace(/^ {10}/, ''))
+    .join('\n');
+};
+
+test('deploy.yml: o script remoto tem sintaxe válida de bash e o passo local também', () => {
+  execFileSync('bash', ['-n'], { input: `imagem=node\n${scriptRemoto()}\n`, stdio: 'pipe' });
+  const yml = readFileSync(join(process.cwd(), '.github/workflows/deploy.yml'), 'utf8');
+  const inicio = yml.indexOf('imagem="$IMAGEM_N8N_CLIENTES"');
+  const fim = yml.indexOf('\n\n      - name: Smoke', inicio);
+  const passo = yml
+    .slice(inicio, fim)
+    .split('\n')
+    .map((linha) => linha.replace(/^ {10}/, ''))
+    .join('\n');
+  execFileSync('bash', ['-n'], { input: passo, stdio: 'pipe' });
+});
+
+test('deploy.yml: o contêiner do n8n é endurecido, nomeado e travado; o smoke roda depois do passo', () => {
+  const yml = readFileSync(join(process.cwd(), '.github/workflows/deploy.yml'), 'utf8');
+  const remoto = scriptRemoto();
   assert.match(yml, /id: n8n_clientes\n\s+timeout-minutes: 8/);
   assert.match(yml, /EXIT HUP INT TERM PIPE/);
-  assert.match(yml, /flock -n 9/);
-  assert.match(yml, /--cap-drop=ALL/);
-  assert.match(yml, /no-new-privileges/);
+  assert.match(yml, /sudo flock -w 300 \/run\/lock\/tria-n8n-clientes\.lock/);
+  assert.doesNotMatch(yml, /flock -n/);
+  assert.match(remoto, /--name orla-n8n-clientes/);
+  assert.match(remoto, /--cap-drop=ALL/);
+  assert.doesNotMatch(yml, /--cap-add/);
+  assert.match(remoto, /--security-opt no-new-privileges/);
+  assert.match(remoto, /--read-only --tmpfs \/tmp --pids-limit 64 --memory 256m/);
+  assert.match(remoto, /chmod -R a\+rX \/opt\/tria\/n8n-clientes/);
+  assert.match(remoto, /docker ps -aq --filter name='\^orla-n8n-clientes\$'/);
+  assert.match(remoto, /aplicacao-\$\(date -u/);
+  assert.match(remoto, /--backup-dir \/backup --backup-dir-host \/var\/backups\/tria-n8n/);
+  assert.doesNotMatch(remoto, /N8N_API_KEY=\$\{?chave/);
   assert.match(yml, /if: \$\{\{ !cancelled\(\) && steps\.n8n_clientes\.conclusion != 'skipped' \}\}/);
 });

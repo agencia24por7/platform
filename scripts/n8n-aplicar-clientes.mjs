@@ -1,5 +1,5 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { basename, join, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const PASTAS_DE_CLIENTES = ['clientes', 'agencia'];
@@ -32,10 +32,12 @@ ao id e ao nome do workflow. Arquivo fora do manifesto, id inexistente, nome div
 opções:
   --aplicar              grava no n8n; sem ela, só mostra o que mudaria
   --backup-dir <dir>     obrigatório com --aplicar: guarda o JSON anterior de cada workflow antes do PUT
+  --backup-dir-host <dir> caminho do mesmo diretório no host, só para as mensagens (padrão: o próprio --backup-dir)
   --manifesto <arquivo>  manifesto alternativo
   --propor-manifesto     só leitura: lista candidatos arquivo → id/nome por nome exato, sem gravar nada
 
-Saída: 0 ok; 1 erro definitivo (não repetir); 2 n8n indisponível ou erro de rede (pode repetir).
+Saída: 0 ok; 1 erro definitivo (não repetir; inclui qualquer falha depois de iniciado um PUT); 2 n8n indisponível
+ou erro de rede antes de qualquer PUT, na listagem ou em GET (pode repetir).
 Precisa de N8N_API_URL e N8N_API_KEY no ambiente.`;
 
 export class ErroDeConexao extends Error {}
@@ -230,7 +232,9 @@ export function conteudoDoBackup(workflow) {
 function expurgarBackupsAntigos(diretorio, idSeguro) {
   const padrao = new RegExp(`^${idSeguro}-\\d{4}-\\d{2}-\\d{2}T[0-9-]+Z\\.json$`);
   const arquivos = readdirSync(diretorio).filter((nome) => padrao.test(nome)).sort();
-  for (const nome of arquivos.slice(0, Math.max(0, arquivos.length - RETENCAO_DE_BACKUPS))) unlinkSync(join(diretorio, nome));
+  const [maisAntigo, ...demais] = arquivos;
+  if (!maisAntigo) return;
+  for (const nome of demais.slice(0, Math.max(0, demais.length - RETENCAO_DE_BACKUPS))) unlinkSync(join(diretorio, nome));
 }
 
 export function gravarBackup(diretorio, atual, agora = new Date()) {
@@ -254,22 +258,18 @@ const corpoDoPut = (workflow) => ({
 
 const assinaturaCompleta = (workflow) => JSON.stringify([workflow.name, assinatura(workflow)]);
 
-function mudouDesde(antes, depois) {
-  if (antes.versionId && depois.versionId) return antes.versionId !== depois.versionId;
-  return assinaturaCompleta(antes) !== assinaturaCompleta(depois);
-}
-
 export function interpretarArgumentos(argumentos) {
-  const opcoes = { aplicar: false, proporManifesto: false, backupDir: undefined, manifesto: undefined, raiz: undefined, ajuda: false };
+  const opcoes = { aplicar: false, proporManifesto: false, backupDir: undefined, backupDirHost: undefined, manifesto: undefined, raiz: undefined, ajuda: false };
   for (let i = 0; i < argumentos.length; i += 1) {
     const a = argumentos[i];
     if (['--help', '-h', '--ajuda'].includes(a)) opcoes.ajuda = true;
     else if (a === '--aplicar') opcoes.aplicar = true;
     else if (a === '--propor-manifesto') opcoes.proporManifesto = true;
-    else if (a === '--backup-dir' || a === '--manifesto') {
+    else if (a === '--backup-dir' || a === '--backup-dir-host' || a === '--manifesto') {
       const valor = argumentos[i + 1];
       if (!valor || valor.startsWith('--')) throw new Error(`${a} exige um valor`);
       if (a === '--backup-dir') opcoes.backupDir = valor;
+      else if (a === '--backup-dir-host') opcoes.backupDirHost = valor;
       else opcoes.manifesto = valor;
       i += 1;
     } else if (a.startsWith('--')) throw new Error(`opção desconhecida: ${a}`);
@@ -299,7 +299,31 @@ async function proporManifesto(api, raiz, manifesto, saida) {
   return SAIDA_OK;
 }
 
-async function aplicarArquivo({ api, plano, modelo, rotulo, backupDir, saida }) {
+function mudouDesde(antes, depois) {
+  return assinaturaCompleta(antes) !== assinaturaCompleta(depois);
+}
+
+function conferir(depois, { ativo, assinaturaEsperada }) {
+  if (Boolean(depois.active) !== ativo) return { ok: false, motivo: `estado ativo esperado ${ativo}, encontrado ${Boolean(depois.active)}` };
+  if (assinaturaCompleta(depois) !== assinaturaEsperada) return { ok: false, motivo: 'o conteúdo implantado difere do esperado' };
+  const publicacao = Boolean(depois.versionId && depois.activeVersionId);
+  if (publicacao && depois.versionId !== depois.activeVersionId) return { ok: false, motivo: 'versionId e activeVersionId diferem: a versão publicada não é a gravada' };
+  return { ok: true, publicacao };
+}
+
+const descreverConferencia = (conferencia) => (conferencia.publicacao ? 'conteúdo e versão publicada conferidos' : 'conteúdo conferido; versão publicada não verificada');
+
+async function ciclarAtivacao(api, caminho, rotulo, saida) {
+  for (const acao of ['deactivate', 'activate']) {
+    try {
+      await api('POST', `${caminho}/${acao}`);
+    } catch (erro) {
+      saida.error(`aviso ${rotulo}: POST ${acao} respondeu erro (${erro.message})`);
+    }
+  }
+}
+
+async function aplicarArquivo({ api, plano, modelo, rotulo, backupDir, backupDirHost, saida }) {
   const atual = await api('GET', `/workflows/${plano.id}`);
   let backup;
   try {
@@ -308,63 +332,66 @@ async function aplicarArquivo({ api, plano, modelo, rotulo, backupDir, saida }) 
     saida.error(`ERRO ${rotulo}: backup não gravado (${erro.message}); nada foi alterado`);
     return SAIDA_DEFINITIVA;
   }
+  const noHost = join(backupDirHost, basename(backup));
   const antes = conteudoDoBackup(atual);
   const estavaAtivo = antes.active;
   const final = mesclarComImplantado(modelo, atual);
   const esperado = assinaturaCompleta(final);
   const caminho = `/workflows/${plano.id}`;
+  const aviso = estavaAtivo ? 'o gatilho pode ter ficado fora do ar; ' : '';
 
-  const restaurar = async () => {
-    try {
-      await api('PUT', caminho, corpoDoPut(antes));
-    } catch (erro) {
-      saida.error(`aviso ${rotulo}: PUT de restauração respondeu erro (${erro.message}); conferindo o estado`);
-    }
-    if (estavaAtivo) {
+  const restaurar = async ({ reescrever }) => {
+    if (reescrever) {
       try {
-        await api('POST', `${caminho}/activate`);
+        await api('PUT', caminho, corpoDoPut(antes));
       } catch (erro) {
-        saida.error(`aviso ${rotulo}: reativação respondeu erro (${erro.message}); conferindo o estado`);
+        saida.error(`aviso ${rotulo}: PUT de restauração respondeu erro (${erro.message}); conferindo o estado`);
       }
     }
+    if (estavaAtivo) await ciclarAtivacao(api, caminho, rotulo, saida);
     try {
-      const depois = await api('GET', caminho);
-      if (assinaturaCompleta(depois) === assinaturaCompleta(antes) && Boolean(depois.active) === estavaAtivo) {
-        saida.error(`restaurado ${rotulo} (${plano.id}) a partir de ${backup}`);
+      const conferencia = conferir(await api('GET', caminho), { ativo: estavaAtivo, assinaturaEsperada: assinaturaCompleta(antes) });
+      if (conferencia.ok) {
+        const situacao = reescrever ? 'restaurado' : 'conteúdo original mantido em';
+        const ciclo = estavaAtivo ? '; gatilho desativado e reativado' : '';
+        saida.error(`${situacao} ${rotulo} (${plano.id}) a partir de ${noHost}${ciclo}; ${descreverConferencia(conferencia)}`);
         return;
       }
+      saida.error(`aviso ${rotulo}: conferência da restauração falhou (${conferencia.motivo})`);
     } catch (erro) {
       saida.error(`aviso ${rotulo}: conferência da restauração falhou (${erro.message})`);
     }
-    saida.error(`ERRO ${rotulo}: restauração não confirmada; restaurar à mão a partir de ${backup}`);
+    saida.error(`ERRO ${rotulo}: restauração não confirmada; ${aviso}restaurar à mão a partir de ${noHost} (docs/n8n-clientes-manifesto.md)`);
   };
 
   try {
     await api('PUT', caminho, corpoDoPut(final));
   } catch (erro) {
-    if (erro instanceof ErroDeConexao) throw erro;
-    saida.error(`ERRO ${rotulo}: PUT recusado (${erro.message}); conferindo se o n8n gravou mesmo assim`);
-    let alterado = true;
+    const porConexao = erro instanceof ErroDeConexao ? '; falha de conexão, o estado no n8n é desconhecido' : '';
+    saida.error(`ERRO ${rotulo}: PUT falhou (${erro.message})${porConexao}; ${aviso}conferindo o estado`);
+    let vigente;
     try {
-      alterado = mudouDesde(antes, await api('GET', caminho));
-    } catch {
-      saida.error(`aviso ${rotulo}: não foi possível conferir o estado; restaurando por segurança`);
+      vigente = await api('GET', caminho);
+    } catch (erroDoGet) {
+      saida.error(`ERRO ${rotulo}: não foi possível ler o workflow depois da falha (${erroDoGet.message}); ${aviso}nada foi restaurado; restaurar à mão a partir de ${noHost} (docs/n8n-clientes-manifesto.md)`);
+      return SAIDA_DEFINITIVA;
     }
-    if (alterado) await restaurar();
+    const alterado = mudouDesde(antes, vigente);
+    if (alterado || estavaAtivo) await restaurar({ reescrever: alterado });
     return SAIDA_DEFINITIVA;
   }
 
+  let conferencia;
   try {
     if (estavaAtivo) await api('POST', `${caminho}/activate`);
-    const depois = await api('GET', caminho);
-    if (Boolean(depois.active) !== estavaAtivo) throw new Error(`estado ativo esperado ${estavaAtivo}, encontrado ${Boolean(depois.active)}`);
-    if (assinaturaCompleta(depois) !== esperado) throw new Error('o conteúdo implantado difere do esperado após a aplicação');
+    conferencia = conferir(await api('GET', caminho), { ativo: estavaAtivo, assinaturaEsperada: esperado });
+    if (!conferencia.ok) throw new Error(conferencia.motivo);
   } catch (erro) {
-    saida.error(`ERRO ${rotulo}: conferência após aplicar falhou (${erro.message}); restaurando o JSON anterior`);
-    await restaurar();
+    saida.error(`ERRO ${rotulo}: conferência após aplicar falhou (${erro.message}); ${aviso}restaurando o JSON anterior`);
+    await restaurar({ reescrever: true });
     return SAIDA_DEFINITIVA;
   }
-  saida.log(`atualizado ${rotulo} (${plano.id})${estavaAtivo ? ', reativado' : ''}; conferido; backup ${backup}`);
+  saida.log(`atualizado ${rotulo} (${plano.id})${estavaAtivo ? ', reativado' : ''}; ${descreverConferencia(conferencia)}; cópia anterior ${noHost}`);
   return SAIDA_OK;
 }
 
@@ -444,7 +471,7 @@ export async function executar(argumentos, ambiente = process.env, saida = conso
         saida.log(`igual ${rotulo} (${plano.id})`);
       } else if (!opcoes.aplicar) {
         saida.log(`atualizaria ${rotulo} (${plano.id})`);
-      } else if ((await aplicarArquivo({ api, plano, modelo, rotulo, backupDir: opcoes.backupDir, saida })) !== SAIDA_OK) {
+      } else if ((await aplicarArquivo({ api, plano, modelo, rotulo, backupDir: opcoes.backupDir, backupDirHost: opcoes.backupDirHost ?? opcoes.backupDir, saida })) !== SAIDA_OK) {
         definitivas += 1;
       }
     } catch (erro) {

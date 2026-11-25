@@ -176,44 +176,56 @@ jobs:
           IMAGEM_N8N_CLIENTES: ${{ vars.N8N_CLIENTES_IMAGEM }}
         run: |
           imagem="$IMAGEM_N8N_CLIENTES"
-          if [[ "$imagem" == *$'\n'* || "$imagem" == *$'\r'* || ! "$imagem" =~ ^[a-z0-9][a-z0-9./_-]*(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}$ ]]; then
-            echo "Defina a variável do repositório N8N_CLIENTES_IMAGEM com a imagem do Node fixada por @sha256 (ADR 0053)."
+          if [[ "$imagem" == *$'\n'* || "$imagem" == *$'\r'* || ! "$imagem" =~ ^(docker\.io/library/)?node(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}$ ]]; then
+            echo "Defina a variável do repositório N8N_CLIENTES_IMAGEM com a imagem oficial do Node fixada por @sha256 (ADR 0053)."
             exit 1
           fi
-          tentar_ssh() {
-            for n in 1 2 3 4 5; do
-              rc=0
-              gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "$1" || rc=$?
-              if [ "$rc" -ne 255 ]; then return "$rc"; fi
-              echo "tentativa $n: o tunel IAP caiu. repetindo em 15s"
-              sleep 15
+          script=$(printf 'imagem=%q\n' "$imagem"; cat <<'EOS'
+          set -eu
+          install -d -m 700 /var/backups/tria-n8n
+          chave=$(sed -n 's/^N8N_API_KEY=//p' /opt/tria/.env | head -n 1)
+          if [ -z "$chave" ]; then echo 'N8N_API_KEY ausente no .env; fluxos de clientes não aplicados.'; exit 1; fi
+          umask 077
+          arq=$(mktemp)
+          trap 'rm -f "$arq"' EXIT HUP INT TERM PIPE
+          printf 'N8N_API_URL=http://n8n:5678\nN8N_API_KEY=%s\n' "$chave" > "$arq"
+          chmod -R a+rX /opt/tria/n8n-clientes
+          for n in 1 2 3 4 5 6 7 8 9 10; do
+            if [ -n "$(docker ps -aq --filter name='^orla-n8n-clientes$')" ]; then
+              echo 'O contêiner orla-n8n-clientes já existe: há uma aplicação anterior em andamento ou interrompida. Confira docker logs orla-n8n-clientes e /var/backups/tria-n8n antes de repetir.'
+              exit 1
+            fi
+            log=/var/backups/tria-n8n/aplicacao-$(date -u +%Y%m%dT%H%M%SZ).log
+            : > "$log"
+            docker run -d --name orla-n8n-clientes --network orla_interna --env-file "$arq" \
+              --cap-drop=ALL --security-opt no-new-privileges --read-only --tmpfs /tmp --pids-limit 64 --memory 256m \
+              -v /opt/tria/n8n-clientes:/w:ro -v /var/backups/tria-n8n:/backup \
+              "$imagem" node /w/n8n-aplicar-clientes.mjs /w --aplicar --backup-dir /backup --backup-dir-host /var/backups/tria-n8n > /dev/null
+            nohup bash -c 'rc=$(docker wait orla-n8n-clientes); { docker logs orla-n8n-clientes 2>&1; echo "desfecho: codigo $rc"; } >> "$1"; docker rm orla-n8n-clientes > /dev/null; echo "$rc" > "$1.rc"' _ "$log" > /dev/null 2>&1 &
+            esperou=0
+            while [ ! -s "$log.rc" ]; do
+              esperou=$((esperou + 1))
+              if [ "$esperou" -gt 240 ]; then echo "A aplicação não terminou em 8 minutos; acompanhe $log e docker logs orla-n8n-clientes."; exit 1; fi
+              sleep 2
             done
-            return 255
-          }
-          tentar_ssh "
-            set -eu
-            sudo install -d -m 700 /var/backups/tria-n8n
-            chave=\$(sudo sed -n 's/^N8N_API_KEY=//p' /opt/tria/.env | head -n 1)
-            if [ -z \"\$chave\" ]; then echo 'N8N_API_KEY ausente no .env; fluxos de clientes não aplicados.'; exit 1; fi
-            umask 077
-            exec 9>/tmp/tria-n8n-clientes.lock
-            if ! flock -n 9; then echo 'outra aplicação de fluxos do n8n está em andamento; abortando.'; exit 1; fi
-            arq=\$(mktemp)
-            trap 'rm -f \"\$arq\"' EXIT HUP INT TERM PIPE
-            printf 'N8N_API_URL=http://n8n:5678\nN8N_API_KEY=%s\n' \"\$chave\" > \"\$arq\"
-            for n in 1 2 3 4 5 6 7 8 9 10; do
-              rc=0
-              sudo docker run --rm --network orla_interna --env-file \"\$arq\" \
-                --cap-drop=ALL --cap-add=DAC_READ_SEARCH --security-opt no-new-privileges \
-                -v /opt/tria/n8n-clientes:/w:ro -v /var/backups/tria-n8n:/backup \
-                '$imagem' node /w/n8n-aplicar-clientes.mjs /w --aplicar --backup-dir /backup || rc=\$?
-              if [ \"\$rc\" -eq 0 ]; then exit 0; fi
-              if [ \"\$rc\" -ne 2 ]; then exit \"\$rc\"; fi
-              echo \"n8n indisponível (tentativa \$n); nova tentativa em 15s\"
-              sleep 15
-            done
-            exit 2
-          "
+            rc=$(cat "$log.rc")
+            cat "$log"
+            if [ "$rc" -eq 0 ]; then exit 0; fi
+            if [ "$rc" -ne 2 ]; then exit "$rc"; fi
+            echo "n8n indisponível (tentativa $n); nova tentativa em 15s"
+            sleep 15
+          done
+          exit 2
+          EOS
+          )
+          for n in 1 2 3 4 5; do
+            rc=0
+            printf '%s\n' "$script" | gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo flock -w 300 /run/lock/tria-n8n-clientes.lock bash -s" || rc=$?
+            if [ "$rc" -ne 255 ]; then exit "$rc"; fi
+            echo "tentativa $n: o tunel IAP caiu. repetindo em 15s"
+            sleep 15
+          done
+          exit 255
 
       - name: Smoke pós-deploy (saúde, worker 401, cofre 404 pelo proxy)
         if: ${{ !cancelled() && steps.n8n_clientes.conclusion != 'skipped' }}
