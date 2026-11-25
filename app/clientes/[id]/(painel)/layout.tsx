@@ -3,17 +3,17 @@ import type { ReactNode } from 'react';
 import { BotaoDeEnvio } from '@/../app/_components/BotaoDeEnvio';
 import { Shell } from '@/../app/_components/Shell';
 import { AbasDoCliente } from '@/../app/clientes/[id]/_componentes/AbasDoCliente';
+import { AcaoPrincipalDoCabecalho } from '@/../app/clientes/[id]/_componentes/AcaoPrincipalDoCabecalho';
+import { ConfirmarAcao } from '@/../app/clientes/[id]/_componentes/ConfirmarAcao';
 import { Icone } from '@/../app/clientes/[id]/_componentes/Icones';
 import { MenuMais } from '@/../app/clientes/[id]/_componentes/MenuMais';
 import { modules } from '@/composition';
-import { carregarContexto, carregarPainel, carregarProntidao } from '@/../app/clientes/[id]/_dados';
+import { carregarPainel, carregarProntidao } from '@/../app/clientes/[id]/_dados';
 import { mudarSituacao } from '@/../app/clientes/[id]/(painel)/conexoes/acoes';
 import { EFEITO_DA_SITUACAO, ROTULO_DA_SITUACAO, SITUACOES, mudancaPermitida } from '@/modules/clients/domain/ciclo';
-import { tamanhoLegivel } from '@/modules/clients/domain/painel/formato';
 import { acaoPrincipal, ROTULO_DO_VEREDITO, type Veredito } from '@/modules/clients/domain/painel/prontidao';
-import { podeCadastrarCliente } from '@/modules/clients/domain/painel/permissoes';
 import { rotaDoCliente } from '@/modules/clients/domain/painel/enderecos';
-import { estadoDoBlocoDeRegras } from '@/modules/clients/domain/painel/regras';
+import { estadoDoBlocoDeRegras, podeRegistrarOuMexer } from '@/modules/clients/domain/painel/regras';
 import { noVocabularioDe, vocabularioDe } from '@/modules/organizations/domain/vocabulario';
 
 export const dynamic = 'force-dynamic';
@@ -30,26 +30,23 @@ async function carregarProntidaoDeRegras(organizationId: string, clientId: strin
 
 const CLASSE_DO_VEREDITO: Record<Veredito, string> = { sim: 'pill--ok', parcial: 'pill--warn', nao: 'pill--danger' };
 
-const ROTULO_DO_BRAIN: Record<string, string> = {
-  desativado: 'Armazenamento não configurado',
-  nunca_publicado: 'Ainda não publicado',
-  em_dia: 'Publicado e em dia',
-  pendente: 'Publicação pendente',
-  com_erro: 'Última publicação falhou',
-};
-
 type Prontidao = NonNullable<Awaited<ReturnType<typeof carregarProntidao>>>;
+type Regras = NonNullable<Awaited<ReturnType<typeof carregarProntidaoDeRegras>>>;
 
-function FaixaDeProntidao({ prontidao }: { readonly prontidao: Prontidao }) {
-  const icone = prontidao.veredito === 'sim' ? 'ok' : prontidao.veredito === 'parcial' ? 'parcial' : 'nao';
+function FaixaDeProntidao({ prontidao, regras, clienteId, podeDefinir }: { readonly prontidao: Prontidao | null; readonly regras: Regras | null; readonly clienteId: string; readonly podeDefinir: boolean }) {
+  const lacunasDoPlanejamento = prontidao && prontidao.veredito !== 'sim' ? prontidao.lacunas : [];
+  const lacunasDeRegras = regras?.essenciaisFaltando ?? [];
+  const total = lacunasDoPlanejamento.length + lacunasDeRegras.length;
+  const veredito: Veredito | null = prontidao ? (prontidao.veredito === 'sim' && lacunasDeRegras.length > 0 ? 'parcial' : prontidao.veredito) : lacunasDeRegras.length > 0 ? 'parcial' : null;
+  if (!veredito) return null;
+  const icone = veredito === 'sim' ? 'ok' : veredito === 'parcial' ? 'parcial' : 'nao';
   const pill = (
-    <span className={`pill ${CLASSE_DO_VEREDITO[prontidao.veredito]}`}>
+    <span className={`pill ${CLASSE_DO_VEREDITO[veredito]}`}>
       <Icone nome={icone} tamanho={14} />
-      {ROTULO_DO_VEREDITO[prontidao.veredito]}
+      {ROTULO_DO_VEREDITO[veredito]}
     </span>
   );
-  const lacunas = prontidao.veredito !== 'sim' ? prontidao.lacunas : [];
-  if (lacunas.length === 0) {
+  if (total === 0) {
     return (
       <section className="prontidao" aria-label="Pronto para planejar">
         <span className="prontidao__titulo">Pronto para planejar</span>
@@ -63,12 +60,24 @@ function FaixaDeProntidao({ prontidao }: { readonly prontidao: Prontidao }) {
         <span className="prontidao__titulo">Pronto para planejar</span>
         {pill}
         <span className="prontidao__contagem">
-          {lacunas.length} {lacunas.length === 1 ? 'sugestão' : 'sugestões'}
+          {total} {total === 1 ? 'sugestão' : 'sugestões'}
         </span>
       </summary>
       <ul className="prontidao__lacunas" aria-label="O que falta">
-        {lacunas.map((lacuna) => (
+        {lacunasDoPlanejamento.map((lacuna) => (
           <li key={lacuna.id}>{lacuna.titulo}</li>
+        ))}
+        {lacunasDeRegras.map((lacuna) => (
+          <li key={lacuna.chave}>
+            <span>{lacuna.nome}</span>
+            {podeDefinir ? (
+              <Link className="btn btn--compacto" href={rotaDoCliente(clienteId, 'regras', { secao: 'registrar', natureza: 'limite', definicao: lacuna.chave })}>
+                Definir
+              </Link>
+            ) : (
+              <span className="subtle xsmall">Peça a quem administra</span>
+            )}
+          </li>
         ))}
       </ul>
     </details>
@@ -83,13 +92,15 @@ export default async function LayoutDoCliente({
   readonly params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { ctx, cliente, podeEditar, podeAdministrar, organizacaoInteira } = await carregarPainel(id);
-  const [prontidao, contexto] = await Promise.all([carregarProntidao(ctx.organization.id, cliente.id), carregarContexto(ctx.organization.id, cliente.id)]);
-  const regras = await carregarProntidaoDeRegras(ctx.organization.id, cliente.id);
+  const { ctx, cliente, podeEditar, organizacaoInteira } = await carregarPainel(id);
+  const [prontidao, regras] = await Promise.all([carregarProntidao(ctx.organization.id, cliente.id), carregarProntidaoDeRegras(ctx.organization.id, cliente.id)]);
   const blocoDeRegras = regras ? estadoDoBlocoDeRegras(regras) : null;
   const principal = prontidao ? acaoPrincipal(prontidao.acoes, cliente.id, { podeEditar, organizacaoInteira, tipo: ctx.organization.type }) : null;
   const vocabulario = vocabularioDe(ctx.organization.type);
-  const opcoes = SITUACOES.filter((valor) => mudancaPermitida(ctx.role, valor) === null);
+  const permitidas = SITUACOES.filter((valor) => mudancaPermitida(ctx.role, valor) === null);
+  const podeArquivar = cliente.status !== 'archived' && permitidas.includes('archived');
+  const opcoes = permitidas.filter((valor) => valor !== 'archived' || cliente.status === 'archived');
+  const contadorDeRegras = regras ? regras.essenciaisFaltando.length + regras.propostasPendentes + regras.aRevisar : 0;
 
   return (
     <Shell title={cliente.name} organization={ctx.organization} active="/clientes">
@@ -124,17 +135,8 @@ export default async function LayoutDoCliente({
             </div>
           </div>
           <div className="cliente-topo__direita">
-            {principal ? (
-              <Link className="btn btn--primary" href={principal.href} title={principal.titulo}>
-                {principal.rotulo}
-              </Link>
-            ) : null}
-            {ctx.organization.type === 'advertiser' && organizacaoInteira && podeCadastrarCliente(ctx.organization.type, ctx.role) ? (
-              <Link className="btn" href="/clientes/novo">
-                Novo negócio
-              </Link>
-            ) : null}
-            <MenuMais rotulo="Situação e arquivos">
+            {principal ? <AcaoPrincipalDoCabecalho href={principal.href} rotulo={principal.rotulo} titulo={principal.titulo} /> : null}
+            <MenuMais rotulo="Situação">
               {podeEditar ? (
                 <form className="menu-mais__bloco" action={mudarSituacao}>
                   <input type="hidden" name="clientId" value={cliente.id} />
@@ -152,25 +154,24 @@ export default async function LayoutDoCliente({
                   <BotaoDeEnvio className="btn" pendente="Aplicando…">
                     Aplicar
                   </BotaoDeEnvio>
-                  <p className="field__hint">Excluir é lógico (ADR 0022) e fica com quem administra: arquive aqui.</p>
                 </form>
               ) : null}
-                <dl className="menu-mais__bloco fatos">
-                  <div className="fatos__item">
-                    <dt className="fatos__rotulo">Arquivos</dt>
-                    <dd>{contexto ? `${tamanhoLegivel(contexto.usoDeArquivosBytes)} de ${tamanhoLegivel(contexto.cotaDeArquivosBytes)}` : '—'}</dd>
-                  </div>
-                  <div className="fatos__item">
-                    <dt className="fatos__rotulo">Brain publicado</dt>
-                    <dd>{contexto ? (ROTULO_DO_BRAIN[contexto.brain.situacao] ?? contexto.brain.situacao) : '—'}</dd>
-                  </div>
-                  {contexto?.brain.exportadoEm ? (
-                    <div className="fatos__item">
-                      <dt className="fatos__rotulo">Última publicação</dt>
-                      <dd>{contexto.brain.exportadoEm.toLocaleString('pt-BR')}</dd>
-                    </div>
-                  ) : null}
-                </dl>
+              {podeEditar && podeArquivar ? (
+                <div className="menu-mais__bloco">
+                  <ConfirmarAcao
+                    gatilho="Arquivar"
+                    rotuloDoGatilho={`Arquivar ${cliente.name}`}
+                    titulo={`Arquivar ${cliente.name}?`}
+                    descricao={noVocabularioDe(ctx.organization.type, EFEITO_DA_SITUACAO.archived)}
+                    confirmar="Arquivar"
+                    action={mudarSituacao}
+                  >
+                    <input type="hidden" name="clientId" value={cliente.id} />
+                    <input type="hidden" name="situacao" value="archived" />
+                  </ConfirmarAcao>
+                  <p className="field__hint">Excluir é lógico (ADR 0022) e fica com quem administra: arquive aqui.</p>
+                </div>
+              ) : null}
               </MenuMais>
           </div>
         </div>
@@ -179,25 +180,9 @@ export default async function LayoutDoCliente({
             <strong>{noVocabularioDe(ctx.organization.type, 'Cliente')} {ROTULO_DA_SITUACAO[cliente.status].toLowerCase()}.</strong> {noVocabularioDe(ctx.organization.type, EFEITO_DA_SITUACAO[cliente.status])}
           </div>
         ) : null}
-        {prontidao ? <FaixaDeProntidao prontidao={prontidao} /> : null}
-        {regras && regras.essenciaisFaltando.length > 0 ? (
-          <section className="prontidao" aria-label="Lacunas em Regras">
-            <span className="prontidao__titulo">Regras</span>
-            <span className="pill pill--warn">
-              <Icone nome="atencao" tamanho={14} />
-              {blocoDeRegras?.rotulo ?? 'Parcial'}
-            </span>
-            <ul className="prontidao__lacunas" aria-label="Lacunas essenciais em Regras">
-              {regras.essenciaisFaltando.map((lacuna) => (
-                <li key={lacuna.chave}>
-                  <Link href={rotaDoCliente(cliente.id, 'regras', { secao: 'registrar', natureza: 'limite', definicao: lacuna.chave })}>{lacuna.nome}</Link>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
+        <FaixaDeProntidao prontidao={prontidao} regras={regras} clienteId={cliente.id} podeDefinir={podeRegistrarOuMexer(ctx.role, 'limite')} />
       </header>
-      <AbasDoCliente clienteId={cliente.id} blocos={{ conexoes: prontidao?.conexoes ?? null, contexto: prontidao?.contexto ?? null, regras: blocoDeRegras }} />
+      <AbasDoCliente clienteId={cliente.id} blocos={{ conexoes: prontidao?.conexoes ?? null, contexto: prontidao?.contexto ?? null, regras: blocoDeRegras }} contadores={{ regras: contadorDeRegras }} />
       <div className="cliente-aba">{children}</div>
     </Shell>
   );

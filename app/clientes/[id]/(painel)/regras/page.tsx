@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { Feedback } from '@/../app/_components/Feedback';
+import { CabecalhoDeSecao } from '@/../app/clientes/[id]/_componentes/CabecalhoDeSecao';
+import { EstadoVazio } from '@/../app/clientes/[id]/_componentes/EstadoVazio';
 import { SubNavegacao } from '@/../app/clientes/[id]/_componentes/SubNavegacao';
 import { carregarPainel, primeiro } from '@/../app/clientes/[id]/_dados';
 import { CartaoDeRegra } from '@/../app/clientes/[id]/(painel)/regras/CartaoDeRegra';
@@ -78,8 +80,8 @@ export default async function Regras({ params, searchParams }: { readonly params
   const itens = [
     { chave: 'hoje', rotulo: 'O que vale hoje', href: aba('hoje') },
     { chave: 'linha', rotulo: 'Linha do tempo', href: aba('linha') },
-    { chave: 'propostas', rotulo: `Propostas de agentes${contagem ? ` (${contagem.propostasPendentes})` : ''}`, href: aba('propostas') },
-    { chave: 'revisar', rotulo: `Revisar e converter${contagem ? ` (${contagem.aRevisar})` : ''}`, href: aba('revisar') },
+    { chave: 'propostas', rotulo: 'Propostas de agentes', href: aba('propostas'), contador: contagem?.propostasPendentes ?? null },
+    { chave: 'revisar', rotulo: 'Revisar e converter', href: aba('revisar'), contador: contagem?.aRevisar ?? null },
   ];
   const ativaNaNavegacao: string = secao === 'historico' ? 'linha' : secao === 'registrar' || secao === 'alterar' ? 'hoje' : secao;
 
@@ -96,7 +98,7 @@ export default async function Regras({ params, searchParams }: { readonly params
       nivelDoTitulo={nivel}
     />
   );
-  const vazio = (mensagem: string) => <p className="regras-vazio">{noVocabularioDe(tipo, mensagem)}</p>;
+  const vazio = (titulo: string, mensagem?: string) => <EstadoVazio titulo={titulo} texto={mensagem ? noVocabularioDe(tipo, mensagem) : undefined} />;
   const erroDoServico = (mensagem: string) => <div className="alert alert--error">{mensagem}</div>;
 
   let corpo: React.ReactNode;
@@ -110,40 +112,17 @@ export default async function Regras({ params, searchParams }: { readonly params
       const grupos = agruparPorCategoria(vigentes.value.decisoes);
       corpo = (
         <div className="pilha">
-          {contagem && contagem.essenciaisFaltando.length > 0 ? (
-            <section className="card card--warn" aria-labelledby="regras-faltando">
-              <div className="card__body">
-                <h2 id="regras-faltando" className="card__title">
-                  Falta definir
-                </h2>
-                <ul className="regras-faltando">
-                  {contagem.essenciaisFaltando.map((l) => (
-                    <li key={l.chave}>
-                      <span>{l.nome}</span>
-                      {podeRegistrarOuMexer(papel, 'limite') ? (
-                        <Link className="btn btn--compacto" href={aba('registrar', { natureza: 'limite', definicao: l.chave })}>
-                          Definir
-                        </Link>
-                      ) : (
-                        <span className="muted xsmall">Peça a quem administra</span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </section>
-          ) : null}
           {vigentes.value.conflitos.length > 0 ? (
             <div className="alert alert--warn" role="status">
               Há decisões vigentes concorrentes para a mesma chave ({vigentes.value.conflitos.map((c) => `#${c.numero}`).join(', ')}). Vale a mais recente; revise.
             </div>
           ) : null}
           {grupos.length === 0
-            ? vazio('Nada vigente ainda. Registre o primeiro limite, regra ou decisão do cliente.')
+            ? vazio('Nada vigente ainda', 'Registre o primeiro limite, regra ou decisão do cliente.')
             : grupos.map((g) => (
                 <section key={g.categoria} aria-labelledby={`grupo-${g.categoria}`} className="regras-grupo">
                   <h2 id={`grupo-${g.categoria}`} className="regras-grupo__titulo">
-                    {g.rotulo} <span className="aba__contador">{g.decisoes.length}</span>
+                    {g.rotulo} <span className="contador">{g.decisoes.length}</span>
                   </h2>
                   <div className="regras-lista">{g.decisoes.map((d) => cartao(d, 'vigente', nomes))}</div>
                 </section>
@@ -211,7 +190,7 @@ export default async function Regras({ params, searchParams }: { readonly params
             </div>
           </form>
           {pagina.value.itens.length === 0 ? (
-            vazio('Nenhum registro com estes filtros.')
+            vazio('Nenhum registro', 'Nenhum registro com estes filtros.')
           ) : (
             <ol className="regras-lista regras-lista--linha" aria-label="Decisões, da mais recente para a mais antiga">
               {pagina.value.itens.map((d) => (
@@ -243,7 +222,7 @@ export default async function Regras({ params, searchParams }: { readonly params
       corpo = (
         <div className="pilha">
           <p className="muted small">Agentes propõem; só uma pessoa faz a proposta valer. Limite e regra propostos por agente nunca valem sozinhos.</p>
-          {propostas.value.length === 0 ? vazio('Nenhuma proposta esperando decisão.') : <div className="regras-lista">{propostas.value.map((d) => cartao(d, 'proposta', nomes))}</div>}
+          {propostas.value.length === 0 ? vazio('Nenhuma proposta esperando decisão') : <div className="regras-lista">{propostas.value.map((d) => cartao(d, 'proposta', nomes))}</div>}
         </div>
       );
     }
@@ -256,7 +235,7 @@ export default async function Regras({ params, searchParams }: { readonly params
       corpo = (
         <div className="pilha">
           <p className="muted small">Regras em texto livre que trazem número. Converta em limite para o sistema poder impor, ou mantenha como regra alterando-a.</p>
-          {fila.value.length === 0 ? vazio('Nada para revisar.') : <div className="regras-lista">{fila.value.map((d) => cartao(d, 'revisar', nomes))}</div>}
+          {fila.value.length === 0 ? vazio('Nada para revisar') : <div className="regras-lista">{fila.value.map((d) => cartao(d, 'revisar', nomes))}</div>}
         </div>
       );
     }
@@ -275,7 +254,7 @@ export default async function Regras({ params, searchParams }: { readonly params
             Cadeia de superação de <span className="mono">{chave}</span>, do atual ao primeiro.
           </p>
           {cadeia.length === 0 ? (
-            vazio('Sem histórico para esta chave.')
+            vazio('Sem histórico', 'Sem histórico para esta chave.')
           ) : (
             <ol className="regras-lista regras-cadeia" aria-label="Cadeia de superação">
               {cadeia.map(({ decisao, eventos }) => (
@@ -379,14 +358,18 @@ export default async function Regras({ params, searchParams }: { readonly params
     <div className="pilha regras">
       <Feedback message={texto('erro')} tone="error" />
       <Feedback message={texto('feito')} tone="ok" />
-      <div className="regras__topo">
-        <SubNavegacao rotulo="Seções de Regras" ativa={ativaNaNavegacao as SecaoDeRegras} itens={itens} />
-        {podeEscrever && secao !== 'registrar' && secao !== 'alterar' ? (
-          <Link className="btn btn--primary" href={aba('registrar')}>
-            Registrar
-          </Link>
-        ) : null}
-      </div>
+      <CabecalhoDeSecao
+        titulo="Regras"
+        descricao="Limites, regras e decisões vigentes, com histórico de cada mudança."
+        acao={
+          podeEscrever && secao !== 'registrar' && secao !== 'alterar' ? (
+            <Link className="btn btn--primary" href={aba('registrar')}>
+              Registrar
+            </Link>
+          ) : null
+        }
+      />
+      <SubNavegacao rotulo="Seções de Regras" ativa={ativaNaNavegacao as SecaoDeRegras} itens={itens} />
       {secao === 'registrar' || secao === 'alterar' ? (
         <h2 className="regras-grupo__titulo">{secao === 'registrar' ? 'Registrar limite, regra ou decisão' : 'Alterar (cria uma nova versão)'}</h2>
       ) : null}

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useDeferredValue, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { CopyButton } from '@/../app/_components/CopyButton';
+import { EstadoVazio } from '@/../app/clientes/[id]/_componentes/EstadoVazio';
 import { ALTURA_DO_MAPA, LARGURA_DO_MAPA, type Mapa, type NoDoMapa } from '@/modules/clients/domain/painel/brain/mapa';
 import { separarPorPreenchimento } from '@/modules/clients/domain/painel/brain/preenchimento';
 import {
@@ -266,13 +267,15 @@ export function ExploradorDoBrain({ clienteNome, entradas, mapa }: Props) {
           </label>
         </div>
         {filtradas.length === 0 && base.length === 0 ? (
-          <div className="empty">
-            Nada preenchido ainda. <button type="button" className="linkish" onClick={() => setMostrarVazias(true)}>Mostrar o que falta</button>
-          </div>
+          <EstadoVazio
+            titulo="Nada preenchido ainda"
+            acao={<button type="button" className="linkish" onClick={() => setMostrarVazias(true)}>Mostrar o que falta</button>}
+          />
         ) : filtradas.length === 0 ? (
-          <div className="empty">
-            Nada com esses filtros. <button type="button" className="linkish" onClick={limpar}>Limpar filtros</button>
-          </div>
+          <EstadoVazio
+            titulo="Nada com esses filtros"
+            acao={<button type="button" className="linkish" onClick={limpar}>Limpar filtros</button>}
+          />
         ) : vista === 'tabela' ? (
           <div className="table-wrap">
             <table className="table">

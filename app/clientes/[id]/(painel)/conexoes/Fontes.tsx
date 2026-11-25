@@ -1,4 +1,7 @@
 import Link from 'next/link';
+import { CabecalhoDeSecao } from '@/../app/clientes/[id]/_componentes/CabecalhoDeSecao';
+import { ConfirmarAcao } from '@/../app/clientes/[id]/_componentes/ConfirmarAcao';
+import { EstadoVazio } from '@/../app/clientes/[id]/_componentes/EstadoVazio';
 import { MenuMais } from '@/../app/clientes/[id]/_componentes/MenuMais';
 import { Marca } from '@/../app/_components/Marca';
 import { Icone, type NomeDoIcone } from '@/../app/clientes/[id]/_componentes/Icones';
@@ -22,6 +25,7 @@ import {
 } from '@/modules/connections/domain/connection';
 import { atrasoDaColeta, ordenarPorProblema, situacaoDaFonte, situacaoDeRecurso, type SituacaoDaFonte, type VariacaoDoEstado } from '@/modules/clients/domain/painel/fontes';
 import { tempoRelativo } from '@/modules/clients/domain/painel/resumo';
+import { noVocabularioDe } from '@/modules/organizations/domain/vocabulario';
 
 const ICONE_DA_VARIACAO: Record<VariacaoDoEstado, NomeDoIcone> = {
   ok: 'ok',
@@ -145,27 +149,21 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
 
   return (
     <section className="pilha" aria-labelledby="t-fontes">
-      <div className="fontes-topo">
-        <div>
-          <h2 className="card__title" id="t-fontes">
-            Fontes
-          </h2>
-          <p className="subtle small">
-            {ordenadas.length === 0 ? 'Nada conectado ainda.' : pedemAcao > 0 ? `${pedemAcao} de ${ordenadas.length} pedem ação.` : `${ordenadas.length} em dia.`}
-          </p>
-        </div>
-        {podeEditar && !cabecalhoTemConexao ? (
-          <Link className="btn btn--primary" href={`/clientes/${cliente.id}/contas/nova`}>
-            Conectar conta
-          </Link>
-        ) : null}
-      </div>
+      <CabecalhoDeSecao
+        id="t-fontes"
+        titulo="Fontes"
+        descricao={ordenadas.length === 0 ? 'Nada conectado ainda.' : pedemAcao > 0 ? `${pedemAcao} de ${ordenadas.length} pedem ação.` : `${ordenadas.length} em dia.`}
+        acao={
+          podeEditar && !cabecalhoTemConexao ? (
+            <Link className="btn btn--primary" href={`/clientes/${cliente.id}/contas/nova`}>
+              Conectar conta
+            </Link>
+          ) : null
+        }
+      />
 
       {ordenadas.length === 0 ? (
-        <div className="vazio">
-          <div className="vazio__titulo">Nenhuma conta ou fonte</div>
-          <p className="vazio__texto">Sem conta vinculada o cliente não entra na coleta.</p>
-        </div>
+        <EstadoVazio titulo="Nenhuma conta ou fonte" texto={noVocabularioDe(ctx.organization.type, 'Sem conta vinculada o cliente não entra na coleta.')} />
       ) : (
         <ul className="fontes fontes--grupos">
           {grupos.map((grupo) => (
@@ -263,13 +261,17 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
                           </button>
                         </form>
                       ) : null}
-                      <form action={linha.tipo === 'conta' ? desvincularContaDeAnuncio : desvincularFonte}>
+                      <ConfirmarAcao
+                        gatilho="Desvincular"
+                        rotuloDoGatilho={`Desvincular ${linha.nome}`}
+                        titulo={`Desvincular ${linha.nome}?`}
+                        descricao={noVocabularioDe(ctx.organization.type, `${linha.tipo === 'conta' ? 'A conta' : 'A fonte'} deixa de entrar na coleta deste cliente.`)}
+                        confirmar="Desvincular"
+                        action={linha.tipo === 'conta' ? desvincularContaDeAnuncio : desvincularFonte}
+                      >
                         <input type="hidden" name="clientId" value={cliente.id} />
                         <input type="hidden" name={linha.tipo === 'conta' ? 'accountId' : 'recursoId'} value={linha.id} />
-                        <button className="btn btn--compacto btn--perigo" type="submit" aria-label={`Desvincular ${linha.nome}`}>
-                          Desvincular
-                        </button>
-                      </form>
+                      </ConfirmarAcao>
                     </div>
                   </MenuMais>
                 </div>

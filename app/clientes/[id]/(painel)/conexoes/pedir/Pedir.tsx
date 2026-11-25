@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { CopyButton } from '@/../app/_components/CopyButton';
+import { CabecalhoDeSecao } from '@/../app/clientes/[id]/_componentes/CabecalhoDeSecao';
+import { ConfirmarAcao } from '@/../app/clientes/[id]/_componentes/ConfirmarAcao';
 import { Marca } from '@/../app/_components/Marca';
 import { podeVerConviteDeIntegracao } from '@/modules/connections/domain/visibilidadeDoConvite';
 import { pedirAcessoMetaPartner, revogarConviteDeIntegracao } from '@/../app/clientes/[id]/acoes';
@@ -53,12 +55,11 @@ export async function Pedir({ clienteId, abrirMapa }: { readonly clienteId: stri
   return (
     <div className="pilha acessos">
       <section className="acessos__chamada" aria-label={vocabulario.rotuloDePedir}>
-        <div>
-          <h2 className="card__title">{vocabulario.rotuloDePedir}</h2>
-          <p className="subtle small">Um link só, sem login: escolha as plataformas e inclua o contexto.</p>
-        </div>
-        <div className="acessos__botoes">
-          {podeEditar ? (
+        <CabecalhoDeSecao
+          titulo={vocabulario.rotuloDePedir}
+          descricao="Um link só, sem login: escolha as plataformas e inclua o contexto."
+          acao={
+            podeEditar ? (
             <PedirAoCliente
               rotulo={vocabulario.rotuloDePedir}
               tipo={ctx.organization.type}
@@ -77,8 +78,9 @@ export async function Pedir({ clienteId, abrirMapa }: { readonly clienteId: stri
               plataformas={plataformasConvidaveis}
               abrirAoCarregar={abrirMapa}
             />
-          ) : null}
-        </div>
+            ) : null
+          }
+        />
       </section>
 
       <details className="recolhivel">
@@ -105,13 +107,16 @@ export async function Pedir({ clienteId, abrirMapa }: { readonly clienteId: stri
                   {veConvites ? (
                     <span className="linha-compacta__acoes">
                       <CopyButton texto={enderecoDoConvite(baseUrl, convite.token)} />
-                      <form action={revogarConviteDeIntegracao}>
+                      <ConfirmarAcao
+                        gatilho="Revogar"
+                        titulo="Revogar este convite?"
+                        descricao="O link deixa de funcionar e quem o recebeu não consegue mais conectar por ele."
+                        confirmar="Revogar"
+                        action={revogarConviteDeIntegracao}
+                      >
                         <input type="hidden" name="clientId" value={cliente.id} />
                         <input type="hidden" name="inviteId" value={convite.id} />
-                        <button className="btn btn--compacto btn--perigo" type="submit">
-                          Revogar
-                        </button>
-                      </form>
+                      </ConfirmarAcao>
                     </span>
                   ) : null}
                 </li>
@@ -135,13 +140,16 @@ export async function Pedir({ clienteId, abrirMapa }: { readonly clienteId: stri
                   {podeEditar ? (
                     <span className="linha-compacta__acoes">
                       <RegenerarLink clienteId={cliente.id} linkId={link.id} />
-                      <form action={revogarLinkDeContexto}>
+                      <ConfirmarAcao
+                        gatilho="Revogar"
+                        titulo="Revogar este link?"
+                        descricao="O link deixa de abrir para quem o recebeu."
+                        confirmar="Revogar"
+                        action={revogarLinkDeContexto}
+                      >
                         <input type="hidden" name="clientId" value={cliente.id} />
                         <input type="hidden" name="linkId" value={link.id} />
-                        <button className="btn btn--compacto btn--perigo" type="submit">
-                          Revogar
-                        </button>
-                      </form>
+                      </ConfirmarAcao>
                     </span>
                   ) : null}
                 </li>

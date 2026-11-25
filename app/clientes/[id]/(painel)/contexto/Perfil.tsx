@@ -1,6 +1,8 @@
+import { CabecalhoDeSecao } from '@/../app/clientes/[id]/_componentes/CabecalhoDeSecao';
 import { carregarContexto, carregarPainel } from '@/../app/clientes/[id]/_dados';
 import { EditorDeContexto } from '@/../app/clientes/[id]/(painel)/contexto/EditorDeContexto';
 import { modules } from '@/composition';
+import { tamanhoLegivel } from '@/modules/clients/domain/painel/formato';
 import { tempoRelativo } from '@/modules/clients/domain/painel/resumo';
 
 const ROTULO_DA_OPERACAO: Record<string, string> = { criar: 'preencheu', alterar: 'alterou', status: 'marcou', remover: 'removeu' };
@@ -22,6 +24,10 @@ export async function Perfil({ clienteId, secaoInicial, campoInicial }: { readon
 
   return (
     <div className="pilha">
+      <CabecalhoDeSecao
+        titulo="Perfil"
+        descricao={`O que a equipe sabe sobre o negócio. Arquivos: ${tamanhoLegivel(contexto.usoDeArquivosBytes)} de ${tamanhoLegivel(contexto.cotaDeArquivosBytes)}.`}
+      />
       <EditorDeContexto tipo={ctx.organization.type} clienteId={cliente.id} dados={dados} podeEditar={podeEditar} secaoInicial={secaoInicial} campoInicial={campoInicial} />
       {revisoes.ok && revisoes.value.length > 0 ? (
         <details className="recolhivel">

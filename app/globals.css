@@ -402,15 +402,6 @@ table { border-collapse: collapse; width: 100%; }
 .conta__nome { font-weight: 600; font-size: var(--fs-base); }
 .conta__meta { font-size: var(--fs-xs); color: var(--fg-muted); font-family: var(--font-mono); }
 
-.vazio {
-  border: 1px dashed var(--border-strong); border-radius: var(--radius-lg);
-  padding: 40px 32px; text-align: center; display: grid; gap: 10px; justify-items: center;
-  background: var(--bg-sunken);
-}
-.vazio__titulo { font-weight: 640; font-size: var(--fs-md); }
-.vazio__texto { font-size: var(--fs-sm); color: var(--fg-muted); max-width: 460px; line-height: 1.6; }
-.vazio .btn { margin-top: 8px; }
-
 .erro { min-height: 100svh; display: grid; place-items: center; padding: 32px; background: var(--bg); }
 .erro__caixa { width: 100%; max-width: 420px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 14px; }
 .erro__icone { width: 44px; height: 44px; }
@@ -544,7 +535,6 @@ table { border-collapse: collapse; width: 100%; }
   .form--inline { align-items: stretch; }
   .filtros__rotulo { width: 100%; }
   .filtros__busca { max-width: none; }
-  .vazio { padding: 28px 18px; }
 }
 
 @media (pointer: coarse) {
