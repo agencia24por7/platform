@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Feedback } from '@/../app/_components/Feedback';
+import { AvisoEfemero } from '@/../app/clientes/[id]/_componentes/AvisoEfemero';
 import { CabecalhoDeSecao } from '@/../app/clientes/[id]/_componentes/CabecalhoDeSecao';
 import { EstadoVazio } from '@/../app/clientes/[id]/_componentes/EstadoVazio';
 import { SubNavegacao } from '@/../app/clientes/[id]/_componentes/SubNavegacao';
@@ -255,7 +255,7 @@ export default async function Regras({ params, searchParams }: { readonly params
           {cadeia.length === 0 ? (
             vazio('Sem histórico', 'Sem histórico para esta chave.')
           ) : (
-            <ol className="regras-lista regras-cadeia" aria-label="Cadeia de superação">
+            <ol className="regras-lista regras-cadeia" aria-label="Versões da regra">
               {cadeia.map(({ decisao, eventos }) => (
                 <li key={decisao.id}>
                   {cartao(decisao, 'historico', nomes)}
@@ -359,7 +359,7 @@ export default async function Regras({ params, searchParams }: { readonly params
       : secao === 'revisar'
         ? 'Regras em texto livre que trazem número. Converta em limite para o sistema poder impor, ou mantenha como regra alterando-a.'
         : secao === 'historico'
-          ? `Cadeia de superação de ${texto('chave') ?? ''}, do atual ao primeiro.`
+          ? `Versões de ${texto('chave') ?? ''}, da atual à primeira.`
           : secao === 'registrar'
             ? 'Registre um limite, uma regra ou uma decisão do cliente.'
             : secao === 'alterar'
@@ -368,8 +368,7 @@ export default async function Regras({ params, searchParams }: { readonly params
 
   return (
     <div className="pilha regras">
-      <Feedback message={texto('erro')} tone="error" />
-      <Feedback message={texto('feito')} tone="ok" />
+      <AvisoEfemero erro={texto('erro')} feito={texto('feito')} />
       <CabecalhoDeSecao
         titulo="Regras"
         descricao={descricaoDaSecao}

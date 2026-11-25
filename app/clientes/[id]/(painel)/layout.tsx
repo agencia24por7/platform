@@ -169,7 +169,7 @@ export default async function LayoutDoCliente({
                     <input type="hidden" name="clientId" value={cliente.id} />
                     <input type="hidden" name="situacao" value="archived" />
                   </ConfirmarAcao>
-                  <p className="field__hint">Excluir é lógico (ADR 0022) e fica com quem administra: arquive aqui.</p>
+                  <p className="field__hint">Quem administra pode apagar o cliente; aqui o arquivo mantém o histórico.</p>
                 </div>
               ) : null}
               </MenuMais>

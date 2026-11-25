@@ -306,3 +306,9 @@
   .cliente-topo__direita .menu-mais { position: static; }
   .cliente-topo__direita .menu-mais__painel { left: auto; right: 0; }
 }
+
+.aviso-efemero { align-items: center; }
+.aviso-efemero__texto { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.aviso-efemero__fechar { flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: var(--radius-sm); background: transparent; color: inherit; cursor: pointer; }
+.aviso-efemero__fechar:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
+.aviso-efemero__fechar:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

@@ -117,32 +117,30 @@ export async function BrainView({ clienteId }: { readonly clienteId: string }) {
 
       <section className="pulso" aria-labelledby="t-pulso">
         <div className="pulso__anel">
-          <Anel valor={brain.pulso.saude} rotulo="Saúde do Brain" tamanho={148} espessura={12} tom={brain.pulso.saude >= 70 ? 'ok' : brain.pulso.saude >= 40 ? 'acento' : 'alerta'} />
+          <Anel valor={brain.pulso.saude} rotulo="Saúde do Brain" tamanho={72} espessura={7} tom={brain.pulso.saude >= 70 ? 'ok' : brain.pulso.saude >= 40 ? 'acento' : 'alerta'} />
         </div>
         <div className="pulso__texto">
-          <span className="eyebrow">Pulso do Brain</span>
-          <h2 className="pulso__titulo" id="t-pulso">
-            Tudo o que sabemos sobre {cliente.name}, num índice só.
-          </h2>
-          <p className="subtle small">
-            {totalPreenchidas} {totalPreenchidas === 1 ? 'entrada preenchida' : 'entradas preenchidas'} · atualizado {tempoRelativo(new Date(brain.atualizadoEm), agora)} · versão{' '}
-            <span className="mono">{brain.versao}</span>
-          </p>
+          <div className="pulso__cabeca">
+            <h2 className="pulso__titulo" id="t-pulso">Pulso do Brain</h2>
+            <p className="subtle small" title={`Versão ${brain.versao}`}>
+              {totalPreenchidas} {totalPreenchidas === 1 ? 'entrada preenchida' : 'entradas preenchidas'} · atualizado {tempoRelativo(new Date(brain.atualizadoEm), agora)}
+            </p>
+          </div>
           <dl className="pulso__medidas">
             <div className="medida">
               <dt>Cobertura</dt>
               <dd>{brain.pulso.cobertura}%</dd>
-              <dd className="medida__ajuda">dias com dado nos últimos 90</dd>
+              <dd className="medida__ajuda" title="dias com dado nos últimos 90">dias com dado nos últimos 90</dd>
             </div>
             <div className="medida">
               <dt>Frescor</dt>
               <dd>{brain.pulso.frescor}%</dd>
-              <dd className="medida__ajuda">conexões coletando em dia</dd>
+              <dd className="medida__ajuda" title="conexões coletando em dia">conexões coletando em dia</dd>
             </div>
             <div className="medida">
               <dt>Contexto</dt>
               <dd>{brain.pulso.completudeDoContexto}%</dd>
-              <dd className="medida__ajuda">mapa de contexto preenchido</dd>
+              <dd className="medida__ajuda" title="mapa de contexto preenchido">mapa de contexto preenchido</dd>
             </div>
           </dl>
         </div>
@@ -154,6 +152,7 @@ export async function BrainView({ clienteId }: { readonly clienteId: string }) {
         <section className="card" aria-labelledby="t-capacidades">
           <div className="card__head">
             <h2 className="card__title" id="t-capacidades">O que o Brain consegue responder</h2>
+            <span className="card__sub">{brain.capacidades.filter((c) => c.estado === 'disponivel').length} de {brain.capacidades.length} disponíveis</span>
           </div>
           <ul className="capacidades">
             {brain.capacidades.map((c) => (
