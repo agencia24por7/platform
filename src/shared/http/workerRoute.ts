@@ -72,8 +72,14 @@ function handle<I, O>(
     }
 
     const caller = fingerprint(token);
-    const verdict = consume(`worker:${caller}`, RATE_LIMIT, RATE_WINDOW_MS);
+    const verdict = consume('worker', `worker:${caller}`, RATE_LIMIT, RATE_WINDOW_MS);
     if (!verdict.allowed) {
+      logger.warn('worker.limite_excedido', {
+        requestId,
+        path: request.nextUrl.pathname,
+        callerFingerprint: caller,
+        retryAfterSeconds: verdict.retryAfterSeconds,
+      });
       return NextResponse.json(
         { type: 'https://orla.app/problems/rate_limited', title: 'Limite de chamadas excedido.', status: 429, requestId },
         { status: 429, headers: { 'Retry-After': String(verdict.retryAfterSeconds), 'X-Request-Id': requestId } },

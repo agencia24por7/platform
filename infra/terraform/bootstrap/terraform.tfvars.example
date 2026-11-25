@@ -1,0 +1,10 @@
+project_id = "tria-platform"
+region     = "us-central1"
+
+# Ids numéricos, não nomes (ADR 0057). Para obter:
+#   gh api repos/agencia24por7/platform --jq '.id, .owner.id'
+github_repository_id       = "000000000"
+github_repository_owner_id = "000000000"
+
+protected_environment = "producao"
+protected_branch_ref  = "refs/heads/main"

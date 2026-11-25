@@ -46,7 +46,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const sourceIp = ipDoClienteViaProxyConfiavel(request);
-  const verdict = consume(`webhook:whatsapp:${sourceIp}`, RATE_LIMIT, RATE_WINDOW_MS);
+  const verdict = consume('ip', `webhook:whatsapp:${sourceIp}`, RATE_LIMIT, RATE_WINDOW_MS);
   if (!verdict.allowed) {
     return NextResponse.json(
       { error: 'limite_excedido' },

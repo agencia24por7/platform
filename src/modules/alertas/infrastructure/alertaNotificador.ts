@@ -26,5 +26,5 @@ export function createNotificadorPorWebhook(): Notificador {
 }
 
 export function createLimiteDeAlertasNovos(): LimiteDeNovos {
-  return () => consume('alertas:novos', LIMITE_DE_ALERTAS_NOVOS_POR_HORA, UMA_HORA_EM_MS).allowed;
+  return () => consume('alertas', 'alertas:novos', LIMITE_DE_ALERTAS_NOVOS_POR_HORA, UMA_HORA_EM_MS).allowed;
 }

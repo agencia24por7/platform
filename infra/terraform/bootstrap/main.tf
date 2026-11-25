@@ -20,9 +20,35 @@ provider "google" {
 
 variable "project_id" { type = string }
 variable "region" { type = string }
-variable "github_repository" {
-  description = "No formato dono/repositorio. Só este repositório consegue assumir qualquer identidade."
+variable "github_repository_id" {
+  description = "Id numérico do repositório no GitHub (gh api repos/<dono>/<repositorio> --jq .id). Só tokens deste repositório são aceitos pelo provedor; o id não muda com renomeação nem é reaproveitado por outro repositório de mesmo nome."
   type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.github_repository_id))
+    error_message = "Informe só o id numérico do repositório, como devolvido por gh api repos/<dono>/<repositorio> --jq .id."
+  }
+}
+
+variable "github_repository_owner_id" {
+  description = "Id numérico do dono do repositório no GitHub (gh api repos/<dono>/<repositorio> --jq .owner.id)."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.github_repository_owner_id))
+    error_message = "Informe só o id numérico do dono, como devolvido por gh api repos/<dono>/<repositorio> --jq .owner.id."
+  }
+}
+
+variable "protected_branch_ref" {
+  description = "Único ref de onde o environment protegido vale no GCP. Um workflow_dispatch de outro ramo com o mesmo environment não recebe a identidade de produção."
+  type        = string
+  default     = "refs/heads/main"
+
+  validation {
+    condition     = can(regex("^refs/heads/[A-Za-z0-9._/-]+$", var.protected_branch_ref))
+    error_message = "Use um ref de ramo completo, como refs/heads/main."
+  }
 }
 
 variable "protected_environment" {
@@ -134,13 +160,17 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   display_name                       = "GitHub OIDC"
 
   attribute_mapping = {
-    "google.subject"        = "assertion.sub"
-    "attribute.repository"  = "assertion.repository"
-    "attribute.ref"         = "assertion.ref"
-    "attribute.environment" = "assertion.environment"
+    "google.subject"                = "assertion.sub"
+    "attribute.repository"          = "assertion.repository"
+    "attribute.repository_id"       = "assertion.repository_id"
+    "attribute.repository_owner_id" = "assertion.repository_owner_id"
+    "attribute.ref"                 = "assertion.ref"
+    "attribute.environment"         = "assertion.environment"
+    "attribute.ambiente_no_ramo"    = "has(assertion.environment) ? assertion.environment + '@' + assertion.ref : 'sem-ambiente'"
+    "attribute.plano_de_pr"         = "has(assertion.environment) && assertion.environment == 'plano' && assertion.event_name == 'pull_request' && assertion.ref.startsWith('refs/pull/') && assertion.workflow_ref.startsWith(assertion.repository + '/.github/workflows/infra.yml@refs/pull/') ? 'infra-pull-request' : 'nao'"
   }
 
-  attribute_condition = "assertion.repository == '${var.github_repository}'"
+  attribute_condition = "assertion.repository_id == '${var.github_repository_id}' && assertion.repository_owner_id == '${var.github_repository_owner_id}'"
 
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
@@ -156,7 +186,7 @@ resource "google_service_account" "terraform" {
 resource "google_service_account" "planner" {
   account_id   = "tria-terraform-plan"
   display_name = "Terraform plan em pull request"
-  description  = "Somente leitura. Serve aos planos de pull request, que rodam sem aprovação."
+  description  = "Lê só metadados e o state, sem escrever lock. Assumida por job em pull_request no environment plano cujo workflow é o infra.yml da versão do PR."
 }
 
 resource "google_service_account" "deployer" {
@@ -187,11 +217,52 @@ resource "google_project_iam_member" "terraform" {
   member  = "serviceAccount:${google_service_account.terraform.email}"
 }
 
-resource "google_project_iam_member" "planner" {
-  for_each = toset(["roles/viewer", "roles/iam.securityReviewer"])
+resource "google_project_iam_custom_role" "planner_metadados" {
+  role_id     = "orlaPlanoMetadados"
+  title       = "Plano do Terraform: só metadados"
+  description = "Só as permissões get/list e getIamPolicy dos tipos de recurso que o plan da raiz lê. Nenhuma lê dado: linha do BigQuery, objeto, entrada de log, valor de segredo, saída de console ou atributo de convidado da VM."
+  permissions = [
+    "bigquery.datasets.get",
+    "cloudkms.cryptoKeys.get",
+    "cloudkms.cryptoKeys.getIamPolicy",
+    "cloudkms.keyRings.get",
+    "compute.addresses.get",
+    "compute.diskTypes.get",
+    "compute.disks.get",
+    "compute.firewalls.get",
+    "compute.instances.get",
+    "compute.machineTypes.get",
+    "compute.networks.get",
+    "compute.projects.get",
+    "compute.regions.get",
+    "compute.resourcePolicies.get",
+    "compute.subnetworks.get",
+    "compute.zones.get",
+    "dns.managedZones.get",
+    "dns.resourceRecordSets.get",
+    "dns.resourceRecordSets.list",
+    "iam.serviceAccounts.get",
+    "iam.serviceAccounts.getIamPolicy",
+    "logging.buckets.get",
+    "logging.exclusions.get",
+    "logging.logMetrics.get",
+    "logging.sinks.get",
+    "monitoring.alertPolicies.get",
+    "monitoring.notificationChannels.get",
+    "resourcemanager.projects.get",
+    "resourcemanager.projects.getIamPolicy",
+    "secretmanager.secrets.get",
+    "secretmanager.secrets.getIamPolicy",
+    "serviceusage.services.get",
+    "serviceusage.services.list",
+    "storage.buckets.get",
+    "storage.buckets.getIamPolicy",
+  ]
+}
 
+resource "google_project_iam_member" "planner_metadados" {
   project = var.project_id
-  role    = each.value
+  role    = google_project_iam_custom_role.planner_metadados.id
   member  = "serviceAccount:${google_service_account.planner.email}"
 }
 
@@ -220,34 +291,22 @@ resource "google_storage_bucket_iam_member" "planner_state" {
   member = "serviceAccount:${google_service_account.planner.email}"
 }
 
-resource "google_storage_bucket_iam_member" "planner_lock" {
-  bucket = google_storage_bucket.state.name
-  role   = "roles/storage.objectAdmin"
-  member = "serviceAccount:${google_service_account.planner.email}"
-
-  condition {
-    title       = "apenas arquivos de lock"
-    description = "O plano de pull request precisa escrever o lock do Terraform, e nada alem disso."
-    expression  = "resource.name.endsWith(\".tflock\")"
-  }
-}
-
 resource "google_service_account_iam_member" "terraform_wif" {
   service_account_id = google_service_account.terraform.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.environment/${var.protected_environment}"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.ambiente_no_ramo/${var.protected_environment}@${var.protected_branch_ref}"
 }
 
 resource "google_service_account_iam_member" "deployer_wif" {
   service_account_id = google_service_account.deployer.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.environment/${var.protected_environment}"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.ambiente_no_ramo/${var.protected_environment}@${var.protected_branch_ref}"
 }
 
 resource "google_service_account_iam_member" "planner_wif" {
   service_account_id = google_service_account.planner.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${var.github_repository}"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.plano_de_pr/infra-pull-request"
 }
 
 output "workload_identity_provider" {
@@ -262,7 +321,7 @@ output "terraform_service_account" {
 
 output "planner_service_account" {
   value       = google_service_account.planner.email
-  description = "Segredo TF_PLAN_SERVICE_ACCOUNT. Somente leitura, usado nos planos de pull request."
+  description = "Segredo TF_PLAN_SERVICE_ACCOUNT. Lê só metadados e o state; exige o environment plano do GitHub."
 }
 
 output "deployer_service_account" {

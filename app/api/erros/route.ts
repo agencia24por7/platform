@@ -51,8 +51,8 @@ export async function POST(request: Request): Promise<NextResponse> {
   const origem = enderecoConfiavel(request.headers.get('x-forwarded-for')) ?? 'desconhecida';
   const veredito = consumeAll(
     [
-      { key: `erros:${origem}`, limit: RELATOS_POR_MINUTO },
-      { key: 'erros:todos', limit: RELATOS_GLOBAIS_POR_MINUTO },
+      { dominio: 'ip', key: `erros:${origem}`, limit: RELATOS_POR_MINUTO },
+      { dominio: 'relato', key: 'erros:todos', limit: RELATOS_GLOBAIS_POR_MINUTO },
     ],
     60_000,
   );

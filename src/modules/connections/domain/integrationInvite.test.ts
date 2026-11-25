@@ -7,6 +7,7 @@ import {
   convidavelPorLink,
   expiracaoPadrao,
   gerarTokenDeConvite,
+  tokenDeConviteBemFormado,
   validarPlataformasEscolhidas,
 } from './integrationInvite.ts';
 
@@ -69,5 +70,13 @@ test('plataformas válidas e únicas passam', () => {
 test('toda motivo de recusa tem uma mensagem', () => {
   for (const motivo of Object.keys(MOTIVO_DO_CONVITE_DE_INTEGRACAO)) {
     assert.ok(MOTIVO_DO_CONVITE_DE_INTEGRACAO[motivo as keyof typeof MOTIVO_DO_CONVITE_DE_INTEGRACAO].length > 0);
+  }
+});
+
+test('o formato do token de convite aceita o que o gerador produz e recusa NUL, caractere fora do alfabeto e tamanho errado', () => {
+  for (let i = 0; i < 50; i += 1) assert.ok(tokenDeConviteBemFormado(gerarTokenDeConvite()));
+  const nul = String.fromCharCode(0);
+  for (const ruim of [`${'a'.repeat(20)}${nul}`, `${'a'.repeat(20)}'`, `${'a'.repeat(20)}.`, 'a'.repeat(15), 'a'.repeat(65), '']) {
+    assert.equal(tokenDeConviteBemFormado(ruim), false, JSON.stringify(ruim));
   }
 });

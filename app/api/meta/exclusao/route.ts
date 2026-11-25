@@ -33,7 +33,7 @@ const recusar = (erro: string, status: number) => NextResponse.json({ error: err
 
 async function tratarPost(request: NextRequest): Promise<NextResponse> {
   const sourceIp = ipDoClienteViaProxyConfiavel(request);
-  const veredito = consume(`meta:exclusao:${sourceIp}`, LIMITE_POR_IP, JANELA_MS);
+  const veredito = consume('ip', `meta:exclusao:${sourceIp}`, LIMITE_POR_IP, JANELA_MS);
   if (!veredito.allowed) {
     return NextResponse.json(
       { error: 'limite_excedido' },

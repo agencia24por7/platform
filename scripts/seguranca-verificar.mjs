@@ -1,22 +1,27 @@
 #!/usr/bin/env node
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { closeSync, existsSync, openSync, readFileSync, readSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { detectarSegredo, arquivoSensivel } from '../.claude/hooks/lib/politicas.mjs'
+import { StringDecoder } from 'node:string_decoder'
+import { arquivoSensivel } from '../.claude/hooks/lib/politicas.mjs'
 import { linhasAdicionadas, alteracoesDoNameStatus } from '../.claude/hooks/lib/diff.mjs'
+import { PADROES_DE_CODIGO, PADROES_DE_WORKFLOW, PADROES_DE_TERRAFORM, PADROES_DE_PACOTE, TIPOS_HEURISTICOS, SOBREPOSICAO_DE_FATIA, criarDetectorDeCredencialVizinha, fatiasDaLinha, tiposDeSegredo } from './seguranca-padroes.mjs'
 
 const AJUDA = `Uso: node scripts/seguranca-verificar.mjs <modo>
 
 Modos (só leem o git; nada é gravado):
   --staged          alterações no índice (pre-commit)
   --push [remoto]   commits que seriam enviados, lidos de stdin no formato do pre-push
-  --range A..B      diferença entre dois commits
-  --arvore          árvore versionada inteira (CI)
+  --range A..B      diferença entre dois commits (CI: base do PR ou "before" do push até HEAD)
+  --arvore          árvore versionada inteira (CI); arquivo grande é varrido por blocos, binário é pulado
+  --sugerir         com --arvore: imprime as entradas de allowlist para os achados atuais (sem valores)
 
 Verifica segredo, arquivo sensível, padrão inseguro de código, workflow, Terraform,
 dependência, migração imutável e migração destrutiva fora de db/corte-gate.txt.
 No --push também roda typecheck, testes de unidade e npm audit.
-Exceção consciente: uma linha "caminho::id" em .githooks/seguranca-allowlist.txt.`
+Exceção consciente: uma linha "caminho::id::assinatura::contagem" em .githooks/seguranca-allowlist.txt
+(formato no cabeçalho do arquivo; gere com --arvore --sugerir).`
 
 const argumentos = process.argv.slice(2)
 if (argumentos.includes('--help') || argumentos.includes('-h') || argumentos.length === 0) {
@@ -25,38 +30,22 @@ if (argumentos.includes('--help') || argumentos.includes('-h') || argumentos.len
 }
 
 const ZEROS = /^0+$/
-const TAMANHO_MAXIMO = 200_000
+const TAMANHO_DO_BLOCO = 1 << 20
+const EXTENSOES_BINARIAS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'bmp', 'tif', 'tiff', 'heic', 'psd', 'pdf', 'woff', 'woff2', 'ttf', 'otf', 'eot', 'zip', 'gz', 'tgz', 'bz2', 'xz', '7z', 'rar', 'jar', 'war', 'wasm', 'mp3', 'mp4', 'm4a', 'mov', 'avi', 'webm', 'ogg', 'wav', 'flac', 'bin', 'exe', 'dll', 'so', 'dylib', 'node', 'class', 'pyc', 'sqlite', 'sqlite3', 'db', 'xlsx', 'docx', 'pptx']
+const ARQUIVO_BINARIO = new RegExp(`\\.(?:${EXTENSOES_BINARIAS.join('|')})$`, 'i')
+const BYTES_PARA_DETECTAR_BINARIO = 8000
+const LIMITE_DE_LEITURA = 1_000_000
+const LIMITE_DA_SAIDA_DO_GIT = 400_000_000
+const ARVORE_VAZIA = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 const ARQUIVO_DE_CODIGO = /\.(ts|tsx|js|mjs|cjs|sh|yml|yaml|tf)$/
 const ARQUIVO_DE_TESTE = /(^|[/])tests[/]|\.test\.(?:ts|mjs)$/
-const TIPO_HEURISTICO = 'atribuição de segredo'
-const DESTRUTIVO = /\b(?:DROP\s+(?:TABLE|COLUMN|SCHEMA)|TRUNCATE)\b/i
+const FORMATO_DA_ENTRADA = /^(.+)::([a-z0-9-]+)::([0-9a-f]{12}|-)::([1-9]\d*)$/
+const ASSINATURA_DE_ARQUIVO = '-'
+const DESTRUTIVO = /\b(?:DROP\s{1,200}(?:TABLE|COLUMN|SCHEMA)|TRUNCATE)\b/i
 
-const PADROES_DE_CODIGO = [
-  { id: 'tls-desligado', padrao: /rejectUnauthorized\s*:\s*false|NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*['"]?0/, mensagem: 'Validação de certificado TLS desligada' },
-  { id: 'html-injetado', padrao: new RegExp('dangerously' + 'SetInnerHTML'), mensagem: 'HTML injetado sem sanitização (XSS)' },
-  { id: 'eval-dinamico', padrao: /\beval\s*\(|new\s+Function\s*\(/, mensagem: 'Execução dinâmica de código' },
-  { id: 'sql-interpolado', padrao: /\.unsafe\s*\(\s*`[^`]*\$\{/, mensagem: 'SQL montado por interpolação (injeção)' },
-  { id: 'shell-interpolado', padrao: /\bexec(?:Sync)?\s*\(\s*`[^`]*\$\{/, mensagem: 'Comando de shell montado por interpolação (injeção)' },
-  { id: 'cors-aberto', padrao: /Access-Control-Allow-Origin['"]?\s*[:,]\s*['"]\*['"]/, mensagem: 'CORS aberto para qualquer origem' },
-]
-
-const PADROES_DE_WORKFLOW = [
-  { id: 'workflow-pull-request-target', padrao: /\bpull_request_target\b/, mensagem: 'pull_request_target executa código de fork com segredos' },
-  { id: 'workflow-permissao-total', padrao: /permissions:\s*write-all/, mensagem: 'Permissão write-all no workflow' },
-  { id: 'workflow-acao-sem-sha', padrao: /^\s*-?\s*uses:\s*(?!\.[/]|docker:[/][/])[^\s@]+@(?![0-9a-f]{40}(?:\s|$))/, mensagem: 'Ação de terceiro sem fixar o commit (SHA de 40 caracteres)' },
-  { id: 'workflow-baixa-e-executa', padrao: /\b(?:curl|wget)\b[^|\n]*\|\s*(?:sudo\s+)?(?:ba|z)?sh\b/, mensagem: 'Baixa e executa script no workflow' },
-]
-
-const PADROES_DE_TERRAFORM = [
-  { id: 'terraform-aberto-ao-mundo', padrao: /["']0\.0\.0\.0[/]0["']/, mensagem: 'Faixa 0.0.0.0/0 aberta' },
-  { id: 'terraform-publico', padrao: /\ball(?:Authenticated)?Users\b/, mensagem: 'Recurso público (allUsers)' },
-  { id: 'terraform-papel-amplo', padrao: /["']roles[/](?:owner|editor)["']/, mensagem: 'Papel amplo demais (owner ou editor)' },
-]
-
-const PADROES_DE_PACOTE = [
-  { id: 'pacote-script-de-instalacao', padrao: /"(?:preinstall|install|postinstall)"\s*:/, mensagem: 'Script de instalação no package.json' },
-  { id: 'pacote-origem-nao-registrada', padrao: /"[^"]+"\s*:\s*"(?:git\+|github:|https?:|file:|latest$|\*$)/, mensagem: 'Dependência fora do registro ou sem versão fixa' },
-]
+function assinaturaDaLinha(texto) {
+  return createHash('sha256').update(texto.trim().replace(/\s+/g, ' ')).digest('hex').slice(0, 12)
+}
 
 function git(argumentosGit, opcoes = {}) {
   try {
@@ -66,13 +55,32 @@ function git(argumentosGit, opcoes = {}) {
   }
 }
 
+function gitObrigatorio(argumentosGit) {
+  try {
+    return execFileSync('git', argumentosGit, { cwd: raiz, encoding: 'utf8', maxBuffer: LIMITE_DA_SAIDA_DO_GIT, stdio: ['ignore', 'pipe', 'pipe'] })
+  } catch (erro) {
+    console.error(`falha ao ler o git (${argumentosGit.slice(-3).join(' ')}): ${String(erro.message).split('\n')[0]}`)
+    process.exit(2)
+  }
+}
+
 const raiz = git(['rev-parse', '--show-toplevel']).trim() || process.cwd()
 
 function lerAllowlist() {
   const arquivo = join(raiz, '.githooks', 'seguranca-allowlist.txt')
-  if (!existsSync(arquivo)) return new Set()
-  const linhas = readFileSync(arquivo, 'utf8').split('\n').map((linha) => linha.trim())
-  return new Set(linhas.filter((linha) => linha && !linha.startsWith('#')))
+  const entradas = new Map()
+  if (!existsSync(arquivo)) return entradas
+  readFileSync(arquivo, 'utf8').split('\n').forEach((bruta, indice) => {
+    const linha = bruta.trim()
+    if (!linha || linha.startsWith('#')) return
+    const partes = linha.match(FORMATO_DA_ENTRADA)
+    if (!partes) {
+      console.error(`allowlist: entrada inválida na linha ${indice + 1}; o formato é caminho::id::assinatura::contagem (veja o cabeçalho de .githooks/seguranca-allowlist.txt)`)
+      process.exit(2)
+    }
+    entradas.set(`${partes[1]}::${partes[2]}::${partes[3]}`, Number(partes[4]))
+  })
+  return entradas
 }
 
 function portaoDeCorte() {
@@ -82,55 +90,132 @@ function portaoDeCorte() {
   return new Set(linhas.filter((linha) => linha && !linha.startsWith('#')))
 }
 
+function arquivosBinariosDoNumstat(textoComNul) {
+  return String(textoComNul).split('\0').filter(Boolean).flatMap((registro) => {
+    const partes = registro.match(/^(\S+)\t(\S+)\t(.*)$/s)
+    return partes && partes[1] === '-' && partes[2] === '-' ? [partes[3]] : []
+  })
+}
+
+function adicionadasDoDiff(diff) {
+  const adicionadas = linhasAdicionadas(diff(['-U0']))
+  const comByteNulo = arquivosBinariosDoNumstat(diff(['--numstat', '-z'])).filter((arquivo) => !ARQUIVO_BINARIO.test(arquivo))
+  return [...adicionadas, ...comByteNulo.map((arquivo) => ({ arquivo, linha: 1, texto: '\0' }))]
+}
+
 function contextoDoIndice() {
-  const diff = (extra) => git(['-c', 'core.quotePath=false', 'diff', '--cached', '--no-color', '--no-renames', ...extra])
+  const diff = (extra) => gitObrigatorio(['-c', 'core.quotePath=false', 'diff', '--cached', '--no-color', '--no-renames', ...extra])
   return {
     alteracoes: alteracoesDoNameStatus(diff(['--name-status', '-z'])),
-    adicionadas: linhasAdicionadas(diff(['-U0'])),
+    adicionadas: adicionadasDoDiff(diff),
     conteudo: (arquivo) => git(['show', `:${arquivo}`]),
   }
 }
 
-function contextoDoIntervalo(inicio, fim) {
-  const diff = (extra) => git(['-c', 'core.quotePath=false', 'diff', `${inicio}..${fim}`, '--no-color', '--no-renames', ...extra])
+function resolverRevisao(revisao) {
+  const resolvida = ZEROS.test(revisao) ? ARVORE_VAZIA : revisao
+  if (!git(['rev-parse', '--verify', '--quiet', `${resolvida}^{tree}`]).trim()) {
+    console.error(`revisão não encontrada no repositório: ${revisao} (o checkout precisa de histórico suficiente, fetch-depth: 0)`)
+    process.exit(2)
+  }
+  return resolvida
+}
+
+function contextoDoIntervalo(inicioInformado, fimInformado) {
+  const inicio = resolverRevisao(inicioInformado)
+  const fim = resolverRevisao(fimInformado)
+  const diff = (extra) => gitObrigatorio(['-c', 'core.quotePath=false', 'diff', `${inicio}..${fim}`, '--no-color', '--no-renames', ...extra])
   return {
     alteracoes: alteracoesDoNameStatus(diff(['--name-status', '-z'])),
-    adicionadas: linhasAdicionadas(diff(['-U0'])),
+    adicionadas: adicionadasDoDiff(diff),
     conteudo: (arquivo) => git(['show', `${fim}:${arquivo}`]),
   }
 }
 
-function contextoDaArvore() {
-  const arquivos = git(['-c', 'core.quotePath=false', 'ls-files', '-z']).split('\0').filter(Boolean)
-  const adicionadas = []
+function* fatiasDoArquivo(caminho) {
+  const descritor = openSync(caminho, 'r')
+  try {
+    const decodificador = new StringDecoder('utf8')
+    const bloco = Buffer.allocUnsafe(TAMANHO_DO_BLOCO)
+    let pendente = ''
+    for (;;) {
+      const lidos = readSync(descritor, bloco, 0, bloco.length, null)
+      if (lidos === 0) break
+      const lido = bloco.subarray(0, lidos)
+      const linhas = (pendente + decodificador.write(lido)).split('\n')
+      pendente = linhas.pop()
+      for (const texto of linhas) yield { texto, fimDeLinha: true }
+      while (pendente.length > LIMITE_DE_LEITURA) {
+        yield { texto: pendente.slice(0, LIMITE_DE_LEITURA), fimDeLinha: false }
+        pendente = pendente.slice(LIMITE_DE_LEITURA - SOBREPOSICAO_DE_FATIA)
+      }
+    }
+    yield { texto: pendente + decodificador.end(), fimDeLinha: true }
+  } finally {
+    closeSync(descritor)
+  }
+}
+
+function binarioDeFato(caminho) {
+  const descritor = openSync(caminho, 'r')
+  try {
+    const bloco = Buffer.alloc(BYTES_PARA_DETECTAR_BINARIO)
+    const lidos = readSync(descritor, bloco, 0, bloco.length, 0)
+    return bloco.subarray(0, lidos).includes(0)
+  } finally {
+    closeSync(descritor)
+  }
+}
+
+function* linhasDaArvore(arquivos) {
   for (const arquivo of arquivos) {
-    const completo = join(raiz, arquivo)
+    let numero = 1
     try {
-      if (statSync(completo).size > TAMANHO_MAXIMO) continue
-      readFileSync(completo, 'utf8').split('\n').forEach((texto, indice) => adicionadas.push({ arquivo, linha: indice + 1, texto }))
+      if (ARQUIVO_BINARIO.test(arquivo) && binarioDeFato(join(raiz, arquivo))) continue
+      for (const { texto, fimDeLinha } of fatiasDoArquivo(join(raiz, arquivo))) {
+        yield { arquivo, linha: numero, texto }
+        if (texto.includes('\0')) break
+        if (fimDeLinha) numero += 1
+      }
     } catch {
       continue
     }
   }
-  return { alteracoes: arquivos.map((arquivo) => ({ status: 'A', arquivo })), adicionadas, conteudo: () => '', arvore: true }
+}
+
+function contextoDaArvore() {
+  const arquivos = gitObrigatorio(['-c', 'core.quotePath=false', 'ls-files', '-z']).split('\0').filter(Boolean)
+  return { alteracoes: arquivos.map((arquivo) => ({ status: 'A', arquivo })), adicionadas: linhasDaArvore(arquivos), conteudo: () => '', arvore: true }
 }
 
 function verificarContexto(contexto) {
   const achados = []
-  const achar = (arquivo, linha, id, mensagem) => achados.push({ arquivo, linha, id, mensagem })
+  const achar = (arquivo, linha, id, mensagem, texto) => achados.push({ arquivo, linha, id, mensagem, assinatura: texto === undefined ? ASSINATURA_DE_ARQUIVO : assinaturaDaLinha(texto) })
   const aplicar = (lista, linha) => {
-    for (const regra of lista) if (regra.padrao.test(linha.texto)) achar(linha.arquivo, linha.linha, regra.id, regra.mensagem)
+    for (const regra of lista) if (regra.padrao.test(linha.texto)) achar(linha.arquivo, linha.linha, regra.id, regra.mensagem, linha.texto)
   }
+  const credencialVizinha = criarDetectorDeCredencialVizinha()
 
   for (const { status, arquivo } of contexto.alteracoes) {
     if (status !== 'D' && arquivoSensivel(arquivo)) achar(arquivo, 0, 'arquivo-sensivel', 'Arquivo de segredo versionado')
   }
 
-  for (const linha of contexto.adicionadas) {
+  const arquivosComByteNulo = new Set()
+  for (const linhaInteira of contexto.adicionadas) {
+    if (arquivosComByteNulo.has(linhaInteira.arquivo)) continue
+    if (linhaInteira.texto.includes('\0')) {
+      arquivosComByteNulo.add(linhaInteira.arquivo)
+      achar(linhaInteira.arquivo, 0, 'byte-nulo-em-arquivo-de-texto', 'Byte nulo em arquivo que não é binário conhecido (esconde conteúdo de ferramentas que o tratam como binário); o resto do arquivo não é varrido')
+      continue
+    }
+    for (const linha of fatiasDaLinha(linhaInteira)) verificarLinha(linha)
+  }
+
+  function verificarLinha(linha) {
     const ehTeste = ARQUIVO_DE_TESTE.test(linha.arquivo)
-    for (const tipo of detectarSegredo(linha.texto)) {
-      if (ehTeste && tipo === TIPO_HEURISTICO) continue
-      achar(linha.arquivo, linha.linha, 'segredo', `Possível segredo (${tipo}); o valor não é exibido`)
+    for (const tipo of tiposDeSegredo(linha, credencialVizinha)) {
+      if (ehTeste && TIPOS_HEURISTICOS.has(tipo)) continue
+      achar(linha.arquivo, linha.linha, 'segredo', `Possível segredo (${tipo}); o valor não é exibido`, linha.texto)
     }
     if (ARQUIVO_DE_CODIGO.test(linha.arquivo) && !ehTeste) aplicar(PADROES_DE_CODIGO, linha)
     if (linha.arquivo.startsWith('.github/workflows/')) aplicar(PADROES_DE_WORKFLOW, linha)
@@ -151,12 +236,52 @@ function verificarContexto(contexto) {
       }
     }
   }
-  return achados
+  return semDuplicatas(achados)
 }
 
-function aplicarAllowlist(achados) {
+function semDuplicatas(achados) {
+  const vistos = new Set()
+  return achados.filter((achado) => {
+    const chave = `${achado.arquivo}:${achado.linha}:${achado.id}`
+    if (vistos.has(chave)) return false
+    vistos.add(chave)
+    return true
+  })
+}
+
+const chaveDaAllowlist = (achado) => `${achado.arquivo}::${achado.id}::${achado.assinatura ?? ASSINATURA_DE_ARQUIVO}`
+
+function aplicarAllowlist(achados, contexto = {}) {
   const permitidos = lerAllowlist()
-  return achados.filter((achado) => !permitidos.has(`${achado.arquivo}::${achado.id}`))
+  const restantes = []
+  const ocorrencias = new Map()
+  for (const achado of achados) {
+    const chave = chaveDaAllowlist(achado)
+    if (!permitidos.has(chave)) {
+      restantes.push(achado)
+      continue
+    }
+    ocorrencias.set(chave, (ocorrencias.get(chave) ?? 0) + 1)
+  }
+  if (contexto.arvore) restantes.push(...divergenciasDaAllowlist(permitidos, ocorrencias))
+  return restantes
+}
+
+function divergenciasDaAllowlist(permitidos, ocorrencias) {
+  const divergencias = []
+  for (const [chave, esperado] of permitidos) {
+    const encontrado = ocorrencias.get(chave) ?? 0
+    if (encontrado === esperado) continue
+    const [arquivo, id] = chave.split('::')
+    divergencias.push({ arquivo, linha: 0, id: 'allowlist-divergente', mensagem: `A allowlist espera ${esperado} ocorrência(s) de [${id}] com esta assinatura e a árvore tem ${encontrado}; corrija o código ou atualize a entrada (--arvore --sugerir)` })
+  }
+  return divergencias
+}
+
+function sugerirEntradas(achados) {
+  const contagem = new Map()
+  for (const achado of achados) contagem.set(chaveDaAllowlist(achado), (contagem.get(chaveDaAllowlist(achado)) ?? 0) + 1)
+  return [...contagem].map(([chave, quantidade]) => `${chave}::${quantidade}`).sort()
 }
 
 function relatar(achados) {
@@ -166,7 +291,7 @@ function relatar(achados) {
     console.error(`- ${onde} [${achado.id}] ${achado.mensagem}`)
   }
   if (achados.length > 40) console.error(`- e mais ${achados.length - 40}`)
-  console.error('Corrija. Exceção consciente: linha "caminho::id" em .githooks/seguranca-allowlist.txt (revisada no PR).')
+  console.error('Corrija. Exceção consciente: linha "caminho::id::assinatura::contagem" em .githooks/seguranca-allowlist.txt (revisada no PR; gere com --arvore --sugerir).')
 }
 
 function lerRefsDoPush() {
@@ -246,7 +371,14 @@ function verificacoesPesadas(arquivosAlterados) {
 
 function executarModo() {
   if (argumentos.includes('--staged')) return aplicarAllowlist(verificarContexto(contextoDoIndice()))
-  if (argumentos.includes('--arvore')) return aplicarAllowlist(verificarContexto(contextoDaArvore()))
+  if (argumentos.includes('--arvore')) {
+    const achadosDaArvore = verificarContexto(contextoDaArvore())
+    if (argumentos.includes('--sugerir')) {
+      sugerirEntradas(achadosDaArvore).forEach((entrada) => console.log(entrada))
+      process.exit(0)
+    }
+    return aplicarAllowlist(achadosDaArvore, { arvore: true })
+  }
   const intervalo = argumentos.indexOf('--range')
   if (intervalo >= 0) {
     const [inicio, fim] = String(argumentos[intervalo + 1] ?? '').split('..')

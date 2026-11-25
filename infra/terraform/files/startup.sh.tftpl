@@ -280,6 +280,9 @@ instalar_ops_agent || echo "Ops Agent nao instalado; a pilha segue sem logs na n
 %{ endif ~}
 if [ -f /var/lib/tria-provisioned ]; then
   echo "Ja provisionado. Ambiente regravado a partir dos segredos. Subindo a pilha."
+  if [ -f "$STACK/metadados-bloquear.sh" ]; then
+    sh "$STACK/metadados-bloquear.sh" instalar || echo "Bloqueio de metadados nao reinstalado no boot; o drop-in do docker.service e o proximo deploy reaplicam."
+  fi
   cd "$STACK" && docker compose -f docker-compose.prod.yml up -d
   exit 0
 fi

@@ -39,9 +39,9 @@ Rotina de contexto: `/clear` entre tarefas (grátis), `/handoff` antes, `/rewind
 |---|---|---|
 | `.githooks/pre-commit` | `seguranca-verificar.mjs --staged` | segredo, arquivo sensível, padrão inseguro, workflow, Terraform, dependência, migração imutável ou destrutiva fora do portão |
 | `.githooks/pre-push` | `seguranca-verificar.mjs --push` | o mesmo sobre os commits enviados, push em `main`, histórico reescrito, mais typecheck, testes de unidade e `npm audit` |
-| CI (`ci.yml`) | `npm run seguranca:verificar` | a árvore inteira, também para quem pulou os hooks |
+| CI (`ci.yml`) | `npm run seguranca:verificar` e `seguranca-verificar.mjs --range <base>..HEAD` (base do PR ou `before` do push; ADR 0058) | a árvore inteira (arquivo grande varrido por blocos, binário pulado) e as regras de migração e de linha nova sobre o intervalo, também para quem pulou os hooks |
 
-Instalação: `npm run ambiente:hooks` (o `start.sh` e o `orca.yaml` já fazem). O agente é impedido de usar `--no-verify` e de trocar `core.hooksPath` pelo hook de ferramentas. Exceções: `.githooks/seguranca-allowlist.txt`, uma linha `caminho::id` por PR com justificativa.
+Instalação: `npm run ambiente:hooks` (o `start.sh` e o `orca.yaml` já fazem). O agente é impedido de usar `--no-verify` e de trocar `core.hooksPath` pelo hook de ferramentas. Exceções: `.githooks/seguranca-allowlist.txt`, uma linha `caminho::id::assinatura::contagem` por PR com justificativa (a assinatura é o hash da linha; gere com `node scripts/seguranca-verificar.mjs --arvore --sugerir`; ADR 0058). Achado de arquivo inteiro (`arquivo-sensivel`, `migracao-*`, `byte-nulo-em-arquivo-de-texto`, este para binário sem extensão conhecida) usa a assinatura `-` e contagem 1.
 
 ## Regras de manutenção
 1. Mudou `.claude/`, `CLAUDE.md`, `orca.yaml` ou `scripts/start.sh`: rode `npm run ambiente:verificar` e atualize este documento no mesmo PR.

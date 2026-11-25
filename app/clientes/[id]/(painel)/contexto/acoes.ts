@@ -3,7 +3,9 @@
 import { modules } from '@/composition';
 import type {
   AlvoDeMarcacao,
+  Comando,
   ContextoCompleto,
+  Leitura,
   MarcacaoParcial,
   RevisaoDeContexto,
 } from '@/modules/clients/application/contextoService';
@@ -38,6 +40,10 @@ const NAO_ENCONTRADO: Resposta<never> = { ok: false, erro: 'Cliente não encontr
 async function comando(clientId: string) {
   const escopo = await escopoDoClienteNaOrganizacao(clientId);
   return escopo ? escopo.comando : null;
+}
+
+function leituraDe(base: Comando): Leitura {
+  return { organizationId: base.organizationId, clientId: base.clientId, papelDeQuemLe: base.papelDeQuemAge };
 }
 
 function responder<T>(resultado: Result<T, Failure>): Resposta<T> {
@@ -111,7 +117,7 @@ export async function compartilharSecaoAcao(clientId: string, secao: string, com
   if (!base) return NAO_ENCONTRADO;
   const definicao = CATALOGO.find((s) => s.key === secao);
   if (!definicao) return { ok: false, erro: 'Seção desconhecida.', codigo: 'validation', versaoAtual: null, campos: null };
-  const carregado = await modules().contexto.carregar(base);
+  const carregado = await modules().contexto.carregar(leituraDe(base));
   if (!carregado.ok) return responder(semCatalogo(carregado));
   const visiveis = new Set(definicao.campos.filter((c) => c.visivelAoCliente).map((c) => c.key));
   const ator = await atorAtual();
@@ -128,7 +134,7 @@ export async function compartilharSecaoAcao(clientId: string, secao: string, com
     const r = await modules().contexto.marcar({ ...base, alvo, versaoEsperada: versao, marcacao: { compartilhavel } }, ator);
     if (!r.ok && r.error.code !== 'conflict') return responder(r);
   }
-  return responder(semCatalogo(await modules().contexto.carregar(base)));
+  return responder(semCatalogo(await modules().contexto.carregar(leituraDe(base))));
 }
 
 export async function removerArquivoAcao(clientId: string, fileId: string): Promise<Resposta<null>> {
@@ -140,11 +146,11 @@ export async function removerArquivoAcao(clientId: string, fileId: string): Prom
 export async function listarRevisoesAcao(clientId: string, chave: string | null): Promise<Resposta<readonly RevisaoDeContexto[]>> {
   const base = await comando(clientId);
   if (!base) return NAO_ENCONTRADO;
-  return responder(await modules().contexto.listarRevisoes({ organizationId: base.organizationId, clientId, limite: 60, chave }));
+  return responder(await modules().contexto.listarRevisoes({ ...leituraDe(base), limite: 60, chave }));
 }
 
 export async function recarregarContextoAcao(clientId: string): Promise<Resposta<DadosDoEditor>> {
   const base = await comando(clientId);
   if (!base) return NAO_ENCONTRADO;
-  return responder(semCatalogo(await modules().contexto.carregar({ organizationId: base.organizationId, clientId })));
+  return responder(semCatalogo(await modules().contexto.carregar(leituraDe(base))));
 }

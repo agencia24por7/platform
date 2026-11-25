@@ -98,9 +98,11 @@ export type ContextoParaCatalogo = {
 
 export type EscopoDoContexto = { readonly organizationId: string; readonly clientId: string };
 
+export type VisaoDoContexto = 'equipe' | 'cliente';
+
 export type CarregadorDeContexto = {
   readonly disponivel: boolean;
-  carregar(escopo: EscopoDoContexto): Promise<ContextoParaCatalogo | null>;
+  carregar(escopo: EscopoDoContexto, visao: VisaoDoContexto): Promise<ContextoParaCatalogo | null>;
 };
 
 export const CARREGADOR_DE_CONTEXTO_INDISPONIVEL: CarregadorDeContexto = {

@@ -5,7 +5,7 @@ import { logger } from '@/shared/logging/logger';
 import { consume } from '@/shared/security/rateLimit';
 import { enderecoConfiavel } from '@/modules/audit/domain/actor';
 import { encodeStateCookie } from '@/modules/connections/domain/tenantBinding';
-import { convidavelPorLink } from '@/modules/connections/domain/integrationInvite';
+import { convidavelPorLink, tokenDeConviteBemFormado } from '@/modules/connections/domain/integrationInvite';
 import {
   PROVIDERS,
   isSafeReturnPath,
@@ -39,7 +39,7 @@ async function tratarGet(
   const falha = (erro: string): NextResponse =>
     NextResponse.redirect(new URL(`/convite/${token}?erro=${erro}`, env().TRIA_APP_BASE_URL));
 
-  const verdict = consume(`convite:oauth:start:${sourceIp(request)}`, LIMITE_POR_JANELA, JANELA_MS);
+  const verdict = consume('ip', `convite:oauth:start:${sourceIp(request)}`, LIMITE_POR_JANELA, JANELA_MS);
   if (!verdict.allowed) return falha('muitas_tentativas');
 
   if (!falaOauth(platform as Platform) || !convidavelPorLink(platform as Platform)) {
@@ -47,7 +47,7 @@ async function tratarGet(
   }
   const plataforma = platform as PlataformaOauth;
 
-  const resolvido = await modules().connectionInvites.resolveByToken(token, plataforma);
+  const resolvido = tokenDeConviteBemFormado(token) ? await modules().connectionInvites.resolveByToken(token, plataforma) : null;
   if (!resolvido) {
     logger.warn('convite.oauth.start.token_invalido', { platform: plataforma });
     return falha('convite_invalido');

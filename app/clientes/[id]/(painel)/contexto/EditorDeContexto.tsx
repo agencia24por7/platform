@@ -23,7 +23,6 @@ import {
 } from '@/../app/clientes/[id]/(painel)/contexto/acoes';
 import type { RevisaoDeContexto } from '@/modules/clients/application/contextoService';
 import {
-  CATALOGO,
   EPISTEMICOS,
   ROTULO_EPISTEMICO,
   ROTULO_FONTE,
@@ -38,6 +37,7 @@ import type { OrganizationType } from '@/modules/organizations/domain/organizati
 import { noVocabularioDe, vocabularioDe, type Vocabulario } from '@/modules/organizations/domain/vocabulario';
 import { campoEhHerdado } from '@/modules/clients/domain/contexto/heranca';
 import { traduzirCatalogo } from '@/modules/clients/domain/contexto/vocabulario';
+import { catalogoDaVisao, type VisaoDoContexto } from '@/modules/clients/domain/contexto/visaoDoCliente';
 import { rotaDoCliente } from '@/modules/clients/domain/painel/enderecos';
 import { barrasDaSecao } from '@/modules/clients/domain/painel/resumo';
 
@@ -45,6 +45,7 @@ type Props = {
   readonly tipo: OrganizationType;
   readonly clienteId: string;
   readonly dados: DadosDoEditor;
+  readonly visao: VisaoDoContexto;
   readonly podeEditar: boolean;
   readonly secaoInicial: string | null;
   readonly campoInicial: string | null;
@@ -115,9 +116,9 @@ function Selos({
   );
 }
 
-export function EditorDeContexto({ tipo, clienteId, dados, podeEditar, secaoInicial, campoInicial }: Props) {
+export function EditorDeContexto({ tipo, clienteId, dados, visao, podeEditar, secaoInicial, campoInicial }: Props) {
   const vocabulario = vocabularioDe(tipo);
-  const catalogo = useMemo(() => traduzirCatalogo(CATALOGO, tipo), [tipo]);
+  const catalogo = useMemo(() => traduzirCatalogo(catalogoDaVisao(visao), tipo), [visao, tipo]);
   const [entradas, setEntradas] = useState<Record<string, EntradaDeCampo>>({ ...dados.campos });
   const [listas, setListas] = useState<Record<string, readonly ItemDeLista[]>>({ ...dados.listas });
   const [arquivos, setArquivos] = useState<readonly ArquivoDeContexto[]>(dados.arquivos);

@@ -93,6 +93,19 @@ jobs:
           tentar gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet \
             --command "sudo sh -c 'find /opt/tria -mindepth 1 -maxdepth 1 ! -name .env -exec rm -rf {} +' && sudo cp -a /tmp/compose/. /opt/tria/ && rm -rf /tmp/compose"
 
+      - name: Redes da pilha e bloqueio de metadados (ADR 0057)
+        run: |
+          tentar() {
+            for n in 1 2 3 4 5; do
+              "$@" && return 0
+              echo "tentativa $n falhou; o tunel IAP cai de vez em quando. repetindo em 15s"
+              sleep 15
+            done
+            return 1
+          }
+          tentar gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet \
+            --command "sudo sh /opt/tria/rede-transicao.sh"
+
       - name: Pre-flight da release (antes de qualquer migração)
         env:
           IMAGEM: ${{ env.IMAGE }}:${{ github.sha }}
@@ -198,3 +211,17 @@ jobs:
           HOST: ${{ vars.APP_HOSTNAME }}
           ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
         run: sh scripts/release/smoke-pos-deploy.sh "https://$HOST"
+
+      - name: Smoke pós-deploy (metadados da VM só para o app)
+        run: |
+          tentar() {
+            for n in 1 2 3 4 5; do
+              if "$@"; then return 0; else status=$?; fi
+              [ "$status" -eq 255 ] || return "$status"
+              echo "tentativa $n: o tunel IAP caiu; repetindo em 15s"
+              sleep 15
+            done
+            return 1
+          }
+          tentar gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet \
+            --command "sudo sh /opt/tria/metadados-verificar.sh"

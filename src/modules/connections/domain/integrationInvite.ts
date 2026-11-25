@@ -22,6 +22,12 @@ export function convidavelPorLink(platform: Platform): platform is PlataformaCon
 const EXPIRACAO_EM_DIAS = 7;
 const MS_POR_DIA = 24 * 60 * 60 * 1000;
 
+const FORMATO_DO_TOKEN_DE_CONVITE = /^[A-Za-z0-9_-]{16,64}$/;
+
+export function tokenDeConviteBemFormado(token: string): boolean {
+  return FORMATO_DO_TOKEN_DE_CONVITE.test(token);
+}
+
 export function gerarTokenDeConvite(): string {
   return randomBytes(24).toString('base64url');
 }

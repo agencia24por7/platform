@@ -2,14 +2,15 @@ import { carregarContexto, carregarPainel } from '@/../app/clientes/[id]/_dados'
 import { EditorDeContexto } from '@/../app/clientes/[id]/(painel)/contexto/EditorDeContexto';
 import { modules } from '@/composition';
 import { tempoRelativo } from '@/modules/clients/domain/painel/resumo';
+import { visaoDoPapel } from '@/modules/clients/domain/contexto/visaoDoCliente';
 
 const ROTULO_DA_OPERACAO: Record<string, string> = { criar: 'preencheu', alterar: 'alterou', status: 'marcou', remover: 'removeu' };
 
 export async function Perfil({ clienteId, secaoInicial, campoInicial }: { readonly clienteId: string; readonly secaoInicial: string | null; readonly campoInicial: string | null }) {
   const { ctx, cliente, podeEditar } = await carregarPainel(clienteId);
   const [contexto, revisoes] = await Promise.all([
-    carregarContexto(ctx.organization.id, cliente.id),
-    modules().contexto.listarRevisoes({ organizationId: ctx.organization.id, clientId: cliente.id, limite: 8 }),
+    carregarContexto(ctx.organization.id, cliente.id, ctx.role),
+    modules().contexto.listarRevisoes({ organizationId: ctx.organization.id, clientId: cliente.id, papelDeQuemLe: ctx.role, limite: 8 }),
   ]);
 
   if (!contexto) {
@@ -22,7 +23,7 @@ export async function Perfil({ clienteId, secaoInicial, campoInicial }: { readon
 
   return (
     <div className="pilha">
-      <EditorDeContexto tipo={ctx.organization.type} clienteId={cliente.id} dados={dados} podeEditar={podeEditar} secaoInicial={secaoInicial} campoInicial={campoInicial} />
+      <EditorDeContexto tipo={ctx.organization.type} clienteId={cliente.id} dados={dados} visao={visaoDoPapel(ctx.role)} podeEditar={podeEditar} secaoInicial={secaoInicial} campoInicial={campoInicial} />
       {revisoes.ok && revisoes.value.length > 0 ? (
         <details className="recolhivel">
           <summary className="recolhivel__resumo">

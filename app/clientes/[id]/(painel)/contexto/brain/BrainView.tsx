@@ -66,7 +66,7 @@ function MarkdownDoCatalogo({ texto }: { readonly texto: string }) {
 
 export async function BrainView({ clienteId }: { readonly clienteId: string }) {
   const { ctx, cliente } = await carregarPainel(clienteId);
-  const buscado = await buscarBrainDoCliente({ organizationId: ctx.organization.id, clientId: cliente.id });
+  const buscado = await buscarBrainDoCliente({ organizationId: ctx.organization.id, clientId: cliente.id, papelDeQuemLe: ctx.role });
   if (!buscado.ok && buscado.motivo === 'nao_encontrado') notFound();
   if (!buscado.ok) {
     return (
