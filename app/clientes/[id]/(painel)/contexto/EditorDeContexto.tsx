@@ -522,17 +522,19 @@ export function EditorDeContexto({ tipo, clienteId, dados, podeEditar, secaoInic
 
           <div className="secao-editor__campos" key={secao.key}>
             {secao.key === 'empresa' ? (
-              <dl className="cadastro-herdado" aria-label={noVocabularioDe(tipo, 'Dados do cadastro do cliente')}>
-                <div className="cadastro-herdado__item">
-                  <dt>Modelo de negócio</dt>
-                  <dd>{dados.cadastro.modeloDeOperacao === 'ecommerce' ? 'E-commerce' : 'Geração de leads'}</dd>
-                </div>
-                <div className="cadastro-herdado__item">
-                  <dt>Pertence a uma rede</dt>
-                  <dd>{dados.cadastro.temRede ? (dados.cadastro.redeNome ? `Sim, filial de ${dados.cadastro.redeNome}` : 'Sim') : 'Não'}</dd>
-                </div>
+              <section className="cadastro-herdado" aria-label={noVocabularioDe(tipo, 'Dados do cadastro do cliente')}>
+                <dl className="cadastro-herdado__lista">
+                  <div className="cadastro-herdado__item">
+                    <dt>Modelo de negócio</dt>
+                    <dd>{dados.cadastro.modeloDeOperacao === 'ecommerce' ? 'E-commerce' : 'Geração de leads'}</dd>
+                  </div>
+                  <div className="cadastro-herdado__item">
+                    <dt>Pertence a uma rede</dt>
+                    <dd>{dados.cadastro.temRede ? (dados.cadastro.redeNome ? `Sim, filial de ${dados.cadastro.redeNome}` : 'Sim') : 'Não'}</dd>
+                  </div>
+                </dl>
                 <p className="cadastro-herdado__nota xsmall subtle">{noVocabularioDe(tipo, 'Vêm do cadastro do cliente e não se editam aqui.')}</p>
-              </dl>
+              </section>
             ) : null}
             <div className="nivel nivel--essencial">
               <h3 className="nivel__titulo">Essencial</h3>

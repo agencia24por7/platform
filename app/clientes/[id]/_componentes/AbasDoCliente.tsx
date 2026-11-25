@@ -41,7 +41,7 @@ export function AbasDoCliente({ clienteId, blocos, contadores }: Props) {
                   <span>{bloco.rotulo}</span>
                 </span>
               ) : null}
-              {contadores?.[aba] ? <span className="contador">{contadores[aba]}</span> : null}
+              {contadores?.[aba] ? <span className="selo-contagem">{contadores[aba]}</span> : null}
             </Link>
           );
         })}

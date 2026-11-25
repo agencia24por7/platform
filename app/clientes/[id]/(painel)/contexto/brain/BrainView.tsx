@@ -236,7 +236,7 @@ export async function BrainView({ clienteId }: { readonly clienteId: string }) {
           <MarkdownDoCatalogo texto={brain.catalogoMd} />
           <details className="disclosure">
             <summary>Ver o texto cru</summary>
-            <pre className="receita">{brain.catalogoMd}</pre>
+            <pre className="receita" tabIndex={0}>{brain.catalogoMd}</pre>
           </details>
         </div>
       </details>
