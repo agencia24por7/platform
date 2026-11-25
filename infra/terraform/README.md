@@ -60,11 +60,11 @@ não mostra mudança alguma: o script de inicialização renderiza byte a byte i
   O `_Default` do projeto **não é alterado**: a auditoria de acesso a dados do KMS e do Secret Manager (ADR 0032) e os
   demais logs ficam nos 30 dias padrão. Para investigar, no Logs Explorer use "Refinar escopo" e escolha o bucket
   `<prefixo>-aplicacao`.
-- **Exclusão da linha da aplicação no `_Default`: adiada de propósito.** Enquanto não houver prova de que o sink escreve
-  no bucket, a linha fica também no `_Default` por 30 dias (a aplicação escreve cerca de 1,4 KB por dia, então a
-  duplicação é desprezível frente aos 50 GiB). Depois da prova (reiniciar a VM, gerar um erro de teste e ver a linha no
-  bucket), um PR novo cria `google_logging_project_exclusion` com `local.filtro_linha_da_app`, e a retenção de 3 dias
-  passa a valer de fato para a linha da aplicação.
+- `google_logging_project_exclusion.aplicacao_no_bucket_proprio`: tira a linha da aplicação do `_Default`, para não
+  guardá-la duas vezes nem contá-la em dobro nos 50 GiB, e a retenção de 3 dias passa a valer para ela. **Só foi criada
+  depois da prova** de que o sink escreve no bucket: em 2026-11-25, com a VM recém-reiniciada, uma linha de teste enviada
+  a `/api/erros` apareceu no bucket `<prefixo>-aplicacao` um segundo depois (e no `_Default`, porque a exclusão ainda não
+  existia). Depende do sink. A métrica de erros e o alerta contam na entrada, antes das exclusões, e não mudam.
 - `google_monitoring_alert_policy.uso_de_logs`: avisa por e-mail quando os logs ingeridos no mês passam de
   `logs_na_nuvem_alerta_uso_gib` (padrão 40 GiB), para agir antes de estourar os 50 GiB grátis. Só avisa.
 - O script é idempotente: não reinstala o pacote se já existe e só reinicia o agente se o `config.yaml` mudou.
@@ -160,7 +160,7 @@ nas primeiras horas, e o OOM kill em `journalctl -k`.
    `sudo apt-get remove -y google-cloud-ops-agent` (opcional: apagar `/etc/apt/sources.list.d/google-cloud-ops-agent.list`
    e `/etc/apt/keyrings/google-cloud-ops-agent.gpg`). O Terraform não remove o agente.
 2. Só então `logs_na_nuvem_habilitado = false` e aplicar pelo `infra.yml`: remove a métrica de erros, as duas políticas
-   de alerta (erros e uso), a exclusão do projeto que descarta o que não é da aplicação, o sink e o bucket `<prefixo>-aplicacao`. Os logs que estavam nesse bucket vão junto; sem
+   de alerta (erros e uso), a exclusão do projeto que descarta o que não é da aplicação, a exclusão da linha da aplicação, o sink e o bucket `<prefixo>-aplicacao`. Os logs que estavam nesse bucket vão junto; sem
    consulta, o bucket é purgado depois de cerca de 7 dias, e religar o pacote logo em seguida pode falhar até o nome do
    bucket ser liberado (comportamento do Cloud Logging, não testado aqui).
 3. Se a variável for desligada com o agente ainda vivo, ele continua enviando logs e as exclusões somem do plano: os logs
