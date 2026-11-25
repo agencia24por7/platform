@@ -20,7 +20,7 @@ com `roles/viewer`.
 ## Logs na nuvem (opt-in) (ADR 0049, decisão 6)
 
 Desligado por padrão no Terraform (`logs_na_nuvem_habilitado = false`); em produção é ligado pela variável do GitHub
-`LOGS_NA_NUVEM_HABILITADO` (ADR 0051), que o `infra.yml` repassa ao `plan` e ao `apply`. Com a variável em `false` o `plan`
+`LOGS_NA_NUVEM_HABILITADO` (ADR 0052), que o `infra.yml` repassa ao `plan` e ao `apply`. Com a variável em `false` o `plan`
 não mostra mudança alguma: o script de inicialização renderiza byte a byte igual ao anterior e nenhum recurso novo é criado.
 
 ### O que liga
@@ -53,6 +53,16 @@ não mostra mudança alguma: o script de inicialização renderiza byte a byte i
 - `google_monitoring_alert_policy.erros_app`: dispara com contagem maior que 0 em janela de 5 minutos e avisa
   os canais `google_monitoring_notification_channel.budget`. Sem e-mails em `budget_notification_emails` a política
   é criada sem canal (aparece no console, não notifica); a mensagem não carrega conteúdo de log.
+- `google_logging_project_bucket_config.aplicacao`, `google_logging_project_sink.aplicacao` e
+  `google_project_iam_member.sink_aplicacao`: bucket próprio `<prefixo>-aplicacao` com retenção de
+  `logs_na_nuvem_retencao_dias` (padrão 3), que recebe só a linha da aplicação. O sink escreve com identidade própria e
+  o papel `logging.bucketWriter` restrito, por condição, a esse bucket. O `_Default` do projeto **não é alterado**: a
+  auditoria de acesso a dados do KMS e do Secret Manager (ADR 0032) e os demais logs ficam nos 30 dias padrão.
+- `google_logging_project_exclusion.aplicacao_no_bucket_proprio`: tira a linha da aplicação do `_Default` para não
+  guardá-la duas vezes nem contá-la em dobro nos 50 GiB. Só é criada depois do sink e do papel, mas o IAM propaga de forma
+  eventual: nos primeiros minutos do `apply` a linha pode ser descartada antes de a permissão valer. Para investigar, no Logs Explorer use "Refinar escopo" e escolha o bucket `<prefixo>-aplicacao`.
+- `google_monitoring_alert_policy.uso_de_logs`: avisa por e-mail quando os logs ingeridos no mês passam de
+  `logs_na_nuvem_alerta_uso_gib` (padrão 40 GiB), para agir antes de estourar os 50 GiB grátis. Só avisa.
 - O script é idempotente: não reinstala o pacote se já existe e só reinicia o agente se o `config.yaml` mudou.
   Falha na instalação não derruba a subida da pilha (o script registra e segue).
 
@@ -66,13 +76,36 @@ não mostra mudança alguma: o script de inicialização renderiza byte a byte i
    aparece nas linhas da aplicação e que `jsonPayload` não traz o campo `log` duplicado.
 6. Gere um erro de teste na aplicação e confirme o e-mail do alerta.
 
-### Custos
+### Custos e retenção (ADR 0054)
 
-- Verificado (Google Cloud Observability): ingestão de log US$ 0,50/GiB, primeiros 50 GiB por projeto por mês
-  grátis; retenção além de 30 dias US$ 0,01/GiB/mês; consulta grátis.
-- Não verificado, conferir na tabela vigente antes de ligar: preço da métrica baseada em log e da política de alerta
-  (as fontes consultadas divergem). Não há estimativa nesta documentação.
-- O volume real não foi medido. Meça o tamanho dos logs docker na VM antes de ligar, para comparar com os 50 GiB.
+Meta: ficar dentro do free tier e guardar o mínimo necessário. Conferido em 2026-11-24 na documentação do Google Cloud
+([preços](https://cloud.google.com/products/observability/pricing), [free tier](https://docs.cloud.google.com/free/docs/free-cloud-features)):
+
+- Ingestão: os primeiros 50 GiB por projeto por mês são grátis; acima disso US$ 0,50/GiB. Consulta é grátis.
+- Retenção: o padrão de 30 dias já está incluído; acima de 30 dias custa US$ 0,01/GiB/mês. Por isso
+  `logs_na_nuvem_retencao_dias` vai de 1 a 30 e o padrão é **3 dias** (cobre um fim de semana entre o alerta por e-mail
+  e a investigação). Vale **só para o bucket da aplicação**: encurtar o `_Default` apagaria, em todo o projeto, a trilha de
+  acesso a dados do KMS, do Secret Manager e do BigQuery, que fica nele e não está no `_Required`. Reduzir o prazo do
+  bucket da aplicação apaga o que for mais antigo que o novo prazo.
+- Log excluído (a exclusão do projeto e a lista de permissão do agente) não é cobrado.
+- Alerta: sem cobrança hoje; o Google informa que passa a cobrar no mínimo a partir de 2027-09-01 (US$ 0,35 por mês por
+  referência de métrica). O alerta de uso do mês usa métrica de billing, que fica fora dessa cobrança.
+- Métrica de erros baseada em log: a única fonte encontrada (blog antigo) fala em 150 MiB grátis por conta de cobrança,
+  e um contador de linhas usa uma fração disso. **Não confirmado em página vigente**: conferir na primeira fatura.
+- Trava de uso: o alerta "uso de logs perto do free tier" avisa por e-mail quando os logs ingeridos no mês passam de
+  `logs_na_nuvem_alerta_uso_gib` (padrão 40 GiB, folga de 10 GiB sobre o free tier). A métrica é
+  `logging.googleapis.com/billing/monthly_bytes_ingested`, atualizada em lotes de hora em hora (segundo a [página de buckets do Cloud Logging](https://docs.cloud.google.com/logging/docs/buckets); não testado
+  neste projeto), por isso o alinhamento é de 2 horas. O alerta só avisa: não corta a ingestão.
+- Os logs de acesso a dados (KMS: um por Encrypt ou Decrypt de cada coleta; Secret Manager; BigQuery) também entram nos
+  50 GiB e não estão na estimativa abaixo; o alerta de uso mede o projeto inteiro e os cobre.
+- Pior caso conhecido: `client.erro` (aberto a anônimo) aceita até 120 requisições por minuto de cerca de 6 KB, ou
+  perto de 1 GB por dia (cerca de 31 GB por mês) se alguém saturar o limite. Cabe no free tier, mas consome dois terços dele.
+- Volume medido em 2026-11-24, pelo humano, na VM: o container `orla-app` escreveu **1.467 bytes em 24 horas**
+  (`docker logs --since 24h orla-app 2>&1 | wc -c`), cerca de 44 KB por mês, contra os 50 GiB do free tier. É uma amostra de
+  um dia, de um dia útil comum, e inclui linhas que não são do formato da aplicação, então é teto do que sai da VM. A
+  conta do free tier fica dominada pelos logs de acesso a dados (KMS, Secret Manager, BigQuery), que não estão nessa
+  medida, e pelo pior caso de `client.erro` acima. Depois de ligar, acompanhe a página Logs Storage do console por um mês.
+  Para repetir: `sudo docker logs --since 24h orla-app 2>&1 | wc -c` na VM, por IAP.
 
 ### Antes de ligar: impressão digital da chave apt
 
@@ -94,8 +127,8 @@ Debian 13 não estão confirmados lá.
 Os logs saem da VM para o Cloud Logging do projeto, legível por quem tem `roles/viewer`. Só a linha da aplicação sai
 (ver acima), e o logger redige segredo e e-mail (ADR 0049, decisão 4). Logs de Postgres, Caddy e n8n não saem. Mesmo
 assim, revise amostras no Logs Explorer logo após ligar: se o contexto de alguma linha da aplicação trouxer dado de
-cliente, ele ficará 30 dias no `_Default`. A cópia na nuvem usa a retenção do bucket `_Default` (30 dias); esta
-mudança não altera a retenção. A cópia local continua nos limites atuais (docker 10m x 3, journald 200M/1 mês).
+cliente, ele ficará `logs_na_nuvem_retencao_dias` dias (padrão 3) no bucket `<prefixo>-aplicacao`, e não no `_Default`.
+A cópia local continua nos limites atuais (docker 10m x 3, journald 200M/1 mês).
 
 ### Memória da VM
 
@@ -122,8 +155,13 @@ nas primeiras horas, e o OOM kill em `journalctl -k`.
 1. Primeiro, na VM, passo do humano: `sudo systemctl disable --now google-cloud-ops-agent` e
    `sudo apt-get remove -y google-cloud-ops-agent` (opcional: apagar `/etc/apt/sources.list.d/google-cloud-ops-agent.list`
    e `/etc/apt/keyrings/google-cloud-ops-agent.gpg`). O Terraform não remove o agente.
-2. Só então `logs_na_nuvem_habilitado = false` e aplicar pelo `infra.yml`: remove a métrica, a política e a exclusão do projeto.
-3. Se a variável for desligada com o agente ainda vivo, ele continua enviando logs e a exclusão que descarta os
-   containers fora da aplicação some do plano: os logs de Caddy, Postgres e n8n passam a ser guardados no `_Default`
-   (30 dias, legível por `roles/viewer`) até o agente ser parado. Nesse caso pare o agente na VM imediatamente.
-4. Os logs já enviados ficam no `_Default` até vencerem os 30 dias.
+2. Só então `logs_na_nuvem_habilitado = false` e aplicar pelo `infra.yml`: remove a métrica de erros, as duas políticas
+   de alerta (erros e uso), a exclusão do projeto que descarta o que não é da aplicação, a exclusão da linha da aplicação,
+   o papel `logging.bucketWriter`, o sink e o bucket `<prefixo>-aplicacao`. Os logs que estavam nesse bucket vão junto; sem
+   consulta, o bucket é purgado depois de cerca de 7 dias, e religar o pacote logo em seguida pode falhar até o nome do
+   bucket ser liberado (comportamento do Cloud Logging, não testado aqui).
+3. Se a variável for desligada com o agente ainda vivo, ele continua enviando logs e as exclusões somem do plano: os logs
+   de Caddy, Postgres e n8n e também a linha da aplicação (com `userId` em `client.erro`) passam a ser guardados no
+   `_Default` (30 dias, legível por `roles/viewer`) até o agente ser parado, o que contradiz os 3 dias de
+   `docs/lgpd/retencao.md`. Nesse caso pare o agente na VM imediatamente.
+4. A retenção do `_Default` nunca foi alterada por este pacote, então não há o que reverter nela.

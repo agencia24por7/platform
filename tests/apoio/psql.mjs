@@ -17,24 +17,25 @@ function valorDoEnv(chave) {
 }
 
 function argumentosDoRole(usuario) {
-  if (usuario === 'postgres') return { ambiente: [], host: [] };
+  if (usuario === 'postgres') return { ambiente: [], host: [], senha: undefined };
   const variavel = VARIAVEL_DE_SENHA[usuario];
   if (variavel === undefined) throw new Error(`role sem senha configurada para testes: ${usuario}`);
-  return { ambiente: ['-e', `PGPASSWORD=${valorDoEnv(variavel)}`], host: ['-h', '127.0.0.1'] };
+  return { ambiente: ['-e', 'PGPASSWORD'], host: ['-h', '127.0.0.1'], senha: valorDoEnv(variavel) };
 }
 
 export function psqlComoRole(usuario, sql, { pararNoErro = false } = {}) {
-  const { ambiente, host } = argumentosDoRole(usuario);
+  const { ambiente, host, senha } = argumentosDoRole(usuario);
+  const env = senha === undefined ? process.env : { ...process.env, PGPASSWORD: senha };
   const opcoes = pararNoErro ? ['-v', 'ON_ERROR_STOP=1'] : [];
   try {
     return execFileSync(
       'docker',
       ['exec', '-i', ...ambiente, PG_CONTAINER, 'psql', '-U', usuario, ...host, '-d', 'tria', ...opcoes, '-qtAc', sql],
-      { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
+      { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], env },
     ).trim();
   } catch (falha) {
     const stderr = String(falha.stderr ?? '');
-    const erro = new Error(`psql como ${usuario} falhou: ${stderr.trim()}`, { cause: falha });
+    const erro = new Error(`psql como ${usuario} falhou: ${stderr.trim()}`);
     erro.stderr = stderr;
     erro.status = falha.status;
     throw erro;

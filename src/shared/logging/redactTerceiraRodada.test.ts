@@ -4,7 +4,9 @@ import { redactText } from './redact.ts';
 
 const BORDA_DA_REDACAO = 8192;
 const LIMITE_MS = 50;
-const LIMITE_DO_JWT_MS = 10;
+const LIMITE_DE_CRESCIMENTO = 9;
+const TAMANHO_BASE = 2048;
+const REPETICOES_POR_AMOSTRA = 40;
 
 const MEDICOES = 5;
 
@@ -16,6 +18,18 @@ function medirUmaVezMs(trabalho: () => unknown): number {
 
 function medirMs(trabalho: () => unknown): number {
   return Math.min(...Array.from({ length: MEDICOES }, () => medirUmaVezMs(trabalho)));
+}
+
+function custoPorChamadaMs(texto: string): number {
+  const amostra = () => {
+    for (let repeticao = 0; repeticao < REPETICOES_POR_AMOSTRA; repeticao++) redactText(texto);
+  };
+  return medirMs(amostra) / REPETICOES_POR_AMOSTRA;
+}
+
+function crescimentoAteABorda(unidade: string): number {
+  const comTamanho = (caracteres: number) => unidade.repeat(Math.ceil(caracteres / unidade.length));
+  return custoPorChamadaMs(comTamanho(BORDA_DA_REDACAO)) / custoPorChamadaMs(comTamanho(TAMANHO_BASE));
 }
 
 describe('encolhimento pela redação não expõe o que passou da borda', () => {
@@ -63,7 +77,8 @@ describe('e-mail fora do formato curto', () => {
 
 describe('JWT', () => {
   it('eyJa- repetido não é quadrático', () => {
-    assert.ok(medirMs(() => redactText('eyJa-'.repeat(1640))) < LIMITE_DO_JWT_MS);
+    const crescimento = crescimentoAteABorda('eyJa-');
+    assert.ok(crescimento < LIMITE_DE_CRESCIMENTO, `custo cresceu ${crescimento.toFixed(1)}x ao quadruplicar a entrada`);
   });
 
   it('JWT real continua redigido', () => {
@@ -97,7 +112,8 @@ describe('quarta rodada', () => {
 
   for (const [nome, unidade] of [['eyJa-', 'eyJa-'], ['eyJ.', 'eyJ.'], ['eyJeyJ', 'eyJeyJ']] as const) {
     it(`desempenho linear com ${nome}`, () => {
-      assert.ok(medirMs(() => redactText(unidade.repeat(Math.ceil(8192 / unidade.length)))) < LIMITE_DO_JWT_MS);
+      const crescimento = crescimentoAteABorda(unidade);
+      assert.ok(crescimento < LIMITE_DE_CRESCIMENTO, `custo cresceu ${crescimento.toFixed(1)}x ao quadruplicar a entrada`);
     });
   }
 });

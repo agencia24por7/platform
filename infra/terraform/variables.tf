@@ -140,3 +140,25 @@ variable "logs_na_nuvem_chave_apt_impressao" {
     error_message = "A impressão digital deve ter exatamente 40 caracteres hexadecimais, sem espaços, ou ficar vazia."
   }
 }
+
+variable "logs_na_nuvem_retencao_dias" {
+  description = "Retenção, em dias, do bucket próprio dos logs da aplicação no Cloud Logging (ADR 0054). O _Default do projeto não é alterado e segue em 30 dias. O padrão de 3 dias cobre um fim de semana entre o alerta por e-mail e a investigação. Acima de 30 dias a retenção é cobrada (US$ 0,01/GiB/mês); por isso o limite é 30."
+  type        = number
+  default     = 3
+
+  validation {
+    condition     = var.logs_na_nuvem_retencao_dias >= 1 && var.logs_na_nuvem_retencao_dias <= 30 && floor(var.logs_na_nuvem_retencao_dias) == var.logs_na_nuvem_retencao_dias
+    error_message = "A retenção deve ser um número inteiro de dias entre 1 e 30."
+  }
+}
+
+variable "logs_na_nuvem_alerta_uso_gib" {
+  description = "Limite, em GiB de logs ingeridos no mês corrente, a partir do qual o alerta de uso avisa por e-mail (ADR 0054). O free tier do Cloud Logging é de 50 GiB por projeto por mês; o padrão de 40 GiB deixa folga para agir."
+  type        = number
+  default     = 40
+
+  validation {
+    condition     = var.logs_na_nuvem_alerta_uso_gib > 0 && var.logs_na_nuvem_alerta_uso_gib <= 50
+    error_message = "O limite de alerta deve ser maior que 0 e no máximo 50 GiB (o free tier)."
+  }
+}
