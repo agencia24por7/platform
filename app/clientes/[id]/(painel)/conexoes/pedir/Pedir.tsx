@@ -1,6 +1,9 @@
 import Link from 'next/link';
 import { CopyButton } from '@/../app/_components/CopyButton';
+import { CabecalhoDeSecao } from '@/../app/clientes/[id]/_componentes/CabecalhoDeSecao';
+import { ConfirmarAcao } from '@/../app/clientes/[id]/_componentes/ConfirmarAcao';
 import { Marca } from '@/../app/_components/Marca';
+import { Icone } from '@/../app/clientes/[id]/_componentes/Icones';
 import { podeVerConviteDeIntegracao } from '@/modules/connections/domain/visibilidadeDoConvite';
 import { pedirAcessoMetaPartner, revogarConviteDeIntegracao } from '@/../app/clientes/[id]/acoes';
 import { carregarPainel } from '@/../app/clientes/[id]/_dados';
@@ -22,6 +25,16 @@ const ROTULO_DO_CONVITE: Record<string, string> = {
   expired: 'Expirado',
   revoked: 'Revogado',
 };
+
+const ROTULO_DO_PEDIDO: Record<string, { readonly rotulo: string; readonly classe: string }> = {
+  done: { rotulo: 'Concluído', classe: 'pill--ok' },
+  failed: { rotulo: 'Falhou', classe: 'pill--danger' },
+};
+const PEDIDO_EM_ANDAMENTO = { rotulo: 'Em andamento', classe: 'pill--info' };
+
+function secoesPorExtenso(total: number): string {
+  return `${total} ${total === 1 ? 'seção' : 'seções'}`;
+}
 
 const ROTULO_DO_LINK: Record<string, string> = { ativo: 'Ativo', expirado: 'Expirado', revogado: 'Revogado' };
 
@@ -50,15 +63,49 @@ export async function Pedir({ clienteId, abrirMapa }: { readonly clienteId: stri
   const veConvites = podeVerConviteDeIntegracao(podeAdministrar, ctx.clientIds);
   const plataformasConvidaveis = podeAdministrar && organizacaoInteira ? PLATAFORMAS_CONVIDAVEIS.map((p) => ({ platform: p, rotulo: ROTULO_DA_PLATAFORMA[p] })) : [];
 
+  const blocoDoHistorico = (
+    <>
+          {historico.length + pedidos.length + linksAntigos.length > 0 ? (
+            <details className="historico">
+              <summary>Ver histórico ({historico.length + pedidos.length + linksAntigos.length})</summary>
+              <ul className="lista-compacta lista-compacta--apagada">
+                {historico.map((convite) => (
+                  <li key={convite.id} className="linha-compacta">
+                    <span>{convite.items.map((i) => ROTULO_DA_PLATAFORMA[i.platform]).join(', ')}</span>
+                    <span className="pill">{convite.status === 'pending' ? 'Expirado' : ROTULO_DO_CONVITE[convite.status]}</span>
+                    <span className="subtle xsmall">criado {tempoRelativo(convite.createdAt, agora)}</span>
+                  </li>
+                ))}
+                {linksAntigos.map((link) => (
+                  <li key={link.id} className="linha-compacta">
+                    <span>Contexto · {secoesPorExtenso(link.secoes.length)}</span>
+                    <span className="pill">{ROTULO_DO_LINK[link.estado]}</span>
+                    <span className="subtle xsmall">{link.concluidoEm ? 'enviado · ' : ''}criado {tempoRelativo(link.criadoEm, agora)}</span>
+                  </li>
+                ))}
+                {pedidos.map((pedido) => (
+                  <li key={pedido.id} className="linha-compacta">
+                    <span>
+                      Pedido Meta Partner · <span className="mono">{pedido.targetExternalId}</span>
+                    </span>
+                    <span className={`pill ${(ROTULO_DO_PEDIDO[pedido.status] ?? PEDIDO_EM_ANDAMENTO).classe}`}>{(ROTULO_DO_PEDIDO[pedido.status] ?? PEDIDO_EM_ANDAMENTO).rotulo}</span>
+                    <span className="subtle xsmall">{pedido.outcome ?? tempoRelativo(pedido.createdAt, agora)}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+    </>
+  );
+
   return (
     <div className="pilha acessos">
       <section className="acessos__chamada" aria-label={vocabulario.rotuloDePedir}>
-        <div>
-          <h2 className="card__title">{vocabulario.rotuloDePedir}</h2>
-          <p className="subtle small">Um link só, sem login: escolha as plataformas e inclua o contexto.</p>
-        </div>
-        <div className="acessos__botoes">
-          {podeEditar ? (
+        <CabecalhoDeSecao
+          titulo={vocabulario.rotuloDePedir}
+          descricao="Um link só, sem login: escolha as plataformas e inclua o contexto."
+          acao={
+            podeEditar ? (
             <PedirAoCliente
               rotulo={vocabulario.rotuloDePedir}
               tipo={ctx.organization.type}
@@ -77,17 +124,23 @@ export async function Pedir({ clienteId, abrirMapa }: { readonly clienteId: stri
               plataformas={plataformasConvidaveis}
               abrirAoCarregar={abrirMapa}
             />
-          ) : null}
-        </div>
+            ) : null
+          }
+        />
       </section>
 
-      <details className="recolhivel">
+      {totalPendente === 0 ? (
+        <div className="pilha">
+          <p className="subtle small">Nada esperando resposta.</p>
+          {blocoDoHistorico}
+        </div>
+      ) : (
+      <details className="recolhivel" open>
         <summary className="recolhivel__resumo">
           <span className="recolhivel__titulo">Pendentes</span>
           <span className={`pill ${totalPendente ? 'pill--warn' : ''}`}>{totalPendente}</span>
         </summary>
         <div className="recolhivel__corpo">
-          {totalPendente === 0 ? <p className="subtle small">Nada esperando resposta.</p> : null}
           {pendentes.length > 0 ? (
             <ul className="lista-compacta">
               {pendentes.map((convite) => (
@@ -97,7 +150,12 @@ export async function Pedir({ clienteId, abrirMapa }: { readonly clienteId: stri
                       <span key={item.id} className={`chip-plataforma${item.status === 'completed' ? ' chip-plataforma--ok' : ''}`} title={ROTULO_DO_CONVITE[item.status]}>
                         <Marca platform={item.platform} tamanho={14} />
                         {ROTULO_DA_PLATAFORMA[item.platform]}
-                        {item.status === 'completed' ? ' ✓' : ''}
+                        {item.status === 'completed' ? (
+                          <>
+                            {' '}
+                            <Icone nome="ok" tamanho={12} /> concluído
+                          </>
+                        ) : null}
                       </span>
                     ))}
                   </span>
@@ -105,13 +163,17 @@ export async function Pedir({ clienteId, abrirMapa }: { readonly clienteId: stri
                   {veConvites ? (
                     <span className="linha-compacta__acoes">
                       <CopyButton texto={enderecoDoConvite(baseUrl, convite.token)} />
-                      <form action={revogarConviteDeIntegracao}>
+                      <ConfirmarAcao
+                        gatilho="Revogar"
+                        titulo="Revogar este convite?"
+                        descricao="O link deixa de funcionar e quem o recebeu não consegue mais conectar por ele."
+                        confirmar="Revogar"
+                        pendente="Revogando…"
+                        action={revogarConviteDeIntegracao}
+                      >
                         <input type="hidden" name="clientId" value={cliente.id} />
                         <input type="hidden" name="inviteId" value={convite.id} />
-                        <button className="btn btn--compacto btn--perigo" type="submit">
-                          Revogar
-                        </button>
-                      </form>
+                      </ConfirmarAcao>
                     </span>
                   ) : null}
                 </li>
@@ -123,7 +185,7 @@ export async function Pedir({ clienteId, abrirMapa }: { readonly clienteId: stri
               {linksAtivos.map((link) => (
                 <li key={link.id} className="linha-compacta linha-compacta--link">
                   <span className="linha-compacta__principal">
-                    <span className="strong small">Contexto · {link.secoes.length} seção(ões)</span>
+                    <span className="strong small">Contexto · {secoesPorExtenso(link.secoes.length)}</span>
                     <span className="subtle xsmall">{link.secoes.map((s) => nomeDaSecao.get(s) ?? s).join(', ')}</span>
                   </span>
                   <span className="linha-compacta__meta xsmall">
@@ -135,51 +197,27 @@ export async function Pedir({ clienteId, abrirMapa }: { readonly clienteId: stri
                   {podeEditar ? (
                     <span className="linha-compacta__acoes">
                       <RegenerarLink clienteId={cliente.id} linkId={link.id} />
-                      <form action={revogarLinkDeContexto}>
+                      <ConfirmarAcao
+                        gatilho="Revogar"
+                        titulo="Revogar este link?"
+                        descricao="O link deixa de abrir para quem o recebeu."
+                        confirmar="Revogar"
+                        pendente="Revogando…"
+                        action={revogarLinkDeContexto}
+                      >
                         <input type="hidden" name="clientId" value={cliente.id} />
                         <input type="hidden" name="linkId" value={link.id} />
-                        <button className="btn btn--compacto btn--perigo" type="submit">
-                          Revogar
-                        </button>
-                      </form>
+                      </ConfirmarAcao>
                     </span>
                   ) : null}
                 </li>
               ))}
             </ul>
           ) : null}
-          {historico.length + pedidos.length + linksAntigos.length > 0 ? (
-            <details className="historico">
-              <summary>Ver histórico ({historico.length + pedidos.length + linksAntigos.length})</summary>
-              <ul className="lista-compacta lista-compacta--apagada">
-                {historico.map((convite) => (
-                  <li key={convite.id} className="linha-compacta">
-                    <span>{convite.items.map((i) => ROTULO_DA_PLATAFORMA[i.platform]).join(', ')}</span>
-                    <span className="pill">{convite.status === 'pending' ? 'Expirado' : ROTULO_DO_CONVITE[convite.status]}</span>
-                    <span className="subtle xsmall">criado {tempoRelativo(convite.createdAt, agora)}</span>
-                  </li>
-                ))}
-                {linksAntigos.map((link) => (
-                  <li key={link.id} className="linha-compacta">
-                    <span>Contexto · {link.secoes.length} seção(ões)</span>
-                    <span className="pill">{ROTULO_DO_LINK[link.estado]}</span>
-                    <span className="subtle xsmall">{link.concluidoEm ? 'enviado · ' : ''}criado {tempoRelativo(link.criadoEm, agora)}</span>
-                  </li>
-                ))}
-                {pedidos.map((pedido) => (
-                  <li key={pedido.id} className="linha-compacta">
-                    <span>
-                      Pedido Meta Partner · <span className="mono">{pedido.targetExternalId}</span>
-                    </span>
-                    <span className={`pill ${pedido.status === 'done' ? 'pill--ok' : pedido.status === 'failed' ? 'pill--danger' : 'pill--info'}`}>{pedido.status}</span>
-                    <span className="subtle xsmall">{pedido.outcome ?? tempoRelativo(pedido.createdAt, agora)}</span>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          ) : null}
+          {blocoDoHistorico}
         </div>
       </details>
+      )}
 
       {podeAdministrar && organizacaoInteira ? (
         <details className="recolhivel">

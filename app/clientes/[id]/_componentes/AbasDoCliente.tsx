@@ -9,13 +9,14 @@ import type { EstadoDoBloco, TomDoBloco } from '@/modules/clients/domain/painel/
 type Props = {
   readonly clienteId: string;
   readonly blocos: Readonly<Record<AbaDoCliente, EstadoDoBloco | null>>;
+  readonly contadores?: Readonly<Partial<Record<AbaDoCliente, number>>>;
 };
 
 const ICONE_DO_TOM: Record<TomDoBloco, NomeDoIcone> = { ok: 'ok', atencao: 'atencao', critico: 'reautorizar', vazio: 'vazio' };
-const CLASSE_DO_TOM: Record<TomDoBloco, string> = { ok: 'pill--ok', atencao: 'pill--warn', critico: 'pill--danger', vazio: '' };
+const CLASSE_DO_TOM: Record<TomDoBloco, string> = { ok: 'aba__estado--ok', atencao: 'aba__estado--warn', critico: 'aba__estado--danger', vazio: '' };
 const ABAS: readonly AbaDoCliente[] = ['conexoes', 'contexto', 'regras'];
 
-export function AbasDoCliente({ clienteId, blocos }: Props) {
+export function AbasDoCliente({ clienteId, blocos, contadores }: Props) {
   const segmento = useSelectedLayoutSegment();
   const ativa: AbaDoCliente = segmento === 'contexto' || segmento === 'regras' ? segmento : 'conexoes';
 
@@ -35,11 +36,12 @@ export function AbasDoCliente({ clienteId, blocos }: Props) {
             >
               <span className="aba__rotulo">{ROTULO_DA_ABA[aba]}</span>
               {bloco ? (
-                <span className={`pill ${CLASSE_DO_TOM[bloco.tom]}`}>
-                  <Icone nome={ICONE_DO_TOM[bloco.tom]} tamanho={14} />
-                  {bloco.rotulo}
+                <span className={`aba__estado ${CLASSE_DO_TOM[bloco.tom]}`}>
+                  <Icone nome={ICONE_DO_TOM[bloco.tom]} tamanho={12} />
+                  <span>{bloco.rotulo}</span>
                 </span>
               ) : null}
+              {contadores?.[aba] ? <span className="selo-contagem">{contadores[aba]}</span> : null}
             </Link>
           );
         })}

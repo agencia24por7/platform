@@ -150,6 +150,7 @@ export function CampoAutosalvo({ campo, idBase, valorInicial, versaoInicial, ver
         <span className={`campo__estado campo__estado--${estado}`} aria-hidden="true">{ROTULO_DO_ESTADO[estado] ?? ''}</span>
       </div>
       {campo.ajuda ? <p className="field__hint" id={dica}>{campo.ajuda}</p> : null}
+      {campo.tipo === 'selecao' || campo.tipo === 'multipla' ? <p className="field__hint">{campo.tipo === 'selecao' ? 'Escolha uma' : 'Escolha uma ou mais'}</p> : null}
       <Entrada
         campo={campo}
         id={id}
