@@ -1,4 +1,4 @@
-export const VERSAO_DO_CATALOGO = 2;
+export const VERSAO_DO_CATALOGO = 3;
 
 export const NIVEIS = ['essencial', 'aprofundar'] as const;
 export type Nivel = (typeof NIVEIS)[number];
@@ -313,7 +313,7 @@ const empresa: Secao = {
         ['servico', 'Serviço'],
         ['recorrencia', 'Recorrência / assinatura'],
       ]),
-      { ...ESSENCIAL, ajuda: 'Como a empresa vende. O tipo de operação (leads ou e-commerce) vem do cadastro do cliente.' },
+      { ...ESSENCIAL, ajuda: 'Como a empresa vende; marque todos que se aplicam. É diferente do tipo de operação (geração de leads ou e-commerce), que é definido no cadastro do cliente e não se edita aqui.' },
     ),
     selecao(
       'tempo_de_mercado',

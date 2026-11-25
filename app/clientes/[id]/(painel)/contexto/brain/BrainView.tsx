@@ -95,7 +95,7 @@ export async function BrainView({ clienteId }: { readonly clienteId: string }) {
 
   return (
     <div className="brain pilha">
-      <CabecalhoDeSecao titulo="Brain" descricao="Só leitura: o que o motor enxerga. Para editar, use o Perfil." />
+      <CabecalhoDeSecao titulo="Brain" descricao="Só leitura: o que o motor enxerga. Para editar, use o Mapa de contexto." />
       <dl className="fatos">
         <div className="fatos__item">
           <dt className="fatos__rotulo">Brain publicado</dt>

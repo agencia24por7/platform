@@ -3,6 +3,7 @@ import { CabecalhoDeSecao } from '@/../app/clientes/[id]/_componentes/CabecalhoD
 import { ConfirmarAcao } from '@/../app/clientes/[id]/_componentes/ConfirmarAcao';
 import { EstadoVazio } from '@/../app/clientes/[id]/_componentes/EstadoVazio';
 import { MenuMais } from '@/../app/clientes/[id]/_componentes/MenuMais';
+import { BuscaDeFontes } from '@/../app/clientes/[id]/(painel)/conexoes/BuscaDeFontes';
 import { Marca } from '@/../app/_components/Marca';
 import { Icone, type NomeDoIcone } from '@/../app/clientes/[id]/_componentes/Icones';
 import { carregarConexoes, carregarContas, carregarPainel, carregarProntidao } from '@/../app/clientes/[id]/_dados';
@@ -17,15 +18,15 @@ import { modules } from '@/composition';
 import { acaoPrincipal } from '@/modules/clients/domain/painel/prontidao';
 import {
   ROTULO_DA_PLATAFORMA,
-  ROTULO_DO_RECURSO,
   precisaReautorizar,
-  temRecursoParaVincular,
   type Connection,
   type Platform,
 } from '@/modules/connections/domain/connection';
 import { atrasoDaColeta, ordenarPorProblema, situacaoDaFonte, situacaoDeRecurso, type SituacaoDaFonte, type VariacaoDoEstado } from '@/modules/clients/domain/painel/fontes';
 import { tempoRelativo } from '@/modules/clients/domain/painel/resumo';
 import { noVocabularioDe } from '@/modules/organizations/domain/vocabulario';
+
+const LIMITE_DA_BUSCA = 8;
 
 const ICONE_DA_VARIACAO: Record<VariacaoDoEstado, NomeDoIcone> = {
   ok: 'ok',
@@ -52,7 +53,6 @@ type Linha = {
   readonly plataforma: Platform;
   readonly nome: string;
   readonly externalId: string;
-  readonly detalhe: string;
   readonly situacao: SituacaoDaFonte;
   readonly frescor: string;
   readonly conexaoId: string | null;
@@ -117,7 +117,6 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
         plataforma: conta.platform,
         nome: conta.name,
         externalId: conta.externalId,
-        detalhe: [conexao?.label ?? 'Conexão', conta.accountGroup, conta.currency].filter(Boolean).join(' · '),
         situacao,
         frescor: conta.lastSyncAt ? `Coleta ${tempoRelativo(conta.lastSyncAt, agora)}${atraso ? ` · ${atraso}` : ''}` : 'Sem coleta ainda',
         conexaoId: conta.connectionId,
@@ -134,7 +133,6 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
         plataforma: fonte.platform,
         nome: fonte.name,
         externalId: fonte.externalId,
-        detalhe: [temRecursoParaVincular(fonte.platform) ? ROTULO_DO_RECURSO[fonte.platform] : 'Fonte', conexao?.label ?? 'Conexão'].join(' · '),
         situacao: situacaoDeRecurso(conexaoPrecisaReautorizar(conexao)),
         frescor: 'Entra na coleta',
         conexaoId: fonte.connectionId,
@@ -165,9 +163,10 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
       {ordenadas.length === 0 ? (
         <EstadoVazio titulo="Nenhuma conta ou fonte" texto={noVocabularioDe(ctx.organization.type, 'Sem conta vinculada o cliente não entra na coleta.')} />
       ) : (
+        <BuscaDeFontes habilitada={ordenadas.length > LIMITE_DA_BUSCA}>
         <ul className="fontes fontes--grupos">
           {grupos.map((grupo) => (
-            <li key={grupo.chave} className="grupo-fonte">
+            <li key={grupo.chave} className="grupo-fonte" data-grupo-fonte="">
               <details className="grupo-fonte__detalhes" open={grupo.linhas.some((l) => l.situacao.variacao === 'reautorizar' || l.situacao.variacao === 'erro')}>
                 <summary className="grupo-fonte__topo">
                   <Marca platform={grupo.plataforma} tamanho={24} />
@@ -194,20 +193,20 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
                 ) : null}
               <ul className="fontes">
           {grupo.linhas.map((linha) => (
-            <li key={linha.chave} className={`fonte fonte--${linha.situacao.variacao}`}>
+            <li key={linha.chave} className={`fonte fonte--${linha.situacao.variacao}`} data-fonte-nome={linha.nome.toLocaleLowerCase('pt-BR')}>
               <div className="fonte__quem">
                 <div className="fonte__textos">
-                  <span className="strong fonte__nome">{linha.nome}</span>
-                  <span className="mono subtle xsmall">{linha.externalId}</span>
+                  <span className="strong fonte__nome" title={`ID ${linha.externalId}`}>{linha.nome}</span>
                 </div>
               </div>
               <div className="fonte__estado">
-                <span className={`pill ${CLASSE_DA_VARIACAO[linha.situacao.variacao]}`}>
-                  <Icone nome={ICONE_DA_VARIACAO[linha.situacao.variacao]} tamanho={14} />
-                  {linha.situacao.rotulo}
-                </span>
+                {linha.situacao.variacao !== grupo.linhas[0]!.situacao.variacao ? (
+                  <span className={`pill ${CLASSE_DA_VARIACAO[linha.situacao.variacao]}`}>
+                    <Icone nome={ICONE_DA_VARIACAO[linha.situacao.variacao]} tamanho={14} />
+                    {linha.situacao.rotulo}
+                  </span>
+                ) : null}
                 <span className="subtle xsmall">{linha.frescor}</span>
-                <span className="subtle xsmall fonte__detalhe">{linha.detalhe}</span>
               </div>
               {podeEditar ? (
                 <div className="fonte__acoes">
@@ -223,6 +222,7 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
                   ) : null}
                   <MenuMais rotulo={`Mais ações de ${linha.nome}`} textoDoGatilho="Mais" compacto>
                     <div className="menu-mais__bloco">
+                      <span className="mono subtle xsmall">ID {linha.externalId}</span>
                       {linha.tipo === 'conta' && destinos.length > 0 ? (
                         <form action={moverConta} className="form--inline">
                           <input type="hidden" name="clientId" value={cliente.id} />
@@ -261,6 +261,8 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
                           </button>
                         </form>
                       ) : null}
+                    </div>
+                    <div className="menu-mais__bloco menu-mais__bloco--destrutivo">
                       <ConfirmarAcao
                         gatilho="Desvincular"
                         rotuloDoGatilho={`Desvincular ${linha.nome}`}
@@ -284,6 +286,7 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
             </li>
           ))}
         </ul>
+        </BuscaDeFontes>
       )}
     </section>
   );

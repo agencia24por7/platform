@@ -53,3 +53,8 @@ Auditoria do código e da página ao vivo (24K-113) mostrou cada aba desenhada d
 4. Desvincular, Revogar e arquivar pedem confirmação.
 5. O formulário de Regras mostra no máximo cinco campos antes de "Detalhes opcionais".
 6. Typecheck, unit, build e integração passam.
+
+## Fase 2a (Conexões e Contexto)
+- A subseção "Perfil" passa a se chamar "Mapa de contexto" (chave `perfil` e URL iguais).
+- A barra de cada passo mostra o progresso do essencial; sem campo essencial, mostra o percentual da seção. O aprofundar aparece só dentro da seção. Antes, seção sem essencial mostrava barra cheia com 0%, e o percentual ao lado (ponderado) divergia da barra.
+- `VERSAO_DO_CATALOGO` sobe de 2 para 3 (ajuda de "Modelo de negócio" reescrita). Brains já publicados ficam no catálogo 2 até a próxima edição; depois do deploy, rodar `scripts/contexto-reconstruir-brain.mjs` (ADR 0028, leia o `--help` e o alvo antes).
