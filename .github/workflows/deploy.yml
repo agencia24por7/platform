@@ -171,10 +171,12 @@ jobs:
 
       - name: Aplicar fluxos do n8n de clientes e da agência
         id: n8n_clientes
+        timeout-minutes: 8
         env:
           IMAGEM_N8N_CLIENTES: ${{ vars.N8N_CLIENTES_IMAGEM }}
         run: |
-          if ! printf '%s' "$IMAGEM_N8N_CLIENTES" | grep -Eq '^[a-z0-9./_-]+(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}$'; then
+          imagem="$IMAGEM_N8N_CLIENTES"
+          if [[ "$imagem" == *$'\n'* || "$imagem" == *$'\r'* || ! "$imagem" =~ ^[a-z0-9][a-z0-9./_-]*(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}$ ]]; then
             echo "Defina a variável do repositório N8N_CLIENTES_IMAGEM com a imagem do Node fixada por @sha256 (ADR 0053)."
             exit 1
           fi
@@ -194,14 +196,17 @@ jobs:
             chave=\$(sudo sed -n 's/^N8N_API_KEY=//p' /opt/tria/.env | head -n 1)
             if [ -z \"\$chave\" ]; then echo 'N8N_API_KEY ausente no .env; fluxos de clientes não aplicados.'; exit 1; fi
             umask 077
+            exec 9>/tmp/tria-n8n-clientes.lock
+            if ! flock -n 9; then echo 'outra aplicação de fluxos do n8n está em andamento; abortando.'; exit 1; fi
             arq=\$(mktemp)
-            trap 'rm -f \"\$arq\"' EXIT
+            trap 'rm -f \"\$arq\"' EXIT HUP INT TERM PIPE
             printf 'N8N_API_URL=http://n8n:5678\nN8N_API_KEY=%s\n' \"\$chave\" > \"\$arq\"
             for n in 1 2 3 4 5 6 7 8 9 10; do
               rc=0
               sudo docker run --rm --network orla_interna --env-file \"\$arq\" \
+                --cap-drop=ALL --cap-add=DAC_READ_SEARCH --security-opt no-new-privileges \
                 -v /opt/tria/n8n-clientes:/w:ro -v /var/backups/tria-n8n:/backup \
-                $IMAGEM_N8N_CLIENTES node /w/n8n-aplicar-clientes.mjs /w --aplicar --backup-dir /backup || rc=\$?
+                '$imagem' node /w/n8n-aplicar-clientes.mjs /w --aplicar --backup-dir /backup || rc=\$?
               if [ \"\$rc\" -eq 0 ]; then exit 0; fi
               if [ \"\$rc\" -ne 2 ]; then exit \"\$rc\"; fi
               echo \"n8n indisponível (tentativa \$n); nova tentativa em 15s\"

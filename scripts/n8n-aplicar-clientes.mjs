@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -113,10 +113,17 @@ export function assinatura(workflow) {
   return JSON.stringify(ordenado({ nos, conexoes: workflow.connections ?? {}, configuracao: configuracaoPermitida(workflow.settings) }));
 }
 
+export const RETENCAO_DE_BACKUPS = 20;
+const TIMEOUT_PADRAO_MS = 30000;
+
+export function normalizarTexto(valor) {
+  return String(valor ?? '').normalize('NFKC').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 export function ehDaPlataforma(workflow) {
-  const nome = String(workflow?.name ?? '');
+  const nome = normalizarTexto(workflow?.name);
   const etiquetas = Array.isArray(workflow?.tags) ? workflow.tags : [];
-  return nome.startsWith(PREFIXO_DA_PLATAFORMA) || etiquetas.some((etiqueta) => String(etiqueta?.name ?? etiqueta).toLowerCase() === TAG_DA_PLATAFORMA);
+  return nome.startsWith(normalizarTexto(PREFIXO_DA_PLATAFORMA)) || etiquetas.some((etiqueta) => normalizarTexto(etiqueta?.name ?? etiqueta) === TAG_DA_PLATAFORMA);
 }
 
 export function escolherImplantado(implantados, nome) {
@@ -129,10 +136,13 @@ export function escolherImplantado(implantados, nome) {
 export function validarManifesto(bruto) {
   if (!bruto || typeof bruto !== 'object' || Array.isArray(bruto)) throw new Error('manifesto inválido: esperado um objeto { "arquivo": { "id", "nome" } }');
   const manifesto = new Map();
+  const ids = new Set();
   for (const [arquivo, entrada] of Object.entries(bruto)) {
     const id = typeof entrada?.id === 'string' ? entrada.id.trim() : '';
     const nome = typeof entrada?.nome === 'string' ? entrada.nome : '';
     if (!id || !nome.trim()) throw new Error(`manifesto inválido: "${arquivo}" precisa de id e nome em texto não vazio`);
+    if (ids.has(id)) throw new Error(`manifesto inválido: o id ${id} aparece em mais de um arquivo`);
+    ids.add(id);
     manifesto.set(arquivo.split(sep).join('/'), { id, nome });
   }
   return manifesto;
@@ -164,6 +174,7 @@ export function planejar(modelo, entrada, implantado) {
   const exemplos = credenciaisDeExemplo(modelo);
   if (exemplos.length) return { acao: 'credencial-de-exemplo', nome: modelo.name, nos: exemplos };
   if (!implantado) return { acao: 'id-inexistente', nome: modelo.name, id: entrada.id };
+  if (!Array.isArray(implantado.tags)) return { acao: 'tags-ausentes', nome: modelo.name, id: entrada.id };
   if (ehDaPlataforma(implantado)) return { acao: 'alvo-da-plataforma', nome: modelo.name, id: entrada.id };
   if (implantado.name !== entrada.nome || modelo.name !== entrada.nome) {
     return { acao: 'nome-divergente', nome: modelo.name, id: entrada.id, esperado: entrada.nome, implantado: implantado.name };
@@ -172,7 +183,7 @@ export function planejar(modelo, entrada, implantado) {
   return { acao: 'atualizar', nome: modelo.name, id: implantado.id, ativo: Boolean(implantado.active) };
 }
 
-function criarApi(url, chave) {
+function criarApi(url, chave, timeoutMs = TIMEOUT_PADRAO_MS) {
   const base = url.replace(/\/$/, '');
   return async (metodo, caminho, corpo, { aceitar404 = false } = {}) => {
     let resposta;
@@ -182,7 +193,7 @@ function criarApi(url, chave) {
         method: metodo,
         headers: { 'X-N8N-API-KEY': chave, 'Content-Type': 'application/json', Accept: 'application/json' },
         body: corpo ? JSON.stringify(corpo) : undefined,
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(timeoutMs),
       });
       texto = await resposta.text();
     } catch (erro) {
@@ -206,13 +217,31 @@ async function listarImplantados(api) {
   return todos;
 }
 
+export function conteudoDoBackup(workflow) {
+  return {
+    name: workflow.name,
+    nodes: workflow.nodes ?? [],
+    connections: workflow.connections ?? {},
+    settings: workflow.settings ?? {},
+    active: Boolean(workflow.active),
+  };
+}
+
+function expurgarBackupsAntigos(diretorio, idSeguro) {
+  const padrao = new RegExp(`^${idSeguro}-\\d{4}-\\d{2}-\\d{2}T[0-9-]+Z\\.json$`);
+  const arquivos = readdirSync(diretorio).filter((nome) => padrao.test(nome)).sort();
+  for (const nome of arquivos.slice(0, Math.max(0, arquivos.length - RETENCAO_DE_BACKUPS))) unlinkSync(join(diretorio, nome));
+}
+
 export function gravarBackup(diretorio, atual, agora = new Date()) {
   mkdirSync(diretorio, { recursive: true, mode: 0o700 });
   chmodSync(diretorio, 0o700);
+  const idSeguro = String(atual.id).replace(/[^A-Za-z0-9_-]/g, '_');
   const carimbo = agora.toISOString().replace(/[:.]/g, '-');
-  const caminho = join(diretorio, `${String(atual.id).replace(/[^A-Za-z0-9_-]/g, '_')}-${carimbo}.json`);
-  writeFileSync(caminho, JSON.stringify(atual), { mode: 0o600, flag: 'wx' });
+  const caminho = join(diretorio, `${idSeguro}-${carimbo}.json`);
+  writeFileSync(caminho, JSON.stringify(conteudoDoBackup(atual)), { mode: 0o600, flag: 'wx' });
   chmodSync(caminho, 0o600);
+  expurgarBackupsAntigos(diretorio, idSeguro);
   return caminho;
 }
 
@@ -222,6 +251,13 @@ const corpoDoPut = (workflow) => ({
   connections: workflow.connections,
   settings: configuracaoPermitida(workflow.settings),
 });
+
+const assinaturaCompleta = (workflow) => JSON.stringify([workflow.name, assinatura(workflow)]);
+
+function mudouDesde(antes, depois) {
+  if (antes.versionId && depois.versionId) return antes.versionId !== depois.versionId;
+  return assinaturaCompleta(antes) !== assinaturaCompleta(depois);
+}
 
 export function interpretarArgumentos(argumentos) {
   const opcoes = { aplicar: false, proporManifesto: false, backupDir: undefined, manifesto: undefined, raiz: undefined, ajuda: false };
@@ -272,32 +308,70 @@ async function aplicarArquivo({ api, plano, modelo, rotulo, backupDir, saida }) 
     saida.error(`ERRO ${rotulo}: backup não gravado (${erro.message}); nada foi alterado`);
     return SAIDA_DEFINITIVA;
   }
+  const antes = conteudoDoBackup(atual);
+  const estavaAtivo = antes.active;
   const final = mesclarComImplantado(modelo, atual);
-  await api('PUT', `/workflows/${plano.id}`, corpoDoPut(final));
-  if (!plano.ativo) {
-    saida.log(`atualizado ${rotulo} (${plano.id}); backup ${backup}`);
-    return SAIDA_OK;
-  }
-  try {
-    await api('POST', `/workflows/${plano.id}/activate`);
-  } catch (erro) {
-    saida.error(`ERRO ${rotulo}: ativação falhou (${erro.message}); restaurando o JSON anterior`);
+  const esperado = assinaturaCompleta(final);
+  const caminho = `/workflows/${plano.id}`;
+
+  const restaurar = async () => {
     try {
-      await api('PUT', `/workflows/${plano.id}`, corpoDoPut(atual));
-      await api('POST', `/workflows/${plano.id}/activate`);
-      saida.error(`restaurado ${rotulo} (${plano.id}) a partir de ${backup}`);
-    } catch (erroDaRestauracao) {
-      saida.error(`ERRO ${rotulo}: restauração falhou (${erroDaRestauracao.message}); restaurar à mão a partir de ${backup}`);
+      await api('PUT', caminho, corpoDoPut(antes));
+    } catch (erro) {
+      saida.error(`aviso ${rotulo}: PUT de restauração respondeu erro (${erro.message}); conferindo o estado`);
     }
+    if (estavaAtivo) {
+      try {
+        await api('POST', `${caminho}/activate`);
+      } catch (erro) {
+        saida.error(`aviso ${rotulo}: reativação respondeu erro (${erro.message}); conferindo o estado`);
+      }
+    }
+    try {
+      const depois = await api('GET', caminho);
+      if (assinaturaCompleta(depois) === assinaturaCompleta(antes) && Boolean(depois.active) === estavaAtivo) {
+        saida.error(`restaurado ${rotulo} (${plano.id}) a partir de ${backup}`);
+        return;
+      }
+    } catch (erro) {
+      saida.error(`aviso ${rotulo}: conferência da restauração falhou (${erro.message})`);
+    }
+    saida.error(`ERRO ${rotulo}: restauração não confirmada; restaurar à mão a partir de ${backup}`);
+  };
+
+  try {
+    await api('PUT', caminho, corpoDoPut(final));
+  } catch (erro) {
+    if (erro instanceof ErroDeConexao) throw erro;
+    saida.error(`ERRO ${rotulo}: PUT recusado (${erro.message}); conferindo se o n8n gravou mesmo assim`);
+    let alterado = true;
+    try {
+      alterado = mudouDesde(antes, await api('GET', caminho));
+    } catch {
+      saida.error(`aviso ${rotulo}: não foi possível conferir o estado; restaurando por segurança`);
+    }
+    if (alterado) await restaurar();
     return SAIDA_DEFINITIVA;
   }
-  saida.log(`atualizado ${rotulo} (${plano.id}), reativado; backup ${backup}`);
+
+  try {
+    if (estavaAtivo) await api('POST', `${caminho}/activate`);
+    const depois = await api('GET', caminho);
+    if (Boolean(depois.active) !== estavaAtivo) throw new Error(`estado ativo esperado ${estavaAtivo}, encontrado ${Boolean(depois.active)}`);
+    if (assinaturaCompleta(depois) !== esperado) throw new Error('o conteúdo implantado difere do esperado após a aplicação');
+  } catch (erro) {
+    saida.error(`ERRO ${rotulo}: conferência após aplicar falhou (${erro.message}); restaurando o JSON anterior`);
+    await restaurar();
+    return SAIDA_DEFINITIVA;
+  }
+  saida.log(`atualizado ${rotulo} (${plano.id})${estavaAtivo ? ', reativado' : ''}; conferido; backup ${backup}`);
   return SAIDA_OK;
 }
 
 const MENSAGENS_DE_RECUSA = {
   'fora-do-manifesto': () => 'arquivo fora do manifesto (rode --propor-manifesto e revise)',
   'alvo-da-plataforma': (p) => `alvo é workflow da plataforma (tag ${TAG_DA_PLATAFORMA} ou nome "${PREFIXO_DA_PLATAFORMA}…"), id ${p.id}`,
+  'tags-ausentes': (p) => `o n8n não devolveu as tags do workflow ${p.id}; não dá para provar que não é da plataforma`,
   'id-inexistente': (p) => `não existe workflow com o id ${p.id}`,
   'nome-divergente': (p) => `nome divergente (manifesto "${p.esperado}", implantado "${p.implantado}", arquivo "${p.nome}")`,
   'credencial-de-exemplo': (p) => `credencial de exemplo (a-definir…) em ${p.nos.join(', ')}`,
@@ -336,7 +410,8 @@ export async function executar(argumentos, ambiente = process.env, saida = conso
     saida.error(erro.message);
     return SAIDA_DEFINITIVA;
   }
-  const api = criarApi(N8N_API_URL, N8N_API_KEY);
+  const limite = Number.parseInt(ambiente.N8N_API_TIMEOUT_MS ?? '', 10);
+  const api = criarApi(N8N_API_URL, N8N_API_KEY, limite > 0 ? limite : TIMEOUT_PADRAO_MS);
   if (opcoes.proporManifesto) {
     try {
       return await proporManifesto(api, raiz, manifesto, saida);

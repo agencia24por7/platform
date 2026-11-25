@@ -4,6 +4,7 @@
     "executionOrder": "v1",
     "saveDataErrorExecution": "all",
     "saveDataSuccessExecution": "all",
+    "saveManualExecutions": false,
     "timezone": "America/Recife"
   },
   "nodes": [

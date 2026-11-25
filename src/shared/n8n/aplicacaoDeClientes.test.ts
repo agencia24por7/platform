@@ -37,7 +37,7 @@ test('candidatos por nome para propor o manifesto: ausente, repetido, arquivado 
 const ENTRADA = { id: 'w1', nome: 'Credaz · Teste' };
 
 test('planejar: igual, atualizar mantendo o estado ativo', () => {
-  const implantado = { ...modelo(), id: 'w1', active: true };
+  const implantado = { ...modelo(), id: 'w1', active: true, tags: [] };
   assert.equal(planejar(modelo(), ENTRADA, implantado).acao, 'igual');
   const mudado = modelo({ nodes: [no({ parameters: { jsCode: 'return [1];' } })] });
   assert.deepEqual(planejar(mudado, ENTRADA, implantado), { acao: 'atualizar', nome: 'Credaz · Teste', id: 'w1', ativo: true });
@@ -51,7 +51,7 @@ test('recusa arquivo com credencial de exemplo', () => {
 test('planejar recusa alvo com tag platform e com nome ORLA ·', () => {
   const comTag = { ...modelo(), id: 'w1', tags: [{ id: 't', name: 'platform' }] };
   assert.equal(planejar(modelo(), ENTRADA, comTag).acao, 'alvo-da-plataforma');
-  const orla = { ...modelo({ name: 'ORLA · Meta Ads · coletor' }), id: 'w1' };
+  const orla = { ...modelo({ name: 'ORLA · Meta Ads · coletor' }), id: 'w1', tags: [] };
   assert.equal(planejar(orla, { id: 'w1', nome: orla.name }, orla).acao, 'alvo-da-plataforma');
   assert.equal(planejar(modelo(), { id: 'w1', nome: orla.name }, orla).acao, 'alvo-da-plataforma');
 });
@@ -59,8 +59,8 @@ test('planejar recusa alvo com tag platform e com nome ORLA ·', () => {
 test('planejar: fora do manifesto, id inexistente e nome divergente', () => {
   assert.equal(planejar(modelo(), undefined, undefined).acao, 'fora-do-manifesto');
   assert.equal(planejar(modelo(), ENTRADA, undefined).acao, 'id-inexistente');
-  assert.equal(planejar(modelo(), { id: 'w1', nome: 'Outro' }, { ...modelo(), id: 'w1' }).acao, 'nome-divergente');
-  assert.equal(planejar(modelo(), ENTRADA, { ...modelo({ name: 'Renomeado' }), id: 'w1' }).acao, 'nome-divergente');
+  assert.equal(planejar(modelo(), { id: 'w1', nome: 'Outro' }, { ...modelo(), id: 'w1', tags: [] }).acao, 'nome-divergente');
+  assert.equal(planejar(modelo(), ENTRADA, { ...modelo({ name: 'Renomeado' }), id: 'w1', tags: [] }).acao, 'nome-divergente');
 });
 
 test('webhookId gerado pelo n8n em nó comum não conta como diferença e é preservado', () => {

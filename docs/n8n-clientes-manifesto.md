@@ -20,10 +20,15 @@ deploy falha. O arquivo versionado começa vazio (`{}`): os ids reais só o huma
 - Recusa (erro, arquivo não aplicado) alvo com tag `platform` ou nome começando por `ORLA ·`.
 - Id inexistente, nome divergente, credencial de exemplo (`a-definir…`) e arquivo fora do manifesto são erro definitivo.
 - `--aplicar` exige `--backup-dir <dir>`. Antes de cada `PUT`, grava `<id>-<timestamp>.json` (arquivo 0600, diretório 0700)
-  com o JSON anterior. Se a ativação falhar após o `PUT`, restaura o JSON anterior, reativa se estava ativo e sai com erro.
+  com `name`, `nodes`, `connections`, `settings` e `active` (sem `pinData` nem `staticData`); guarda os 20 mais recentes por id.
+  Se o `PUT` der erro que não seja de conexão, o script lê o workflow e, se o n8n gravou mesmo assim, restaura o arquivo guardado.
+  Depois de `PUT` e ativação, lê o workflow e exige o estado ativo e o conteúdo esperados; se não bater, restaura, reativa se
+  estava ativo e sai com 1. A mensagem de sucesso só sai depois dessa conferência.
+- A recusa de alvo da plataforma compara nome e tag normalizados (NFKC, minúsculas, espaços colapsados) e recusa se o GET por
+  id não devolver o array de tags. O manifesto não aceita o mesmo id em dois arquivos.
 - Códigos de saída: `0` ok; `1` erro definitivo (o deploy não repete); `2` n8n indisponível ou erro de rede (o deploy repete).
 - No deploy, os backups ficam em `/var/backups/tria-n8n` na VM (fora de `/opt/tria`, que o deploy apaga), modo 0700.
-  Nada os expurga: o humano limpa quando quiser.
+  A retenção é por id (20 mais recentes) e só mexe dentro do `--backup-dir`.
 
 ## Como preencher o manifesto (feito pelo humano)
 
@@ -37,8 +42,10 @@ deploy falha. O arquivo versionado começa vazio (`{}`): os ids reais só o huma
 ## Deploy
 
 - Imagem do passo: variável do repositório `N8N_CLIENTES_IMAGEM`, uma imagem do Node fixada por `@sha256:<64 hex>`.
-  Vazia ou sem digest, o passo falha com mensagem clara.
+  Aceita `node:22-alpine@sha256:<64 hex>` ou `docker.io/library/node@sha256:<64 hex>`. Vazia, sem digest, com quebra de linha,
+  espaço, `;`, `$(` ou crase, o passo falha com mensagem clara.
 - A `N8N_API_KEY` vai ao contêiner por `--env-file` temporário 0600 na VM, removido ao fim, nunca na linha de comando.
 - O smoke pós-deploy roda mesmo se o passo do n8n falhar (o job continua falhando).
-- `saveManualExecutions: false` está nos fluxos que carregam dados pessoais de leads:
-  `rd-para-meta-conversoes`, `lead-meta-para-rd` e `meta-leads-entrada`.
+- O passo tem `timeout-minutes: 8` (estoura como falha, não como cancelado), trava com `flock` na VM, remove o env-file em
+  EXIT/HUP/INT/TERM/PIPE e roda o contêiner com `--cap-drop=ALL --cap-add=DAC_READ_SEARCH` e `no-new-privileges`.
+- `saveManualExecutions: false` está em todos os fluxos de `clientes/` e `agencia/`; um teste percorre a listagem de fluxos.
