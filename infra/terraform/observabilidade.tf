@@ -91,6 +91,16 @@ resource "google_logging_project_sink" "aplicacao" {
   depends_on = [google_project_service.required]
 }
 
+resource "google_logging_project_exclusion" "aplicacao_no_bucket_proprio" {
+  count = var.logs_na_nuvem_habilitado ? 1 : 0
+
+  name        = "${local.prefix}-aplicacao-no-bucket-proprio"
+  description = "Tira a linha da aplicação do _Default, onde ficaria 30 dias e seria cobrada em dobro, porque ela é guardada no bucket próprio com retenção mínima. O resto do _Default (auditoria, KMS, Secret Manager) não muda."
+  filter      = local.filtro_linha_da_app
+
+  depends_on = [google_logging_project_sink.aplicacao]
+}
+
 resource "google_monitoring_alert_policy" "uso_de_logs" {
   count = var.logs_na_nuvem_habilitado ? 1 : 0
 
