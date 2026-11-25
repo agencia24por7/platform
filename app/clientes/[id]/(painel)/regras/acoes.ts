@@ -74,7 +74,7 @@ export async function alterarAcao(_anterior: EstadoDoFormulario, formData: FormD
   const entrada = lerAlteracao(campos, unidade);
   if (!entrada.ok) return { erro: 'Corrija os campos indicados.', campos: entrada.error };
   const resultado = await modules().regras.superar(escopo.comando, entrada.value, await atorAtual());
-  return resolver(escopo.cliente.id, resultado, { secao: 'hoje', mensagem: 'Alterado: a decisão anterior ficou como superada.' });
+  return resolver(escopo.cliente.id, resultado, { secao: 'hoje', mensagem: 'Alterado: a decisão anterior ficou no histórico como substituída.' });
 }
 
 export async function revogarAcao(formData: FormData): Promise<void> {

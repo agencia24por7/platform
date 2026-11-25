@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Feedback } from '@/../app/_components/Feedback';
 import { Shell } from '@/../app/_components/Shell';
+import { EstadoVazio } from '@/../app/clientes/[id]/_componentes/EstadoVazio';
 import { carregarPainel } from '@/../app/clientes/[id]/_dados';
 import { escopoDoClienteNaOrganizacao } from '@/../app/clientes/[id]/_escopo';
 import { modules } from '@/composition';
@@ -135,16 +136,15 @@ export default async function VincularConta({
       <Feedback message={erro} tone="error" />
 
       {contasDeAnuncio.length + fontesDeDados.length === 0 ? (
-        <div className="vazio">
-          <p className="vazio__titulo">Nenhuma conta disponível ainda</p>
-          <p className="vazio__texto">
-            Contas e fontes aparecem aqui depois que você autoriza a plataforma. A Orla só enxerga o
-            que cada plataforma devolve na autorização.
-          </p>
-          <Link className="btn btn--primary btn--pill" href="/comecar?passo=conectar">
-            Conectar uma plataforma →
-          </Link>
-        </div>
+        <EstadoVazio
+          titulo="Nenhuma conta disponível ainda"
+          texto="Contas e fontes aparecem aqui depois que você autoriza a plataforma. A Orla só enxerga o que cada plataforma devolve na autorização."
+          acao={
+            <Link className="btn btn--primary btn--pill" href="/comecar?passo=conectar">
+              Conectar uma plataforma →
+            </Link>
+          }
+        />
       ) : (
         <form action={vincularConta} className="card">
           <div className="card__body">

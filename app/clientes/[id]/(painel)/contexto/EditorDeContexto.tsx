@@ -69,48 +69,56 @@ function itemDaUi(item: ItemDeLista): ItemDaLista {
   return { id: item.id, dados: item.dados, versao: item.versao, removivel: true, editavel: true };
 }
 
-function Selos({
+function IndicadorDoCampo({
   vocabulario,
   marcacao,
+  interno,
+  herdado,
   podeEditar,
   aoMarcar,
   aoConfirmar,
 }: {
   readonly vocabulario: Vocabulario;
   readonly marcacao: Marcacao | null;
+  readonly interno: boolean;
+  readonly herdado: boolean;
   readonly podeEditar: boolean;
   readonly aoMarcar: (epistemico: Epistemico) => void;
   readonly aoConfirmar: () => void;
 }) {
-  if (!marcacao) return null;
+  const notas: string[] = [];
+  if (interno) notas.push(vocabulario.seloInterno);
+  if (herdado) notas.push('Do cadastro');
+  if (marcacao?.compartilhavel) notas.push(vocabulario.seloDoCompartilhado);
+  if (!marcacao && notas.length === 0) return null;
+
+  const sugerido = marcacao?.revisao === 'sugerido';
+  const dica = [
+    herdado ? 'Vem do cadastro. Ao editar aqui, o valor passa a ser deste contexto.' : null,
+    marcacao ? `Fonte: ${ROTULO_FONTE[marcacao.fonte]}.` : null,
+    marcacao?.compartilhavel ? vocabulario.dicaDoSelo : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <span className="selos">
-      {marcacao.revisao === 'sugerido' ? (
-        <span className="selo selo--sugerido">
-          sugerido por {ROTULO_FONTE[marcacao.fonte]}
-          {podeEditar ? (
-            <button type="button" className="selo__acao" onClick={aoConfirmar}>
-              Confirmar
-            </button>
-          ) : null}
-        </span>
-      ) : null}
-      {podeEditar ? (
-        <select
-          className={`selo selo--${marcacao.epistemico}`}
-          value={marcacao.epistemico}
-          aria-label="Natureza da informação"
-          onChange={(e) => aoMarcar(e.target.value as Epistemico)}
-        >
+    <span className={`selo selo--unico${marcacao ? ` selo--${marcacao.epistemico}` : ''}${sugerido ? ' selo--sugerido' : ''}`} title={dica || undefined}>
+      {sugerido && marcacao ? <span>sugerido por {ROTULO_FONTE[marcacao.fonte]}</span> : null}
+      {marcacao && podeEditar ? (
+        <select className="selo__escolha" value={marcacao.epistemico} aria-label="Natureza da informação" onChange={(e) => aoMarcar(e.target.value as Epistemico)}>
           {EPISTEMICOS.map((ep) => (
             <option key={ep} value={ep}>{ROTULO_EPISTEMICO[ep]}</option>
           ))}
         </select>
-      ) : (
-        <span className={`selo selo--${marcacao.epistemico}`}>{ROTULO_EPISTEMICO[marcacao.epistemico]}</span>
-      )}
-      <span className="selo selo--fonte" title="Fonte da informação">{ROTULO_FONTE[marcacao.fonte]}</span>
-      {marcacao.compartilhavel ? <span className="selo selo--cliente" title={vocabulario.dicaDoSelo}>{vocabulario.seloDoCompartilhado}</span> : null}
+      ) : marcacao ? (
+        <span>{ROTULO_EPISTEMICO[marcacao.epistemico]}</span>
+      ) : null}
+      {notas.length > 0 ? <span className="selo__notas">{notas.join(' · ')}</span> : null}
+      {sugerido && podeEditar ? (
+        <button type="button" className="selo__acao" onClick={aoConfirmar}>
+          Confirmar
+        </button>
+      ) : null}
     </span>
   );
 }
@@ -344,9 +352,11 @@ export function EditorDeContexto({ tipo, clienteId, dados, podeEditar, secaoInic
           selosDoItem={(ui) => {
             const item = itens.find((i) => i.id === ui.id);
             return item ? (
-              <Selos
+              <IndicadorDoCampo
                 vocabulario={vocabulario}
                 marcacao={item}
+                interno={false}
+                herdado={false}
                 podeEditar={podeEditar}
                 aoMarcar={(ep) => void marcarItem(campo.key, item, { epistemico: ep })}
                 aoConfirmar={() => void marcarItem(campo.key, item, { confirmar: true })}
@@ -387,17 +397,15 @@ export function EditorDeContexto({ tipo, clienteId, dados, podeEditar, secaoInic
         desabilitado={!podeEditar}
         realce={realce === campo.key}
         selos={
-          <>
-            {!campo.visivelAoCliente ? <span className="selo selo--interno">{vocabulario.seloInterno}</span> : null}
-            {entrada && campoEhHerdado(entrada) ? <span className="selo selo--fonte" title="Vem do cadastro. Ao editar aqui, o valor passa a ser deste contexto.">Do cadastro</span> : null}
-            <Selos
-              vocabulario={vocabulario}
-              marcacao={entrada && !campoEhHerdado(entrada) ? entrada : null}
-              podeEditar={podeEditar}
-              aoMarcar={(ep) => void marcarCampo(campo.key, ep)}
-              aoConfirmar={() => void confirmarCampo(campo.key)}
-            />
-          </>
+          <IndicadorDoCampo
+            vocabulario={vocabulario}
+            marcacao={entrada && !campoEhHerdado(entrada) ? entrada : null}
+            interno={!campo.visivelAoCliente}
+            herdado={Boolean(entrada && campoEhHerdado(entrada))}
+            podeEditar={podeEditar}
+            aoMarcar={(ep) => void marcarCampo(campo.key, ep)}
+            aoConfirmar={() => void confirmarCampo(campo.key)}
+          />
         }
       />
     );
@@ -405,6 +413,9 @@ export function EditorDeContexto({ tipo, clienteId, dados, podeEditar, secaoInic
 
   const essenciais = secao.campos.filter((c) => c.nivel === 'essencial');
   const aprofundar = secao.campos.filter((c) => c.nivel === 'aprofundar');
+  const completudeAtiva = completude.secoes.find((x) => x.secao === secao.key);
+  const barrasAtivas = completudeAtiva ? barrasDaSecao(completudeAtiva) : null;
+  const aprofundarFeitos = barrasAtivas?.aprofundar.feitos ?? 0;
   const aprofundarAberto =
     aprofundar.some((c) => c.key === realce) ||
     aprofundar.some((c) => (c.tipo === 'lista' ? (listas[c.key]?.length ?? 0) > 0 : Boolean(entradas[c.key])));
@@ -424,14 +435,6 @@ export function EditorDeContexto({ tipo, clienteId, dados, podeEditar, secaoInic
           ))}
         </div>
         <span className="spacer" />
-        <span className="sugerir" tabIndex={0} aria-describedby="sugerir-dica">
-          <button type="button" className="btn btn--compacto" disabled>
-            Sugerir a partir do site / Instagram
-          </button>
-          <span className="sugerir__dica" id="sugerir-dica" role="tooltip">
-            Em breve: cole o site e o @ e a IA sugere descrição, produtos, tom de voz e concorrentes. Nada entra sem a sua confirmação.
-          </span>
-        </span>
         <button type="button" className="btn btn--compacto" onClick={() => void abrirHistorico()}>
           Histórico
         </button>
@@ -457,7 +460,7 @@ export function EditorDeContexto({ tipo, clienteId, dados, podeEditar, secaoInic
             <select className="select" value={ativa} onChange={(e) => irPara(e.target.value)}>
               {catalogo.map((s) => {
                 const c = completude.secoes.find((x) => x.secao === s.key);
-                return <option key={s.key} value={s.key}>{s.letra} · {s.titulo} — {c?.percentual ?? 0}%</option>;
+                return <option key={s.key} value={s.key}>{s.letra} · {s.titulo} — {c ? barrasDaSecao(c).progresso : 0}%</option>;
               })}
             </select>
           </label>
@@ -477,17 +480,15 @@ export function EditorDeContexto({ tipo, clienteId, dados, podeEditar, secaoInic
                     <span className="passo__texto">
                       <span className="passo__titulo">{s.titulo}</span>
                       <span className="passo__barras">
-                        <Barra valor={b?.essencial.percentual ?? 0} rotulo={`${s.titulo}, essencial`} />
-                        <Barra valor={b?.aprofundar.percentual ?? 0} rotulo={`${s.titulo}, aprofundar`} tom="suave" />
+                        <Barra valor={b?.progresso ?? 0} rotulo={`${s.titulo}, progresso`} />
                       </span>
                     </span>
-                    <span className="passo__pct">{c?.percentual ?? 0}%</span>
+                    <span className="passo__pct">{b?.progresso ?? 0}%</span>
                   </button>
                 </li>
               );
             })}
           </ol>
-          <p className="passos__legenda xsmall subtle">Barra cheia: essencial · barra clara: aprofundar</p>
         </nav>
 
         <section className="card secao-editor" aria-labelledby="secao-titulo">
@@ -540,8 +541,9 @@ export function EditorDeContexto({ tipo, clienteId, dados, podeEditar, secaoInic
             {aprofundar.length > 0 ? (
               <details className="nivel nivel--aprofundar" open={aprofundarAberto}>
                 <summary className="nivel__titulo">
-                  Aprofundar <span className="subtle xsmall">opcional, melhora o resultado · {aprofundar.length} campos</span>
+                  Aprofundar <span className="subtle xsmall">opcional, melhora o resultado · {aprofundarFeitos} de {aprofundar.length} campos</span>
                 </summary>
+                <Barra valor={barrasAtivas?.aprofundar.percentual ?? 0} rotulo={`${secao.titulo}, aprofundar`} tom="suave" />
                 {aprofundar.map(renderizarCampo)}
               </details>
             ) : null}

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useDeferredValue, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { CopyButton } from '@/../app/_components/CopyButton';
+import { EstadoVazio } from '@/../app/clientes/[id]/_componentes/EstadoVazio';
 import { ALTURA_DO_MAPA, LARGURA_DO_MAPA, type Mapa, type NoDoMapa } from '@/modules/clients/domain/painel/brain/mapa';
 import { separarPorPreenchimento } from '@/modules/clients/domain/painel/brain/preenchimento';
 import {
@@ -78,6 +79,8 @@ export function ExploradorDoBrain({ clienteNome, entradas, mapa }: Props) {
       abrir(urn);
     }
   }
+
+  const filtrosAtivos = [tipo, provedor, sensibilidade, frescor].filter(Boolean).length;
 
   const limpar = () => {
     setBusca('');
@@ -220,7 +223,11 @@ export function ExploradorDoBrain({ clienteNome, entradas, mapa }: Props) {
           <span className="card__sub">
             {filtradas.length} de {base.length} entradas
           </span>
-          <span className="spacer" />
+        </div>
+        <div className="catalogo__barra">
+          <div className="catalogo__busca">
+            <input className="input" type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar tabela, coluna, tag…" aria-label="Buscar no catálogo" />
+          </div>
           {vazias.length > 0 ? (
             <button type="button" className="btn btn--compacto" aria-pressed={mostrarVazias} onClick={() => setMostrarVazias((atual) => !atual)}>
               {mostrarVazias ? 'Só o preenchido' : `Mostrar o que falta (${vazias.length})`}
@@ -231,48 +238,52 @@ export function ExploradorDoBrain({ clienteNome, entradas, mapa }: Props) {
             <button type="button" aria-pressed={vista === 'cartoes'} onClick={() => setVista('cartoes')}>Cartões</button>
           </div>
         </div>
-        <div className="catalogo__filtros">
-          <label className="field catalogo__busca">
-            <span className="field__label">Buscar</span>
-            <input className="input" type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="tabela, coluna, tag…" />
-          </label>
-          <label className="field">
-            <span className="field__label">Tipo</span>
-            <select className="select" value={tipo} onChange={(e) => setTipo(e.target.value)}>
-              <option value="">Todos</option>
-              {TIPOS_DE_ENTRADA.map((t) => <option key={t} value={t}>{ROTULO_DO_TIPO[t]}</option>)}
-            </select>
-          </label>
-          <label className="field">
-            <span className="field__label">Plataforma</span>
-            <select className="select" value={provedor} onChange={(e) => setProvedor(e.target.value)}>
-              <option value="">Todas</option>
-              {provedores.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </label>
-          <label className="field">
-            <span className="field__label">Sensibilidade</span>
-            <select className="select" value={sensibilidade} onChange={(e) => setSensibilidade(e.target.value)}>
-              <option value="">Todas</option>
-              {NIVEIS_DE_SENSIBILIDADE.map((n) => <option key={n} value={n}>{ROTULO_DA_SENSIBILIDADE[n]}</option>)}
-            </select>
-          </label>
-          <label className="field">
-            <span className="field__label">Frescor</span>
-            <select className="select" value={frescor} onChange={(e) => setFrescor(e.target.value)}>
-              <option value="">Todos</option>
-              {FRESCORES.map((f) => <option key={f} value={f}>{ROTULO_DO_FRESCOR[f]}</option>)}
-            </select>
-          </label>
-        </div>
+        <details className="catalogo__filtros-grupo" open={filtrosAtivos > 0 ? true : undefined}>
+          <summary>
+            Filtros
+            {filtrosAtivos > 0 ? <span className="catalogo__filtros-ativos" aria-label={`${filtrosAtivos} ativos`}>{filtrosAtivos}</span> : null}
+          </summary>
+          <div className="catalogo__filtros">
+            <label className="field">
+              <span className="field__label">Tipo</span>
+              <select className="select" value={tipo} onChange={(e) => setTipo(e.target.value)}>
+                <option value="">Todos</option>
+                {TIPOS_DE_ENTRADA.map((t) => <option key={t} value={t}>{ROTULO_DO_TIPO[t]}</option>)}
+              </select>
+            </label>
+            <label className="field">
+              <span className="field__label">Plataforma</span>
+              <select className="select" value={provedor} onChange={(e) => setProvedor(e.target.value)}>
+                <option value="">Todas</option>
+                {provedores.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </label>
+            <label className="field">
+              <span className="field__label">Sensibilidade</span>
+              <select className="select" value={sensibilidade} onChange={(e) => setSensibilidade(e.target.value)}>
+                <option value="">Todas</option>
+                {NIVEIS_DE_SENSIBILIDADE.map((n) => <option key={n} value={n}>{ROTULO_DA_SENSIBILIDADE[n]}</option>)}
+              </select>
+            </label>
+            <label className="field">
+              <span className="field__label">Frescor</span>
+              <select className="select" value={frescor} onChange={(e) => setFrescor(e.target.value)}>
+                <option value="">Todos</option>
+                {FRESCORES.map((f) => <option key={f} value={f}>{ROTULO_DO_FRESCOR[f]}</option>)}
+              </select>
+            </label>
+          </div>
+        </details>
         {filtradas.length === 0 && base.length === 0 ? (
-          <div className="empty">
-            Nada preenchido ainda. <button type="button" className="linkish" onClick={() => setMostrarVazias(true)}>Mostrar o que falta</button>
-          </div>
+          <EstadoVazio
+            titulo="Nada preenchido ainda"
+            acao={<button type="button" className="linkish" onClick={() => setMostrarVazias(true)}>Mostrar o que falta</button>}
+          />
         ) : filtradas.length === 0 ? (
-          <div className="empty">
-            Nada com esses filtros. <button type="button" className="linkish" onClick={limpar}>Limpar filtros</button>
-          </div>
+          <EstadoVazio
+            titulo="Nada com esses filtros"
+            acao={<button type="button" className="linkish" onClick={limpar}>Limpar filtros</button>}
+          />
         ) : vista === 'tabela' ? (
           <div className="table-wrap">
             <table className="table">
@@ -289,8 +300,7 @@ export function ExploradorDoBrain({ clienteNome, entradas, mapa }: Props) {
                 {filtradas.map((e) => (
                   <tr key={e.urn}>
                     <td>
-                      <button type="button" className="linkish strong" onClick={() => abrir(e.urn)}>{e.titulo}</button>
-                      <div className="mono subtle">{e.urn}</div>
+                      <button type="button" className="linkish strong" title={e.urn} onClick={() => abrir(e.urn)}>{e.titulo}</button>
                     </td>
                     <td>{ROTULO_DO_TIPO[e.tipo]}</td>
                     <td><span className={`frescor frescor--${e.frescor.status}`}><span className="dot" />{ROTULO_DO_FRESCOR[e.frescor.status]}</span></td>
@@ -305,7 +315,7 @@ export function ExploradorDoBrain({ clienteNome, entradas, mapa }: Props) {
           <ul className="cartoes-do-catalogo">
             {filtradas.map((e) => (
               <li key={e.urn}>
-                <button type="button" className="cartao-do-catalogo" onClick={() => abrir(e.urn)}>
+                <button type="button" className="cartao-do-catalogo" title={e.urn} onClick={() => abrir(e.urn)}>
                   <span className="cartao-do-catalogo__topo">
                     <span className="pill">{ROTULO_DO_TIPO[e.tipo]}</span>
                     <span className={`frescor frescor--${e.frescor.status}`}><span className="dot" />{ROTULO_DO_FRESCOR[e.frescor.status]}</span>
@@ -342,7 +352,7 @@ export function ExploradorDoBrain({ clienteNome, entradas, mapa }: Props) {
                 <span className="pill">{USO[aberta.sensibilidade.usoPorAgente]}</span>
               </div>
               <dl className="fatos">
-                <div className="fatos__item"><dt className="fatos__rotulo">URN</dt><dd className="mono">{aberta.urn}</dd></div>
+                <div className="fatos__item"><dt className="fatos__rotulo">URN</dt><dd className="catalogo__urn-detalhe"><span className="mono">{aberta.urn}</span> <CopyButton texto={aberta.urn} rotulo="Copiar URN" /></dd></div>
                 <div className="fatos__item"><dt className="fatos__rotulo">Grão</dt><dd>{aberta.grao ?? '—'}</dd></div>
                 <div className="fatos__item"><dt className="fatos__rotulo">Cobertura</dt><dd>{dataCurta(aberta.cobertura.desde)} → {dataCurta(aberta.cobertura.ate)}</dd></div>
                 <div className="fatos__item"><dt className="fatos__rotulo">Linhas</dt><dd>{aberta.cobertura.linhas?.toLocaleString('pt-BR') ?? '—'}</dd></div>

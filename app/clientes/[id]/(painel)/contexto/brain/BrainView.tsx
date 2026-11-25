@@ -2,9 +2,11 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { CopyButton } from '@/../app/_components/CopyButton';
+import { CabecalhoDeSecao } from '@/../app/clientes/[id]/_componentes/CabecalhoDeSecao';
+import { EstadoVazio } from '@/../app/clientes/[id]/_componentes/EstadoVazio';
 import { Anel } from '@/../app/clientes/[id]/_componentes/Anel';
 import { buscarBrainDoCliente } from '@/../app/clientes/[id]/_brain/fonte';
-import { carregarPainel } from '@/../app/clientes/[id]/_dados';
+import { carregarContexto, carregarPainel } from '@/../app/clientes/[id]/_dados';
 import { ExploradorDoBrain } from '@/../app/clientes/[id]/(painel)/contexto/brain/ExploradorDoBrain';
 import { separarPorPreenchimento } from '@/modules/clients/domain/painel/brain/preenchimento';
 import { montarMapa } from '@/modules/clients/domain/painel/brain/mapa';
@@ -15,6 +17,14 @@ const ESTADO: Record<Capacidade['estado'], { readonly rotulo: string; readonly c
   disponivel: { rotulo: 'Disponível', classe: 'pill--ok' },
   parcial: { rotulo: 'Parcial', classe: 'pill--warn' },
   indisponivel: { rotulo: 'Indisponível', classe: '' },
+};
+
+const ROTULO_DO_BRAIN: Record<string, string> = {
+  desativado: 'Armazenamento não configurado',
+  nunca_publicado: 'Ainda não publicado',
+  em_dia: 'Publicado e em dia',
+  pendente: 'Publicação pendente',
+  com_erro: 'Última publicação falhou',
 };
 
 const IMPACTO = { 3: 'Alto impacto', 2: 'Médio impacto', 1: 'Baixo impacto' } as const;
@@ -70,13 +80,14 @@ export async function BrainView({ clienteId }: { readonly clienteId: string }) {
   if (!buscado.ok && buscado.motivo === 'nao_encontrado') notFound();
   if (!buscado.ok) {
     return (
-      <div className="vazio">
-        <div className="vazio__titulo">O Brain não respondeu agora</div>
-        <p className="vazio__texto">O índice deste cliente é montado na hora a partir das conexões, coletas e contexto. Tente de novo em instantes; se persistir, avise o time técnico.</p>
-      </div>
+      <EstadoVazio
+        titulo="O Brain não respondeu agora"
+        texto="O índice deste cliente é montado na hora a partir das conexões, coletas e contexto. Tente de novo em instantes; se persistir, avise o time técnico."
+      />
     );
   }
   const brain = buscado.brain;
+  const contexto = await carregarContexto(ctx.organization.id, cliente.id);
   const mapa = montarMapa(brain);
   const agora = new Date();
   const totalPreenchidas = separarPorPreenchimento(brain.entradas).preenchidas.length;
@@ -84,7 +95,19 @@ export async function BrainView({ clienteId }: { readonly clienteId: string }) {
 
   return (
     <div className="brain pilha">
-      <p className="subtle small">Só leitura: o que o motor enxerga. Para editar, use o Perfil.</p>
+      <CabecalhoDeSecao titulo="Brain" descricao="Só leitura: o que o motor enxerga. Para editar, use o Mapa de contexto." />
+      <dl className="fatos">
+        <div className="fatos__item">
+          <dt className="fatos__rotulo">Brain publicado</dt>
+          <dd>{contexto ? (ROTULO_DO_BRAIN[contexto.brain.situacao] ?? contexto.brain.situacao) : '—'}</dd>
+        </div>
+        {contexto?.brain.exportadoEm ? (
+          <div className="fatos__item">
+            <dt className="fatos__rotulo">Última publicação</dt>
+            <dd>{contexto.brain.exportadoEm.toLocaleString('pt-BR')}</dd>
+          </div>
+        ) : null}
+      </dl>
       {brain.origem === 'exemplo' ? (
         <p className="faixa-de-exemplo" role="note">
           <strong>Prévia.</strong> Conexões e contexto são reais; cobertura, frescor das tabelas e esquemas são de exemplo até o
@@ -94,32 +117,30 @@ export async function BrainView({ clienteId }: { readonly clienteId: string }) {
 
       <section className="pulso" aria-labelledby="t-pulso">
         <div className="pulso__anel">
-          <Anel valor={brain.pulso.saude} rotulo="Saúde do Brain" tamanho={148} espessura={12} tom={brain.pulso.saude >= 70 ? 'ok' : brain.pulso.saude >= 40 ? 'acento' : 'alerta'} />
+          <Anel valor={brain.pulso.saude} rotulo="Saúde do Brain" tamanho={72} espessura={7} tom={brain.pulso.saude >= 70 ? 'ok' : brain.pulso.saude >= 40 ? 'acento' : 'alerta'} />
         </div>
         <div className="pulso__texto">
-          <span className="eyebrow">Pulso do Brain</span>
-          <h2 className="pulso__titulo" id="t-pulso">
-            Tudo o que sabemos sobre {cliente.name}, num índice só.
-          </h2>
-          <p className="subtle small">
-            {totalPreenchidas} {totalPreenchidas === 1 ? 'entrada preenchida' : 'entradas preenchidas'} · atualizado {tempoRelativo(new Date(brain.atualizadoEm), agora)} · versão{' '}
-            <span className="mono">{brain.versao}</span>
-          </p>
+          <div className="pulso__cabeca">
+            <h2 className="pulso__titulo" id="t-pulso">Pulso do Brain</h2>
+            <p className="subtle small" title={`Versão ${brain.versao}`}>
+              {totalPreenchidas} {totalPreenchidas === 1 ? 'entrada preenchida' : 'entradas preenchidas'} · atualizado {tempoRelativo(new Date(brain.atualizadoEm), agora)}
+            </p>
+          </div>
           <dl className="pulso__medidas">
             <div className="medida">
               <dt>Cobertura</dt>
               <dd>{brain.pulso.cobertura}%</dd>
-              <dd className="medida__ajuda">dias com dado nos últimos 90</dd>
+              <dd className="medida__ajuda" title="dias com dado nos últimos 90">dias com dado nos últimos 90</dd>
             </div>
             <div className="medida">
               <dt>Frescor</dt>
               <dd>{brain.pulso.frescor}%</dd>
-              <dd className="medida__ajuda">conexões coletando em dia</dd>
+              <dd className="medida__ajuda" title="conexões coletando em dia">conexões coletando em dia</dd>
             </div>
             <div className="medida">
               <dt>Contexto</dt>
               <dd>{brain.pulso.completudeDoContexto}%</dd>
-              <dd className="medida__ajuda">mapa de contexto preenchido</dd>
+              <dd className="medida__ajuda" title="mapa de contexto preenchido">mapa de contexto preenchido</dd>
             </div>
           </dl>
         </div>
@@ -131,6 +152,7 @@ export async function BrainView({ clienteId }: { readonly clienteId: string }) {
         <section className="card" aria-labelledby="t-capacidades">
           <div className="card__head">
             <h2 className="card__title" id="t-capacidades">O que o Brain consegue responder</h2>
+            <span className="card__sub">{brain.capacidades.filter((c) => c.estado === 'disponivel').length} de {brain.capacidades.length} disponíveis</span>
           </div>
           <ul className="capacidades">
             {brain.capacidades.map((c) => (
@@ -156,7 +178,7 @@ export async function BrainView({ clienteId }: { readonly clienteId: string }) {
             <span className="card__sub">por impacto</span>
           </div>
           {brain.acoes.length === 0 ? (
-            <div className="empty">Nada pendente.</div>
+            <EstadoVazio titulo="Nada pendente" />
           ) : (
             <ol className="acoes-lista">
               {brain.acoes.map((a) => (
@@ -179,7 +201,7 @@ export async function BrainView({ clienteId }: { readonly clienteId: string }) {
           <span className="card__sub">últimos 90 dias · cada traço é um dia</span>
         </summary>
         {tabelas.length === 0 ? (
-          <div className="empty">Nenhuma tabela coletada ainda.</div>
+          <EstadoVazio titulo="Nenhuma tabela coletada ainda" />
         ) : (
           <ul className="faixas">
             {tabelas.map((t) => {

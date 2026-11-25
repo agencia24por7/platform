@@ -116,6 +116,11 @@ export function FormularioDeRegra({ modo, clienteId, voltarPara, definicoes, pod
     if (estado.erro) resumo.current?.focus();
   }, [estado]);
 
+  useEffect(() => {
+    const campos = estado.campos ?? {};
+    if (['contexto', 'emNomeDe', 'evidencia', 'vigenciaInicio', 'vigenciaFim'].some((campo) => campos[campo])) setRecolhidoAberto(true);
+  }, [estado]);
+
   const lido = definicao ? valorDoCampo(definicao.unidade, valor) : null;
   const opcoesDeEscopo = definicao
     ? [
@@ -126,9 +131,52 @@ export function FormularioDeRegra({ modo, clienteId, voltarPara, definicoes, pod
   const escopoEfetivo = opcoesDeEscopo.includes(escopo) ? escopo : (opcoesDeEscopo[0] ?? 'cliente');
   const campoDeValor = natureza === 'limite' && (!editando || definicao !== null);
   const naturezaDisponivel: readonly Natureza[] = podeLimite ? ['limite', 'regra', 'decisao'] : ['regra', 'decisao'];
+  const CAMPOS_RECOLHIDOS = ['contexto', 'emNomeDe', 'evidencia', 'vigenciaInicio', 'vigenciaFim'];
+  const algumRecolhidoPreenchido = Boolean(inicial.contexto || inicial.vigenciaFim) || CAMPOS_RECOLHIDOS.some((campo) => erros[campo]);
+  const [recolhidoAberto, setRecolhidoAberto] = useState(algumRecolhidoPreenchido);
+
+  const campoDeValorJsx = campoDeValor ? (
+    <Campo
+      id={id('valor')}
+      rotulo={editando ? 'Novo valor' : 'Valor'}
+      erro={erros['valor']}
+      dica={
+        definicao
+          ? definicao.unidade === 'brl_centavos'
+            ? 'Em reais, com vírgula nos centavos. Exemplo: 10.000,00'
+            : 'Use vírgula ou ponto para decimais.'
+          : undefined
+      }
+    >
+      <div className="regra-form__valor">
+        {definicao?.unidade === 'brl_centavos' ? <span aria-hidden="true">R$</span> : null}
+        <input
+          className="input"
+          name="valor"
+          type="text"
+          inputMode="decimal"
+          autoComplete="off"
+          value={valor}
+          onChange={(e) => setValor(e.target.value)}
+          {...ligacao('valor', true)}
+        />
+        {definicao?.unidade === 'percentual' ? <span aria-hidden="true">%</span> : null}
+        {definicao?.unidade === 'razao' ? <span aria-hidden="true">x</span> : null}
+      </div>
+      <span className="regra-form__previa" aria-live="polite">
+        {valor.trim() === '' ? '' : lido ? `Será registrado como ${formatarValor(lido)}.` : 'Valor ainda não reconhecido.'}
+      </span>
+    </Campo>
+  ) : null;
+
+  const avisoDeDadoPessoal = (
+    <p className="aviso regra-form__lgpd">
+      <Icone nome="atencao" tamanho={14} /> Não escreva dado pessoal de terceiros (nome, CPF, telefone ou e-mail de pessoas). Registros não se apagam: a correção é uma nova decisão.
+    </p>
+  );
 
   return (
-    <form className="regra-form card" action={enviar} noValidate>
+    <form className="regra-form card" action={enviar} noValidate aria-label={editando ? 'Alterar decisão' : 'Registrar limite, regra ou decisão'}>
       <div className="card__body">
         <div ref={resumo} tabIndex={-1} role={estado.erro ? 'alert' : undefined} className={estado.erro ? 'alert alert--error' : 'sr-only'}>
           {estado.erro ? (
@@ -148,22 +196,25 @@ export function FormularioDeRegra({ modo, clienteId, voltarPara, definicoes, pod
         <input type="hidden" name="clienteId" value={clienteId} />
         {decisaoId ? <input type="hidden" name="decisaoId" value={decisaoId} /> : null}
 
-        <p className="aviso regra-form__lgpd">
-          <Icone nome="atencao" tamanho={14} /> Não escreva dado pessoal de terceiros (nome, CPF, telefone ou e-mail de pessoas). Registros não se apagam: a correção é uma nova decisão.
-        </p>
-
         {!editando ? (
-          <Campo id={id('natureza')} rotulo="O que você vai registrar" erro={erros['natureza']}>
-            <select className="select" name="natureza" value={natureza} onChange={(e) => setNatureza(e.target.value as Natureza)} {...ligacao('natureza', false)}>
+          <fieldset className="regra-form__natureza" aria-describedby={erros['natureza'] ? id('natureza-erro') : undefined}>
+            <legend className="field__label">O que você vai registrar</legend>
+            <div className="opcoes-segmentadas">
               {naturezaDisponivel.map((n) => (
-                <option key={n} value={n}>
-                  {ROTULO_DA_NATUREZA[n]}
-                </option>
+                <label key={n} className="opcoes-segmentadas__opcao">
+                  <input type="radio" name="natureza" value={n} checked={natureza === n} onChange={() => setNatureza(n)} aria-invalid={erros['natureza'] ? true : undefined} />
+                  <span>{ROTULO_DA_NATUREZA[n]}</span>
+                </label>
               ))}
-            </select>
-          </Campo>
+            </div>
+            {erros['natureza'] ? (
+              <span className="field__erro" id={id('natureza-erro')}>
+                <Icone nome="erro" tamanho={14} /> {erros['natureza']}
+              </span>
+            ) : null}
+            {!podeLimite ? <span className="field__hint">Limite só quem administra registra.</span> : null}
+          </fieldset>
         ) : null}
-        {!editando && !podeLimite ? <p className="field__hint">Limite só quem administra registra.</p> : null}
 
         {natureza === 'limite' && !editando ? (
           <>
@@ -200,17 +251,22 @@ export function FormularioDeRegra({ modo, clienteId, voltarPara, definicoes, pod
             ) : (
               <p className="alert alert--warn">Nenhum tipo de limite disponível.</p>
             )}
-            <Campo id={id('escopo')} rotulo="Vale para" erro={erros['escopo']}>
-              <select className="select" name="escopo" value={escopoEfetivo} onChange={(e) => setEscopo(e.target.value)} {...ligacao('escopo', false)}>
-                {opcoesDeEscopo.map((o) => (
-                  <option key={o} value={o}>
-                    {rotuloDoEscopo(o)}
-                  </option>
-                ))}
-              </select>
-            </Campo>
+            <div className="regra-form__linha">
+              {campoDeValorJsx}
+              <Campo id={id('escopo')} rotulo="Vale para" erro={erros['escopo']}>
+                <select className="select" name="escopo" value={escopoEfetivo} onChange={(e) => setEscopo(e.target.value)} {...ligacao('escopo', false)}>
+                  {opcoesDeEscopo.map((o) => (
+                    <option key={o} value={o}>
+                      {rotuloDoEscopo(o)}
+                    </option>
+                  ))}
+                </select>
+              </Campo>
+            </div>
           </>
-        ) : null}
+        ) : (
+          campoDeValorJsx
+        )}
 
         {natureza === 'regra' && !editando ? (
           <Campo id={id('categoria')} rotulo="Categoria" erro={erros['categoria']}>
@@ -224,39 +280,7 @@ export function FormularioDeRegra({ modo, clienteId, voltarPara, definicoes, pod
           </Campo>
         ) : null}
 
-        {campoDeValor ? (
-          <Campo
-            id={id('valor')}
-            rotulo={editando ? 'Novo valor' : 'Valor'}
-            erro={erros['valor']}
-            dica={
-              definicao
-                ? definicao.unidade === 'brl_centavos'
-                  ? 'Em reais, com vírgula nos centavos. Exemplo: 10.000,00'
-                  : 'Use vírgula ou ponto para decimais.'
-                : undefined
-            }
-          >
-            <div className="regra-form__valor">
-              {definicao?.unidade === 'brl_centavos' ? <span aria-hidden="true">R$</span> : null}
-              <input
-                className="input"
-                name="valor"
-                type="text"
-                inputMode="decimal"
-                autoComplete="off"
-                value={valor}
-                onChange={(e) => setValor(e.target.value)}
-                {...ligacao('valor', true)}
-              />
-              {definicao?.unidade === 'percentual' ? <span aria-hidden="true">%</span> : null}
-              {definicao?.unidade === 'razao' ? <span aria-hidden="true">x</span> : null}
-            </div>
-            <span className="regra-form__previa" aria-live="polite">
-              {valor.trim() === '' ? '' : lido ? `Será registrado como ${formatarValor(lido)}.` : 'Valor ainda não reconhecido.'}
-            </span>
-          </Campo>
-        ) : null}
+        {natureza !== 'limite' || editando ? avisoDeDadoPessoal : null}
 
         {natureza !== 'limite' || editando ? (
           <Campo id={id('titulo')} rotulo="Título" erro={erros['titulo']} dica="Curto e específico. Em regra, o título identifica a regra.">
@@ -286,29 +310,35 @@ export function FormularioDeRegra({ modo, clienteId, voltarPara, definicoes, pod
           <Campo id={id('motivo')} rotulo="Por que está mudando?" erro={erros['motivo']} dica="Obrigatório. Fica registrado junto da nova versão.">
             <textarea className="input textarea" name="motivo" required maxLength={500} {...ligacao('motivo', true)} />
           </Campo>
-        ) : (
-          <Campo id={id('contexto')} rotulo="Por quê (opcional)" erro={erros['contexto']} dica="O contexto da decisão, para quem ler depois.">
-            <textarea className="input textarea" name="contexto" maxLength={2000} defaultValue={inicial.contexto ?? ''} {...ligacao('contexto', true)} />
-          </Campo>
-        )}
+        ) : null}
 
-        <Campo id={id('emNomeDe')} rotulo="Em nome de (opcional)" erro={erros['emNomeDe']} dica="Quem decidiu fora da plataforma, quando não foi você.">
-          <input className="input" name="emNomeDe" type="text" maxLength={120} autoComplete="off" {...ligacao('emNomeDe', true)} />
-        </Campo>
-        <Campo id={id('evidencia')} rotulo="Evidência (opcional)" erro={erros['evidencia']} dica={`Link ou texto curto. Limite sem evidência fica marcado: ${avisoDoVocabulario.toLowerCase()}.`}>
-          <input className="input" name="evidencia" type="text" maxLength={500} autoComplete="off" {...ligacao('evidencia', true)} />
-        </Campo>
-
-        <div className="grid grid--2">
-          {!editando ? (
-            <Campo id={id('vigenciaInicio')} rotulo="Vale a partir de (opcional)" erro={erros['vigenciaInicio']}>
-              <input className="input" name="vigenciaInicio" type="date" {...ligacao('vigenciaInicio', false)} />
+        <details className="regra-form__opcionais" open={recolhidoAberto} onToggle={(e) => setRecolhidoAberto(e.currentTarget.open)}>
+          <summary className="regra-form__opcionais-resumo">Detalhes opcionais</summary>
+          <div className="regra-form__opcionais-corpo">
+            {natureza === 'limite' && !editando ? avisoDeDadoPessoal : null}
+            {!editando ? (
+              <Campo id={id('contexto')} rotulo="Por quê" erro={erros['contexto']} dica="O contexto da decisão, para quem ler depois.">
+                <textarea className="input textarea" name="contexto" maxLength={2000} defaultValue={inicial.contexto ?? ''} {...ligacao('contexto', true)} />
+              </Campo>
+            ) : null}
+            <Campo id={id('evidencia')} rotulo="Evidência" erro={erros['evidencia']} dica={`Link ou texto curto. Limite sem evidência fica marcado: ${avisoDoVocabulario.toLowerCase()}.`}>
+              <input className="input" name="evidencia" type="text" maxLength={500} autoComplete="off" {...ligacao('evidencia', true)} />
             </Campo>
-          ) : null}
-          <Campo id={id('vigenciaFim')} rotulo="Vale até (opcional)" erro={erros['vigenciaFim']}>
-            <input className="input" name="vigenciaFim" type="date" defaultValue={inicial.vigenciaFim ?? ''} {...ligacao('vigenciaFim', false)} />
-          </Campo>
-        </div>
+            <Campo id={id('emNomeDe')} rotulo="Em nome de" erro={erros['emNomeDe']} dica="Quem decidiu fora da plataforma, quando não foi você.">
+              <input className="input" name="emNomeDe" type="text" maxLength={120} autoComplete="off" {...ligacao('emNomeDe', true)} />
+            </Campo>
+            <div className="regra-form__linha">
+              {!editando ? (
+                <Campo id={id('vigenciaInicio')} rotulo="Vale a partir de" erro={erros['vigenciaInicio']}>
+                  <input className="input" name="vigenciaInicio" type="date" {...ligacao('vigenciaInicio', false)} />
+                </Campo>
+              ) : null}
+              <Campo id={id('vigenciaFim')} rotulo="Vale até" erro={erros['vigenciaFim']}>
+                <input className="input" name="vigenciaFim" type="date" defaultValue={inicial.vigenciaFim ?? ''} {...ligacao('vigenciaFim', false)} />
+              </Campo>
+            </div>
+          </div>
+        </details>
       </div>
       <div className="card__foot regra-form__rodape">
         <BotaoDeEnvio className="btn btn--primary" pendente="Salvando…">
