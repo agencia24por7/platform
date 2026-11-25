@@ -12,6 +12,7 @@ import { carregarPainel, carregarProntidao } from '@/../app/clientes/[id]/_dados
 import { mudarSituacao } from '@/../app/clientes/[id]/(painel)/conexoes/acoes';
 import { EFEITO_DA_SITUACAO, ROTULO_DA_SITUACAO, SITUACOES, mudancaPermitida } from '@/modules/clients/domain/ciclo';
 import { acaoPrincipal, ROTULO_DO_VEREDITO, type Veredito } from '@/modules/clients/domain/painel/prontidao';
+import { podeCadastrarCliente } from '@/modules/clients/domain/painel/permissoes';
 import { rotaDoCliente } from '@/modules/clients/domain/painel/enderecos';
 import { estadoDoBlocoDeRegras, podeRegistrarOuMexer } from '@/modules/clients/domain/painel/regras';
 import { noVocabularioDe, vocabularioDe } from '@/modules/organizations/domain/vocabulario';
@@ -137,6 +138,13 @@ export default async function LayoutDoCliente({
           <div className="cliente-topo__direita">
             {principal ? <AcaoPrincipalDoCabecalho href={principal.href} rotulo={principal.rotulo} titulo={principal.titulo} /> : null}
             <MenuMais rotulo="Situação">
+              {ctx.organization.type === 'advertiser' && organizacaoInteira && podeCadastrarCliente(ctx.organization.type, ctx.role) ? (
+                <div className="menu-mais__bloco">
+                  <Link className="btn" href="/clientes/novo">
+                    Novo negócio
+                  </Link>
+                </div>
+              ) : null}
               {podeEditar ? (
                 <form className="menu-mais__bloco" action={mudarSituacao}>
                   <input type="hidden" name="clientId" value={cliente.id} />
@@ -164,6 +172,7 @@ export default async function LayoutDoCliente({
                     titulo={`Arquivar ${cliente.name}?`}
                     descricao={noVocabularioDe(ctx.organization.type, EFEITO_DA_SITUACAO.archived)}
                     confirmar="Arquivar"
+                    pendente="Arquivando…"
                     action={mudarSituacao}
                   >
                     <input type="hidden" name="clientId" value={cliente.id} />

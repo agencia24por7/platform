@@ -181,6 +181,7 @@ export function CartaoDeRegra({ clienteId, decisao, definicao, nomes, vocabulari
                 titulo={`Revogar a decisão #${decisao.numero}?`}
                 descricao="Revogar não apaga: o registro continua na linha do tempo."
                 confirmar="Revogar"
+                pendente="Revogando…"
                 action={revogarAcao}
               >
                 <input type="hidden" name="clienteId" value={clienteId} />
@@ -230,6 +231,7 @@ export function CartaoDeRegra({ clienteId, decisao, definicao, nomes, vocabulari
                 titulo={`Rejeitar a proposta #${decisao.numero}?`}
                 descricao="A proposta deixa de esperar decisão; o registro continua na linha do tempo."
                 confirmar="Rejeitar"
+                pendente="Rejeitando…"
                 action={rejeitarPropostaAcao}
               >
                 <input type="hidden" name="clienteId" value={clienteId} />

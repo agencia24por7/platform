@@ -53,6 +53,7 @@ type Linha = {
   readonly plataforma: Platform;
   readonly nome: string;
   readonly externalId: string;
+  readonly complemento: string;
   readonly situacao: SituacaoDaFonte;
   readonly frescor: string;
   readonly conexaoId: string | null;
@@ -117,6 +118,7 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
         plataforma: conta.platform,
         nome: conta.name,
         externalId: conta.externalId,
+        complemento: [conta.accountGroup, conta.currency].filter(Boolean).join(' · '),
         situacao,
         frescor: conta.lastSyncAt ? `Coleta ${tempoRelativo(conta.lastSyncAt, agora)}${atraso ? ` · ${atraso}` : ''}` : 'Sem coleta ainda',
         conexaoId: conta.connectionId,
@@ -133,6 +135,7 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
         plataforma: fonte.platform,
         nome: fonte.name,
         externalId: fonte.externalId,
+        complemento: '',
         situacao: situacaoDeRecurso(conexaoPrecisaReautorizar(conexao)),
         frescor: 'Entra na coleta',
         conexaoId: fonte.connectionId,
@@ -200,7 +203,7 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
                 </div>
               </div>
               <div className="fonte__estado">
-                {linha.situacao.variacao !== grupo.linhas[0]!.situacao.variacao ? (
+                {linha.situacao.rotulo !== grupo.linhas[0]!.situacao.rotulo ? (
                   <span className={`pill ${CLASSE_DA_VARIACAO[linha.situacao.variacao]}`}>
                     <Icone nome={ICONE_DA_VARIACAO[linha.situacao.variacao]} tamanho={14} />
                     {linha.situacao.rotulo}
@@ -223,6 +226,7 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
                   <MenuMais rotulo={`Mais ações de ${linha.nome}`} textoDoGatilho="Mais" compacto>
                     <div className="menu-mais__bloco">
                       <span className="mono subtle xsmall">ID {linha.externalId}</span>
+                      {linha.complemento ? <span className="subtle xsmall">{linha.complemento}</span> : null}
                       {linha.tipo === 'conta' && destinos.length > 0 ? (
                         <form action={moverConta} className="form--inline">
                           <input type="hidden" name="clientId" value={cliente.id} />
@@ -269,6 +273,7 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
                         titulo={`Desvincular ${linha.nome}?`}
                         descricao={noVocabularioDe(ctx.organization.type, `${linha.tipo === 'conta' ? 'A conta' : 'A fonte'} deixa de entrar na coleta deste cliente.`)}
                         confirmar="Desvincular"
+                        pendente="Desvinculando…"
                         action={linha.tipo === 'conta' ? desvincularContaDeAnuncio : desvincularFonte}
                       >
                         <input type="hidden" name="clientId" value={cliente.id} />

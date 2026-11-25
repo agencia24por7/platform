@@ -38,7 +38,7 @@ export function AbasDoCliente({ clienteId, blocos, contadores }: Props) {
               {bloco ? (
                 <span className={`aba__estado ${CLASSE_DO_TOM[bloco.tom]}`}>
                   <Icone nome={ICONE_DO_TOM[bloco.tom]} tamanho={12} />
-                  <span className="visualmente-oculto">{bloco.rotulo}</span>
+                  <span>{bloco.rotulo}</span>
                 </span>
               ) : null}
               {contadores?.[aba] ? <span className="contador">{contadores[aba]}</span> : null}

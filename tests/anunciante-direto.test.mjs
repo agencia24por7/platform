@@ -109,10 +109,10 @@ describe('anunciante direto: vocabulário, atalho e tipo da organização', { co
     assert.ok(agencia.texto.includes('Descrição do cliente'));
   });
 
-  it('o cabeçalho do negócio não oferece Novo negócio; a entrada fica na lista', async () => {
+  it('anunciante dono ou admin cria o segundo negócio a partir do cabeçalho do negócio', async () => {
     signIn(pessoas.dono);
     const { texto } = await html(`/clientes/${orgs.negocio}/conexoes`);
-    assert.ok(!texto.includes('Novo negócio'));
+    assert.ok(texto.includes('Novo negócio'));
     signIn(pessoas.agencia);
     assert.ok(!(await html(`/clientes/${orgs.cliente}/conexoes`)).texto.includes('Novo negócio'));
   });

@@ -24,7 +24,7 @@ export function AvisoEfemero({ erro, feito }: Props) {
     if (!temParametroDeAviso(busca)) return;
     setFechados([]);
     const atual = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-    window.history.replaceState(window.history.state, '', semParametrosDeAviso(atual));
+    window.history.replaceState(null, '', semParametrosDeAviso(atual));
   }, [busca]);
 
   const feitoVisivel = Boolean(feito) && !fechados.includes('feito');

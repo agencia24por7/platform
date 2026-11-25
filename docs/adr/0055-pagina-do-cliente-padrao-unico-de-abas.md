@@ -22,7 +22,7 @@ Auditoria do código e da página ao vivo (24K-113) mostrou cada aba desenhada d
 ### Cabeçalho
 - Nome, uma linha de fatos e a ação principal, que só aparece nas abas onde faz sentido (Conexões e Contexto).
 - Um único resumo de prontidão recolhido, que reúne as lacunas do planejamento e as de Regras. A aba Regras não repete o bloco.
-- "Novo negócio" sai do cabeçalho do cliente; fica na lista.
+- "Novo negócio" fica no menu "…" do cabeçalho (só anunciante, dono ou admin, organização inteira), além da lista: o anunciante com um só negócio é levado direto a ele e nunca vê a lista. Isso preserva o ADR 0036.
 - Estado do Brain e uso de arquivos saem do menu "…" e vão para as abas Brain e Contexto. O menu fica só com a situação, e arquivar pede confirmação.
 - O popover do menu respeita a largura da tela.
 

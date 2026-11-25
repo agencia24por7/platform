@@ -168,6 +168,7 @@ export async function Pedir({ clienteId, abrirMapa }: { readonly clienteId: stri
                         titulo="Revogar este convite?"
                         descricao="O link deixa de funcionar e quem o recebeu não consegue mais conectar por ele."
                         confirmar="Revogar"
+                        pendente="Revogando…"
                         action={revogarConviteDeIntegracao}
                       >
                         <input type="hidden" name="clientId" value={cliente.id} />
@@ -201,6 +202,7 @@ export async function Pedir({ clienteId, abrirMapa }: { readonly clienteId: stri
                         titulo="Revogar este link?"
                         descricao="O link deixa de abrir para quem o recebeu."
                         confirmar="Revogar"
+                        pendente="Revogando…"
                         action={revogarLinkDeContexto}
                       >
                         <input type="hidden" name="clientId" value={cliente.id} />
