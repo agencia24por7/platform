@@ -35,7 +35,7 @@ deploy falha. O arquivo versionado começa vazio (`{}`): os ids reais só o huma
   `POST /activate`, confere por GET e avisa que o gatilho pode ter ficado fora do ar. Se o GET também falhar, não toca em nada
   e manda restaurar à mão a partir da cópia no host. Sai sempre com 1, sem repetir.
 - Depois de `PUT` e ativação bem-sucedidos, lê o workflow e exige o estado ativo e o conteúdo esperados. Se o GET trouxer
-  `versionId` e `activeVersionId`, exige que sejam iguais. Sem esses campos a mensagem diz "conteúdo conferido; versão
+  `versionId` e `activeVersionId` e o fluxo estiver ativo, exige que sejam iguais (fluxo inativo aceita `activeVersionId` nulo, ausente ou antigo). Sem esses campos a mensagem diz "conteúdo conferido; versão
   publicada não verificada". Se a conferência falhar, restaura, reinicia o gatilho e sai com 1.
 - Códigos de saída: `0` ok; `1` erro definitivo (o deploy não repete; inclui qualquer falha depois de iniciado um `PUT`);
   `2` n8n indisponível ou erro de rede antes de qualquer `PUT`, na listagem ou em GET (o deploy repete).
@@ -81,16 +81,47 @@ A simulação não grava, então rodá-la duas vezes não prova nada. O procedim
 - Imagem do passo: variável do repositório `N8N_CLIENTES_IMAGEM`. Aceita `node[:tag]@sha256:<64 hex>` ou
   `docker.io/library/node[:tag]@sha256:<64 hex>`, como valor inteiro. Vazia, de outro registro, sem digest, com quebra de
   linha, espaço, `;`, `$(` ou crase, o passo falha com mensagem clara.
-- O passo manda o script por stdin para a VM e o executa sob `sudo flock -w 300 /run/lock/tria-n8n-clientes.lock`. A trava
-  que dura o mesmo que o contêiner é o nome fixo `orla-n8n-clientes`: se já existir, o passo falha com exit 1 e mensagem clara.
+- O passo grava o script remoto num arquivo temporário e o manda por stdin para a VM, sob
+  `sudo flock -w 60 /run/tria-n8n-clientes.lock` (arquivo do root, em `/run`, que não é gravável por outros usuários).
+- Tempos: `timeout-minutes: 15` no passo (estoura como falha, não como cancelado); espera interna do contêiner de cerca de
+  8 minutos (240 verificações de 2 s); `flock -w 60`. Um teste falha se o timeout do passo deixar de superar a espera interna
+  mais o `flock`.
+- O contêiner tem nome fixo `orla-n8n-clientes`. É a trava que dura o mesmo que ele: se já existir, o passo falha com exit 1.
 - O contêiner roda destacado, com `--cap-drop=ALL`, `--security-opt no-new-privileges`, `--read-only`, `--tmpfs /tmp`,
-  `--pids-limit 64` e `--memory 256m`; sem `--cap-add`. Se `/w` não for legível, a correção é `chmod -R a+rX` na VM,
-  nunca capability. Só escreve em `/tmp` e em `/backup` (montagem de `/var/backups/tria-n8n`).
-- A saída do script vai também para `/var/backups/tria-n8n/aplicacao-<timestamp>.log` (modo 0600) com a linha
-  `desfecho: codigo N`, escrita por um observador independente do runner: se o timeout de 8 minutos do passo matar o runner,
-  o contêiner segue sozinho e o log registra o desfecho.
-- A `N8N_API_KEY` vai ao contêiner por `--env-file` temporário 0600 na VM, removido em EXIT/HUP/INT/TERM/PIPE, nunca na
-  linha de comando.
-- O passo tem `timeout-minutes: 8` (estoura como falha, não como cancelado). O smoke pós-deploy roda mesmo se esse passo
-  falhar (o job continua falhando).
+  `--pids-limit 64` e `--memory 256m`; sem `--cap-add`. Antes do `docker run`, a VM faz
+  `chown -R root:root /opt/tria/n8n-clientes && chmod -R u+rX,go-rwx /opt/tria/n8n-clientes`; o root do contêiner é o dono e
+  lê sem capability. Só escreve em `/tmp` e em `/backup` (montagem de `/var/backups/tria-n8n`).
+- Log por tentativa: `/var/backups/tria-n8n/aplicacao-<timestamp>-<GITHUB_RUN_ID>-<GITHUB_RUN_ATTEMPT>.log` (modo 0600), com a
+  linha `desfecho: codigo N`, escrita por um observador independente do runner, e o arquivo `.rc` ao lado. O passo imprime o
+  caminho do log assim que o contêiner sobe. Se o timeout matar o runner, o contêiner segue sozinho e o log registra o
+  desfecho. Ficam os 30 logs mais recentes.
+- Nova tentativa do mesmo run e tentativa (por exemplo, quando o túnel IAP cai): se já existe log desse run e tentativa, o passo
+  não aplica de novo. Espera o `.rc`, imprime o log e sai com o código dele (0 vira 0, 2 vira 2, o resto vira 1). `.rc` vazio ou
+  não numérico dá "desfecho desconhecido" e exit 1.
+- Antes de aplicar, o passo olha o log mais recente de OUTRO run ou tentativa. Se tiver uma linha `estado-pendente:`, falha com
+  exit 1. Falha de rede comum, sem essa linha, não bloqueia.
+- A `N8N_API_KEY` vai ao contêiner por `--env-file` temporário 0600 na VM, removido no `EXIT` (os sinais HUP, INT, TERM e PIPE
+  encerram o script e disparam o `EXIT`), nunca na linha de comando. Enquanto o contêiner existir, a chave também fica no
+  `Config.Env` dele, visível a root na VM (`docker inspect`), até a remoção do contêiner.
+- O smoke pós-deploy roda mesmo se esse passo falhar (o job continua falhando).
 - `saveManualExecutions: false` está em todos os fluxos de `clientes/` e `agencia/`; um teste percorre a listagem de fluxos.
+
+## Estado pendente e trava presa
+
+`estado-pendente: <id> <motivo>` aparece no log (e na saída do contêiner) quando a aplicação termina com fluxo possivelmente
+desligado ou restauração não confirmada. Motivos: `gatilho-desligado-conteudo-integro` (só falta `POST /activate`),
+`restauracao-nao-confirmada` e `estado-desconhecido-apos-falha-de-put`.
+
+Para resolver:
+
+1. Leia o log citado na mensagem do passo e confira o fluxo no n8n (túnel) pelo id indicado.
+2. Corrija: no caso de conteúdo íntegro, só `POST /api/v1/workflows/<id>/activate`; nos outros, siga a recuperação manual acima.
+3. Renomeie o log (por exemplo, acrescente `.resolvido`) para ele deixar de casar com `aplicacao-*.log`. Sem isso o próximo
+   deploy continua bloqueado.
+
+Além do marcador, com `--backup-dir` o script (e a simulação) acusa erro quando a cópia mais recente do id diz `active: true` e
+o n8n mostra o workflow inativo, em vez de dizer `igual`. Quem desativa um fluxo de propósito precisa mover essa cópia antes
+do deploy seguinte.
+
+Contêiner parado sem observador (por exemplo, o host reiniciou no meio): o nome `orla-n8n-clientes` continua ocupado e o passo
+falha com exit 1. Leia `docker logs orla-n8n-clientes`, entenda o desfecho e só então rode `docker rm orla-n8n-clientes`.

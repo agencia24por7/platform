@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -355,11 +355,50 @@ test('ativação falha: restaura o JSON anterior, reinicia o gatilho e sai com 1
   assert.match(r.saida, /^restaurado/m);
 });
 
-test('restauração que também falha sai com 1 e aponta a cópia no host', async () => {
+test('deactivate ok e activate falho com conteúdo íntegro: mensagem própria, estado-pendente e exit 1', async () => {
   const r = await rodar({ implantados: [fluxoImplantado()], ativacoesQueFalham: 2 }, MANIFESTO, aplicar, comMudanca);
   assert.equal(r.codigo, 1);
-  assert.match(r.saida, /restaurar à mão a partir de \/var\/backups\/tria-n8n\/w1-/);
+  assert.match(r.saida, /gatilho DESLIGADO; conteúdo íntegro; rode só POST \/api\/v1\/workflows\/w1\/activate/);
+  assert.match(r.saida, /^estado-pendente: w1 gatilho-desligado-conteudo-integro$/m);
+  assert.ok(r.saida.includes(`${DIR_NO_HOST}/w1-`));
   assert.doesNotMatch(r.saida, /\/backup\//);
+});
+
+test('restauração não confirmada com conteúdo diferente: restaurar à mão e estado-pendente', async () => {
+  const r = await rodar({ implantados: [fluxoImplantado()], statusDoPut: 400, getIndisponivelAposPut: true }, MANIFESTO, aplicar, comMudanca);
+  assert.equal(r.codigo, 1);
+  assert.match(r.saida, /restaurar à mão a partir de \/var\/backups\/tria-n8n\/w1-/);
+  assert.match(r.saida, /^estado-pendente: w1 estado-desconhecido-apos-falha-de-put$/m);
+});
+
+test('restauração bem-sucedida não marca estado-pendente', async () => {
+  const r = await rodar({ implantados: [fluxoImplantado()], putsQueGravamEFalham: 1 }, MANIFESTO, aplicar, comMudanca);
+  assert.equal(r.codigo, 1);
+  assert.doesNotMatch(r.saida, /estado-pendente/);
+});
+
+test('nova execução com a cópia mais recente ativa e o workflow inativo acusa erro em vez de igual', async () => {
+  const dirDeCopias = join(mkdtempSync(join(tmpdir(), 'n8n-copias-')), 'cofre');
+  gravarBackup(dirDeCopias, { id: 'w1', name: 'Credaz · Teste', nodes: [no()], connections: {}, settings: { executionOrder: 'v1' }, active: true });
+  const igualAoArquivo = { arquivo: modelo() };
+  const args = (p: Pasta) => [p.raiz, '--aplicar', '--backup-dir', dirDeCopias, '--backup-dir-host', DIR_NO_HOST];
+  const aplicando = await rodar({ implantados: [fluxoImplantado({ active: false })] }, MANIFESTO, args, igualAoArquivo);
+  assert.equal(aplicando.codigo, 1, aplicando.saida);
+  assert.match(aplicando.saida, /diz ativo, mas o workflow está inativo/);
+  assert.equal(escritas(aplicando).length, 0);
+  const simulando = await rodar({ implantados: [fluxoImplantado({ active: false })] }, MANIFESTO, (p) => [p.raiz, '--backup-dir', dirDeCopias], igualAoArquivo);
+  assert.equal(simulando.codigo, 1, simulando.saida);
+  const semCopia = await rodar({ implantados: [fluxoImplantado({ active: false })] }, MANIFESTO, (p) => [p.raiz], igualAoArquivo);
+  assert.equal(semCopia.codigo, 0, semCopia.saida);
+  assert.match(semCopia.saida, /^igual/m);
+  const ativoNormal = await rodar({ implantados: [fluxoImplantado()] }, MANIFESTO, (p) => [p.raiz, '--backup-dir', dirDeCopias], igualAoArquivo);
+  assert.equal(ativoNormal.codigo, 0, ativoNormal.saida);
+});
+
+test('fluxo inativo não exige activeVersionId igual a versionId', async () => {
+  const r = await rodar({ implantados: [fluxoImplantado({ active: false })], versoes: 'divergentes' }, MANIFESTO, aplicar, comMudanca);
+  assert.equal(r.codigo, 0, r.saida);
+  assert.match(r.saida, /versão publicada não verificada/);
 });
 
 test('ativação sem efeito e PUT que desativa: a conferência pega, restaura e sai com 1', async () => {
@@ -523,18 +562,20 @@ test('deploy.yml: o script remoto tem sintaxe válida de bash e o passo local ta
 test('deploy.yml: o contêiner do n8n é endurecido, nomeado e travado; o smoke roda depois do passo', () => {
   const yml = readFileSync(join(process.cwd(), '.github/workflows/deploy.yml'), 'utf8');
   const remoto = scriptRemoto();
-  assert.match(yml, /id: n8n_clientes\n\s+timeout-minutes: 8/);
-  assert.match(yml, /EXIT HUP INT TERM PIPE/);
-  assert.match(yml, /sudo flock -w 300 \/run\/lock\/tria-n8n-clientes\.lock/);
-  assert.doesNotMatch(yml, /flock -n/);
+  assert.match(yml, /id: n8n_clientes\n\s+timeout-minutes: 15/);
+  assert.match(remoto, /trap 'rm -f "\$arq"' EXIT\n/);
+  assert.match(remoto, /trap 'exit 1' HUP INT TERM PIPE/);
+  assert.match(yml, /sudo flock -w 60 \/run\/tria-n8n-clientes\.lock/);
+  assert.doesNotMatch(yml, /flock -n|\/run\/lock/);
   assert.match(remoto, /--name orla-n8n-clientes/);
   assert.match(remoto, /--cap-drop=ALL/);
   assert.doesNotMatch(yml, /--cap-add/);
   assert.match(remoto, /--security-opt no-new-privileges/);
   assert.match(remoto, /--read-only --tmpfs \/tmp --pids-limit 64 --memory 256m/);
-  assert.match(remoto, /chmod -R a\+rX \/opt\/tria\/n8n-clientes/);
+  assert.match(remoto, /chown -R root:root \/opt\/tria\/n8n-clientes && chmod -R u\+rX,go-rwx \/opt\/tria\/n8n-clientes/);
+  assert.match(remoto, /log no host: \$log/);
   assert.match(remoto, /docker ps -aq --filter name='\^orla-n8n-clientes\$'/);
-  assert.match(remoto, /aplicacao-\$\(date -u/);
+  assert.match(remoto, /aplicacao-\$\(date -u \+%Y%m%dT%H%M%SZ\)-\$run_id-\$tentativa_do_run\.log/);
   assert.match(remoto, /--backup-dir \/backup --backup-dir-host \/var\/backups\/tria-n8n/);
   assert.doesNotMatch(remoto, /N8N_API_KEY=\$\{?chave/);
   assert.match(yml, /if: \$\{\{ !cancelled\(\) && steps\.n8n_clientes\.conclusion != 'skipped' \}\}/);

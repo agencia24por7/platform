@@ -170,7 +170,20 @@ export function caminhoDoManifesto(raiz, explicito) {
   return candidatos.find((caminho) => existsSync(caminho)) ?? candidatos[0];
 }
 
-export function planejar(modelo, entrada, implantado) {
+export function copiaMaisRecente(diretorio, id) {
+  if (!diretorio || !existsSync(diretorio)) return undefined;
+  const idSeguro = String(id).replace(/[^A-Za-z0-9_-]/g, '_');
+  const padrao = new RegExp(`^${idSeguro}-\\d{4}-\\d{2}-\\d{2}T[0-9-]+Z\\.json$`);
+  const maisRecente = readdirSync(diretorio).filter((nome) => padrao.test(nome)).sort().pop();
+  if (!maisRecente) return undefined;
+  try {
+    return JSON.parse(readFileSync(join(diretorio, maisRecente), 'utf8'));
+  } catch {
+    return undefined;
+  }
+}
+
+export function planejar(modelo, entrada, implantado, ultimaCopia) {
   if (!entrada) return { acao: 'fora-do-manifesto', nome: modelo.name };
   if (ehDaPlataforma(modelo)) return { acao: 'alvo-da-plataforma', nome: modelo.name, id: entrada.id };
   const exemplos = credenciaisDeExemplo(modelo);
@@ -181,6 +194,7 @@ export function planejar(modelo, entrada, implantado) {
   if (implantado.name !== entrada.nome || modelo.name !== entrada.nome) {
     return { acao: 'nome-divergente', nome: modelo.name, id: entrada.id, esperado: entrada.nome, implantado: implantado.name };
   }
+  if (ultimaCopia?.active === true && !implantado.active) return { acao: 'desligado-apos-falha', nome: modelo.name, id: entrada.id };
   if (assinatura(implantado) === assinatura(modelo)) return { acao: 'igual', nome: modelo.name, id: implantado.id };
   return { acao: 'atualizar', nome: modelo.name, id: implantado.id, ativo: Boolean(implantado.active) };
 }
@@ -299,6 +313,8 @@ async function proporManifesto(api, raiz, manifesto, saida) {
   return SAIDA_OK;
 }
 
+const marcarPendente = (saida, id, motivo) => saida.error(`estado-pendente: ${id} ${motivo}`);
+
 function mudouDesde(antes, depois) {
   return assinaturaCompleta(antes) !== assinaturaCompleta(depois);
 }
@@ -306,7 +322,7 @@ function mudouDesde(antes, depois) {
 function conferir(depois, { ativo, assinaturaEsperada }) {
   if (Boolean(depois.active) !== ativo) return { ok: false, motivo: `estado ativo esperado ${ativo}, encontrado ${Boolean(depois.active)}` };
   if (assinaturaCompleta(depois) !== assinaturaEsperada) return { ok: false, motivo: 'o conteúdo implantado difere do esperado' };
-  const publicacao = Boolean(depois.versionId && depois.activeVersionId);
+  const publicacao = ativo && Boolean(depois.versionId && depois.activeVersionId);
   if (publicacao && depois.versionId !== depois.activeVersionId) return { ok: false, motivo: 'versionId e activeVersionId diferem: a versão publicada não é a gravada' };
   return { ok: true, publicacao };
 }
@@ -349,8 +365,10 @@ async function aplicarArquivo({ api, plano, modelo, rotulo, backupDir, backupDir
       }
     }
     if (estavaAtivo) await ciclarAtivacao(api, caminho, rotulo, saida);
+    let depois;
     try {
-      const conferencia = conferir(await api('GET', caminho), { ativo: estavaAtivo, assinaturaEsperada: assinaturaCompleta(antes) });
+      depois = await api('GET', caminho);
+      const conferencia = conferir(depois, { ativo: estavaAtivo, assinaturaEsperada: assinaturaCompleta(antes) });
       if (conferencia.ok) {
         const situacao = reescrever ? 'restaurado' : 'conteúdo original mantido em';
         const ciclo = estavaAtivo ? '; gatilho desativado e reativado' : '';
@@ -361,7 +379,13 @@ async function aplicarArquivo({ api, plano, modelo, rotulo, backupDir, backupDir
     } catch (erro) {
       saida.error(`aviso ${rotulo}: conferência da restauração falhou (${erro.message})`);
     }
+    if (estavaAtivo && depois && !depois.active && assinaturaCompleta(depois) === assinaturaCompleta(antes)) {
+      saida.error(`ERRO ${rotulo}: gatilho DESLIGADO; conteúdo íntegro; rode só POST /api/v1/workflows/${plano.id}/activate (cópia anterior em ${noHost})`);
+      marcarPendente(saida, plano.id, 'gatilho-desligado-conteudo-integro');
+      return;
+    }
     saida.error(`ERRO ${rotulo}: restauração não confirmada; ${aviso}restaurar à mão a partir de ${noHost} (docs/n8n-clientes-manifesto.md)`);
+    marcarPendente(saida, plano.id, 'restauracao-nao-confirmada');
   };
 
   try {
@@ -374,6 +398,7 @@ async function aplicarArquivo({ api, plano, modelo, rotulo, backupDir, backupDir
       vigente = await api('GET', caminho);
     } catch (erroDoGet) {
       saida.error(`ERRO ${rotulo}: não foi possível ler o workflow depois da falha (${erroDoGet.message}); ${aviso}nada foi restaurado; restaurar à mão a partir de ${noHost} (docs/n8n-clientes-manifesto.md)`);
+      marcarPendente(saida, plano.id, 'estado-desconhecido-apos-falha-de-put');
       return SAIDA_DEFINITIVA;
     }
     const alterado = mudouDesde(antes, vigente);
@@ -399,6 +424,7 @@ const MENSAGENS_DE_RECUSA = {
   'fora-do-manifesto': () => 'arquivo fora do manifesto (rode --propor-manifesto e revise)',
   'alvo-da-plataforma': (p) => `alvo é workflow da plataforma (tag ${TAG_DA_PLATAFORMA} ou nome "${PREFIXO_DA_PLATAFORMA}…"), id ${p.id}`,
   'tags-ausentes': (p) => `o n8n não devolveu as tags do workflow ${p.id}; não dá para provar que não é da plataforma`,
+  'desligado-apos-falha': (p) => `a cópia anterior mais recente do id ${p.id} diz ativo, mas o workflow está inativo: possível gatilho desligado por falha anterior; confira o fluxo no n8n, corrija e mova a cópia antes de repetir`,
   'id-inexistente': (p) => `não existe workflow com o id ${p.id}`,
   'nome-divergente': (p) => `nome divergente (manifesto "${p.esperado}", implantado "${p.implantado}", arquivo "${p.nome}")`,
   'credencial-de-exemplo': (p) => `credencial de exemplo (a-definir…) em ${p.nos.join(', ')}`,
@@ -463,7 +489,7 @@ export async function executar(argumentos, ambiente = process.env, saida = conso
     const rotulo = `${chave} → "${modelo.name}"`;
     try {
       const implantado = entrada ? await api('GET', `/workflows/${encodeURIComponent(entrada.id)}`, undefined, { aceitar404: true }) : undefined;
-      const plano = planejar(modelo, entrada, implantado ?? undefined);
+      const plano = planejar(modelo, entrada, implantado ?? undefined, entrada ? copiaMaisRecente(opcoes.backupDir, entrada.id) : undefined);
       if (MENSAGENS_DE_RECUSA[plano.acao]) {
         saida.error(`ERRO ${rotulo}: ${MENSAGENS_DE_RECUSA[plano.acao](plano)}`);
         definitivas += 1;
