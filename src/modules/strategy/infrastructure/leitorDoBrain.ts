@@ -11,7 +11,9 @@ import {
   MAXIMO_DE_ENTRADAS_LIDAS_DO_BRAIN,
   esquemaEntradaDoPacote,
   esquemaPacoteDeLeitura,
+  MAXIMO_DE_ITENS_DO_CATALOGO,
   type EntradaDoPacote,
+  type ItemDoCatalogo,
   type PacoteDeLeitura,
 } from '@/modules/strategy/domain/index';
 
@@ -22,6 +24,8 @@ export type DependenciasDoLeitorDoBrain = {
   readonly maximoDeBytes?: number;
 };
 
+const TIPOS_FORA_DO_PACOTE: readonly string[] = ['arquivo'];
+const TAMANHO_DO_TITULO_NO_CATALOGO = 80;
 const TIPOS_DE_REGRA = ['regra', 'limite', 'decisao'];
 const TAMANHO_DO_RESUMO = 600;
 
@@ -69,7 +73,7 @@ export function montarPacote(
   entradas: readonly EntradaDoCatalogo[],
   limites: { readonly maximoDeEntradas: number; readonly maximoDeBytes: number },
 ): PacoteDeLeitura {
-  const visiveis = aplicarPoliticaDeUso(entradas).entradas;
+  const visiveis = aplicarPoliticaDeUso(entradas).entradas.filter((entrada) => !TIPOS_FORA_DO_PACOTE.includes(entrada.tipo));
   let descartadasPorFormato = 0;
   const validas: { readonly prioridade: number; readonly entrada: EntradaDoPacote }[] = [];
   for (const origem of visiveis) {
@@ -88,11 +92,22 @@ export function montarPacote(
     bytes += tamanho;
   }
 
+  const incluidas = new Set(mantidas.map((entrada) => entrada.urn));
+  const catalogo: ItemDoCatalogo[] = validas.slice(0, MAXIMO_DE_ITENS_DO_CATALOGO).map(({ entrada }) => ({
+    urn: entrada.urn,
+    tipo: entrada.tipo,
+    titulo: entrada.titulo.slice(0, TAMANHO_DO_TITULO_NO_CATALOGO),
+    ...(entrada.evidencia === undefined ? {} : { nota: entrada.evidencia.nota }),
+    ...(entrada.evidencia?.validoAte === undefined ? {} : { validoAte: entrada.evidencia.validoAte }),
+    incluida: incluidas.has(entrada.urn),
+  }));
+
   return {
     organizacaoId,
     clienteId,
     lidoEm: lidoEm.toISOString(),
     entradas: mantidas,
+    catalogo,
     omitidasPorTamanho: validas.length - mantidas.length,
     descartadasPorFormato,
   };

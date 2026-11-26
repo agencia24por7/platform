@@ -33,11 +33,24 @@ export const esquemaEntradaDoPacote = z.strictObject({
 });
 export type EntradaDoPacote = z.infer<typeof esquemaEntradaDoPacote>;
 
+export const MAXIMO_DE_ITENS_DO_CATALOGO = 2_000;
+
+export const esquemaItemDoCatalogo = z.strictObject({
+  urn: z.string().max(320),
+  tipo: z.string().regex(PADRAO_DO_TIPO),
+  titulo: z.string().min(1).max(80),
+  nota: z.enum(NOTAS_DE_EVIDENCIA).optional(),
+  validoAte: esquemaData.optional(),
+  incluida: z.boolean(),
+});
+export type ItemDoCatalogo = z.infer<typeof esquemaItemDoCatalogo>;
+
 export const esquemaPacoteDeLeitura = z.strictObject({
   organizacaoId: z.string().uuid(),
   clienteId: z.string().uuid(),
   lidoEm: z.string().datetime({ offset: true }),
   entradas: z.array(esquemaEntradaDoPacote).max(MAXIMO_DE_ENTRADAS_NO_PACOTE),
+  catalogo: z.array(esquemaItemDoCatalogo).max(MAXIMO_DE_ITENS_DO_CATALOGO).optional(),
   omitidasPorTamanho: z.number().int().min(0).optional(),
   descartadasPorFormato: z.number().int().min(0).optional(),
 });

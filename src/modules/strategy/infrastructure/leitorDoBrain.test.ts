@@ -68,6 +68,30 @@ describe('montarPacote', () => {
     assert.ok(esquemaPacoteDeLeitura.safeParse(pacote).success);
   });
 
+  it('catálogo lista tudo que é visível, marca o que não coube e deixa de fora negado e arquivo', () => {
+    const a = entrada('regra', 'r1');
+    const b = entrada('contexto_secao', 'c1');
+    const c = entrada('contexto_secao', 'c2');
+    const negada = entrada('regra', 'rn', { sensibilidade: { nivel: 'restrito', piiPossivel: true, usoPorAgente: 'negado', retencao: 'x' } });
+    const arquivo = entrada('arquivo', 'a1', { titulo: 'Contrato Maria Silva.pdf' });
+    const pacote = montarPacote(ORGANIZACAO_ID, CLIENTE_ID, quando, [a, b, c, negada, arquivo], { maximoDeEntradas: 2, maximoDeBytes: 300_000 });
+    assert.equal(pacote.entradas.length, 2);
+    const catalogo = pacote.catalogo ?? [];
+    assert.equal(catalogo.length, 3);
+    assert.equal(catalogo.filter((item) => item.incluida).length, 2);
+    assert.equal(catalogo.filter((item) => !item.incluida).length, 1);
+    const texto = JSON.stringify(pacote);
+    assert.ok(!texto.includes('Maria Silva'));
+    assert.ok(!catalogo.some((item) => item.urn === negada.urn));
+  });
+
+  it('o título do catálogo é curto e sem e-mail', () => {
+    const longa = entrada('contexto_secao', 'c9', { titulo: `${'x'.repeat(120)} joao@exemplo.com` });
+    const pacote = montarPacote(ORGANIZACAO_ID, CLIENTE_ID, quando, [longa], limites);
+    assert.ok((pacote.catalogo ?? [])[0]!.titulo.length <= 80);
+    assert.ok(!JSON.stringify(pacote.catalogo).includes('joao@exemplo.com'));
+  });
+
   it('textoSeguro em título e resumo: e-mail e telefone saem do pacote', () => {
     const suja = entrada('contexto_secao', 'c1', { titulo: 'Contato joao@exemplo.com', descricao: 'Fale com maria@exemplo.com ou (11) 98888-7777.' });
     const pacote = montarPacote(ORGANIZACAO_ID, CLIENTE_ID, quando, [suja], limites);
