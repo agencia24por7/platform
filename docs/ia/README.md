@@ -70,6 +70,11 @@ node --env-file=<arquivo de ambiente> --experimental-strip-types scripts/ia-cont
 
 Roda três casos com pedido trivial, sem dado de cliente: saída estruturada, laço com ferramenta e instrução escondida no dado. Imprime o resultado, os tokens e o tempo. O valor da chave nunca é impresso.
 
+## Testes
+
+- `tests/agentes-mcp.test.mjs` exige o app sob teste com `IA_MCP_HABILITADO=true`; sem isso a rota responde 404 e os testes da rota falham. O workflow `ci` define a variável no passo que sobe o app.
+- `tests/ia-modelos.test.mjs` usa chaves com o prefixo `orla-teste:`, atendidas por um catálogo e um modelo falsos que só existem fora de produção, sem `TOKENS_KMS_KEY` e com endereço local. Nenhum teste chama fornecedor real.
+
 ## Variáveis de ambiente
 
 | Variável | Padrão | Efeito |

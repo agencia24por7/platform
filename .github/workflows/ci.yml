@@ -107,6 +107,7 @@ jobs:
       - name: App
         env:
           PLATAFORMA_OPERADORES: operador@tria.local
+          IA_MCP_HABILITADO: 'true'
         run: |
           npx next dev --port 3000 > app.log 2>&1 &
           for tentativa in $(seq 1 60); do
