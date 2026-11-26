@@ -102,7 +102,7 @@ Execução, ordens e escrita em conta; política de autonomia; Strategy Metrics 
 
 ## Limites conhecidos da integração com a camada de IA
 - A camada de IA não tem `AbortSignal`, idempotência nem erro próprio de tempo. O adaptador manda `tempoMs` com margem de 10 segundos abaixo do prazo do nosso `comValidacao`, para o tempo limite do SDK disparar antes e a chamada não ficar órfã e cobrada. Cada tentativa nova gasta cota.
-- O teto da organização e o 429 do fornecedor chegam ambos como `rate_limited`, mas a mensagem do teto é constante exportada (`MENSAGEM_DO_BLOQUEIO`). O adaptador usa essa constante: teto da organização e IA desligada viram `limite_atingido` (encerra a execução); 429 do fornecedor vira `falha_do_fornecedor` (transitória, tenta de novo). Se a camada mudar essas mensagens, o teste do mapeamento falha.
+- O teto da organização e o 429 do fornecedor chegam ambos como `rate_limited`, mas a mensagem do teto é constante exportada (`MENSAGEM_DO_BLOQUEIO`). O adaptador usa essa constante: teto da organização e IA desligada viram `limite_atingido` (encerra a execução); 429 do fornecedor vira `falha_do_fornecedor` (transitória, tenta de novo). Os motivos de teto são derivados do registro de mensagens da camada: um motivo novo é tratado como teto da organização, e o teste percorre todos os motivos.
 - `unauthorized` (chave recusada pelo fornecedor), `not_found` (sem chave ou modelo) e fornecedor não habilitado viram `nao_configurada`: o remédio é o mesmo, `/config/ia`.
 - Falha no meio da redação recomeça os 5 grupos, porque o progresso parcial não é guardado.
 - Melhoria seguinte: um grupo por passo, com o progresso parcial guardado na execução (exige coluna nova e caminho de redação), o que também cabe no orçamento de tempo entre passos.

@@ -41,7 +41,7 @@ export const SECOES_DA_CHECAGEM: Readonly<Record<string, readonly SecaoRedigida[
   urns_no_pacote: ['diagnostico'],
   evidencia_vigente: ['diagnostico'],
   meta_sem_nota_d: ['metas_e_metricas'],
-  limites_do_cliente: ['metas_e_metricas', 'riscos_e_regras'],
+  limites_do_cliente: ['metas_e_metricas', 'riscos_e_regras', 'lacunas'],
   nao_faremos: ['estrategia', 'campanhas'],
   nao_faremos_preservado: ['estrategia'],
   regra_legal_presente: ['riscos_e_regras'],
@@ -56,18 +56,16 @@ function primeiroSegmento(caminho: string): string {
 }
 
 export function gruposDaPendenciaDoGate(chave: string, onde: readonly string[]): number[] {
-  const dosCaminhos = new Set<number>();
+  const grupos = new Set<number>();
   for (const caminho of onde) {
     const grupo = grupoDaSecao(primeiroSegmento(caminho));
-    if (grupo !== null) dosCaminhos.add(grupo);
+    if (grupo !== null) grupos.add(grupo);
   }
-  if (dosCaminhos.size > 0) return [...dosCaminhos].sort((a, b) => a - b);
-  const dosMapa = new Set<number>();
   for (const secao of SECOES_DA_CHECAGEM[chave] ?? []) {
     const grupo = grupoDaSecao(secao);
-    if (grupo !== null) dosMapa.add(grupo);
+    if (grupo !== null) grupos.add(grupo);
   }
-  return dosMapa.size > 0 ? [...dosMapa].sort((a, b) => a - b) : [INDICE_DO_ULTIMO_GRUPO];
+  return grupos.size > 0 ? [...grupos].sort((a, b) => a - b) : [INDICE_DO_ULTIMO_GRUPO];
 }
 
 export type SecoesRedigidas = Partial<Record<SecaoRedigida, unknown>>;

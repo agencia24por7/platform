@@ -17,7 +17,9 @@ export const MARGEM_DA_CAMADA_MS = 10_000;
 
 const FALHA_DO_FORNECEDOR = 'O fornecedor de modelo não respondeu como esperado.';
 
-const MENSAGENS_DE_TETO_DA_ORGANIZACAO: readonly string[] = [MENSAGEM_DO_BLOQUEIO.teto_de_chamadas, MENSAGEM_DO_BLOQUEIO.teto_de_tokens];
+const MENSAGENS_DE_TETO_DA_ORGANIZACAO: readonly string[] = Object.entries(MENSAGEM_DO_BLOQUEIO)
+  .filter(([motivo]) => motivo !== 'desligada')
+  .map(([, mensagem]) => mensagem);
 
 export function codigoDeIaDaFalha(falha: Failure): CodigoDeErroDeIA {
   if (falha.code === 'unavailable' && falha.message === SEM_MODELO_CONFIGURADO.message) return 'nao_configurada';

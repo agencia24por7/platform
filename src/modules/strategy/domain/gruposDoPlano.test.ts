@@ -23,8 +23,12 @@ describe('pendências do Gate por grupo', () => {
     assert.deepEqual(gruposDaPendenciaDoGate('meta_sem_nota_d', ['metas_e_metricas/m_neg (só nota D)']), [grupoDe('metas_e_metricas')]);
     assert.deepEqual(gruposDaPendenciaDoGate('objetivo_com_metrica', ['metas_e_metricas/m_social (sem forma de medir)']), [grupoDe('metas_e_metricas')]);
     assert.deepEqual(gruposDaPendenciaDoGate('nao_faremos_preservado', ['estrategia/nf_tiktok (removido)']), [grupoDe('estrategia')]);
-    assert.deepEqual(gruposDaPendenciaDoGate('limites_do_cliente', ['orcamento/total acima do limite']), [grupoDe('orcamento')]);
-    assert.deepEqual(gruposDaPendenciaDoGate('urns_no_pacote', ['campanhas/cp_1 cita urn fora']), [grupoDe('campanhas')]);
+    assert.deepEqual(
+      gruposDaPendenciaDoGate('limites_do_cliente', ['orcamento/total acima do limite']),
+      [grupoDe('orcamento'), grupoDe('metas_e_metricas'), grupoDe('riscos_e_regras')].sort((a, b) => a - b),
+    );
+    assert.ok(gruposDaPendenciaDoGate('limites_do_cliente', ['orcamento (limite de gasto ausente e não declarado)']).includes(grupoDe('lacunas')));
+    assert.deepEqual(gruposDaPendenciaDoGate('urns_no_pacote', ['campanhas/cp_1 cita urn fora']), [grupoDe('diagnostico'), grupoDe('campanhas')].sort((a, b) => a - b));
     const dois = gruposDaPendenciaDoGate('nao_faremos', ['campanhas/cp_social viola estrategia/nf_x', 'canais_e_plataformas/cn_1 viola estrategia/nf_x']);
     assert.deepEqual(dois, [grupoDe('posicionamento_e_mensagem'), grupoDe('campanhas')].sort((a, b) => a - b));
   });
