@@ -43,4 +43,4 @@ O ADR 0061 dizia que lotar o domínio `ip` exigia mais de 20.000 IPs distintos. 
 
 ## Atualização de 2026-11-26 (camada de IA e MCP, issue 24K-131)
 
-A rota MCP (`/api/mcp`, `docs/adr/0057-camada-de-ia-e-mcp.md`) também usa `enderecoDoCliente` e mapeia o IP `null` para a chave fixa `desconhecida` no domínio `ip`. Com ela, cada IP cria até 9 chaves nesse domínio, e a conta da seção acima passa a ser de cerca de 2.200 IPs (20.000 ÷ 9).
+A rota MCP (`/api/mcp`, `docs/adr/0063-camada-de-ia-e-mcp.md`) também usa `enderecoDoCliente` e mapeia o IP `null` para a chave fixa `desconhecida` no domínio `ip`. Com ela, cada IP cria até 9 chaves nesse domínio, e a conta da seção acima passa a ser de cerca de 2.200 IPs (20.000 ÷ 9).

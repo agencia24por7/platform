@@ -2,7 +2,9 @@
 status: accepted
 date: 2026-11-25
 ---
-# ADR-0057: Camada de IA atrás de porta própria, registro único de ferramentas e servidor MCP com credencial de agente
+# ADR-0063: Camada de IA atrás de porta própria, registro único de ferramentas e servidor MCP com credencial de agente
+
+Numeração anterior: 0057. Os comentários das migrações 0142 a 0144 e as mensagens de commit anteriores a 2026-11-26 citam o número antigo; o conteúdo do ADR não mudou, só o número e o nome do arquivo.
 
 Complementa os ADRs 0005, 0011, 0030, 0032, 0041, 0045, 0049, 0051 e 0056. Cumpre o "próximo passo" do ADR 0030 §6 (identidade por agente). Não supera nenhum. Issue 24K-131. Aceito em 2026-11-25 pelo dono do produto, com a instrução de escolher a opção mais segura em cada decisão aberta.
 
@@ -40,7 +42,7 @@ Provado por execução em 2026-11-25 (`ai` 7.0.182, zod 4.6.7, Node do projeto):
 
 Provado com fornecedor real em 2026-11-25 (Google, pedido trivial sem dado de cliente): a lista de modelos vem da API com a chave (`GET /v1beta/models`, cabeçalho `x-goog-api-key`); saída estruturada por esquema e laço com uma ferramenta funcionam pelo mesmo contrato. **Chave inválida no Google responde 400, não 401**: o testador de chave tem mapeamento de erro por fornecedor e nunca assume 401.
 
-**Moonshot e xAI ficam desligados por padrão** (ADR 0058 §7). Só aparecem quando listados em `IA_FORNECEDORES_HABILITADOS`. Ligá-lo é decisão do humano, depois do aceite legal sobre transferência internacional de dados (LGPD).
+**Moonshot e xAI ficam desligados por padrão** (ADR 0064 §7). Só aparecem quando listados em `IA_FORNECEDORES_HABILITADOS`. Ligá-lo é decisão do humano, depois do aceite legal sobre transferência internacional de dados (LGPD).
 
 ### 4. Registro único de ferramentas
 
@@ -106,7 +108,7 @@ O Gate continua determinístico, em código, como no ADR 0056 §5. Passo de IA n
 
 Entregue e testado: registro de ferramentas, ferramenta `brain_consultar_catalogo`, credencial de agente (banco, serviço, tela), servidor MCP, porta de modelo com o adaptador do AI SDK, executor único (`modules().ia.executor`) com orçamento, delimitação de dado, registro de uso e ferramentas de leitura no laço, e a suíte de contrato `scripts/ia-contrato.ts`.
 
-A chave do fornecedor, o modelo por tarefa em `/config/ia`, a tabela de uso com teto diário e o botão de desligar vieram na entrega seguinte e estão no ADR 0058, que também corrige o caminho previsto aqui: a chave não entra como plataforma de conexão, e sim em tabela própria selada com a cifra do cofre e coberta pela mesma varredura de recifragem. Fila de execução longa continua fora.
+A chave do fornecedor, o modelo por tarefa em `/config/ia`, a tabela de uso com teto diário e o botão de desligar vieram na entrega seguinte e estão no ADR 0064, que também corrige o caminho previsto aqui: a chave não entra como plataforma de conexão, e sim em tabela própria selada com a cifra do cofre e coberta pela mesma varredura de recifragem. Fila de execução longa continua fora.
 
 ## Etapas
 

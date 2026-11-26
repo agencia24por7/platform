@@ -15,7 +15,7 @@ function arquivos(pasta: string): string[] {
   });
 }
 
-describe('fronteira de fornecedor de IA (ADR 0057 §1)', () => {
+describe('fronteira de fornecedor de IA (ADR 0063 §1)', () => {
   it('só a infraestrutura do módulo de IA importa biblioteca de modelo ou de MCP', () => {
     const fora = [...arquivos('src'), ...arquivos('app'), 'proxy.ts']
       .filter((caminho) => !caminho.startsWith(PASTA_PERMITIDA))

@@ -100,7 +100,7 @@ const consultar = (clienteId, extra = {}) => ({
 const conteudo = (resposta) => resposta.mensagem?.result?.content?.[0]?.text ?? '';
 const naoEncontrado = (resposta) => resposta.mensagem?.result?.isError === true && conteudo(resposta) === 'Cliente não encontrado.';
 
-describe('credencial de agente e servidor MCP (ADR 0057)', { concurrency: false }, () => {
+describe('credencial de agente e servidor MCP (ADR 0063)', { concurrency: false }, () => {
   let a;
   let b;
   let usuario;

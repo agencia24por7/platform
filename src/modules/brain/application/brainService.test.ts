@@ -217,7 +217,7 @@ describe('API de leitura do brain (serviço)', () => {
   });
 });
 
-describe('leitura do catálogo por agente (ADR 0057)', () => {
+describe('leitura do catálogo por agente (ADR 0063)', () => {
   const OUTRA_ORG = '44444444-4444-4444-8444-444444444444';
   const agente = (extra: Partial<{ organizationId: string; clienteIds: readonly string[] | null }> = {}) => ({
     credencialId: 'cred-1',

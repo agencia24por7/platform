@@ -18,7 +18,7 @@ function buscador(resposta: () => Response | Promise<Response>) {
 
 const json = (corpo: unknown, status = 200) => new Response(JSON.stringify(corpo), { status });
 
-describe('catálogo de modelos do fornecedor (ADR 0058)', () => {
+describe('catálogo de modelos do fornecedor (ADR 0064)', () => {
   it('cada fornecedor tem destino fixo em https e a chave vai em cabeçalho, nunca na URL', async () => {
     for (const fornecedor of FORNECEDORES) {
       const { catalogo, pedidos } = buscador(() => json({ data: [{ id: 'm1' }], models: [{ name: 'models/m1', supportedGenerationMethods: ['generateContent'] }] }));

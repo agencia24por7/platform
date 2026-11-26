@@ -46,7 +46,7 @@ function montar(contexto: ContextoDaOrigem | null, opcoes: { permitir?: boolean;
   return { servico, eventos, pedidos: () => pedidosAoCofre };
 }
 
-describe('recifragem de segredos fora do cofre de conexões (ADR 0058)', () => {
+describe('recifragem de segredos fora do cofre de conexões (ADR 0064)', () => {
   it('soma as contagens dos recifradores extras e passa a versão primária do cofre', async () => {
     const recebidos: [string, number][] = [];
     const t = montar(VALIDO, {

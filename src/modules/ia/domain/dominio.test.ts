@@ -17,7 +17,7 @@ const ferramenta = (extra: Record<string, unknown> = {}) =>
     ...extra,
   });
 
-describe('registro de ferramentas (ADR 0057 §4)', () => {
+describe('registro de ferramentas (ADR 0063 §4)', () => {
   it('só entrega as ferramentas que o escopo lista, em ordem estável', () => {
     const registro = criarRegistro([ferramenta({ nome: 'zeta_ler' }), ferramenta({ nome: 'alfa_ler' })]);
     assert.deepEqual(registro.nomes(), ['alfa_ler', 'zeta_ler']);
@@ -59,7 +59,7 @@ describe('registro de ferramentas (ADR 0057 §4)', () => {
   });
 });
 
-describe('credencial de agente (ADR 0057 §5)', () => {
+describe('credencial de agente (ADR 0063 §5)', () => {
   it('gera segredo único no formato esperado e guarda só o SHA-256', () => {
     const a = credencial.gerarCredencial();
     const b = credencial.gerarCredencial();

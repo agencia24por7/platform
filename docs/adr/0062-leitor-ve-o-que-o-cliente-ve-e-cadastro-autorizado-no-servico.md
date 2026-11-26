@@ -73,7 +73,7 @@ Fecha dois achados da revisão de segurança: 24K-118 (o papel leitor recebia co
 
 ## Atualização de 2026-11-26 (camada de IA e MCP, issue 24K-131)
 
-"O catálogo para agentes" do item 2 é o consumo pelo worker (`montar`, rotas `/api/v0/brain/*`), que continua na visão `equipe`. A credencial de agente do servidor MCP (`docs/adr/0057-camada-de-ia-e-mcp.md`) é outro caminho: lê por `montarNaOrganizacao` com o papel leitor e recebe a visão `cliente`, porque a resposta sai da plataforma para um cliente MCP de terceiro.
+"O catálogo para agentes" do item 2 é o consumo pelo worker (`montar`, rotas `/api/v0/brain/*`), que continua na visão `equipe`. A credencial de agente do servidor MCP (`docs/adr/0063-camada-de-ia-e-mcp.md`) é outro caminho: lê por `montarNaOrganizacao` com o papel leitor e recebe a visão `cliente`, porque a resposta sai da plataforma para um cliente MCP de terceiro.
 
 | Caminho | Tratamento |
 | --- | --- |

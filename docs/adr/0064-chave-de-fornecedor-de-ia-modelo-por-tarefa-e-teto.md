@@ -2,13 +2,15 @@
 status: accepted
 date: 2026-11-25
 ---
-# ADR-0058: Chave de fornecedor de IA em tabela própria com a cifra do cofre, modelo por tarefa e teto diário
+# ADR-0064: Chave de fornecedor de IA em tabela própria com a cifra do cofre, modelo por tarefa e teto diário
 
-Complementa os ADRs 0032, 0042 e 0057. Corrige o caminho previsto no ADR 0057 §11. Não supera nenhum. Issue 24K-131. Aceito em 2026-11-25 pelo dono do produto.
+Numeração anterior: 0058. Os comentários das migrações 0142 a 0144 e as mensagens de commit anteriores a 2026-11-26 citam o número antigo; o conteúdo do ADR não mudou, só o número e o nome do arquivo.
+
+Complementa os ADRs 0032, 0042 e 0063. Corrige o caminho previsto no ADR 0063 §11. Não supera nenhum. Issue 24K-131. Aceito em 2026-11-25 pelo dono do produto.
 
 ## Contexto
 
-O ADR 0057 §11 previa guardar a chave do fornecedor de IA como mais uma plataforma de conexão. A leitura do código mostrou que isso é errado:
+O ADR 0063 §11 previa guardar a chave do fornecedor de IA como mais uma plataforma de conexão. A leitura do código mostrou que isso é errado:
 
 - `Platform` é a lista de fontes de dados do produto. Uma chave de IA ali entraria no mapa de fontes de coleta, na descoberta de contas, nas telas de conexão do cliente e no catálogo do Brain, como "conexão" do cliente. Exigiria mudar o enum `integrations.platform` fora de transação e excluir a IA, um a um, de cada fluxo que lista conexões.
 - O cofre tem rotação operada no fim por uma pessoa (ADR 0042): a varredura semanal recifra, e só com `avaliadas = 0` e `falhas = 0` a versão antiga da chave do KMS é desativada. Segredo selado fora dessa varredura fica ilegível no dia em que a versão antiga sai.
@@ -65,7 +67,7 @@ A primeira tarefa registrada é `teste_de_modelo`, usada pelo botão "Testar mod
 
 ### 7. Fornecedores ligados
 
-Padrão: `anthropic`, `google`, `openai`. `xai` e `moonshot` têm adaptador e catálogo prontos e só entram quando listados em `IA_FORNECEDORES_HABILITADOS`; o Moonshot depende também do aceite legal (ADR 0057 §3).
+Padrão: `anthropic`, `google`, `openai`. `xai` e `moonshot` têm adaptador e catálogo prontos e só entram quando listados em `IA_FORNECEDORES_HABILITADOS`; o Moonshot depende também do aceite legal (ADR 0063 §3).
 
 ### 8. Costura de teste
 
@@ -93,4 +95,6 @@ Fila de execução longa (não há consumidor) e tabela de sugestão de modelo p
 - Lista de modelos e código de erro de chave inválida de Anthropic, OpenAI, xAI e Moonshot com chave real. Só o Google foi provado, antes desta entrega e fora do catálogo novo.
 - A recifragem das chaves de IA com o KMS real; foi provada com a chave mestra local.
 - **Antes da primeira desativação de versão do KMS:** `core.ia_chaves_com_versao_antiga` e `integrations.tokens_com_chave_antiga` (ADR 0042) leem tabelas com `FORCE ROW LEVEL SECURITY`. Se o dono das funções em produção não for superusuário nem tiver `BYPASSRLS`, elas devolvem zero linhas sem erro e `avaliadas = 0` deixa de significar "nada pendente". Só foi provado com o superusuário do contêiner local. Conferir `rolsuper` e `rolbypassrls` do dono em produção é pré-condição da desativação.
+  - Evidência do repositório, não do banco de produção: o deploy roda `/opt/tria/migrar.sh` com `PG_USER` padrão `postgres` (`.github/workflows/deploy.yml`, `infra/compose/migrar.sh`), o superusuário de bootstrap do contêiner (`POSTGRES_SUPERUSER` em `infra/docker-compose.yml`). Se for isso, as funções pertencem a um superusuário e ignoram a RLS.
+  - Prova que falta, só leitura, para o humano rodar no banco de produção: `SELECT p.proname, r.rolname, r.rolsuper, r.rolbypassrls FROM pg_proc p JOIN pg_roles r ON r.oid = p.proowner WHERE p.proname IN ('ia_chaves_com_versao_antiga', 'tokens_com_chave_antiga');`. Cada linha precisa de `rolsuper` ou `rolbypassrls` verdadeiro.
 - O comportamento da tela com centenas de modelos na lista.
