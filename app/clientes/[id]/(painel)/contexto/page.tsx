@@ -1,4 +1,4 @@
-import { Feedback } from '@/../app/_components/Feedback';
+import { AvisoEfemero } from '@/../app/clientes/[id]/_componentes/AvisoEfemero';
 import { SubNavegacao } from '@/../app/clientes/[id]/_componentes/SubNavegacao';
 import { carregarPainel, primeiro } from '@/../app/clientes/[id]/_dados';
 import { BrainView } from '@/../app/clientes/[id]/(painel)/contexto/brain/BrainView';
@@ -22,8 +22,7 @@ export default async function Contexto({
 
   return (
     <div className="pilha">
-      <Feedback message={primeiro(busca['erro'])} tone="error" />
-      <Feedback message={primeiro(busca['feito'])} tone="ok" />
+      <AvisoEfemero erro={primeiro(busca['erro'])} feito={primeiro(busca['feito'])} />
       <SubNavegacao
         rotulo="Seções de Contexto"
         ativa={secao}

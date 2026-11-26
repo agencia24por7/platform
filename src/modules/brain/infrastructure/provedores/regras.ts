@@ -22,7 +22,7 @@ const SENSIBILIDADE: Sensibilidade = {
   nivel: 'negocio',
   piiPossivel: false,
   usoPorAgente: 'permitido',
-  retencao: 'Enquanto o cliente existir; dado pessoal digitado por engano é substituído por [redigido] pelo worker e o expurgo do cliente apaga tudo (ADR 0051).',
+  retencao: 'Enquanto o cliente existir; dado pessoal digitado por engano é substituído por [redigido] pelo worker e o expurgo do cliente apaga tudo.',
 };
 
 function cortar(texto: string, maximo: number): string {
@@ -152,7 +152,7 @@ function urnsDasVigentes(ctx: ContextoDeDescoberta, regras: RegrasParaCatalogo):
 export const provedorDeRegras: ProvedorDeCatalogo = {
   id: ID,
   versao: VERSAO,
-  descricao: 'Limites, regras e decisões do cliente (ADR 0051): vigentes por chave e o histórico de cada registro, sempre como conteúdo não confiável.',
+  descricao: 'Limites, regras e decisões do cliente: vigentes por chave e o histórico de cada registro, sempre como conteúdo não confiável.',
   fase: 'primaria',
   tiposDeclarados: ['limite', 'regra', 'decisao'],
   descobrir(ctx) {

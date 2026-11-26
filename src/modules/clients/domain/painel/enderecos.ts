@@ -19,7 +19,7 @@ export const SECOES_DE_CONTEXTO = ['perfil', 'brain'] as const;
 export type SecaoDeContexto = (typeof SECOES_DE_CONTEXTO)[number];
 
 export const ROTULO_DA_SECAO_DE_CONTEXTO: Record<SecaoDeContexto, string> = {
-  perfil: 'Perfil',
+  perfil: 'Mapa de contexto',
   brain: 'Brain',
 };
 

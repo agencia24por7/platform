@@ -1,0 +1,26 @@
+{
+  "agencia/alertas-de-falha.json": {
+    "id": "im3mfvd9pUI79e74",
+    "nome": "24/7 · Alertas de falha"
+  },
+  "agencia/meta-leads-entrada.json": {
+    "id": "3P5GftNxoAJKIbS2",
+    "nome": "24/7 · Meta Lead Ads (entrada)"
+  },
+  "clientes/credaz/conciliacao-leads.json": {
+    "id": "JTo0O68ZD1RMfsZb",
+    "nome": "Credaz · Conciliação de leads (de hora em hora)"
+  },
+  "clientes/credaz/lead-meta-para-rd.json": {
+    "id": "TkrchseIkpszaY1D",
+    "nome": "Credaz · Lead Meta → RD"
+  },
+  "clientes/credaz/rd-para-meta-conversoes.json": {
+    "id": "lsLf2F8vaYqIeLa5",
+    "nome": "Credaz · RD → Meta (conversões)"
+  },
+  "clientes/credaz/tarefas-por-etapa.json": {
+    "id": "x621uctpcUtVLXuw",
+    "nome": "Credaz · Tarefas por etapa"
+  }
+}

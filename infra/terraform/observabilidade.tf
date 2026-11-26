@@ -147,20 +147,6 @@ resource "google_logging_project_sink" "aplicacao" {
   depends_on = [google_project_service.required]
 }
 
-resource "google_project_iam_member" "sink_aplicacao" {
-  count = var.logs_na_nuvem_habilitado ? 1 : 0
-
-  project = var.project_id
-  role    = "roles/logging.bucketWriter"
-  member  = google_logging_project_sink.aplicacao[0].writer_identity
-
-  condition {
-    title       = "so-o-bucket-da-aplicacao"
-    description = "Limita a escrita do sink ao bucket de logs da aplicação."
-    expression  = "resource.name.endsWith(\"locations/global/buckets/${local.prefix}-aplicacao\")"
-  }
-}
-
 resource "google_logging_project_exclusion" "aplicacao_no_bucket_proprio" {
   count = var.logs_na_nuvem_habilitado ? 1 : 0
 
@@ -168,10 +154,7 @@ resource "google_logging_project_exclusion" "aplicacao_no_bucket_proprio" {
   description = "Tira a linha da aplicação do _Default, onde ficaria 30 dias e seria cobrada em dobro, porque ela é guardada no bucket próprio com retenção mínima. O resto do _Default (auditoria, KMS, Secret Manager) não muda."
   filter      = local.filtro_linha_da_app
 
-  depends_on = [
-    google_logging_project_sink.aplicacao,
-    google_project_iam_member.sink_aplicacao,
-  ]
+  depends_on = [google_logging_project_sink.aplicacao]
 }
 
 resource "google_monitoring_alert_policy" "uso_de_logs" {

@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-11-24
 ---
-# ADR-0056: O leitor vê o que o cliente vê, e o cadastro de cliente é autorizado no serviço
+# ADR-0062: O leitor vê o que o cliente vê, e o cadastro de cliente é autorizado no serviço
 
 Fecha dois achados da revisão de segurança: 24K-118 (o papel leitor recebia conteúdo interno da equipe) e 24K-119 (a regra de quem cadastra cliente só existia na tela). Não contradiz os ADRs 0026, 0036, 0050 e 0051; complementa-os nos pontos citados abaixo.
 

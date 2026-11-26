@@ -51,7 +51,7 @@ export const EXPLICACAO_DA_FORCA: Readonly<Record<Forca, string>> = {
 export const ROTULO_DO_STATUS: Readonly<Record<Status, string>> = {
   proposta: 'Proposta',
   vigente: 'Vigente',
-  superada: 'Superada',
+  superada: 'Substituída',
   revogada: 'Revogada',
   rejeitada: 'Rejeitada',
 };

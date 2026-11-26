@@ -117,6 +117,16 @@ describe('resumo da completude e saúde dos dados', () => {
     assert.equal(barrasDaSecao(secao({ preenchidos: 10, essenciaisPreenchidos: 4, essenciaisCompletos: true })).estado, 'completa');
   });
 
+  it('progresso usa o essencial e nunca enche a barra de seção sem essencial preenchido', () => {
+    const empresa = barrasDaSecao(secao({ preenchidos: 2, essenciaisPreenchidos: 2, essenciaisTotal: 6, percentual: 19 }));
+    assert.equal(empresa.progresso, 33);
+    const semEssencial = barrasDaSecao(secao({ essenciaisTotal: 0, total: 3, percentual: 0, essenciaisCompletos: true }));
+    assert.equal(semEssencial.essencial.percentual, 0);
+    assert.equal(semEssencial.progresso, 0);
+    assert.equal(semEssencial.estado, 'vazia');
+    assert.equal(barrasDaSecao(secao({ essenciaisTotal: 0, total: 3, preenchidos: 1, percentual: 33, essenciaisCompletos: true })).progresso, 33);
+  });
+
   it('agrega seções', () => {
     const r = resumirCompletude(62, [
       secao({ preenchidos: 10, essenciaisPreenchidos: 4, essenciaisCompletos: true }),

@@ -1,4 +1,4 @@
-# 0055 — Limitador de taxa isolado por domínio
+# 0061 — Limitador de taxa isolado por domínio
 
 - Status: aceito
 - Data: 2026-11-24

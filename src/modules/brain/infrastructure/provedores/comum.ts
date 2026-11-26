@@ -4,7 +4,7 @@ import { calcularFrescor, esperadoAte } from '../../domain/frescor.ts';
 import type { FonteDoInventario, InventarioDoCliente, JanelaColetada, ResumoDeColetas } from '../../domain/inventario.ts';
 import { conectorDe } from '../../dados/registro.ts';
 
-export const RETENCAO_DOS_DADOS = 'Enquanto o cliente existir; a exclusão lógica esconde e o expurgo apaga pelo período de posse (ADR 0022 e 0023).';
+export const RETENCAO_DOS_DADOS = 'Enquanto o cliente existir; a exclusão lógica esconde e o expurgo apaga pelo período de posse.';
 export const RETENCAO_DO_CONTEXTO = 'Enquanto o cliente existir; o expurgo do cliente apaga o contexto, os arquivos e este catálogo.';
 
 export const SENSIBILIDADE_DE_NEGOCIO: Sensibilidade = {

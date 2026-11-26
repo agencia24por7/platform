@@ -3,13 +3,14 @@ import type { CompletudeDaSecao } from '../contexto/completude.ts';
 export type BarrasDaSecao = {
   readonly secao: string;
   readonly percentual: number;
+  readonly progresso: number;
   readonly essencial: { readonly feitos: number; readonly total: number; readonly percentual: number };
   readonly aprofundar: { readonly feitos: number; readonly total: number; readonly percentual: number };
   readonly estado: 'vazia' | 'comecada' | 'essencial_ok' | 'completa';
 };
 
 function pct(feitos: number, total: number): number {
-  return total === 0 ? 100 : Math.round((feitos / total) * 100);
+  return total === 0 ? 0 : Math.round((feitos / total) * 100);
 }
 
 export function barrasDaSecao(c: CompletudeDaSecao): BarrasDaSecao {
@@ -17,10 +18,12 @@ export function barrasDaSecao(c: CompletudeDaSecao): BarrasDaSecao {
   const aprofundarFeitos = Math.max(c.preenchidos - c.essenciaisPreenchidos, 0);
   const estado =
     c.preenchidos === 0 ? 'vazia' : c.preenchidos >= c.total ? 'completa' : c.essenciaisCompletos ? 'essencial_ok' : 'comecada';
+  const essencial = { feitos: c.essenciaisPreenchidos, total: c.essenciaisTotal, percentual: pct(c.essenciaisPreenchidos, c.essenciaisTotal) };
   return {
     secao: c.secao,
     percentual: c.percentual,
-    essencial: { feitos: c.essenciaisPreenchidos, total: c.essenciaisTotal, percentual: pct(c.essenciaisPreenchidos, c.essenciaisTotal) },
+    progresso: c.essenciaisTotal > 0 ? essencial.percentual : c.percentual,
+    essencial,
     aprofundar: { feitos: aprofundarFeitos, total: aprofundarTotal, percentual: pct(aprofundarFeitos, aprofundarTotal) },
     estado,
   };

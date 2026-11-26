@@ -361,14 +361,18 @@ não mostra mudança alguma: o script de inicialização renderiza byte a byte i
 - `google_monitoring_alert_policy.erros_app`: dispara com contagem maior que 0 em janela de 5 minutos e avisa
   os canais `google_monitoring_notification_channel.budget`. Sem e-mails em `budget_notification_emails` a política
   é criada sem canal (aparece no console, não notifica); a mensagem não carrega conteúdo de log.
-- `google_logging_project_bucket_config.aplicacao`, `google_logging_project_sink.aplicacao` e
-  `google_project_iam_member.sink_aplicacao`: bucket próprio `<prefixo>-aplicacao` com retenção de
-  `logs_na_nuvem_retencao_dias` (padrão 3), que recebe só a linha da aplicação. O sink escreve com identidade própria e
-  o papel `logging.bucketWriter` restrito, por condição, a esse bucket. O `_Default` do projeto **não é alterado**: a
-  auditoria de acesso a dados do KMS e do Secret Manager (ADR 0032) e os demais logs ficam nos 30 dias padrão.
-- `google_logging_project_exclusion.aplicacao_no_bucket_proprio`: tira a linha da aplicação do `_Default` para não
-  guardá-la duas vezes nem contá-la em dobro nos 50 GiB. Só é criada depois do sink e do papel, mas o IAM propaga de forma
-  eventual: nos primeiros minutos do `apply` a linha pode ser descartada antes de a permissão valer. Para investigar, no Logs Explorer use "Refinar escopo" e escolha o bucket `<prefixo>-aplicacao`.
+- `google_logging_project_bucket_config.aplicacao` e `google_logging_project_sink.aplicacao`: bucket próprio
+  `<prefixo>-aplicacao` com retenção de `logs_na_nuvem_retencao_dias` (padrão 3), que recebe só a linha da aplicação. O
+  sink escreve em bucket do **mesmo projeto**, e nesse caso a API devolve o `writer_identity` vazio: não há papel IAM a
+  conceder (a primeira versão tentou conceder `logging.bucketWriter` e o `apply` falhou com `invalid value "" for member`).
+  O `_Default` do projeto **não é alterado**: a auditoria de acesso a dados do KMS e do Secret Manager (ADR 0032) e os
+  demais logs ficam nos 30 dias padrão. Para investigar, no Logs Explorer use "Refinar escopo" e escolha o bucket
+  `<prefixo>-aplicacao`.
+- `google_logging_project_exclusion.aplicacao_no_bucket_proprio`: tira a linha da aplicação do `_Default`, para não
+  guardá-la duas vezes nem contá-la em dobro nos 50 GiB, e a retenção de 3 dias passa a valer para ela. **Só foi criada
+  depois da prova** de que o sink escreve no bucket: em 2026-11-25, com a VM recém-reiniciada, uma linha de teste enviada
+  a `/api/erros` apareceu no bucket `<prefixo>-aplicacao` um segundo depois (e no `_Default`, porque a exclusão ainda não
+  existia). Depende do sink. A métrica de erros e o alerta contam na entrada, antes das exclusões, e não mudam.
 - `google_monitoring_alert_policy.uso_de_logs`: avisa por e-mail quando os logs ingeridos no mês passam de
   `logs_na_nuvem_alerta_uso_gib` (padrão 40 GiB), para agir antes de estourar os 50 GiB grátis. Só avisa.
 - O script é idempotente: não reinstala o pacote se já existe e só reinicia o agente se o `config.yaml` mudou.
@@ -464,8 +468,7 @@ nas primeiras horas, e o OOM kill em `journalctl -k`.
    `sudo apt-get remove -y google-cloud-ops-agent` (opcional: apagar `/etc/apt/sources.list.d/google-cloud-ops-agent.list`
    e `/etc/apt/keyrings/google-cloud-ops-agent.gpg`). O Terraform não remove o agente.
 2. Só então `logs_na_nuvem_habilitado = false` e aplicar pelo `infra.yml`: remove a métrica de erros, as duas políticas
-   de alerta (erros e uso), a exclusão do projeto que descarta o que não é da aplicação, a exclusão da linha da aplicação,
-   o papel `logging.bucketWriter`, o sink e o bucket `<prefixo>-aplicacao`. Os logs que estavam nesse bucket vão junto; sem
+   de alerta (erros e uso), a exclusão do projeto que descarta o que não é da aplicação, a exclusão da linha da aplicação, o sink e o bucket `<prefixo>-aplicacao`. Os logs que estavam nesse bucket vão junto; sem
    consulta, o bucket é purgado depois de cerca de 7 dias, e religar o pacote logo em seguida pode falhar até o nome do
    bucket ser liberado (comportamento do Cloud Logging, não testado aqui).
 3. Se a variável for desligada com o agente ainda vivo, ele continua enviando logs e as exclusões somem do plano: os logs
