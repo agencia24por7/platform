@@ -1,10 +1,11 @@
-export const ABAS_DO_CLIENTE = ['conexoes', 'contexto', 'regras'] as const;
+export const ABAS_DO_CLIENTE = ['conexoes', 'contexto', 'regras', 'estrategia'] as const;
 export type AbaDoCliente = (typeof ABAS_DO_CLIENTE)[number];
 
 export const ROTULO_DA_ABA: Record<AbaDoCliente, string> = {
   conexoes: 'Conexões',
   contexto: 'Contexto',
   regras: 'Regras',
+  estrategia: 'Estratégia',
 };
 
 export const SECOES_DE_CONEXOES = ['fontes', 'pedir'] as const;
@@ -29,6 +30,20 @@ export function secaoDeConexoes(bruto: string | null | undefined): SecaoDeConexo
 
 export function secaoDeContexto(bruto: string | null | undefined): SecaoDeContexto {
   return bruto === 'brain' ? 'brain' : 'perfil';
+}
+
+export const SECOES_DE_ESTRATEGIA = ['plano', 'comite', 'gates', 'historico'] as const;
+export type SecaoDeEstrategia = (typeof SECOES_DE_ESTRATEGIA)[number];
+
+export const ROTULO_DA_SECAO_DE_ESTRATEGIA: Record<SecaoDeEstrategia, string> = {
+  plano: 'Plano',
+  comite: 'Comitê',
+  gates: 'Gates',
+  historico: 'Histórico',
+};
+
+export function secaoDeEstrategia(bruto: string | null | undefined): SecaoDeEstrategia {
+  return (SECOES_DE_ESTRATEGIA as readonly string[]).includes(bruto ?? '') ? (bruto as SecaoDeEstrategia) : 'plano';
 }
 
 export const SEGMENTOS_LEGADOS = ['visao', 'brain', 'dados', 'acessos', 'configuracoes'] as const;

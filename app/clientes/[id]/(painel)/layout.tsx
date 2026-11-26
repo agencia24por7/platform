@@ -15,6 +15,7 @@ import { acaoPrincipal, ROTULO_DO_VEREDITO, type Veredito } from '@/modules/clie
 import { podeCadastrarCliente } from '@/modules/clients/domain/painel/permissoes';
 import { rotaDoCliente } from '@/modules/clients/domain/painel/enderecos';
 import { estadoDoBlocoDeRegras, podeRegistrarOuMexer } from '@/modules/clients/domain/painel/regras';
+import { podeVerAEstrategia } from '@/modules/strategy/domain/papeis';
 import { noVocabularioDe, vocabularioDe } from '@/modules/organizations/domain/vocabulario';
 
 export const dynamic = 'force-dynamic';
@@ -191,7 +192,7 @@ export default async function LayoutDoCliente({
         ) : null}
         <FaixaDeProntidao prontidao={prontidao} regras={regras} clienteId={cliente.id} podeDefinir={podeRegistrarOuMexer(ctx.role, 'limite')} />
       </header>
-      <AbasDoCliente clienteId={cliente.id} blocos={{ conexoes: prontidao?.conexoes ?? null, contexto: prontidao?.contexto ?? null, regras: blocoDeRegras }} contadores={{ regras: contadorDeRegras }} />
+      <AbasDoCliente clienteId={cliente.id} blocos={{ conexoes: prontidao?.conexoes ?? null, contexto: prontidao?.contexto ?? null, regras: blocoDeRegras, estrategia: null }} contadores={{ regras: contadorDeRegras }} abasOcultas={podeVerAEstrategia(ctx.role) ? [] : ['estrategia']} />
       <div className="cliente-aba">{children}</div>
     </Shell>
   );

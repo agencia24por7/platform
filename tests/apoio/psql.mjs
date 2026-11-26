@@ -9,6 +9,7 @@ const VARIAVEL_DE_SENHA = {
 };
 
 function valorDoEnv(chave) {
+  if (process.env[chave]) return process.env[chave];
   const linha = readFileSync('.env', 'utf8')
     .split('\n')
     .find((candidata) => candidata.startsWith(`${chave}=`));

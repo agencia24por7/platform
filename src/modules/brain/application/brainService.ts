@@ -6,6 +6,8 @@ import { canOperate, type MemberRole } from '../../identity/domain/user.ts';
 import { err, ok, type Result } from '@/shared/result/result';
 import type { DefinicaoDeCapacidade } from '../domain/capacidades.ts';
 import { filtrarCatalogo, paginar, type FiltrosDoCatalogo } from '../domain/consulta.ts';
+import type { EntradaDeConhecimento } from '../domain/conhecimento.ts';
+import { janelaDeDesempenho, PLATAFORMAS_DE_DESEMPENHO } from '../domain/desempenho.ts';
 import type { CarregadorDeContexto, ContextoParaCatalogo, VisaoDoContexto } from '../domain/contexto.ts';
 import { CARREGADOR_DE_REGRAS_INDISPONIVEL, type CarregadorDeRegras, type RegrasParaCatalogo } from '../domain/regras.ts';
 import type { ConectorDoDiagnostico } from '../domain/diagnostico.ts';
@@ -21,6 +23,7 @@ import type {
   ClienteResolvido,
   IdentidadeDoWorker,
   MedidorDeCobertura,
+  MedidorDeDesempenho,
   ObjetoDeMedicao,
 } from './portas.ts';
 import { artefatosDoCatalogo, manifestoDe, PASTA_DAS_ENTRADAS, prefixoDoCatalogo, type ManifestoDoCatalogo } from './publicacao.ts';
@@ -37,6 +40,7 @@ export type DependenciasDoBrain = {
   readonly regras?: CarregadorDeRegras;
   readonly armazenamento: ArmazenamentoDeContexto;
   readonly medidor: MedidorDeCobertura;
+  readonly medidorDeDesempenho?: MedidorDeDesempenho;
   readonly audit: AuditRecorder;
   readonly provedores: readonly ProvedorDeCatalogo[];
   readonly capacidades: readonly DefinicaoDeCapacidade[];
@@ -69,7 +73,13 @@ export type ResumoDaVarredura = {
   readonly despublicados: number;
 };
 
-export type ResumoDaMedicao = { readonly clientes: number; readonly tabelas: number; readonly falhas: number };
+export type ResumoDaMedicao = {
+  readonly clientes: number;
+  readonly tabelas: number;
+  readonly falhas: number;
+  readonly desempenhoLinhas: number;
+  readonly desempenhoFalhas: number;
+};
 
 export type BrainService = {
   montar(clienteId: string): Promise<Result<Snapshot, Failure>>;
@@ -143,11 +153,21 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
     }
   }
 
+  async function carregarConhecimento(cliente: ClienteResolvido): Promise<readonly EntradaDeConhecimento[] | null> {
+    try {
+      return await deps.repositorio.carregarConhecimento(cliente);
+    } catch (erro) {
+      aviso('brain.conhecimento_indisponivel', { clienteId: cliente.clienteId, erro: mensagem(erro) });
+      return null;
+    }
+  }
+
   async function montarResolvido(cliente: ClienteResolvido, visao: VisaoDoContexto): Promise<Snapshot | null> {
-    const [inventario, contexto, regras] = await Promise.all([
+    const [inventario, contexto, regras, conhecimento] = await Promise.all([
       deps.repositorio.carregarInventario(cliente),
       carregarContexto(cliente, visao),
       carregarRegras(cliente),
+      carregarConhecimento(cliente),
     ]);
     if (!inventario) return null;
     return construirCatalogo(
@@ -167,6 +187,7 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
         inventario,
         contexto,
         regras,
+        conhecimento,
       },
     );
   }
@@ -380,22 +401,40 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
       const clientes = await deps.repositorio.clientesParaMedir(limite);
       const ate = somarDias(hojeEmSaoPaulo(agora()), -1);
       const desde = somarDias(ate, -(deps.configuracao.diasDeMedicao - 1));
-      let tabelas = 0;
-      let falhas = 0;
+      const janela = janelaDeDesempenho(agora());
+      const medidorDeDesempenho = deps.medidorDeDesempenho;
+      const contagem = { tabelas: 0, falhas: 0, desempenhoLinhas: 0, desempenhoFalhas: 0 };
       for (const cliente of clientes) {
         const objetos = deps.objetosDeMedicao(cliente.plataformas);
-        if (objetos.length === 0) continue;
+        if (objetos.length > 0) {
+          try {
+            const medidas = await deps.medidor.medir(cliente, objetos, desde, ate);
+            await deps.repositorio.gravarCobertura(cliente, medidas);
+            await deps.repositorio.marcarPendente(cliente, 'cobertura_medida');
+            contagem.tabelas += medidas.length;
+          } catch (erro) {
+            contagem.falhas += 1;
+            aviso('brain.cobertura_falhou', { clienteId: cliente.clienteId, erro: mensagem(erro) });
+          }
+        }
+        const plataformas = cliente.plataformas.filter((p) => (PLATAFORMAS_DE_DESEMPENHO as readonly string[]).includes(p));
+        if (!medidorDeDesempenho?.disponivel || plataformas.length === 0) continue;
         try {
-          const medidas = await deps.medidor.medir(cliente, objetos, desde, ate);
-          await deps.repositorio.gravarCobertura(cliente, medidas);
-          await deps.repositorio.marcarPendente(cliente, 'cobertura_medida');
-          tabelas += medidas.length;
+          const medicao = await medidorDeDesempenho.medir(cliente, plataformas, janela);
+          for (const consulta of medicao.falhas) {
+            contagem.desempenhoFalhas += 1;
+            aviso('brain.desempenho_consulta_falhou', { clienteId: cliente.clienteId, consulta });
+          }
+          if (medicao.medidos.length === 0) continue;
+          await deps.repositorio.gravarDesempenho(cliente, medicao);
+          await deps.repositorio.marcarPendente(cliente, 'desempenho_medido');
+          contagem.desempenhoLinhas += medicao.linhas.length;
         } catch (erro) {
-          falhas += 1;
-          aviso('brain.cobertura_falhou', { clienteId: cliente.clienteId, erro: mensagem(erro) });
+          contagem.desempenhoFalhas += 1;
+          aviso('brain.desempenho_falhou', { clienteId: cliente.clienteId, erro: mensagem(erro) });
         }
       }
-      const resumo = { clientes: clientes.length, tabelas, falhas };
+      const resumo = { clientes: clientes.length, ...contagem };
       await deps.audit.record({
         organizationId: null,
         actorType: 'worker',

@@ -4,6 +4,7 @@
 @import './estilos/brain.css';
 @import './estilos/publico.css';
 @import './estilos/regras.css';
+@import './estilos/estrategia.css';
 
 *, *::before, *::after { box-sizing: border-box; }
 html, body { height: 100%; }

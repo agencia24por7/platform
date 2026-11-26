@@ -1,3 +1,5 @@
+import type { EntradaDeConhecimento } from '../domain/conhecimento.ts';
+import type { JanelaDeDesempenho, ResultadoDaMedicaoDeDesempenho } from '../domain/desempenho.ts';
 import type { InventarioDoCliente } from '../domain/inventario.ts';
 
 export type ClienteResolvido = { readonly organizationId: string; readonly clienteId: string };
@@ -34,6 +36,8 @@ export type BrainRepository = {
   marcarDespublicado(clienteId: string): Promise<void>;
   clientesParaMedir(limite: number): Promise<readonly ClienteParaMedir[]>;
   gravarCobertura(cliente: ClienteResolvido, medidas: readonly MedidaNova[]): Promise<void>;
+  carregarConhecimento(cliente: ClienteResolvido): Promise<readonly EntradaDeConhecimento[]>;
+  gravarDesempenho(cliente: ClienteResolvido, medicao: Pick<ResultadoDaMedicaoDeDesempenho, 'linhas' | 'medidos'>): Promise<void>;
 };
 
 export type ObjetoDeMedicao = {
@@ -46,6 +50,11 @@ export type ObjetoDeMedicao = {
 export type MedidorDeCobertura = {
   readonly disponivel: boolean;
   medir(cliente: ClienteResolvido, objetos: readonly ObjetoDeMedicao[], desde: string, ate: string): Promise<readonly MedidaNova[]>;
+};
+
+export type MedidorDeDesempenho = {
+  readonly disponivel: boolean;
+  medir(cliente: ClienteResolvido, plataformas: readonly string[], janela: JanelaDeDesempenho): Promise<ResultadoDaMedicaoDeDesempenho>;
 };
 
 export type IdentidadeDoWorker = { readonly requestId: string; readonly callerFingerprint: string; readonly sourceIp: string | null };

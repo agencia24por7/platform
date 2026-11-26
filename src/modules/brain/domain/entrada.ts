@@ -23,6 +23,9 @@ export const STATUS_DE_FRESCOR = ['fresco', 'atrasado', 'parado', 'desconhecido'
 export const FONTES_DA_MEDIDA = ['coletas', 'gov_cobertura_cliente', 'contexto', 'nao_se_aplica'] as const;
 export const MARCAS_EPISTEMICAS = ['fato', 'hipotese', 'desejo', 'misto'] as const;
 export const REVISOES = ['confirmado', 'sugerido', 'misto'] as const;
+export const CATEGORIAS_DE_EVIDENCIA = ['lente', 'pratica', 'regra_legal', 'benchmark'] as const;
+export const NOTAS_DE_EVIDENCIA = ['A', 'B', 'C', 'D'] as const;
+export const MATURIDADES_DE_EVIDENCIA = ['rumor', 'piloto', 'validado'] as const;
 
 const dataIso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const momentoIso = z.string().datetime({ offset: true });
@@ -134,6 +137,20 @@ export const relacao = z.object({
   urn: z.string().refine((valor) => lerUrn(valor) !== null, 'urn inválida'),
 });
 
+export const evidencia = z.object({
+  categoria: z.enum(CATEGORIAS_DE_EVIDENCIA),
+  nota: z.enum(NOTAS_DE_EVIDENCIA),
+  fonte: texto(300),
+  mercado: texto(40),
+  jurisdicao: z.string().regex(/^[a-z]{2,10}$/),
+  dataDaFonte: dataIso,
+  validoAte: dataIso.optional(),
+  verificadoEm: dataIso.optional(),
+  obrigatoria: z.boolean(),
+  maturidade: z.enum(MATURIDADES_DE_EVIDENCIA).optional(),
+  replicada: z.boolean(),
+});
+
 export const referencia = z.object({
   sistema: texto(40),
   local: texto(400),
@@ -158,6 +175,7 @@ export const entradaSemSelo = z.object({
   epistemico: epistemico.nullable(),
   valorResumido: z.string().max(600).nullable(),
   conteudoNaoConfiavel: z.literal(true).optional(),
+  evidencia: evidencia.optional(),
   tags: z.array(z.string().regex(/^[a-z0-9][a-z0-9_:-]{0,47}$/)).max(30),
   relacoes: z.array(relacao).max(200),
   versao: z.number().int().min(1),
@@ -177,6 +195,7 @@ export type AcessoBigQuery = z.infer<typeof acessoBigQuery>;
 export type Sensibilidade = z.infer<typeof sensibilidade>;
 export type Epistemico = z.infer<typeof epistemico>;
 export type Relacao = z.infer<typeof relacao>;
+export type Evidencia = z.infer<typeof evidencia>;
 export type EntradaSemSelo = z.infer<typeof entradaSemSelo>;
 export type EntradaDoCatalogo = z.infer<typeof entradaDoCatalogo>;
 

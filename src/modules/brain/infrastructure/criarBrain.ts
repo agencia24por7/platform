@@ -9,6 +9,7 @@ import { createBrainRepository } from './brainRepository.ts';
 import { carregadorDoServicoDeRegras, type ServicoDeRegrasCompativel } from './carregadorDeRegras.ts';
 import { carregadorDoServicoDeContexto, type ServicoDeContextoCompativel } from './carregadorDeContexto.ts';
 import { createMedidorBigQuery } from './coberturaBigQuery.ts';
+import { createMedidorDeDesempenhoBigQuery } from './desempenhoBigQuery.ts';
 import { objetosDeMedicao } from './provedores/dados.ts';
 import { PROVEDORES } from './provedores/index.ts';
 
@@ -26,6 +27,7 @@ export function criarBrain(
     regras: carregadorDoServicoDeRegras(regras),
     armazenamento: criarArmazenamentoDeContexto(config),
     medidor: createMedidorBigQuery(),
+    medidorDeDesempenho: createMedidorDeDesempenhoBigQuery(),
     audit,
     provedores: PROVEDORES,
     capacidades: DEFINICOES_DE_CAPACIDADES,
