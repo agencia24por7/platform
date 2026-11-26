@@ -1,3 +1,4 @@
+import { RECORTES_DE_DESEMPENHO, type RecorteDeDesempenho } from '../domain/desempenho.ts';
 import type { InventarioDoCliente, JanelaColetada, TipoDeFonte } from '../domain/inventario.ts';
 
 export type LinhaDeCliente = {
@@ -55,12 +56,28 @@ export type LinhaDeCobertura = {
   medido_em: Date;
 };
 
+export type LinhaSqlDeDesempenho = {
+  platform: string;
+  periodo: string;
+  recorte: string;
+  chave: string;
+  rotulo: string;
+  investimento_centavos: string | number;
+  impressoes: string | number;
+  cliques: string | number;
+  conversoes: string | number;
+  receita_centavos: string | number | null;
+  moeda: string;
+  medido_em: Date;
+};
+
 export type LinhasDoInventario = {
   clientes: LinhaDeCliente[];
   conexoes: LinhaDeConexao[];
   fontes: LinhaDeFonte[];
   coletas: LinhaDeColetas[];
   cobertura: LinhaDeCobertura[];
+  desempenho: LinhaSqlDeDesempenho[];
 };
 
 export type ExecutorSql = (partes: TemplateStringsArray, ...valores: string[]) => PromiseLike<readonly unknown[]>;
@@ -139,6 +156,22 @@ export function montarInventario(linhas: LinhasDoInventario): InventarioDoClient
       diasComDado: m.dias_com_dado,
       medidoEm: m.medido_em,
     })),
+    desempenho: linhas.desempenho
+      .filter((d) => (RECORTES_DE_DESEMPENHO as readonly string[]).includes(d.recorte))
+      .map((d) => ({
+        platform: d.platform,
+        periodo: d.periodo,
+        recorte: d.recorte as RecorteDeDesempenho,
+        chave: d.chave,
+        rotulo: d.rotulo,
+        investimentoCentavos: Number(d.investimento_centavos),
+        impressoes: Number(d.impressoes),
+        cliques: Number(d.cliques),
+        conversoes: Number(d.conversoes),
+        receitaCentavos: d.receita_centavos === null ? null : Number(d.receita_centavos),
+        moeda: d.moeda.trim(),
+        medidoEm: d.medido_em,
+      })),
   };
 }
 
@@ -147,7 +180,7 @@ export async function consultarInventario(tx: ExecutorSql, cliente: { readonly o
   const clientes = await tx`
     SELECT id, organization_id, name, parent_client_id, status::text AS status, business_model::text AS business_model, segment
     FROM core.clients WHERE id = ${id}`;
-  if (clientes.length === 0) return { clientes: [], conexoes: [], fontes: [], coletas: [], cobertura: [] };
+  if (clientes.length === 0) return { clientes: [], conexoes: [], fontes: [], coletas: [], cobertura: [], desempenho: [] };
   const conexoes = await tx`
     SELECT id, platform::text AS platform, label, status::text AS status, expires_at, authorized_at
     FROM integrations.connections WHERE organization_id = ${cliente.organizationId} ORDER BY id`;
@@ -219,7 +252,11 @@ export async function consultarInventario(tx: ExecutorSql, cliente: { readonly o
   const cobertura = await tx`
     SELECT tabela, desde::text AS desde, ate::text AS ate, linhas, dias_com_dado, medido_em
     FROM core.client_brain_coverage WHERE client_id = ${id} ORDER BY tabela`;
-  return { clientes, conexoes, fontes, coletas, cobertura } as unknown as LinhasDoInventario;
+  const desempenho = await tx`
+    SELECT platform, periodo::text AS periodo, recorte, item AS chave, rotulo, investimento_centavos, impressoes, cliques, conversoes,
+           receita_centavos, moeda, medido_em
+    FROM core.client_brain_performance WHERE client_id = ${id} ORDER BY platform, periodo, recorte, item`;
+  return { clientes, conexoes, fontes, coletas, cobertura, desempenho } as unknown as LinhasDoInventario;
 }
 
-export const CONSULTAS_DO_INVENTARIO = 5;
+export const CONSULTAS_DO_INVENTARIO = 6;

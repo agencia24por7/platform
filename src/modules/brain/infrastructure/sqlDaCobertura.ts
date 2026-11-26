@@ -21,7 +21,7 @@ function exigir(nome: string): string {
   return nome;
 }
 
-function qualificada(destino: Destino, objeto: string): string {
+export function qualificada(destino: Destino, objeto: string): string {
   if (!/^[a-z][a-z0-9-]*$/.test(destino.projeto) || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(destino.conjuntoDeDados)) {
     throw new Error('projeto ou conjunto de dados inválido');
   }
