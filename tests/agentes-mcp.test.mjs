@@ -100,6 +100,17 @@ const consultar = (clienteId, extra = {}) => ({
 const conteudo = (resposta) => resposta.mensagem?.result?.content?.[0]?.text ?? '';
 const naoEncontrado = (resposta) => resposta.mensagem?.result?.isError === true && conteudo(resposta) === 'Cliente não encontrado.';
 
+async function aquecerRotaMcp() {
+  for (let tentativa = 1; tentativa <= 5; tentativa++) {
+    try {
+      await fetch(`${BASE}/api/mcp`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(60000) });
+      return;
+    } catch {
+      await new Promise((resolver) => setTimeout(resolver, 2000));
+    }
+  }
+}
+
 describe('credencial de agente e servidor MCP (ADR 0063)', { concurrency: false }, () => {
   let a;
   let b;
@@ -107,6 +118,7 @@ describe('credencial de agente e servidor MCP (ADR 0063)', { concurrency: false 
 
   before(async () => {
     assert.ok(await appIsUp(), 'App não está no ar');
+    await aquecerRotaMcp();
     a = organizacaoComCliente('a');
     b = organizacaoComCliente('b');
     usuario = ensureUser(`mcp-${sufixo()}@tria.local`);
