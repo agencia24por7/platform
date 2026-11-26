@@ -143,7 +143,7 @@ export async function Shell({ title, organization, active, children }: Props) {
         </div>
         {navegacao('lateral')}
       </aside>
-      <main className="main" id="conteudo" tabIndex={-1}>
+      <main className="main">
         <header className="topbar">
           <NavegacaoMovel>
             {modo ? <div className="gaveta__modo side__modo">{modo}</div> : null}
@@ -155,7 +155,7 @@ export async function Shell({ title, organization, active, children }: Props) {
             <ThemeToggle />
           </div>
         </header>
-        <div className="page">
+        <div className="page" id="conteudo" tabIndex={-1}>
           {children}
         </div>
         <Suspense fallback={null}>
