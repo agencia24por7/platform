@@ -19,7 +19,7 @@ export function BotaoDeEnvio({
   const { pending } = useFormStatus();
 
   return (
-    <button className={className} type="submit" title={title} aria-label={ariaLabel} disabled={pending} aria-busy={pending}>
+    <button className={className} type="submit" title={title} aria-label={pending ? undefined : ariaLabel} disabled={pending} aria-busy={pending}>
       {pending ? pendente : children}
     </button>
   );

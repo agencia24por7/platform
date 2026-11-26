@@ -146,7 +146,7 @@ export default async function InteligenciaArtificialPage({
                     </form>
                     <ConfirmarAcao
                       gatilho="Remover chave"
-                      rotuloDoGatilho={`Remover a chave de ${nome}`}
+                      rotuloDoGatilho={`Remover chave de ${nome}`}
                       titulo={`Remover a chave de ${nome}?`}
                       descricao="As tarefas que usam este fornecedor ficam bloqueadas até você guardar outra chave. Para voltar, será preciso colar a chave de novo."
                       confirmar="Remover chave"
@@ -178,7 +178,7 @@ export default async function InteligenciaArtificialPage({
                   </span>
                   <ConfirmarAcao
                     gatilho="Remover chave desligada"
-                    rotuloDoGatilho={`Remover a chave desligada de ${ROTULO_DO_FORNECEDOR[chave.fornecedor]}`}
+                    rotuloDoGatilho={`Remover chave desligada de ${ROTULO_DO_FORNECEDOR[chave.fornecedor]}`}
                     titulo={`Remover a chave de ${ROTULO_DO_FORNECEDOR[chave.fornecedor]}?`}
                     descricao="A chave sai do cofre e não poderá ser recuperada daqui."
                     confirmar="Remover chave desligada"
