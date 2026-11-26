@@ -70,6 +70,7 @@ export type PainelDeIa = {
   readonly configuracao: ConfiguracaoDeIa;
   readonly usoDeHoje: UsoDoDia;
   readonly fornecedores: readonly { readonly fornecedor: Fornecedor; readonly chave: ChaveGuardada | null }[];
+  readonly chavesDeFornecedorDesligado: readonly ChaveGuardada[];
   readonly tarefas: readonly (TarefaConfiguravel & { readonly escolha: EscolhaDeModelo | null; readonly estado: EstadoDaTarefa })[];
 };
 
@@ -160,6 +161,7 @@ export function createModelosService(deps: DependenciasDosModelos): ModelosServi
           fornecedor,
           chave: vivas.find((chave) => chave.fornecedor === fornecedor) ?? null,
         })),
+        chavesDeFornecedorDesligado: chaves.filter((chave) => !deps.fornecedores.includes(chave.fornecedor)),
         tarefas: deps.tarefas.map((tarefa) => {
           const escolha = escolhas.find((candidata) => candidata.tarefa === tarefa.chave);
           return { ...tarefa, escolha: escolha ?? null, estado: estadoDaTarefa(escolha, vivas) };

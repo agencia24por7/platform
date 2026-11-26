@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 import { z } from 'zod';
 
 await import('../../brain/testes/ganchos.ts');
-const { criarRegistro, definirFerramenta, clienteNoEscopo } = await import('./ferramenta.ts');
+const { criarRegistro, definirFerramenta, clienteNoEscopo, executarFerramenta } = await import('./ferramenta.ts');
 const credencial = await import('./credencial.ts');
 const { ok } = await import('../../../shared/result/result.ts');
 
@@ -31,6 +31,25 @@ describe('registro de ferramentas (ADR 0057 §4)', () => {
     assert.throws(() => criarRegistro([ferramenta({ nome: 'Nome Ruim' })]), /fora do padrão/);
     assert.throws(() => criarRegistro([ferramenta({ descricao: '' })]), /descrição/);
     assert.throws(() => criarRegistro([ferramenta(), ferramenta()]), /duas vezes/);
+  });
+
+  it('a ferramenta nunca roda com entrada fora do esquema, venha de onde vier', async () => {
+    const recebidas: unknown[] = [];
+    const estrita = definirFerramenta({
+      nome: 'cliente_ler',
+      descricao: 'Lê um cliente.',
+      classe: 'leitura' as const,
+      entrada: z.object({ clienteId: z.uuid(), limite: z.number().int().max(50).default(10) }).strict(),
+      executar: async (entrada: unknown) => { recebidas.push(entrada); return ok({}); },
+    });
+    const escopo = { credencialId: 'c', organizationId: 'o', clienteIds: null, ferramentas: ['cliente_ler'], requestId: 'r', sourceIp: null };
+    for (const ruim of [{}, { clienteId: 'x' }, { clienteId: '22222222-2222-4222-8222-222222222222', organizationId: 'outra' }, null, 'texto']) {
+      const r = await executarFerramenta(estrita, ruim, escopo);
+      assert.equal(!r.ok && r.error.code, 'validation');
+    }
+    assert.equal(recebidas.length, 0);
+    await executarFerramenta(estrita, { clienteId: '22222222-2222-4222-8222-222222222222' }, escopo);
+    assert.deepEqual(recebidas, [{ clienteId: '22222222-2222-4222-8222-222222222222', limite: 10 }]);
   });
 
   it('lista nula de clientes vale a organização inteira; lista explícita só os listados', () => {

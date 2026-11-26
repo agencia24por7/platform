@@ -39,7 +39,7 @@ export default async function InteligenciaArtificialPage({
   const organization = ctx.organization;
   const painel = await modules().ia.modelos.painel({ organizationId: organization.id, papelDeQuemAge: ctx.role });
   if (!painel.ok) redirect('/config');
-  const { configuracao, usoDeHoje, fornecedores, tarefas } = painel.value;
+  const { configuracao, usoDeHoje, fornecedores, tarefas, chavesDeFornecedorDesligado } = painel.value;
   const comChave = fornecedores.filter((item) => item.chave !== null);
   const testeConfigurado = tarefas.some((tarefa) => tarefa.chave === TESTE_DE_MODELO.chave && tarefa.escolha !== null);
 
@@ -153,6 +153,24 @@ export default async function InteligenciaArtificialPage({
           </div>
         ))}
       </div>
+
+      {chavesDeFornecedorDesligado.length > 0 ? (
+        <div className="card">
+          <div className="card__head">Chaves de fornecedor desligado</div>
+          <p className="muted">Estes fornecedores não estão mais habilitados na plataforma. As chaves continuam guardadas e nenhuma tarefa as usa.</p>
+          {chavesDeFornecedorDesligado.map((chave) => (
+            <form key={chave.fornecedor} className="form form--linha" action={removerChave}>
+              <input type="hidden" name="fornecedor" value={chave.fornecedor} />
+              <span>
+                {ROTULO_DO_FORNECEDOR[chave.fornecedor]} <span className="mono muted">{chave.rotulo}</span>
+              </span>
+              <button className="btn btn--compacto" type="submit">
+                Remover chave desligada
+              </button>
+            </form>
+          ))}
+        </div>
+      ) : null}
 
       <div className="card">
         <div className="card__head">Modelo por tarefa</div>

@@ -1,6 +1,6 @@
 import type { z } from 'zod';
-import type { Failure } from '@/shared/result/failure';
-import type { Result } from '@/shared/result/result';
+import { failure, type Failure } from '@/shared/result/failure';
+import { err, type Result } from '@/shared/result/result';
 
 export const CLASSES_DE_FERRAMENTA = ['leitura', 'reversivel_dentro_do_teto', 'irreversivel_ou_gasto_novo'] as const;
 export type ClasseDeFerramenta = (typeof CLASSES_DE_FERRAMENTA)[number];
@@ -36,6 +36,14 @@ export type RegistroDeFerramentas = {
 
 export function definirFerramenta<E>(ferramenta: Ferramenta<E>): FerramentaRegistrada {
   return ferramenta as unknown as FerramentaRegistrada;
+}
+
+const ENTRADA_INVALIDA = failure('validation', 'Entrada inválida para a ferramenta.');
+
+export async function executarFerramenta(ferramenta: FerramentaRegistrada, entrada: unknown, escopo: EscopoDoAgente): Promise<Result<unknown, Failure>> {
+  const lida = ferramenta.entrada.safeParse(entrada);
+  if (!lida.success) return err(ENTRADA_INVALIDA);
+  return ferramenta.executar(lida.data, escopo);
 }
 
 export function clienteNoEscopo(escopo: Pick<EscopoDoAgente, 'clienteIds'>, clienteId: string): boolean {

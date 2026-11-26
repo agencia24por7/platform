@@ -10,7 +10,6 @@ export const VALIDADE_MAXIMA_EM_DIAS = 90;
 export const VALIDADE_PADRAO_EM_DIAS = 30;
 export const MAXIMO_DE_CLIENTES_POR_CREDENCIAL = 200;
 export const MAXIMO_DE_CREDENCIAIS_VIVAS = 20;
-const DIA_EM_MS = 86_400_000;
 
 export function gerarCredencial(): string {
   return `${PREFIXO_DA_CREDENCIAL}${randomBytes(BYTES_DO_SEGREDO).toString('base64url')}`;
@@ -28,10 +27,6 @@ export function rotuloDaCredencial(credencial: string): string {
   return `${PREFIXO_DA_CREDENCIAL}••••${credencial.slice(-4)}`;
 }
 
-export function venceEm(criadaEm: Date, validadeEmDias: number): Date {
-  return new Date(criadaEm.getTime() + validadeEmDias * DIA_EM_MS);
-}
-
 export const pedidoDeCredencial = z
   .object({
     nome: z.string().trim().min(1).max(80),
@@ -40,8 +35,6 @@ export const pedidoDeCredencial = z
     validadeEmDias: z.number().int().min(1).max(VALIDADE_MAXIMA_EM_DIAS),
   })
   .strict();
-
-export type PedidoDeCredencial = z.infer<typeof pedidoDeCredencial>;
 
 export type CredencialDeAgente = {
   readonly id: string;

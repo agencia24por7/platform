@@ -1,5 +1,5 @@
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
-import type { EscopoDoAgente, FerramentaRegistrada, RegistroDeFerramentas } from '../domain/ferramenta.ts';
+import { executarFerramenta, type EscopoDoAgente, type FerramentaRegistrada, type RegistroDeFerramentas } from '../domain/ferramenta.ts';
 
 export const CORPO_MAXIMO_DO_MCP = 64 * 1024;
 const NOME_DO_SERVIDOR = 'orla';
@@ -18,7 +18,7 @@ function texto(conteudo: string, erro = false): ResultadoDaFerramenta {
 
 async function executar(ferramenta: FerramentaRegistrada, entrada: unknown, escopo: EscopoDoAgente, avisar: AvisoDeFalha): Promise<ResultadoDaFerramenta> {
   try {
-    const resultado = await ferramenta.executar(entrada as never, escopo);
+    const resultado = await executarFerramenta(ferramenta, entrada, escopo);
     return resultado.ok ? texto(JSON.stringify(resultado.value)) : texto(resultado.error.message, true);
   } catch (erro) {
     avisar('ia.mcp.ferramenta_falhou', {

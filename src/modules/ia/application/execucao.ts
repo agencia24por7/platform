@@ -1,7 +1,7 @@
 import type { z } from 'zod';
 import { failure, type Failure } from '@/shared/result/failure';
 import { err, type Result } from '@/shared/result/result';
-import type { EscopoDoAgente, RegistroDeFerramentas } from '../domain/ferramenta.ts';
+import { executarFerramenta, type EscopoDoAgente, type RegistroDeFerramentas } from '../domain/ferramenta.ts';
 import { dadosDelimitados, instrucaoDoSistema, type Fornecedor, type Orcamento, type Tarefa } from '../domain/tarefa.ts';
 
 export type ModeloResolvido = {
@@ -120,7 +120,7 @@ function ferramentasDoPedido(
     entrada: ferramenta.entrada as z.ZodType<unknown>,
     async executar(entrada) {
       try {
-        const resultado = await ferramenta.executar(entrada as never, agente);
+        const resultado = await executarFerramenta(ferramenta, entrada, agente);
         return resultado.ok ? resultado.value : { erro: resultado.error.message };
       } catch (erro) {
         avisar('ia.execucao.ferramenta_falhou', {

@@ -132,6 +132,12 @@ describe('chave de fornecedor de IA (ADR 0058)', () => {
   it('chave de fornecedor que saiu da lista habilitada continua removível', async () => {
     const { servico, chaves, id } = montar({ fornecedores: ['google'] });
     chaves.set(id(ORG, 'openai'), { bytes: Buffer.from('x'), versaoDaChave: 'v1', rotulo: 'x', modelos: [] });
+    const painel = await servico.painel(admin);
+    assert.ok(painel.ok);
+    if (painel.ok) {
+      assert.deepEqual(painel.value.chavesDeFornecedorDesligado.map((chave) => chave.fornecedor), ['openai']);
+      assert.deepEqual(painel.value.fornecedores.map((item) => item.fornecedor), ['google']);
+    }
     assert.ok((await servico.removerChave(admin, 'openai', ATOR)).ok);
     assert.equal(chaves.size, 0);
     assert.equal((await servico.removerChave(admin, 'inexistente', ATOR)).ok, false);
