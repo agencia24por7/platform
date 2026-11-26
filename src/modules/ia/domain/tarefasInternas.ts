@@ -16,7 +16,8 @@ export const PLANO_DE_ESTRATEGIA = definirTarefa({
   classe: 'raciocinio_forte',
   instrucao: 'Redija ou ajuste um grupo de seções do plano de marketing de um cliente, usando só o pacote de leitura recebido como dado. O pedido de cada chamada traz a instrução e o esquema do grupo.',
   saida: SAIDA_ESTRUTURADA_DA_ESTRATEGIA,
-  orcamento: { passos: 1, tokensDeSaida: 6_500, tempoMs: 115_000 },
+  orcamento: { passos: 3, tokensDeSaida: 6_500, tempoMs: 115_000 },
+  ferramentas: ['brain_consultar_catalogo', 'brain_consultar_item'],
 });
 
 export const COMITE_DA_ESTRATEGIA = definirTarefa({

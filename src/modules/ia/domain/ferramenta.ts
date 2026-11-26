@@ -17,6 +17,7 @@ export type EscopoDoAgente = {
   readonly ferramentas: readonly string[];
   readonly requestId: string;
   readonly sourceIp: string | null;
+  readonly visao?: 'cliente' | 'equipe';
 };
 
 export type Ferramenta<E = unknown> = {

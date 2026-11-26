@@ -41,7 +41,7 @@ export function codigoDeIaDaFalha(falha: Failure): CodigoDeErroDeIA {
 export function orcamentoDaCamada(orcamento: PedidoDeIA<unknown>['orcamento'], registrado: Orcamento = TETO_DO_ORCAMENTO): Orcamento {
   const dentro = (valor: number, teto: number) => Math.min(Math.max(1, Math.floor(valor)), teto);
   return {
-    passos: Math.min(1, registrado.passos),
+    passos: Math.min(registrado.passos, TETO_DO_ORCAMENTO.passos),
     tokensDeSaida: dentro(orcamento.tokensMaximos, Math.min(registrado.tokensDeSaida, TETO_DO_ORCAMENTO.tokensDeSaida)),
     tempoMs: dentro(Math.max(1000, orcamento.tempoMaximoMs - MARGEM_DA_CAMADA_MS), Math.min(registrado.tempoMs, TETO_DO_ORCAMENTO.tempoMs)),
   };
@@ -55,11 +55,25 @@ export function criarIaDaCamada(executor: Executor): ExecutorDeIA {
   return {
     async executar<T>(pedido: PedidoDeIA<T>): Promise<Result<RespostaDeIA<T>, ErroDeIA>> {
       const registrada = TAREFAS_REGISTRADAS[pedido.tarefa];
+      const requestId = idDoPedido(pedido.execucaoId, pedido.chaveDeIdempotencia);
       const resposta = await executor.executar<T>({
         organizationId: pedido.organizacaoId,
+        ...(registrada.ferramentas.length === 0
+          ? {}
+          : {
+              agente: {
+                credencialId: pedido.execucaoId,
+                organizationId: pedido.organizacaoId,
+                clienteIds: [pedido.clienteId],
+                ferramentas: registrada.ferramentas,
+                requestId,
+                sourceIp: null,
+                visao: 'equipe' as const,
+              },
+            }),
         tarefa: { ...registrada, saida: pedido.esquema, instrucao: pedido.instrucoes, orcamento: orcamentoDaCamada(pedido.orcamento, registrada.orcamento) } as Tarefa<T>,
         dados: pedido.dados,
-        requestId: idDoPedido(pedido.execucaoId, pedido.chaveDeIdempotencia),
+        requestId,
       });
       if (!resposta.ok) {
         const codigo = codigoDeIaDaFalha(resposta.error);

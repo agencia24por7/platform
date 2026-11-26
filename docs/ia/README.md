@@ -8,6 +8,7 @@ Decisão e motivos: `docs/adr/0063-camada-de-ia-e-mcp.md` e `docs/adr/0064-chave
 | -- | -- | -- |
 | Registro de ferramentas | `src/modules/ia/domain/ferramenta.ts` | Uma ferramenta declarada uma vez serve o agente interno e o MCP. Só aceita classe `leitura`. |
 | Ferramenta `brain_consultar_catalogo` | `src/modules/brain/interface/ferramentas.ts` | Lê o catálogo do Brain de um cliente, com a política de uso do Brain. |
+| Ferramenta `brain_consultar_item` | `src/modules/brain/interface/ferramentas.ts` | Lê uma entrada do catálogo pela URN, do mesmo cliente, com a política de uso do Brain (ADR 0067). |
 | Credencial de agente | `core.agent_credentials`, `src/modules/ia/application/credencialService.ts`, tela `/config/agentes` | Dá a um agente acesso de leitura a uma organização, com lista de clientes, ferramentas e validade. |
 | Servidor MCP | `POST /api/mcp` | Expõe as ferramentas do escopo da credencial. Desligado por padrão. |
 | Executor | `modules().ia.executor.executar(...)` | Ponto único para chamar modelo de linguagem. Nenhum módulo importa SDK de fornecedor. |

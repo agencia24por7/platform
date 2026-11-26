@@ -91,9 +91,11 @@ export function pacoteParaEntrada(pacote: PacoteDeLeitura, maximoDeBytes: number
     mantidas.push(entrada);
     bytes += tamanho;
   }
+  const urnsMantidas = new Set(mantidas.map((entrada) => entrada.urn));
   return {
     ...pacote,
     entradas: mantidas,
+    ...(pacote.catalogo === undefined ? {} : { catalogo: pacote.catalogo.map((item) => ({ ...item, incluida: urnsMantidas.has(item.urn) })) }),
     omitidasPorTamanho: (pacote.omitidasPorTamanho ?? 0) + (pacote.entradas.length - mantidas.length),
   };
 }

@@ -68,7 +68,7 @@ describe('montarPacote', () => {
     assert.ok(esquemaPacoteDeLeitura.safeParse(pacote).success);
   });
 
-  it('catálogo lista tudo que é visível, marca o que não coube e deixa de fora negado e arquivo', () => {
+  it('catálogo lista tudo que é visível, inclusive arquivo, marca o que não coube e deixa de fora negado', () => {
     const a = entrada('regra', 'r1');
     const b = entrada('contexto_secao', 'c1');
     const c = entrada('contexto_secao', 'c2');
@@ -77,11 +77,10 @@ describe('montarPacote', () => {
     const pacote = montarPacote(ORGANIZACAO_ID, CLIENTE_ID, quando, [a, b, c, negada, arquivo], { maximoDeEntradas: 2, maximoDeBytes: 300_000 });
     assert.equal(pacote.entradas.length, 2);
     const catalogo = pacote.catalogo ?? [];
-    assert.equal(catalogo.length, 3);
+    assert.equal(catalogo.length, 4);
     assert.equal(catalogo.filter((item) => item.incluida).length, 2);
-    assert.equal(catalogo.filter((item) => !item.incluida).length, 1);
-    const texto = JSON.stringify(pacote);
-    assert.ok(!texto.includes('Maria Silva'));
+    assert.equal(catalogo.filter((item) => !item.incluida).length, 2);
+    assert.ok(catalogo.some((item) => item.urn === arquivo.urn));
     assert.ok(!catalogo.some((item) => item.urn === negada.urn));
   });
 
@@ -170,6 +169,45 @@ describe('criarLeitorDoBrain', () => {
       assert.equal(resultado.value.lidoEm, quando.toISOString());
       assert.equal(resultado.value.entradas.length, 1);
     }
+  });
+
+  it('entradasPorUrn devolve só as pedidas, sem negada, com restrita só em metadados e sem limite de entradas', async () => {
+    const a = entrada('regra', 'r1');
+    const b = entrada('contexto_secao', 'c1', { valorResumido: 'Conteúdo da seção.' });
+    const negada = entrada('regra', 'rn', { sensibilidade: { nivel: 'restrito', piiPossivel: true, usoPorAgente: 'negado', retencao: 'x' } });
+    const restrita = entrada('tabela_de_dados', 't1', {
+      valorResumido: 'valor secreto',
+      sensibilidade: { nivel: 'pessoal_possivel', piiPossivel: true, usoPorAgente: 'restrito', retencao: 'x' },
+    });
+    const leitor = criarLeitorDoBrain({
+      brain: { async montarNaOrganizacao() { return ok({ organizationId: ORGANIZACAO_ID, clienteId: CLIENTE_ID, entradas: [a, b, negada, restrita] } as never); } },
+      maximoDeEntradas: 1,
+    });
+    const r = await leitor.entradasPorUrn!(ORGANIZACAO_ID, CLIENTE_ID, [b.urn, negada.urn, restrita.urn, 'orla:x:y:regra:inexistente']);
+    assert.ok(r.ok);
+    if (!r.ok) return;
+    assert.deepEqual(r.value.map((e) => e.urn).sort(), [b.urn, restrita.urn].sort());
+    const devolvidaRestrita = r.value.find((e) => e.urn === restrita.urn)!;
+    assert.equal(devolvidaRestrita.somenteMetadados, true);
+    assert.equal(devolvidaRestrita.resumo, '');
+    assert.ok(!JSON.stringify(r.value).includes('valor secreto'));
+  });
+
+  it('entradasPorUrn sem URN não consulta o Brain, e falha do Brain vira erro tipado', async () => {
+    let chamadas = 0;
+    const leitor = criarLeitorDoBrain({ brain: { async montarNaOrganizacao() { chamadas += 1; return ok(snapshot() as never); } } });
+    const vazio = await leitor.entradasPorUrn!(ORGANIZACAO_ID, CLIENTE_ID, []);
+    assert.ok(vazio.ok && vazio.value.length === 0);
+    assert.equal(chamadas, 0);
+    const fora = criarLeitorDoBrain({ brain: { async montarNaOrganizacao() { return err(failure('unavailable', 'x')); } } });
+    const r = await fora.entradasPorUrn!(ORGANIZACAO_ID, CLIENTE_ID, ['orla:a:b:regra:c']);
+    assert.equal(!r.ok && r.error.codigo, 'brain_indisponivel');
+  });
+
+  it('entradasPorUrn recusa o snapshot de outro cliente', async () => {
+    const leitor = criarLeitorDoBrain({ brain: { async montarNaOrganizacao() { return ok(snapshot(ORGANIZACAO_ID, '33333333-3333-4333-8333-333333333333') as never); } } });
+    const r = await leitor.entradasPorUrn!(ORGANIZACAO_ID, CLIENTE_ID, ['orla:a:b:regra:c']);
+    assert.equal(!r.ok && r.error.codigo, 'brain_indisponivel');
   });
 
   it('cliente inexistente e falha do Brain viram erros tipados, e exceção não escapa', async () => {

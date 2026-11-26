@@ -252,7 +252,7 @@ describe('API de leitura do brain (serviço)', () => {
 
 describe('leitura do catálogo por agente (ADR 0063)', () => {
   const OUTRA_ORG = '44444444-4444-4444-8444-444444444444';
-  const agente = (extra: Partial<{ organizationId: string; clienteIds: readonly string[] | null }> = {}) => ({
+  const agente = (extra: Partial<{ organizationId: string; clienteIds: readonly string[] | null; visao: 'cliente' | 'equipe' }> = {}) => ({
     credencialId: 'cred-1',
     organizationId: fx.ORG,
     clienteIds: null,
@@ -282,6 +282,37 @@ describe('leitura do catálogo por agente (ADR 0063)', () => {
     assert.deepEqual(visoes, ['cliente']);
     await s.catalogo(fx.CLIENTE, consulta, WORKER);
     assert.deepEqual(visoes, ['cliente', 'equipe']);
+  });
+
+  it('visão da equipe só vale quando o escopo interno a pede; sem ela a leitura é do cliente', async () => {
+    const { s, visoes } = servico();
+    await s.catalogoDoAgente(agente({ visao: 'equipe' }), fx.CLIENTE, consulta);
+    await s.catalogoDoAgente(agente({ visao: 'cliente' }), fx.CLIENTE, consulta);
+    await s.catalogoDoAgente(agente(), fx.CLIENTE, consulta);
+    assert.deepEqual(visoes, ['equipe', 'cliente', 'cliente']);
+  });
+
+  it('entradaDoAgente devolve a entrada pela URN, audita o agente e recusa URN de outro cliente', async () => {
+    const { s, eventos } = servico();
+    const propria = criarUrn(fx.ORG, fx.CLIENTE, 'tabela_de_dados', 'fato_ads_diario');
+    const r = await s.entradaDoAgente(agente(), fx.CLIENTE, propria);
+    assert.ok(r.ok && r.value.corpo.urn === propria);
+    const evento = eventos.at(-1) as unknown as { actorType: string; actorId: string };
+    assert.deepEqual({ actorType: evento.actorType, actorId: evento.actorId }, { actorType: 'agent', actorId: 'cred-1' });
+    const alheia = criarUrn(fx.ORG, fx.OUTRO_CLIENTE, 'tabela_de_dados', 'fato_ads_diario');
+    const x = await s.entradaDoAgente(agente(), fx.CLIENTE, alheia);
+    assert.ok(!x.ok && x.error.code === 'not_found');
+    const inexistente = criarUrn(fx.ORG, fx.CLIENTE, 'tabela_de_dados', 'nao_existe');
+    const y = await s.entradaDoAgente(agente(), fx.CLIENTE, inexistente);
+    assert.ok(!y.ok && y.error.code === 'not_found');
+  });
+
+  it('entradaDoAgente respeita a lista de clientes e a organização da credencial', async () => {
+    const propria = criarUrn(fx.ORG, fx.CLIENTE, 'tabela_de_dados', 'fato_ads_diario');
+    const fora = await servico().s.entradaDoAgente(agente({ clienteIds: [fx.OUTRO_CLIENTE] }), fx.CLIENTE, propria);
+    assert.ok(!fora.ok && fora.error.code === 'not_found');
+    const outraOrg = await servico().s.entradaDoAgente(agente({ organizationId: OUTRA_ORG }), fx.CLIENTE, propria);
+    assert.ok(!outraOrg.ok && outraOrg.error.code === 'not_found');
   });
 
   it('nunca resolve o cliente pela travessia do worker', async () => {

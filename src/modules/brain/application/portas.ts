@@ -65,4 +65,5 @@ export type AgenteLeitor = {
   readonly clienteIds: readonly string[] | null;
   readonly requestId: string;
   readonly sourceIp: string | null;
+  readonly visao?: 'cliente' | 'equipe';
 };

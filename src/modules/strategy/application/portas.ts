@@ -3,6 +3,7 @@ import type { Result } from '@/shared/result/result';
 import type { EntradaDoCatalogo } from '@/modules/brain/domain/entrada';
 import type { CatalogoAtual } from '@/modules/strategy/application/catalogoAtual';
 import type {
+  EntradaDoPacote,
   Intencao,
   PacoteDeLeitura,
   PapelDaEvidencia,
@@ -272,6 +273,7 @@ export type SnapshotDoBrainLido = {
 
 export type LeitorDoBrain = {
   lerPacote(organizacaoId: string, clienteId: string): Promise<Result<PacoteDeLeitura, ErroDoBrain>>;
+  entradasPorUrn?(organizacaoId: string, clienteId: string, urns: readonly string[]): Promise<Result<EntradaDoPacote[], ErroDoBrain>>;
   catalogoDoSnapshot?(organizacaoId: string, clienteId: string, snapshot: SnapshotDoBrainLido): CatalogoAtual | null;
 };
 

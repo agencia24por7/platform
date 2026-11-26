@@ -94,6 +94,7 @@ export type BrainService = {
     clienteId: string,
     consulta: FiltrosDoCatalogo & { readonly limite: number; readonly cursor: string | null },
   ): Promise<Result<Resposta<PaginaDeEntradas>, Failure>>;
+  entradaDoAgente(agente: AgenteLeitor, clienteId: string, urn: string): Promise<Result<Resposta<EntradaDoCatalogo>, Failure>>;
   entrada(clienteId: string, urn: string, worker: IdentidadeDoWorker): Promise<Result<Resposta<EntradaDoCatalogo>, Failure>>;
   capacidades(clienteId: string, worker: IdentidadeDoWorker): Promise<Result<Resposta<Pick<Snapshot, 'schemaVersion' | 'capacidades' | 'catalogHash'>>, Failure>>;
   diagnostico(clienteId: string, worker: IdentidadeDoWorker): Promise<Result<Resposta<Snapshot['diagnostico'] & { readonly catalogHash: string }>, Failure>>;
@@ -115,6 +116,7 @@ function leitorDoAgente(agente: AgenteLeitor): Leitor {
 }
 
 const PAPEL_DO_AGENTE: MemberRole = 'viewer';
+const PAPEL_DO_AGENTE_NA_VISAO_DA_EQUIPE: MemberRole = 'admin';
 
 const NAO_ENCONTRADO = failure('not_found', 'Cliente não encontrado.');
 const ENTRADA_NAO_ENCONTRADA = failure('not_found', 'Entrada não encontrada no catálogo deste cliente.');
@@ -253,7 +255,7 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
     if (agente.clienteIds !== null && !agente.clienteIds.includes(clienteId)) return err(NAO_ENCONTRADO);
     const cliente = { organizationId: agente.organizationId, clienteId };
     if (!(await deps.repositorio.clienteVivo(cliente))) return err(NAO_ENCONTRADO);
-    return montarNaOrganizacao(agente.organizationId, clienteId, PAPEL_DO_AGENTE);
+    return montarNaOrganizacao(agente.organizationId, clienteId, agente.visao === 'equipe' ? PAPEL_DO_AGENTE_NA_VISAO_DA_EQUIPE : PAPEL_DO_AGENTE);
   }
 
   function paginaDoCatalogo(consulta: FiltrosDoCatalogo & { readonly limite: number; readonly cursor: string | null }) {
@@ -336,6 +338,14 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
 
     async catalogoDoAgente(agente, clienteId, consulta) {
       return responder(await montarParaAgente(agente, clienteId), leitorDoAgente(agente), 'catalogo', paginaDoCatalogo(consulta));
+    },
+
+    async entradaDoAgente(agente, clienteId, urn) {
+      return responder(await montarParaAgente(agente, clienteId), leitorDoAgente(agente), 'entrada', (snapshot) => {
+        if (!urnDoCliente(urn, snapshot.organizationId, snapshot.clienteId)) return err(ENTRADA_NAO_ENCONTRADA);
+        const achada = snapshot.entradas.find((e) => e.urn === urn);
+        return achada ? ok({ corpo: achada, devolvidas: 1 }) : err(ENTRADA_NAO_ENCONTRADA);
+      });
     },
 
     entrada(clienteId, urn, worker) {

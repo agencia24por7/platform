@@ -24,7 +24,6 @@ export type DependenciasDoLeitorDoBrain = {
   readonly maximoDeBytes?: number;
 };
 
-const TIPOS_FORA_DO_PACOTE: readonly string[] = ['arquivo'];
 const TAMANHO_DO_TITULO_NO_CATALOGO = 80;
 const TIPOS_DE_REGRA = ['regra', 'limite', 'decisao'];
 const TAMANHO_DO_RESUMO = 600;
@@ -73,7 +72,7 @@ export function montarPacote(
   entradas: readonly EntradaDoCatalogo[],
   limites: { readonly maximoDeEntradas: number; readonly maximoDeBytes: number },
 ): PacoteDeLeitura {
-  const visiveis = aplicarPoliticaDeUso(entradas).entradas.filter((entrada) => !TIPOS_FORA_DO_PACOTE.includes(entrada.tipo));
+  const visiveis = aplicarPoliticaDeUso(entradas).entradas;
   let descartadasPorFormato = 0;
   const validas: { readonly prioridade: number; readonly entrada: EntradaDoPacote }[] = [];
   for (const origem of visiveis) {
@@ -113,6 +112,7 @@ export function montarPacote(
   };
 }
 
+const SEM_LIMITE_DE_LEITURA = { maximoDeEntradas: Number.MAX_SAFE_INTEGER, maximoDeBytes: Number.MAX_SAFE_INTEGER };
 const PAPEL_DE_LEITURA_DO_MOTOR: MemberRole = 'admin';
 
 export function criarLeitorDoBrain(dependencias: DependenciasDoLeitorDoBrain): LeitorDoBrain {
@@ -121,31 +121,50 @@ export function criarLeitorDoBrain(dependencias: DependenciasDoLeitorDoBrain): L
     maximoDeEntradas: dependencias.maximoDeEntradas ?? MAXIMO_DE_ENTRADAS_LIDAS_DO_BRAIN,
     maximoDeBytes: dependencias.maximoDeBytes ?? MAXIMO_DE_BYTES_DO_PACOTE_LIDO,
   };
+  async function lerSnapshot(organizacaoId: string, clienteId: string): Promise<Result<{ readonly entradas: readonly EntradaDoCatalogo[] }, ErroDoBrain>> {
+    try {
+      const snapshot = await dependencias.brain.montarNaOrganizacao(organizacaoId, clienteId, PAPEL_DE_LEITURA_DO_MOTOR);
+      if (!snapshot.ok) {
+        return err(
+          snapshot.error.code === 'not_found'
+            ? { codigo: 'cliente_inexistente', mensagem: 'Cliente não encontrado no Brain.' }
+            : { codigo: 'brain_indisponivel', mensagem: 'O Brain não respondeu.' },
+        );
+      }
+      if (snapshot.value.organizationId !== organizacaoId || snapshot.value.clienteId !== clienteId) {
+        return err({ codigo: 'brain_indisponivel', mensagem: 'O Brain devolveu outro cliente.' });
+      }
+      return ok({ entradas: snapshot.value.entradas });
+    } catch {
+      return err({ codigo: 'brain_indisponivel', mensagem: 'O Brain não respondeu.' });
+    }
+  }
+
   return {
     catalogoDoSnapshot(organizacaoId, clienteId, snapshot) {
       if (snapshot.organizationId !== organizacaoId || snapshot.clienteId !== clienteId) return null;
-      return catalogoAtualDoPacote(montarPacote(organizacaoId, clienteId, relogio.agora(), snapshot.entradas, limites));
+      return catalogoAtualDoPacote(montarPacote(organizacaoId, clienteId, relogio.agora(), snapshot.entradas, SEM_LIMITE_DE_LEITURA));
+    },
+    async entradasPorUrn(organizacaoId, clienteId, urns): Promise<Result<EntradaDoPacote[], ErroDoBrain>> {
+      if (urns.length === 0) return ok([]);
+      const snapshot = await lerSnapshot(organizacaoId, clienteId);
+      if (!snapshot.ok) return snapshot;
+      const pedidas = new Set(urns);
+      const achadas: EntradaDoPacote[] = [];
+      for (const origem of aplicarPoliticaDeUso(snapshot.value.entradas).entradas) {
+        if (!pedidas.has(origem.urn)) continue;
+        const convertida = esquemaEntradaDoPacote.safeParse(paraEntradaDoPacote(origem));
+        if (convertida.success) achadas.push(convertida.data);
+      }
+      return ok(achadas);
     },
     async lerPacote(organizacaoId, clienteId): Promise<Result<PacoteDeLeitura, ErroDoBrain>> {
-      try {
-        const snapshot = await dependencias.brain.montarNaOrganizacao(organizacaoId, clienteId, PAPEL_DE_LEITURA_DO_MOTOR);
-        if (!snapshot.ok) {
-          return err(
-            snapshot.error.code === 'not_found'
-              ? { codigo: 'cliente_inexistente', mensagem: 'Cliente não encontrado no Brain.' }
-              : { codigo: 'brain_indisponivel', mensagem: 'O Brain não respondeu.' },
-          );
-        }
-        if (snapshot.value.organizationId !== organizacaoId || snapshot.value.clienteId !== clienteId) {
-          return err({ codigo: 'brain_indisponivel', mensagem: 'O Brain devolveu outro cliente.' });
-        }
-        const pacote = montarPacote(organizacaoId, clienteId, relogio.agora(), snapshot.value.entradas, limites);
-        const lido = esquemaPacoteDeLeitura.safeParse(pacote);
-        if (!lido.success) return err({ codigo: 'brain_indisponivel', mensagem: 'O pacote lido do Brain é inválido.' });
-        return ok(lido.data);
-      } catch {
-        return err({ codigo: 'brain_indisponivel', mensagem: 'O Brain não respondeu.' });
-      }
+      const snapshot = await lerSnapshot(organizacaoId, clienteId);
+      if (!snapshot.ok) return snapshot;
+      const pacote = montarPacote(organizacaoId, clienteId, relogio.agora(), snapshot.value.entradas, limites);
+      const lido = esquemaPacoteDeLeitura.safeParse(pacote);
+      if (!lido.success) return err({ codigo: 'brain_indisponivel', mensagem: 'O pacote lido do Brain é inválido.' });
+      return ok(lido.data);
     },
   };
 }
