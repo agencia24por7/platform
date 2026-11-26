@@ -9,12 +9,18 @@ METADADOS_V6=fd20:ce::254
 INSTALADO="${INSTALADO:-/usr/local/sbin/orla-metadados-bloquear}"
 PASTA_DO_DOCKER="${PASTA_DO_DOCKER:-/etc/systemd/system/docker.service.d}"
 UNIDADE_DO_DOCKER="$PASTA_DO_DOCKER/orla-metadados.conf"
+PASTA_DAS_UNIDADES="${PASTA_DAS_UNIDADES:-/etc/systemd/system}"
+NOME_DA_VIGIA=orla-metadados-vigiar
+MARCADOR=orla-metadados-bloqueio-ausente
+ARQUIVO_DE_ALERTA="${ARQUIVO_DE_ALERTA:-/var/log/orla/metadados-bloqueio.log}"
+LIMITE_DO_ARQUIVO_DE_ALERTA="${LIMITE_DO_ARQUIVO_DE_ALERTA:-65536}"
 
 uso() {
-  echo "uso: metadados-bloquear.sh aplicar|instalar|verificar" >&2
+  echo "uso: metadados-bloquear.sh aplicar|instalar|verificar|vigiar" >&2
   echo "  aplicar    regras na DOCKER-USER: só a ponte $PONTE_DO_APP alcança $METADADOS_V4 (DNS na porta 53 segue liberado)" >&2
   echo "  instalar   copia o script para $INSTALADO, liga o drop-in do docker.service e aplica" >&2
-  echo "  verificar  sai 0 só se as regras IPv4 e o salto estiverem no lugar" >&2
+  echo "  verificar  sai 0 só se as regras IPv4 e o salto (primeira regra da DOCKER-USER) estiverem no lugar" >&2
+  echo "  vigiar     verificar; se falhar, reaplica uma vez e registra o marcador $MARCADOR no journal e em $ARQUIVO_DE_ALERTA (usado pelo timer $NOME_DA_VIGIA)" >&2
 }
 
 regras_v4() {
@@ -34,11 +40,18 @@ regras_v6() {
     "-d $METADADOS_V6/128 -j REJECT --reject-with icmp6-port-unreachable"
 }
 
+salto_na_frente() {
+  tabelas="$1"
+  lista=$("$tabelas" -w -t filter -S DOCKER-USER 2> /dev/null) || return 1
+  primeira=$(printf '%s\n' "$lista" | grep -m 1 '^-A DOCKER-USER ' || true)
+  [ "$primeira" = "-A DOCKER-USER -j $CADEIA" ]
+}
+
 regras_no_lugar() {
   tabelas="$1"
   regras="$2"
   "$tabelas" -w -t filter -S "$CADEIA" > /dev/null 2>&1 || return 1
-  "$tabelas" -w -t filter -C DOCKER-USER -j "$CADEIA" > /dev/null 2>&1 || return 1
+  salto_na_frente "$tabelas" || return 1
   esperadas=0
   while IFS= read -r regra; do
     [ -n "$regra" ] || continue
@@ -68,8 +81,9 @@ reescrever_cadeia() {
 garantir_salto() {
   tabelas="$1"
   "$tabelas" -w -t filter -S DOCKER-USER > /dev/null 2>&1 || "$tabelas" -w -t filter -N DOCKER-USER
-  "$tabelas" -w -t filter -C DOCKER-USER -j "$CADEIA" > /dev/null 2>&1 \
-    || "$tabelas" -w -t filter -I DOCKER-USER 1 -j "$CADEIA"
+  salto_na_frente "$tabelas" && return 0
+  while "$tabelas" -w -t filter -D DOCKER-USER -j "$CADEIA" > /dev/null 2>&1; do :; done
+  "$tabelas" -w -t filter -I DOCKER-USER 1 -j "$CADEIA"
 }
 
 aplicar_familia() {
@@ -96,6 +110,70 @@ aplicar() {
   fi
 }
 
+conferir_v4() {
+  regras_no_lugar iptables "$(regras_v4)"
+}
+
+gravar_no_arquivo_de_alerta() {
+  linha="$1"
+  pasta=$(dirname "$ARQUIVO_DE_ALERTA")
+  if ! (umask 027; mkdir -p "$pasta" && { [ -e "$ARQUIVO_DE_ALERTA" ] || : > "$ARQUIVO_DE_ALERTA"; }) 2> /dev/null; then
+    echo "aviso: não consegui preparar $ARQUIVO_DE_ALERTA; o alerta na nuvem não verá esta ocorrência" >&2
+    return 0
+  fi
+  chmod 0640 "$ARQUIVO_DE_ALERTA" 2> /dev/null || true
+  tamanho=$(wc -c < "$ARQUIVO_DE_ALERTA" 2> /dev/null || echo 0)
+  if [ "$tamanho" -gt "$LIMITE_DO_ARQUIVO_DE_ALERTA" ]; then
+    : > "$ARQUIVO_DE_ALERTA" 2> /dev/null || true
+  fi
+  printf '%s\n' "$linha" >> "$ARQUIVO_DE_ALERTA" 2> /dev/null \
+    || echo "aviso: não consegui gravar em $ARQUIVO_DE_ALERTA; o alerta na nuvem não verá esta ocorrência" >&2
+}
+
+registrar_ausencia() {
+  resultado="$1"
+  prefixo=""
+  if [ -n "${JOURNAL_STREAM:-}" ]; then prefixo="<3>"; fi
+  linha=$(printf '{"severity":"error","marker":"%s","resultado":"%s","message":"bloqueio de metadados da VM ausente ou diferente do esperado"}' \
+    "$MARCADOR" "$resultado")
+  printf '%s%s\n' "$prefixo" "$linha"
+  gravar_no_arquivo_de_alerta "$linha"
+}
+
+vigiar() {
+  if conferir_v4; then
+    return 0
+  fi
+  if aplicar && conferir_v4; then
+    registrar_ausencia reinstalado
+    return 0
+  fi
+  registrar_ausencia persistente
+  return 1
+}
+
+instalar_vigia() {
+  servico="$PASTA_DAS_UNIDADES/$NOME_DA_VIGIA.service"
+  temporizador="$PASTA_DAS_UNIDADES/$NOME_DA_VIGIA.timer"
+  mkdir -p "$PASTA_DAS_UNIDADES"
+  novo_servico=$(printf '[Unit]\nDescription=Confere o bloqueio de metadados da VM (ORLA)\nAfter=docker.service\n\n[Service]\nType=oneshot\nExecStart=%s vigiar\n' "$INSTALADO")
+  novo_temporizador=$(printf '[Unit]\nDescription=Confere o bloqueio de metadados da VM a cada poucos minutos (ORLA)\n\n[Timer]\nOnBootSec=2min\nOnUnitInactiveSec=5min\nAccuracySec=30s\n\n[Install]\nWantedBy=timers.target\n')
+  mudou=0
+  if [ "$(cat "$servico" 2>/dev/null || true)" != "$novo_servico" ]; then
+    printf '%s\n' "$novo_servico" > "$servico"
+    mudou=1
+  fi
+  if [ "$(cat "$temporizador" 2>/dev/null || true)" != "$novo_temporizador" ]; then
+    printf '%s\n' "$novo_temporizador" > "$temporizador"
+    mudou=1
+  fi
+  if [ "$mudou" -eq 1 ]; then
+    systemctl daemon-reload
+    echo "unidades $NOME_DA_VIGIA gravadas: o timer confere o bloqueio no boot e a cada 5 minutos"
+  fi
+  systemctl enable --now "$NOME_DA_VIGIA.timer"
+}
+
 instalar() {
   origem="$0"
   [ -f "$origem" ] || { echo "FALHA: não achei o próprio script em $origem" >&2; return 1; }
@@ -110,14 +188,16 @@ instalar() {
     systemctl daemon-reload
     echo "drop-in $UNIDADE_DO_DOCKER gravado: o docker reaplica o bloqueio antes e depois de cada início"
   fi
+  instalar_vigia
   aplicar
 }
 
 case "$ACAO" in
   aplicar) aplicar ;;
   instalar) instalar ;;
+  vigiar) vigiar ;;
   verificar)
-    if regras_no_lugar iptables "$(regras_v4)"; then
+    if conferir_v4; then
       echo "ok: bloqueio de metadados no lugar (cadeia $CADEIA, salto em DOCKER-USER)"
     else
       echo "FALHA: bloqueio de metadados ausente ou diferente do esperado" >&2

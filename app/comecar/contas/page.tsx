@@ -77,6 +77,7 @@ async function linkSelected(formData: FormData): Promise<void> {
         businessModel: 'leads',
         tipoDaOrganizacao: organization.type,
         papelDeQuemAge: ctx.role,
+        clientIdsDeQuemAge: ctx.clientIds,
       },
       ator,
     );

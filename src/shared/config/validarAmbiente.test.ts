@@ -8,6 +8,7 @@ import { lerArquivoDeAmbiente, validarAmbienteDeProducao } from './validarAmbien
 
 const SEGREDO_DO_WORKER = 'W'.repeat(20) + 'segredo-do-worker-unico-123';
 const SEGREDO_DE_SESSAO = 'S'.repeat(20) + 'sessao-unica-456789abcdef';
+const SEGREDO_DE_BORDA = 'B'.repeat(16) + 'borda-unica-0123456789abcd';
 const SENHA_DO_BANCO = 'senhaDoBancoQueNaoPodeVazar987';
 
 const completo = {
@@ -15,6 +16,7 @@ const completo = {
   DATABASE_URL_WORKER: `postgres://orla_worker:${SENHA_DO_BANCO}x@postgres:5432/tria`,
   TRIA_WORKER_TOKEN: SEGREDO_DO_WORKER,
   TRIA_SESSION_SECRET: SEGREDO_DE_SESSAO,
+  TRIA_PROXY_SECRET: SEGREDO_DE_BORDA,
   TRIA_APP_BASE_URL: 'https://app.local',
   TOKENS_KMS_KEY: 'projects/p/locations/us-central1/keyRings/tria-producao-tokens/cryptoKeys/conexoes',
   CONTEXT_BUCKET: 'tria-platform-tria-producao-contexto',
@@ -35,9 +37,9 @@ describe('validação do ambiente de produção para o pre-flight da release', (
   });
 
   it('lista cada chave obrigatória ausente, do schema e da política da release', () => {
-    const { erros } = validarAmbienteDeProducao({ ...completo, DATABASE_URL_WORKER: '', TOKENS_KMS_KEY: '', CONTEXT_BUCKET: '', BQ_PROJECT_ID: '' });
+    const { erros } = validarAmbienteDeProducao({ ...completo, DATABASE_URL_WORKER: '', TOKENS_KMS_KEY: '', CONTEXT_BUCKET: '', BQ_PROJECT_ID: '', TRIA_PROXY_SECRET: '' });
     const chaves = erros.map((erro) => erro.split(':')[0]);
-    assert.deepEqual(chaves.sort(), ['BQ_PROJECT_ID', 'CONTEXT_BUCKET', 'DATABASE_URL_WORKER', 'TOKENS_KMS_KEY']);
+    assert.deepEqual(chaves.sort(), ['BQ_PROJECT_ID', 'CONTEXT_BUCKET', 'DATABASE_URL_WORKER', 'TOKENS_KMS_KEY', 'TRIA_PROXY_SECRET']);
   });
 
   it('exige a pimenta da Meta com o segredo do app e recusa par incompleto', () => {
@@ -64,7 +66,7 @@ describe('validação do ambiente de produção para o pre-flight da release', (
     const saida = `${r.stdout}${r.stderr}`;
     assert.equal(r.status, 1, saida);
     for (const chave of ['DATABASE_URL_WORKER', 'TRIA_WORKER_TOKEN', 'TOKENS_KMS_KEY', 'CONTEXT_BUCKET']) assert.match(saida, new RegExp(`${chave}:`));
-    for (const valor of [SENHA_DO_BANCO, SEGREDO_DO_WORKER, SEGREDO_DE_SESSAO, 'curto', completo.N8N_API_KEY]) {
+    for (const valor of [SENHA_DO_BANCO, SEGREDO_DO_WORKER, SEGREDO_DE_SESSAO, SEGREDO_DE_BORDA, 'curto', completo.N8N_API_KEY]) {
       assert.equal(saida.includes(valor), false, `vazou um valor: ${valor.slice(0, 3)}…`);
     }
   });

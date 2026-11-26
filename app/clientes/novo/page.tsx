@@ -31,6 +31,7 @@ async function createClient(formData: FormData): Promise<void> {
       businessModel: model === 'ecommerce' ? 'ecommerce' : 'leads',
       tipoDaOrganizacao: organization.type,
       papelDeQuemAge: ctx.role,
+      clientIdsDeQuemAge: ctx.clientIds,
     },
     ator,
   );

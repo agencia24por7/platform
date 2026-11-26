@@ -35,7 +35,7 @@ O ADR 0026 aceita que o limite seja em memória e por réplica; isso não muda.
 
 3. **Despejar não vira bypass barato**, por três razões:
    - quem abusa é justamente quem mais consulta o próprio balde; como a consulta barrada também o recoloca no fim, o balde do abusador é o último a sair;
-   - o limite por IP fica num domínio (`ip`) que só cresce uma chave por IP distinto; lotar `ip` exige mais de 20.000 IPs distintos dentro da janela;
+   - o limite por IP fica num domínio (`ip`) que só cresce com IPs distintos, mas cada IP cria até 8 chaves nele (`convite:view`, `convite:oauth:start`, `erros`, `meta:exclusao`, `webhook:whatsapp`, `webhook:zapi:desconhecidos`, `contexto:desconhecidas`, `contexto:ip`, contadas no código em 2026-11-25). Lotar `ip` exige, portanto, cerca de 2.500 IPs distintos dentro da janela (20.000 ÷ 8), e não mais de 20.000. O efeito segue o mesmo: despejar baldes ociosos, que recomeçam a contagem e ganham folga. O ADR 0060 trata de quem controla o IP que entra nesse domínio;
    - `webhook` e `publico` só recebem chave depois que o banco valida a credencial, então credencial forjada não cria balde nem despeja o de ninguém;
    - pedido barrado não cria balde novo (`consumeAll` é tudo-ou-nada).
 
@@ -104,7 +104,7 @@ O ADR 0026 aceita que o limite seja em memória e por réplica; isso não muda.
 
 ## Consequências
 
-- O único domínio que um anônimo consegue encher é o `ip`, e só com IPs distintos; mesmo assim o ataque degrada só esse domínio: no pior caso, baldes ociosos de visitantes legítimos são despejados e recomeçam a contagem (eles ganham folga, não perdem acesso).
+- O único domínio que um anônimo consegue encher é o `ip`, e só com IPs distintos (cerca de 2.500, item 3); mesmo assim o ataque degrada só esse domínio: no pior caso, baldes ociosos de visitantes legítimos são despejados e recomeçam a contagem (eles ganham folga, não perdem acesso).
 - Sem credencial válida, um IP leva ao banco no máximo a cota de desconhecidas por janela: 600 no Z-API e 30 no contexto público, de forma atômica.
 - Quem tem uma credencial válida ainda consegue, por janela: 60 requisições servidas por token no Z-API e 120 por credencial no contexto (até 300 por IP), de quantos IPs quiser. Enquanto a credencial ainda não está no registro (primeira vez em 24 h, ou depois de reinício ou despejo), ela é cobrada na cota de desconhecidas de cada IP: uma rajada simultânea de muitos IPs pode levar ao banco até `IPs × cota` consultas uma vez (medido: 2.000 consultas numa rajada de 2.000 vindas de 100 IPs, das quais 60 servidas), e zero na rajada seguinte.
 - Credencial nova num IP compartilhado com abuso contínuo pode esperar até o abuso parar (item 5, pior caso).

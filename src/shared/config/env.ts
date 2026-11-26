@@ -33,6 +33,7 @@ const schema = z.object({
   TRIA_WORKER_TOKEN: strongSecret,
   TRIA_SESSION_SECRET: strongSecret,
   META_EXCLUSAO_PEPPER: opcional(strongSecret),
+  TRIA_PROXY_SECRET: opcional(strongSecret),
   TRIA_APP_BASE_URL: z.string().url(),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   DATABASE_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(50).default(10),

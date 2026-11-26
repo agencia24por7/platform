@@ -129,7 +129,7 @@ jobs:
               sudo docker stop tria-proxy tria-app tria-n8n tria-postgres 2>/dev/null || true
               for vol in postgres-data n8n-data caddy-data caddy-config; do
                 sudo docker volume create orla_\$vol > /dev/null
-                sudo docker run --rm -v tria_\$vol:/de -v orla_\$vol:/para alpine sh -c 'cp -a /de/. /para/'
+                sudo docker run --rm -v tria_\$vol:/de -v orla_\$vol:/para alpine:3@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf sh -c 'cp -a /de/. /para/'
               done
               sudo docker rm tria-proxy tria-app tria-n8n tria-postgres 2>/dev/null || true
               echo 'volumes copiados; os volumes tria_* antigos ficam intactos, sem remocao automatica.'
@@ -199,7 +199,7 @@ jobs:
             for n in 1 2 3 4 5 6 7 8 9 10; do
               sudo docker run --rm --network orla_interna -v /opt/tria/n8n-clientes:/w:ro \
                 -e N8N_API_URL=http://n8n:5678 -e N8N_API_KEY=\"\$chave\" \
-                node:22-alpine node /w/n8n-aplicar-clientes.mjs /w --aplicar && exit 0
+                node:22-alpine@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a node /w/n8n-aplicar-clientes.mjs /w --aplicar && exit 0
               echo \"n8n ainda não respondeu (tentativa \$n); nova tentativa em 15s\"
               sleep 15
             done

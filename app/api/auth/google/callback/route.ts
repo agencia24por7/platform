@@ -9,7 +9,7 @@ import {
 import { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, issueSession } from '@/modules/identity/domain/session';
 import { env } from '@/shared/config/env';
 import { logger } from '@/shared/logging/logger';
-import { enderecoConfiavel } from '@/modules/audit/domain/actor';
+import { enderecoDoCliente } from '@/shared/http/enderecoDoCliente';
 import { newRequestId, secureCompare } from '@/shared/security/tokens';
 import { entradaPublica } from '@/shared/http/entradaPublica';
 
@@ -98,7 +98,7 @@ async function tratarGet(request: NextRequest): Promise<NextResponse> {
   const ator = {
     userId: null,
     requestId,
-    sourceIp: enderecoConfiavel(request.headers.get('x-forwarded-for')),
+    sourceIp: enderecoDoCliente(request.headers),
   };
 
   const signedIn = await modules().identity.signIn(identity, ator);

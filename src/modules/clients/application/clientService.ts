@@ -14,6 +14,7 @@ import type { ClientRepository } from '@/modules/clients/infrastructure/clientRe
 export type NovoCliente = NewClient & {
   readonly tipoDaOrganizacao: OrganizationType;
   readonly papelDeQuemAge: MemberRole;
+  readonly clientIdsDeQuemAge: readonly string[] | null;
 };
 
 export type ClientService = {
@@ -34,7 +35,10 @@ export function createClientService(repository: ClientRepository, audit: AuditRe
       if (!podeCadastrarCliente(input.tipoDaOrganizacao, input.papelDeQuemAge)) {
         return err(failure('forbidden', `Seu papel não permite cadastrar ${vocabularioDe(input.tipoDaOrganizacao).cliente}.`));
       }
-      const { tipoDaOrganizacao: _tipo, papelDeQuemAge: _papel, ...novo } = input;
+      if (input.clientIdsDeQuemAge !== null) {
+        return err(failure('forbidden', `Cadastrar ${vocabularioDe(input.tipoDaOrganizacao).cliente} exige acesso à organização inteira.`));
+      }
+      const { tipoDaOrganizacao: _tipo, papelDeQuemAge: _papel, clientIdsDeQuemAge: _recorte, ...novo } = input;
 
       if (await repository.findByName(novo.organizationId, novo.name)) {
         return err(failure('conflict', 'Já existe um cliente com esse nome nesta organização.'));

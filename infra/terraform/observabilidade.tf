@@ -68,6 +68,62 @@ resource "google_monitoring_alert_policy" "erros_app" {
   depends_on = [google_project_service.required]
 }
 
+resource "google_logging_metric" "bloqueio_de_metadados" {
+  count = var.logs_na_nuvem_habilitado ? 1 : 0
+
+  name        = "${local.prefix}-bloqueio-de-metadados"
+  description = "Ocorrências do vigia do bloqueio de metadados da VM (ADR 0057, decisão 4). Só conta resultado reinstalado ou persistente; linhas de teste são ignoradas."
+  filter      = "resource.type=\"gce_instance\" AND logName=\"projects/${var.project_id}/logs/metadados_bloqueio\" AND jsonPayload.marker=\"orla-metadados-bloqueio-ausente\" AND jsonPayload.resultado=(\"reinstalado\" OR \"persistente\")"
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+
+  depends_on = [google_project_service.required]
+}
+
+resource "google_monitoring_alert_policy" "bloqueio_de_metadados" {
+  count = var.logs_na_nuvem_habilitado ? 1 : 0
+
+  display_name = "${local.prefix} · bloqueio de metadados da VM"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "Vigia achou o bloqueio de metadados ausente em 5 minutos"
+
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.bloqueio_de_metadados[0].name}\" AND resource.type=\"gce_instance\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "0s"
+
+      aggregations {
+        alignment_period   = "300s"
+        per_series_aligner = "ALIGN_SUM"
+      }
+
+      trigger {
+        count = 1
+      }
+    }
+  }
+
+  notification_channels = [for canal in google_monitoring_notification_channel.budget : canal.id]
+
+  alert_strategy {
+    auto_close = "1800s"
+  }
+
+  documentation {
+    mime_type = "text/markdown"
+    content   = "O vigia `orla-metadados-vigiar` achou o bloqueio do servidor de metadados da VM ausente. No Logs Explorer filtre `logName=\"projects/${var.project_id}/logs/metadados_bloqueio\"`. Resultado `reinstalado`: o timer já reaplicou o bloqueio; investigue por que ele sumiu (boot, restart do Docker, regra de terceiro). Resultado `persistente`: o bloqueio continua ausente e o n8n pode alcançar o token da conta da VM; entre na VM por IAP, confira `systemctl list-timers orla-metadados-vigiar.timer`, rode `sudo sh /opt/tria/metadados-bloquear.sh verificar` e, se falhar, `sudo sh /opt/tria/metadados-bloquear.sh aplicar`, e leia o erro. Esta mensagem não traz conteúdo de log."
+  }
+
+  depends_on = [google_project_service.required]
+}
+
 resource "google_logging_project_bucket_config" "aplicacao" {
   count = var.logs_na_nuvem_habilitado ? 1 : 0
 

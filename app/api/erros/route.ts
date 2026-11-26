@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { currentUser } from '@/shared/http/currentUser';
 import { consumeAll } from '@/shared/security/rateLimit';
-import { enderecoConfiavel } from '@/modules/audit/domain/actor';
+import { enderecoDoCliente } from '@/shared/http/enderecoDoCliente';
 import { caminhoDaOrigem, textoDoCliente } from '@/shared/http/relatoDoCliente';
 import { logger } from '@/shared/logging/logger';
 
@@ -48,7 +48,7 @@ const RELATOS_POR_MINUTO = 10;
 const RELATOS_GLOBAIS_POR_MINUTO = 120;
 
 export async function POST(request: Request): Promise<NextResponse> {
-  const origem = enderecoConfiavel(request.headers.get('x-forwarded-for')) ?? 'desconhecida';
+  const origem = enderecoDoCliente(request.headers) ?? 'desconhecida';
   const veredito = consumeAll(
     [
       { dominio: 'ip', key: `erros:${origem}`, limit: RELATOS_POR_MINUTO },

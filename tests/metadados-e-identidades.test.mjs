@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { after, beforeEach, describe, it } from 'node:test';
@@ -47,7 +47,8 @@ case "$acao" in
   -S) grep -qxF -- "-N $cadeia" "$arquivo" || exit 1; grep -xF -- "-N $cadeia" "$arquivo"; grep -F -- "-A $cadeia " "$arquivo"; exit 0 ;;
   -N) echo "-N $cadeia" >> "$arquivo"; exit 0 ;;
   -C) grep -qxF -- "-A $cadeia $*" "$arquivo"; exit $? ;;
-  -I) shift; echo "-A $cadeia $*" >> "$arquivo"; exit 0 ;;
+  -I) shift; { echo "-A $cadeia $*"; cat "$arquivo"; } > "$arquivo.tmp"; mv "$arquivo.tmp" "$arquivo"; exit 0 ;;
+  -D) grep -qxF -- "-A $cadeia $*" "$arquivo" || exit 1; grep -vxF -- "-A $cadeia $*" "$arquivo" > "$arquivo.tmp" || true; mv "$arquivo.tmp" "$arquivo"; exit 0 ;;
 esac
 exit 1
 `;
@@ -56,7 +57,7 @@ const rodar = (script, args, extra = {}) => {
   const r = spawnSync('sh', [script, ...args], {
     cwd: RAIZ,
     encoding: 'utf8',
-    env: { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}`, ...extra },
+    env: { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}`, ARQUIVO_DE_ALERTA: join(raiz, 'alerta', 'metadados-bloqueio.log'), ...extra },
   });
   return { status: r.status, saida: `${r.stdout}${r.stderr}` };
 };
@@ -155,7 +156,7 @@ describe('metadados-bloquear.sh', () => {
   it('instalar grava o drop-in do docker que reaplica antes e depois de cada início', () => {
     const instalado = join(raiz, 'sbin', 'orla-metadados-bloquear');
     const pasta = join(raiz, 'docker.service.d');
-    const r = rodar(script, ['instalar'], { INSTALADO: instalado, PASTA_DO_DOCKER: pasta });
+    const r = rodar(script, ['instalar'], { INSTALADO: instalado, PASTA_DO_DOCKER: pasta, PASTA_DAS_UNIDADES: join(raiz, 'unidades') });
     assert.equal(r.status, 0, r.saida);
     assert.equal(readFileSync(instalado, 'utf8'), ler(script));
     const dropin = readFileSync(join(pasta, 'orla-metadados.conf'), 'utf8');
@@ -164,10 +165,148 @@ describe('metadados-bloquear.sh', () => {
     assert.match(chamadas(), /systemctl daemon-reload/);
   });
 
+  it('instalar grava o serviço e o timer da vigia, liga o timer e é idempotente', () => {
+    const instalado = join(raiz, 'sbin', 'orla-metadados-bloquear');
+    const unidades = join(raiz, 'unidades');
+    const ambiente = { INSTALADO: instalado, PASTA_DO_DOCKER: join(raiz, 'docker.service.d'), PASTA_DAS_UNIDADES: unidades };
+    assert.equal(rodar(script, ['instalar'], ambiente).status, 0);
+    const servico = readFileSync(join(unidades, 'orla-metadados-vigiar.service'), 'utf8');
+    assert.ok(servico.includes('Type=oneshot'));
+    assert.ok(servico.includes('After=docker.service'));
+    assert.ok(servico.includes(`ExecStart=${instalado} vigiar`));
+    const temporizador = readFileSync(join(unidades, 'orla-metadados-vigiar.timer'), 'utf8');
+    assert.match(temporizador, /^OnBootSec=2min$/m);
+    assert.match(temporizador, /^OnUnitInactiveSec=5min$/m);
+    assert.match(temporizador, /^WantedBy=timers\.target$/m);
+    assert.match(chamadas(), /systemctl enable --now orla-metadados-vigiar\.timer/);
+    rmSync(registro, { force: true });
+    assert.equal(rodar(script, ['instalar'], ambiente).status, 0);
+    assert.doesNotMatch(chamadas(), /daemon-reload/);
+  });
+
   it('sem ação conhecida sai 2 sem tocar em regra', () => {
     assert.equal(rodar(script, []).status, 2);
     assert.equal(rodar(script, ['--help']).status, 0);
     assert.doesNotMatch(chamadas(), /iptables/);
+  });
+});
+
+describe('metadados-bloquear.sh: salto na primeira posição e vigia', () => {
+  const script = 'infra/compose/metadados-bloquear.sh';
+  const v4 = () => readFileSync(join(estado, 'v4'), 'utf8');
+  const marcador = 'orla-metadados-bloqueio-ausente';
+  const primeiraDaDockerUser = () => v4().split('\n').find((linha) => linha.startsWith('-A DOCKER-USER '));
+  const colocarRegraAntesDoSalto = () => writeFileSync(join(estado, 'v4'), `-A DOCKER-USER -j RETURN\n${v4()}`);
+
+  it('verificar reprova o salto que existe mas não é a primeira regra, e aplicar o recoloca na frente sem duplicar', () => {
+    rodar(script, ['aplicar']);
+    colocarRegraAntesDoSalto();
+    assert.equal(rodar(script, ['verificar']).status, 1);
+    assert.equal(rodar(script, ['aplicar']).status, 0);
+    assert.equal(primeiraDaDockerUser(), '-A DOCKER-USER -j ORLA-METADADOS');
+    assert.equal(v4().split('\n').filter((linha) => linha === '-A DOCKER-USER -j ORLA-METADADOS').length, 1);
+    assert.equal(rodar(script, ['verificar']).status, 0);
+  });
+
+  it('vigiar com tudo no lugar sai 0, sem escrever o marcador e sem reaplicar', () => {
+    rodar(script, ['aplicar']);
+    rmSync(registro, { force: true });
+    const r = rodar(script, ['vigiar']);
+    assert.equal(r.status, 0, r.saida);
+    assert.ok(!r.saida.includes(marcador));
+    assert.doesNotMatch(chamadas(), /-restore/);
+  });
+
+  it('vigiar sem a cadeia reaplica uma vez, confere e registra o marcador com severidade error', () => {
+    const r = rodar(script, ['vigiar']);
+    assert.equal(r.status, 0, r.saida);
+    const linha = r.saida.split('\n').find((l) => l.includes(marcador));
+    assert.ok(linha, r.saida);
+    const registroJson = JSON.parse(linha);
+    assert.equal(registroJson.severity, 'error');
+    assert.equal(registroJson.marker, marcador);
+    assert.equal(registroJson.resultado, 'reinstalado');
+    assert.equal(rodar(script, ['verificar']).status, 0);
+  });
+
+  it('vigiar com o salto fora da primeira posição reinstala e registra o marcador', () => {
+    rodar(script, ['aplicar']);
+    colocarRegraAntesDoSalto();
+    const r = rodar(script, ['vigiar']);
+    assert.equal(r.status, 0, r.saida);
+    assert.ok(r.saida.includes(marcador));
+    assert.equal(primeiraDaDockerUser(), '-A DOCKER-USER -j ORLA-METADADOS');
+  });
+
+  it('vigiar no journal prefixa a linha com <3> para o systemd gravar como erro', () => {
+    const r = rodar(script, ['vigiar'], { JOURNAL_STREAM: '8:12345' });
+    assert.ok(r.saida.split('\n').some((l) => l.startsWith('<3>{') && l.includes(marcador)), r.saida);
+  });
+
+  it('vigiar com o restore falhando tenta uma vez, sai 1 e marca como persistente', () => {
+    escreverExecutavel('iptables-restore', `#!/bin/sh\necho "iptables-restore $*" >> "${registro}"\ncat > /dev/null\nexit 1\n`);
+    const r = rodar(script, ['vigiar']);
+    assert.equal(r.status, 1, r.saida);
+    assert.equal(JSON.parse(r.saida.split('\n').find((l) => l.includes(marcador))).resultado, 'persistente');
+    assert.equal(chamadas().split('\n').filter((l) => l.startsWith('iptables-restore')).length, 1);
+  });
+});
+
+describe('metadados-bloquear.sh vigiar: arquivo de alerta para o Cloud Logging', () => {
+  const script = 'infra/compose/metadados-bloquear.sh';
+  const arquivo = join(raiz, 'alerta', 'metadados-bloqueio.log');
+
+  it('não cria o arquivo quando o bloqueio está no lugar', () => {
+    rodar(script, ['aplicar']);
+    assert.equal(rodar(script, ['vigiar']).status, 0);
+    assert.ok(!existsSync(arquivo));
+  });
+
+  it('grava a mesma linha JSON, sem o prefixo do journal, com permissão 0640', () => {
+    const r = rodar(script, ['vigiar'], { JOURNAL_STREAM: '8:12345' });
+    assert.equal(r.status, 0, r.saida);
+    const linhas = readFileSync(arquivo, 'utf8').trim().split('\n');
+    assert.equal(linhas.length, 1);
+    const registroJson = JSON.parse(linhas[0]);
+    assert.equal(registroJson.severity, 'error');
+    assert.equal(registroJson.marker, 'orla-metadados-bloqueio-ausente');
+    assert.equal(registroJson.resultado, 'reinstalado');
+    assert.ok(r.saida.includes(`<3>${linhas[0]}`));
+    assert.equal(statSync(arquivo).mode & 0o777, 0o640);
+  });
+
+  it('com o restore falhando grava resultado persistente', () => {
+    escreverExecutavel('iptables-restore', '#!/bin/sh\ncat > /dev/null\nexit 1\n');
+    assert.equal(rodar(script, ['vigiar']).status, 1);
+    assert.equal(JSON.parse(readFileSync(arquivo, 'utf8').trim()).resultado, 'persistente');
+  });
+
+  it('limita o tamanho: acima do limite o arquivo é esvaziado antes da nova linha', () => {
+    mkdirSync(join(raiz, 'alerta'), { recursive: true });
+    writeFileSync(arquivo, `${'x'.repeat(200)}\n`);
+    const r = rodar(script, ['vigiar'], { LIMITE_DO_ARQUIVO_DE_ALERTA: '100' });
+    assert.equal(r.status, 0, r.saida);
+    const linhas = readFileSync(arquivo, 'utf8').trim().split('\n');
+    assert.equal(linhas.length, 1);
+    assert.equal(JSON.parse(linhas[0]).marker, 'orla-metadados-bloqueio-ausente');
+  });
+
+  it('falha ao gravar o arquivo não muda o resultado do vigia', () => {
+    mkdirSync(raiz, { recursive: true });
+    writeFileSync(join(raiz, 'arquivo-comum'), '');
+    const r = rodar(script, ['vigiar'], { ARQUIVO_DE_ALERTA: join(raiz, 'arquivo-comum', 'sub', 'a.log') });
+    assert.equal(r.status, 0, r.saida);
+    assert.match(r.saida, /aviso: não consegui preparar/);
+  });
+
+  it('o Ops Agent lê só esse arquivo em pipeline próprio e a métrica ignora linhas de teste', () => {
+    const agente = ler('infra/terraform/files/startup.sh.tftpl');
+    assert.match(agente, /metadados_bloqueio:\n {6}type: files\n {6}include_paths:\n {8}- \/var\/log\/orla\/metadados-bloqueio\.log\n/);
+    assert.match(agente, /receivers: \[metadados_bloqueio\]/);
+    assert.match(agente, /receivers: \[containers_docker\]/);
+    const tf = ler('infra/terraform/observabilidade.tf');
+    assert.match(tf, /jsonPayload\.resultado=\(\\"reinstalado\\" OR \\"persistente\\"\)/);
+    assert.match(tf, /logs\/metadados_bloqueio\\"/);
   });
 });
 

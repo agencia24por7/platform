@@ -118,6 +118,7 @@ const ENV_BASE = [
   `TRIA_SESSION_SECRET=${SEGREDO_DE_SESSAO}`,
   'TRIA_APP_BASE_URL=https://platform.exemplo.com',
   'BQ_PROJECT_ID=tria-platform',
+  `TRIA_PROXY_SECRET=${'b'.repeat(16)}borda-unica-0123456789abcd`,
   'BQ_DATASET=tria_dw',
   'N8N_API_KEY=chave-do-n8n-com-mais-de-vinte',
 ];

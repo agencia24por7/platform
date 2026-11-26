@@ -1,6 +1,6 @@
 import { headers } from 'next/headers';
 import type { Ator } from '@/modules/audit/domain/actor';
-import { enderecoConfiavel } from '@/modules/audit/domain/actor';
+import { enderecoDoCliente } from '@/shared/http/enderecoDoCliente';
 import { requestId } from '@/shared/http/actions';
 import { currentUser } from '@/shared/http/currentUser';
 
@@ -10,6 +10,6 @@ export async function atorAtual(): Promise<Ator> {
   return {
     userId: sessao?.user.id ?? null,
     requestId: await requestId(),
-    sourceIp: enderecoConfiavel(cabecalhos.get('x-forwarded-for')),
+    sourceIp: enderecoDoCliente(cabecalhos),
   };
 }

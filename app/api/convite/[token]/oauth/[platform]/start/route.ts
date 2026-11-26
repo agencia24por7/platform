@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/shared/config/env';
 import { logger } from '@/shared/logging/logger';
 import { consume } from '@/shared/security/rateLimit';
-import { enderecoConfiavel } from '@/modules/audit/domain/actor';
+import { enderecoDoCliente } from '@/shared/http/enderecoDoCliente';
 import { encodeStateCookie } from '@/modules/connections/domain/tenantBinding';
 import { convidavelPorLink, tokenDeConviteBemFormado } from '@/modules/connections/domain/integrationInvite';
 import {
@@ -28,7 +28,7 @@ const LIMITE_POR_JANELA = 20;
 const JANELA_MS = 10 * 60 * 1000;
 
 function sourceIp(request: NextRequest): string {
-  return enderecoConfiavel(request.headers.get('x-forwarded-for')) ?? 'desconhecido';
+  return enderecoDoCliente(request.headers) ?? 'desconhecido';
 }
 
 async function tratarGet(

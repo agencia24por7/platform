@@ -8,7 +8,7 @@ import { logger } from '@/shared/logging/logger';
 import { criarAvisoLimitado } from '@/shared/logging/avisoLimitado';
 import type { RateLimitVerdict } from '@/shared/security/rateLimit';
 import { vigiarConsulta } from '@/shared/security/tentativasInvalidas';
-import { enderecoConfiavel } from '@/modules/audit/domain/actor';
+import { enderecoDoCliente } from '@/shared/http/enderecoDoCliente';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,7 +62,7 @@ export async function POST(
     return NextResponse.json({ error: 'corpo_invalido' }, { status: 413 });
   }
 
-  const sourceIp = enderecoConfiavel(request.headers.get('x-forwarded-for')) ?? 'desconhecido';
+  const sourceIp = enderecoDoCliente(request.headers) ?? 'desconhecido';
   const impressao = impressaoDoToken(token);
   const consulta = vigiarConsulta({
     janelaMs: RATE_WINDOW_MS,

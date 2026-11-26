@@ -89,7 +89,9 @@ só o nome (as versões não são geridas pelo Terraform), não há `random_*`, 
 chave do KMS, e o `startup-script` lê os segredos na hora. O state traz identificadores: ids do projeto e da conta de
 faturamento, e-mails das contas de serviço e dos canais de alerta, IP público, nomes de bucket e o texto do
 `startup-script`. Recurso novo que guarde segredo no state (por exemplo `google_secret_manager_secret_version` ou
-`random_password`) muda essa conclusão e precisa de ADR.
+`random_password`) muda essa conclusão e precisa de ADR. O segredo de borda `proxy-secret` (`TRIA_PROXY_SECRET`, ADR 0060)
+segue a regra: o Terraform cria só o recurso; o humano cria a versão por pipe, sem eco, antes do deploy (roteiro em
+`docs/release/2026-11-identidades-e-metadados.md`).
 
 ### Apply cancelado por outro workflow (risco aceito) e recuperação
 

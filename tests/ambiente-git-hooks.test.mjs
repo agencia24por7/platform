@@ -207,6 +207,112 @@ test('--push bloqueia main, histórico reescrito e segredo, e libera push limpo'
   }
 })
 
+const MIGRACOES_DESTRUTIVAS_DISFARCADAS = {
+  'comentário de bloco entre as palavras': 'DROP/**/TABLE a;\n',
+  'comentário de bloco aninhado': 'DROP /* x /* y */ z */ TABLE a;\n',
+  'comentário de linha e quebra': 'DROP -- x\nTABLE a;\n',
+  'comentário de linha com retorno de carro': 'DROP -- x\r\nTABLE a;\n',
+  '500 espaços': `DROP${' '.repeat(500)}TABLE a;\n`,
+  '5000 quebras de linha': `DROP${'\n'.repeat(5000)}TABLE a;\n`,
+  'minúsculas': 'drop\t\ttable a;\n',
+  'coluna': 'alter table a drop/* c */column b;\n',
+  'schema': 'DROP\n--x\nSCHEMA s;\n',
+  'truncate': 'TRUNCATE a;\n',
+  'literal com marcador de comentário antes': "select '--'; DROP/**/TABLE a;\n",
+  'literal com abertura de bloco antes': "select '/*'; DROP/**/TABLE a; --*/\n",
+}
+
+test('migração destrutiva disfarçada por comentário ou espaço é barrada pelo portão', () => {
+  for (const [nome, sql] of Object.entries(MIGRACOES_DESTRUTIVAS_DISFARCADAS)) {
+    const pasta = criarRepositorio()
+    try {
+      preparar(pasta, 'db/migrations/0002_x.sql', sql)
+      const resultado = verificar(pasta, ['--staged'])
+      assert.equal(resultado.status, 1, `${nome}: ${resultado.stderr}`)
+      assert.match(resultado.stderr, /\[migracao-destrutiva-fora-do-portao\]/, nome)
+      preparar(pasta, 'db/corte-gate.txt', '# gate\n0002_x.sql\n')
+      assert.equal(verificar(pasta, ['--staged']).status, 0, `${nome} no portão`)
+    } finally {
+      rmSync(pasta, { recursive: true, force: true })
+    }
+  }
+})
+
+test('migração sem DROP nem TRUNCATE passa, mesmo com comentários e espaços', () => {
+  const legitimas = [
+    'create table b (id int);\n',
+    'create index i on a (id); -- ajuste\n',
+    '/* nota */ alter table a add column c int;\n',
+    `create table c (id int);${' '.repeat(3000)}\n`,
+    'drop index if exists i;\n',
+    'select 1 /* aberto /* aninhado */ ainda */ ;\n',
+  ]
+  for (const sql of legitimas) {
+    const pasta = criarRepositorio()
+    try {
+      preparar(pasta, 'db/migrations/0002_x.sql', sql)
+      const resultado = verificar(pasta, ['--staged'])
+      assert.equal(resultado.status, 0, `${sql.slice(0, 40)}: ${resultado.stderr}`)
+    } finally {
+      rmSync(pasta, { recursive: true, force: true })
+    }
+  }
+})
+
+test('falha de leitura do git encerra com código 2 sem imprimir conteúdo', () => {
+  const pasta = criarRepositorio()
+  try {
+    const sql = 'select 1;\n'
+    preparar(pasta, 'db/migrations/0002_x.sql', sql)
+    const sha = git(pasta, 'rev-parse', ':db/migrations/0002_x.sql')
+    rmSync(join(pasta, '.git', 'objects', sha.slice(0, 2), sha.slice(2)), { force: true })
+    const resultado = verificar(pasta, ['--staged'])
+    assert.equal(resultado.status, 2, resultado.stderr)
+    assert.match(resultado.stderr, /falha ao ler o git/)
+    assert.ok(!resultado.stdout.includes('verificação de segurança ok'))
+  } finally {
+    rmSync(pasta, { recursive: true, force: true })
+  }
+})
+
+test('--arvore: arquivo versionado que não pode ser lido vira achado explícito, não é pulado', () => {
+  const pasta = criarRepositorio()
+  try {
+    preparar(pasta, 'src/a.ts', 'export const a = 1\n')
+    rmSync(join(pasta, 'src', 'a.ts'))
+    mkdirSync(join(pasta, 'src', 'a.ts'))
+    const resultado = verificar(pasta, ['--arvore'])
+    assert.equal(resultado.status, 1, resultado.stderr)
+    assert.match(resultado.stderr, /src\/a\.ts \[falha-de-leitura\]/)
+  } finally {
+    rmSync(pasta, { recursive: true, force: true })
+  }
+})
+
+const UNIDADES_DE_MIGRACAO = ['DROP ', '/*', '/* /*', '--', "'", 'DROP/**/', ' \n', "'\\", 'DROP -- ']
+
+function tempoDaMigracaoMs(tamanho) {
+  const pasta = criarRepositorio()
+  try {
+    UNIDADES_DE_MIGRACAO.forEach((unidade, indice) => {
+      preparar(pasta, `db/migrations/${String(indice + 2).padStart(4, '0')}_x.sql`, `${unidade.repeat(Math.ceil(tamanho / unidade.length))}\n`)
+    })
+    const inicio = process.hrtime.bigint()
+    const resultado = verificar(pasta, ['--staged'])
+    const decorrido = Number(process.hrtime.bigint() - inicio) / 1_000_000
+    assert.notEqual(resultado.status, 2, resultado.stderr)
+    return decorrido
+  } finally {
+    rmSync(pasta, { recursive: true, force: true })
+  }
+}
+
+test('normalização de migração tem custo linear: dobrar o arquivo não mais que triplica o tempo', () => {
+  const menor = (tamanho) => Math.min(...Array.from({ length: MEDICOES_POR_TAMANHO }, () => tempoDaMigracaoMs(tamanho)))
+  const crescimento = menor(400_000) / menor(200_000)
+  assert.ok(crescimento < LIMITE_DE_CRESCIMENTO_AO_DOBRAR, `custo cresceu ${crescimento.toFixed(1)}x ao dobrar a migração`)
+})
+
 test('hooks reais do git: commit e push passam pelo verificador', () => {
   const pasta = criarRepositorio()
   const remoto = mkdtempSync(join(tmpdir(), 'git-remoto-'))

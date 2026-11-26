@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/shared/config/env';
 import { comoPublico } from '@/shared/db/client';
+import { enderecoDoCliente } from '@/shared/http/enderecoDoCliente';
 import { withoutTenant } from '@/shared/db/tenant';
 import { logger } from '@/shared/logging/logger';
 import { consume } from '@/shared/security/rateLimit';
@@ -18,8 +19,7 @@ const RATE_LIMIT = 300;
 const RATE_WINDOW_MS = 60_000;
 
 function ipDoClienteViaProxyConfiavel(request: NextRequest): string {
-  const encadeamento = request.headers.get('x-forwarded-for')?.split(',') ?? [];
-  return encadeamento.at(-1)?.trim() || 'desconhecido';
+  return enderecoDoCliente(request.headers) ?? 'desconhecido';
 }
 
 export function GET(request: NextRequest): NextResponse {

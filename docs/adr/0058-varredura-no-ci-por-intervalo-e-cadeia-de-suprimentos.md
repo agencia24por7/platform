@@ -46,6 +46,14 @@ Binário e byte nulo (terceira e quarta revisões):
 
 Falha de leitura do git passa a encerrar com código 2. Antes, o `git` mudo devolvia texto vazio quando o diff passava do `maxBuffer` (50 MB), e a varredura passava sem varrer; o limite agora é 400 MB e o estouro falha fechado.
 
+### Migração destrutiva: normalização do SQL e falha fechada (revisão 5)
+- O `migrar.sh` só confia em `db/corte-gate.txt`, então esta varredura é o único detector de `DROP` não declarado. O padrão `DROP\s{1,200}TABLE` passava com mais de 200 espaços ou quebras entre as palavras, e `DROP/**/TABLE` e `DROP -- x` seguido de quebra e `TABLE` passavam em qualquer versão.
+- Antes de testar `DROP TABLE|COLUMN|SCHEMA` e `TRUNCATE`, o arquivo inteiro (não linha a linha) é normalizado em uma passada linear, sem regex: comentário de bloco `/* */` e de linha `--` viram um espaço e qualquer sequência de espaço ou quebra vira um espaço. O padrão testado é `DROP (TABLE|COLUMN|SCHEMA)` com espaço simples, sem quantificador e sem limite de espaços; é um superconjunto do original `\s+`.
+- Para errar sempre para o lado de detectar a mais, a normalização roda em 18 variantes e basta uma casar: comentário de bloco aninhado (PostgreSQL), simples (MySQL) ou não tratado; comentário de linha tratado ou não; literal `'...'` não reconhecido, reconhecido com `''` ou reconhecido com barra invertida. A variante sem comentário nem literal é a paridade exata com o padrão anterior. Custo: 18 passagens lineares sobre cada migração nova, só nos modos de diff.
+- Falso positivo aceito: `DROP TABLE` dentro de comentário ou de literal é acusado (o original também acusava). Residual: construção que faça todas as 18 leituras divergirem do servidor, como literal com dollar-quote que contenha marcador de comentário.
+- A leitura do conteúdo da migração (`git show`) usa `gitObrigatorio`: falha ou estouro do buffer de 400 MB encerra com código 2 e a mensagem traz só o nome do arquivo e a primeira linha do erro do git, nunca conteúdo. Migração de 400 MB não é esperada; se acontecer, o código 2 é o comportamento intencional.
+- Na varredura da árvore, arquivo versionado que não pode ser lido (por exemplo, trocado por diretório) deixa de ser pulado: vira o achado `falha-de-leitura` (código 1, mensagem com o código do erro, sem conteúdo).
+
 ### Formatos novos (todos em `seguranca-verificar.mjs`, não no `politicas.mjs`, que também alimenta os hooks do Claude Code)
 - URL com credencial embutida `esquema://usuario:senha@host`, ignorando senha de exemplo (`password`, `senha`, `changeme`, `${...}`, `<...>`, asteriscos), senha igual ao usuário e host local (`localhost`, `127.0.0.1`, `::1`).
 - Atribuição sem aspas em `.sh`, `.yml`, `.yaml`, `.tf`, `.tfvars` e `.env*` para nome sensível, com valor de 20+ caracteres que misture letra e dígito (referência com ponto, `$(...)` e `${...}` não casam).

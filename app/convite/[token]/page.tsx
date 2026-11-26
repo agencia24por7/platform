@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { headers } from 'next/headers';
 import { EstadoDoLink, MolduraPublica } from '@/../app/contexto/_publico/PaginaPublica';
 import { modules } from '@/composition';
-import { enderecoConfiavel } from '@/modules/audit/domain/actor';
+import { enderecoDoCliente } from '@/shared/http/enderecoDoCliente';
 import { consume } from '@/shared/security/rateLimit';
 import { requestId } from '@/shared/http/actions';
 import { MARCA_DA_PLATAFORMA, ROTULO_DA_PLATAFORMA } from '@/modules/connections/domain/connection';
@@ -41,7 +41,7 @@ export default async function PaginaDoConvite({
   const [{ token }, busca] = await Promise.all([params, searchParams]);
   const unico = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
-  const sourceIp = enderecoConfiavel((await headers()).get('x-forwarded-for'));
+  const sourceIp = enderecoDoCliente(await headers());
   const verdict = consume('ip', `convite:view:${sourceIp ?? 'desconhecido'}`, LIMITE_POR_JANELA, JANELA_MS);
   if (!verdict.allowed) {
     return <EstadoDoLink titulo="Muitas tentativas" texto="Espere um pouco e tente de novo." />;

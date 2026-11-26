@@ -12,6 +12,7 @@ const OBRIGATORIAS_DA_RELEASE: ReadonlyArray<readonly [string, string]> = [
   ['TOKENS_KMS_KEY', 'obrigatória: sem ela o cofre de tokens falha fechado e o corte deixa toda conexão sem reautorização (ADR 0032)'],
   ['CONTEXT_BUCKET', 'obrigatória: sem ela arquivos do contexto e o brain ficam desligados (ADR 0027)'],
   ['BQ_PROJECT_ID', 'obrigatória: sem ela a coleta não grava no BigQuery'],
+  ['TRIA_PROXY_SECRET', 'obrigatória: sem ela o IP do cliente é desconhecido e todos dividem o mesmo balde do limitador (ADR 0060)'],
 ];
 
 const PARES: ReadonlyArray<readonly [string, string]> = [

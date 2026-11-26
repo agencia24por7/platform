@@ -41,7 +41,82 @@ const ARQUIVO_DE_CODIGO = /\.(ts|tsx|js|mjs|cjs|sh|yml|yaml|tf)$/
 const ARQUIVO_DE_TESTE = /(^|[/])tests[/]|\.test\.(?:ts|mjs)$/
 const FORMATO_DA_ENTRADA = /^(.+)::([a-z0-9-]+)::([0-9a-f]{12}|-)::([1-9]\d*)$/
 const ASSINATURA_DE_ARQUIVO = '-'
-const DESTRUTIVO = /\b(?:DROP\s{1,200}(?:TABLE|COLUMN|SCHEMA)|TRUNCATE)\b/i
+const DESTRUTIVO = /\b(?:DROP (?:TABLE|COLUMN|SCHEMA)|TRUNCATE)\b/i
+const MODOS_DE_BLOCO = ['aninhado', 'simples', 'nenhum']
+const MODOS_DE_LINHA = [true, false]
+const MODOS_DE_LITERAL = ['nenhum', 'sql', 'sql-com-barra']
+const VARIANTES_DE_NORMALIZACAO = MODOS_DE_BLOCO.flatMap((bloco) => MODOS_DE_LINHA.flatMap((linha) => MODOS_DE_LITERAL.map((literais) => ({ bloco, linha, literais }))))
+const ESPACO = /\s/
+
+function fimDoComentarioDeBloco(sql, inicio, aninhado) {
+  let profundidade = 1
+  let posicao = inicio + 2
+  while (posicao < sql.length && profundidade > 0) {
+    if (aninhado && sql.startsWith('/*', posicao)) {
+      profundidade += 1
+      posicao += 2
+    } else if (sql.startsWith('*/', posicao)) {
+      profundidade -= 1
+      posicao += 2
+    } else {
+      posicao += 1
+    }
+  }
+  return posicao
+}
+
+function normalizarSql(sql, { bloco, linha, literais }) {
+  const saida = []
+  let espacoPendente = false
+  const emitir = (caractere) => {
+    if (ESPACO.test(caractere)) {
+      espacoPendente = true
+      return
+    }
+    if (espacoPendente && saida.length > 0) saida.push(' ')
+    espacoPendente = false
+    saida.push(caractere)
+  }
+  let dentroDeLiteral = false
+  let posicao = 0
+  while (posicao < sql.length) {
+    const caractere = sql[posicao]
+    if (dentroDeLiteral) {
+      emitir(caractere)
+      if (literais === 'sql-com-barra' && caractere === '\\' && posicao + 1 < sql.length) {
+        emitir(sql[posicao + 1])
+        posicao += 2
+        continue
+      }
+      if (caractere === "'") dentroDeLiteral = false
+      posicao += 1
+      continue
+    }
+    if (caractere === "'" && literais !== 'nenhum') {
+      dentroDeLiteral = true
+      emitir(caractere)
+      posicao += 1
+      continue
+    }
+    if (bloco !== 'nenhum' && sql.startsWith('/*', posicao)) {
+      posicao = fimDoComentarioDeBloco(sql, posicao, bloco === 'aninhado')
+      espacoPendente = true
+      continue
+    }
+    if (linha && sql.startsWith('--', posicao)) {
+      while (posicao < sql.length && sql[posicao] !== '\n' && sql[posicao] !== '\r') posicao += 1
+      espacoPendente = true
+      continue
+    }
+    emitir(caractere)
+    posicao += 1
+  }
+  return saida.join('')
+}
+
+function temSqlDestrutivo(sql) {
+  return VARIANTES_DE_NORMALIZACAO.some((variante) => DESTRUTIVO.test(normalizarSql(sql, variante)))
+}
 
 function assinaturaDaLinha(texto) {
   return createHash('sha256').update(texto.trim().replace(/\s+/g, ' ')).digest('hex').slice(0, 12)
@@ -108,7 +183,7 @@ function contextoDoIndice() {
   return {
     alteracoes: alteracoesDoNameStatus(diff(['--name-status', '-z'])),
     adicionadas: adicionadasDoDiff(diff),
-    conteudo: (arquivo) => git(['show', `:${arquivo}`]),
+    conteudo: (arquivo) => gitObrigatorio(['show', `:${arquivo}`]),
   }
 }
 
@@ -128,7 +203,7 @@ function contextoDoIntervalo(inicioInformado, fimInformado) {
   return {
     alteracoes: alteracoesDoNameStatus(diff(['--name-status', '-z'])),
     adicionadas: adicionadasDoDiff(diff),
-    conteudo: (arquivo) => git(['show', `${fim}:${arquivo}`]),
+    conteudo: (arquivo) => gitObrigatorio(['show', `${fim}:${arquivo}`]),
   }
 }
 
@@ -177,8 +252,8 @@ function* linhasDaArvore(arquivos) {
         if (texto.includes('\0')) break
         if (fimDeLinha) numero += 1
       }
-    } catch {
-      continue
+    } catch (erro) {
+      yield { arquivo, linha: 0, texto: '', falhaDeLeitura: String(erro?.code ?? 'erro') }
     }
   }
 }
@@ -203,6 +278,10 @@ function verificarContexto(contexto) {
   const arquivosComByteNulo = new Set()
   for (const linhaInteira of contexto.adicionadas) {
     if (arquivosComByteNulo.has(linhaInteira.arquivo)) continue
+    if (linhaInteira.falhaDeLeitura) {
+      achar(linhaInteira.arquivo, 0, 'falha-de-leitura', `Não foi possível ler o arquivo versionado (${linhaInteira.falhaDeLeitura}); sem leitura não há varredura`)
+      continue
+    }
     if (linhaInteira.texto.includes('\0')) {
       arquivosComByteNulo.add(linhaInteira.arquivo)
       achar(linhaInteira.arquivo, 0, 'byte-nulo-em-arquivo-de-texto', 'Byte nulo em arquivo que não é binário conhecido (esconde conteúdo de ferramentas que o tratam como binário); o resto do arquivo não é varrido')
@@ -231,7 +310,7 @@ function verificarContexto(contexto) {
         achar(arquivo, 0, 'migracao-imutavel', 'Migração versionada é imutável (alterada, removida ou renomeada)')
         continue
       }
-      if (DESTRUTIVO.test(contexto.conteudo(arquivo)) && !portao.has(basename(arquivo))) {
+      if (temSqlDestrutivo(contexto.conteudo(arquivo)) && !portao.has(basename(arquivo))) {
         achar(arquivo, 0, 'migracao-destrutiva-fora-do-portao', 'Migração destrutiva precisa constar em db/corte-gate.txt (ADR 0034)')
       }
     }

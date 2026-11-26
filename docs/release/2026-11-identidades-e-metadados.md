@@ -94,6 +94,39 @@ devolve `projectReaders`/`projectWriters` sozinho (o campo fica computado). Para
 reversão declara as mesmas entradas que existiam (anotadas no passo 3 de "Antes de tudo") e recoloca o
 `google_bigquery_dataset_iam_member.vm_editor` com um bloco `import` (`id = "projects/tria-platform/datasets/tria_dw roles/bigquery.dataEditor serviceAccount:<vm>"`).
 
+## Camada 2b: criar a versão do segredo de borda ANTES do deploy (humano, ADR 0060)
+
+O `infra.yml` cria só o recurso `tria-producao-proxy-secret` (sem versão). O valor é o que o Caddy envia ao app em
+`X-Orla-Borda` para provar que o `x-forwarded-for` veio dele. Sem versão, o pre-flight do deploy barra
+(`TRIA_PROXY_SECRET` é obrigatória em produção) e, se passasse, todo visitante dividiria o mesmo balde do limitador.
+Faça depois do `apply` da `main` terminar (o recurso precisa existir) e antes de o pre-flight do deploy rodar; se o
+deploy já falhou no pre-flight por isso, crie a versão e repita o `deploy.yml` do mesmo commit.
+
+1. Criar a versão, por pipe, sem eco e sem gravar o valor em arquivo:
+
+   ```sh
+   openssl rand -hex 32 | gcloud secrets versions add tria-producao-proxy-secret --data-file=- --project=tria-platform
+   ```
+
+2. Verificar sem imprimir o valor:
+
+   ```sh
+   gcloud secrets versions list tria-producao-proxy-secret --project=tria-platform --filter='state=ENABLED' --format='value(name)' | wc -l
+   gcloud secrets versions access latest --secret=tria-producao-proxy-secret --project=tria-platform | wc -c
+   ```
+
+   Esperado: ao menos 1 versão habilitada e 65 caracteres (64 hexadecimais mais a quebra de linha do `wc`).
+   Depois do deploy, o `completar-env.sh` grava `TRIA_PROXY_SECRET` no `.env` da VM, e o log do app não pode trazer
+   `proxy.segredo_de_borda_ausente`.
+3. Rotação: criar nova versão e fazer um deploy (o `.env` lê `latest`); app e Caddy sobem juntos, então não há
+   janela com valores diferentes além do tempo de `compose up`. Nessa janela o IP cai no balde desconhecido
+   (conservador), sem abrir o limite.
+
+**Reversão:** desabilitar a versão (`gcloud secrets versions disable <n> --secret=tria-producao-proxy-secret`) volta o
+app ao IP desconhecido em produção (todos num balde só, com aviso limitado no log) e o pre-flight passa a barrar o
+próximo deploy; para voltar ao código anterior, reverter o PR (o Caddy anterior não envia o cabeçalho e o app
+anterior ignora o segredo).
+
 ## Camada 3: deploy (`deploy.yml` no mesmo merge)
 
 1. "Enviar configuração da pilha" leva `rede-transicao.sh`, `metadados-bloquear.sh` e `metadados-verificar.sh`.
@@ -108,10 +141,33 @@ reversão declara as mesmas entradas que existiam (anotadas no passo 3 de "Antes
 Conferência manual opcional na VM (IAP): `sudo iptables -S ORLA-METADADOS`, `sudo iptables -S DOCKER-USER`,
 `systemctl cat docker | grep orla-metadados`, `sudo docker network inspect orla_interna -f '{{.Internal}}'`.
 
+Conferência manual do timer de vigia (na VM, depois do primeiro deploy e depois de reiniciar a VM):
+`systemctl list-timers orla-metadados-vigiar.timer` (deve aparecer com próxima execução),
+`sudo journalctl -u orla-metadados-vigiar --since "-1h"` (sem linha com `orla-metadados-bloqueio-ausente` em
+condições normais), `sudo iptables -S DOCKER-USER | sed -n 2p` (a primeira regra deve ser `-A DOCKER-USER -j ORLA-METADADOS`)
+e `sudo /usr/local/sbin/orla-metadados-bloquear vigiar; echo $?` (0 e sem saída). Uma linha com o marcador significa que
+o bloqueio faltou: `resultado":"reinstalado"` foi corrigido pelo timer (investigue por que o boot falhou),
+`"persistente"` ainda está aberto e o n8n alcança os metadados; reaplique à mão e investigue. Há alerta por e-mail para esse
+marcador (ADR 0057, decisão 4): a linha também vai a `/var/log/orla/metadados-bloqueio.log`, que o Ops Agent envia ao
+Cloud Logging com o `logName` `metadados_bloqueio`.
+
+Confirmar que a linha chega ao Cloud Logging (uma vez, depois do primeiro deploy com o Ops Agent atualizado):
+`sudo systemctl status google-cloud-ops-agent` (ativo, sem erro de config) e, na VM, grave uma linha de teste que a métrica
+ignora: `echo '{"severity":"error","marker":"orla-metadados-bloqueio-ausente","resultado":"teste","message":"teste do envio de log"}' | sudo tee -a /var/log/orla/metadados-bloqueio.log`.
+No Logs Explorer (projeto, escopo padrão) filtre `logName="projects/<projeto>/logs/metadados_bloqueio"` e espere
+até 2 minutos: a linha deve aparecer com `jsonPayload.resultado="teste"` e severidade ERROR. Se o `logName` for outro,
+ajuste o filtro da métrica e a documentação do alerta em `observabilidade.tf` (a premissa de que o `logName` é o id do receptor
+vem do `containers_docker` e não está explícita na documentação do Ops Agent). A linha de teste não conta na métrica
+`bloqueio-de-metadados` (só `reinstalado` e `persistente` contam), então não há falso alarme; não derrube o bloqueio real para
+testar o alerta. O disparo do alerta em si só se observa quando houver ocorrência real; confira que a política existe
+e está ligada ao canal de notificação (`terraform plan` sem diferença e a política listada em Monitoring, Alerting).
+Depois do teste, esvazie o arquivo: `sudo truncate -s 0 /var/log/orla/metadados-bloqueio.log`.
+
 Se o passo 2 falhar no meio, o deploy para antes do pre-flight. Rodar o deploy de novo retoma: com a rede já
 recriada e a pilha parada, o script religa a versão do `.env`.
 
 **Reversão das regras (sem tocar nas redes):** na VM, `sudo rm /etc/systemd/system/docker.service.d/orla-metadados.conf`,
+`sudo systemctl disable --now orla-metadados-vigiar.timer`, `sudo rm /etc/systemd/system/orla-metadados-vigiar.{service,timer}`,
 `sudo systemctl daemon-reload`, `sudo iptables -D DOCKER-USER -j ORLA-METADADOS`, `sudo iptables -F ORLA-METADADOS`,
 `sudo iptables -X ORLA-METADADOS` (idem com `ip6tables`). O app segue funcionando, porque as redes novas não dependem
 das regras; só o bloqueio some. O próximo deploy reinstala, então reverta também o código.
