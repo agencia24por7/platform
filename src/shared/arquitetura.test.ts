@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
+import type { modules } from '@/composition';
 
 const RAIZ = join(import.meta.dirname, '..', '..');
 const IMPORTACAO = /^import\s+(type\s+)?([^;]*?)from\s+'([^']+)'/gms;
@@ -70,5 +71,43 @@ describe('contexto de usuário autodeclarado (ADR 0045)', () => {
       .filter((c) => /\bcomoUsuarioAutenticado\b/.test(readFileSync(join(RAIZ, c), 'utf8')))
       .sort();
     assert.deepEqual(usam, IMPORTADORES_PERMITIDOS);
+  });
+});
+
+describe('a camada de tela só recebe o serviço de Estratégia', () => {
+  const fontes = (pasta: string): string[] =>
+    readdirSync(join(RAIZ, pasta), { withFileTypes: true }).flatMap((entrada) => {
+      const caminho = join(pasta, entrada.name);
+      if (entrada.isDirectory()) return fontes(caminho);
+      return /\.(ts|tsx|mjs)$/.test(entrada.name) ? [caminho] : [];
+    });
+  const doApp = () => fontes('app');
+  const texto = (caminho: string) => readFileSync(join(RAIZ, caminho), 'utf8');
+  const naRotaDoWorker = (caminho: string) => caminho.startsWith('app/api/v0/strategy/');
+
+  it('nenhum arquivo de app/ fora de app/api/v0/strategy referencia strategyDoWorker', () => {
+    assert.ok(doApp().length > 0);
+    const violacoes = doApp().filter((c) => !naRotaDoWorker(c) && /\bstrategyDoWorker\b/.test(texto(c)));
+    assert.deepEqual(violacoes, []);
+  });
+
+  it('nenhum arquivo de app/ importa a infraestrutura, o motor ou o processador do módulo', () => {
+    const PROIBIDO = /strategy\/(infrastructure\/|application\/(motorDoPlano|processadorDeExecucoes))/;
+    const violacoes = doApp().filter((c) => PROIBIDO.test(texto(c)));
+    assert.deepEqual(violacoes, []);
+  });
+
+  it('modules().strategy expõe só o serviço', () => {
+    const chaves = ['repositorio', 'motor', 'leitorDoBrain', 'processador', 'executorDeIA', 'avaliadorDeLimites'] as const;
+    type Estrategia = ReturnType<typeof modules>['strategy'];
+    type ChavesProibidas = Extract<keyof Estrategia, (typeof chaves)[number]>;
+    const nenhuma: [ChavesProibidas] extends [never] ? true : false = true;
+    assert.equal(nenhuma, true);
+    const composicao = texto('src/composition.ts');
+    const bloco = /^ {4}strategy: \{([\s\S]*?)^ {4}\},/m.exec(composicao)?.[1] ?? '';
+    assert.ok(bloco.includes('service:'));
+    const declaradas = [...bloco.matchAll(/^ {6}(\w+):/gm)].map((m) => m[1]);
+    assert.deepEqual(declaradas, ['service']);
+    for (const chave of chaves) assert.equal(declaradas.includes(chave), false, chave);
   });
 });

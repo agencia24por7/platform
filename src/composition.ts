@@ -39,6 +39,14 @@ import { createDimensoesService } from '@/modules/coleta/application/dimensoesSe
 import { createDimensoesRepository } from '@/modules/coleta/infrastructure/dimensoesRepository';
 import { createDimensoesBigQuery } from '@/modules/coleta/infrastructure/dimensoesBigQuery';
 import { criarBrain } from '@/modules/brain/infrastructure/criarBrain';
+import { createEstrategiaService } from '@/modules/strategy/application/estrategiaService';
+import { createMotorDoPlano } from '@/modules/strategy/application/motorDoPlano';
+import { createProcessadorDeExecucoes } from '@/modules/strategy/application/processadorDeExecucoes';
+import { criarAvaliadorDeLimites } from '@/modules/strategy/infrastructure/avaliadorDeLimites';
+import { criarLeitorDoBrain } from '@/modules/strategy/infrastructure/leitorDoBrain';
+import { createEstrategiaRepository } from '@/modules/strategy/infrastructure/estrategiaRepository';
+import { comValidacao } from '@/modules/strategy/infrastructure/ia/comValidacao';
+import { criarIaNaoConfigurada } from '@/modules/strategy/infrastructure/ia/iaNaoConfigurada';
 import { criarModuloDeTokens } from '@/modules/tokens/infrastructure/criarModuloDeTokens';
 import { createPoliticaDeRevogacao } from '@/modules/privacidade/application/revogacaoNoProvedor';
 import { createExpurgoDeFontesService } from '@/modules/privacidade/application/expurgoDeFontes';
@@ -80,6 +88,18 @@ function build() {
   });
 
   const identity = createIdentityService(createUserRepository(), audit);
+  const estrategiaRepository = createEstrategiaRepository();
+  const brain = criarBrain(audit, contexto, regras);
+  const leitorDoBrainDaEstrategia = criarLeitorDoBrain({ brain });
+  const executorDeIA = comValidacao(criarIaNaoConfigurada());
+  const avaliadorDeLimites = criarAvaliadorDeLimites({ regras });
+  const motorDoPlano = createMotorDoPlano({
+    repositorio: estrategiaRepository,
+    executorDeIA,
+    leitorDoBrain: leitorDoBrainDaEstrategia,
+    avaliadorDeLimites,
+    audit,
+  });
 
   return {
     audit,
@@ -126,7 +146,13 @@ function build() {
     alertas: createAlertaService(createAlertaRepository(), audit, createNotificadorPorWebhook(), createLimiteDeAlertasNovos(), (userId) =>
       identity.operadorDaPlataforma(userId, env().PLATAFORMA_OPERADORES)),
     dimensoes,
-    brain: criarBrain(audit, contexto, regras),
+    brain,
+    strategy: {
+      service: createEstrategiaService({ repositorio: estrategiaRepository, audit, leitorDoBrain: leitorDoBrainDaEstrategia }),
+    },
+    strategyDoWorker: {
+      processador: createProcessadorDeExecucoes({ repositorio: estrategiaRepository, motor: motorDoPlano }),
+    },
     tokens,
     expurgoDeFontes,
     pedidosDeExclusao: createPedidosDeExclusaoService(createPedidosDeExclusaoRepository(), {
