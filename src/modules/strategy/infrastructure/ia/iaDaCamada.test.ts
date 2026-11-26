@@ -71,7 +71,7 @@ describe('iaDaCamada', () => {
     await criarIaDaCamada(executor).executar(pedido({ tarefa: 'comite' }));
     await criarIaDaCamada(executor).executar(pedido({ tarefa: 'gate' }));
     assert.deepEqual(vistos[0]!.agente, {
-      credencialId: 'abcdef12-0000',
+      credencialId: 'estrategia:abcdef12-0000',
       organizationId: 'org-1',
       clienteIds: ['cli-1'],
       ferramentas: ['brain_consultar_catalogo', 'brain_consultar_item'],

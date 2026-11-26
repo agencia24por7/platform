@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 import { z } from 'zod';
 
 await import('../../brain/testes/ganchos.ts');
-const { createExecutor, SEM_MODELO_CONFIGURADO } = await import('./execucao.ts');
+const { createExecutor, SEM_MODELO_CONFIGURADO, LIMITE_DE_CHAMADAS_DE_FERRAMENTA_POR_PEDIDO } = await import('./execucao.ts');
 const { definirTarefa, dadosDelimitados, fornecedoresHabilitados, TETO_DO_ORCAMENTO } = await import('../domain/tarefa.ts');
 const { criarRegistro, definirFerramenta } = await import('../domain/ferramenta.ts');
 const { ok, err } = await import('../../../shared/result/result.ts');
@@ -184,6 +184,17 @@ describe('execução de tarefa de IA (ADR 0063 §1, §7 e §8)', () => {
     assert.deepEqual(semFerramenta, []);
     assert.deepEqual(await comFerramenta![0]!.executar({ clienteId: 'x' }), { lido: true });
     assert.deepEqual(execucoesDeFerramenta, [{ entrada: { clienteId: 'x' }, organizacao: ORG }]);
+  });
+
+  it('limita as chamadas de ferramenta por pedido: acima do limite a ferramenta nem executa e avisa o modelo', async () => {
+    const { executor, pedidos, execucoesDeFerramenta } = montar();
+    await executor.executar({ organizationId: ORG, tarefa: tarefa({ ferramentas: ['catalogo_ler'] }), dados: {}, requestId: 'r1', agente: agente() });
+    const ferramentas = pedidos[0]!.ferramentas as { executar(e: unknown): Promise<unknown> }[];
+    const respostas: unknown[] = [];
+    for (let i = 0; i < LIMITE_DE_CHAMADAS_DE_FERRAMENTA_POR_PEDIDO + 2; i++) respostas.push(await ferramentas[0]!.executar({ clienteId: 'x' }));
+    assert.equal(execucoesDeFerramenta.length, LIMITE_DE_CHAMADAS_DE_FERRAMENTA_POR_PEDIDO);
+    assert.deepEqual(respostas[LIMITE_DE_CHAMADAS_DE_FERRAMENTA_POR_PEDIDO - 1], { lido: true });
+    assert.match(String((respostas[LIMITE_DE_CHAMADAS_DE_FERRAMENTA_POR_PEDIDO] as { erro: string }).erro), /Limite de consultas/);
   });
 
   it('falha de ferramenta volta ao modelo como dado, sem exceção', async () => {

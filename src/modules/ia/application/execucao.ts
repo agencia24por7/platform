@@ -107,6 +107,9 @@ export function tokensReservados(orcamento: Orcamento): number {
   return orcamento.tokensDeSaida * orcamento.passos;
 }
 
+export const LIMITE_DE_CHAMADAS_DE_FERRAMENTA_POR_PEDIDO = 10;
+const LIMITE_DE_FERRAMENTA_ATINGIDO = { erro: 'Limite de consultas deste pedido atingido: responda com o que já foi lido e declare a falta.' };
+
 function ferramentasDoPedido(
   tarefa: Tarefa<unknown>,
   agente: EscopoDoAgente | undefined,
@@ -115,11 +118,14 @@ function ferramentasDoPedido(
 ): readonly FerramentaDoPedido[] {
   if (!agente || tarefa.ferramentas.length === 0) return [];
   const permitidas = agente.ferramentas.filter((nome) => tarefa.ferramentas.includes(nome));
+  let chamadas = 0;
   return registro.permitidas({ ferramentas: permitidas }).map((ferramenta) => ({
     nome: ferramenta.nome,
     descricao: ferramenta.descricao,
     entrada: ferramenta.entrada as z.ZodType<unknown>,
     async executar(entrada) {
+      chamadas += 1;
+      if (chamadas > LIMITE_DE_CHAMADAS_DE_FERRAMENTA_POR_PEDIDO) return LIMITE_DE_FERRAMENTA_ATINGIDO;
       try {
         const resultado = await executarFerramenta(ferramenta, entrada, agente);
         return resultado.ok ? resultado.value : { erro: resultado.error.message };

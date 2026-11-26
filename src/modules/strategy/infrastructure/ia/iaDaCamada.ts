@@ -14,6 +14,7 @@ const TAREFAS_REGISTRADAS: Readonly<Record<TarefaDeIA, Tarefa<unknown>>> = {
 };
 
 export const MARGEM_DA_CAMADA_MS = 10_000;
+export const PREFIXO_DO_ATOR_DA_ESTRATEGIA = 'estrategia:';
 
 const FALHA_DO_FORNECEDOR = 'O fornecedor de modelo não respondeu como esperado.';
 
@@ -62,7 +63,7 @@ export function criarIaDaCamada(executor: Executor): ExecutorDeIA {
           ? {}
           : {
               agente: {
-                credencialId: pedido.execucaoId,
+                credencialId: `${PREFIXO_DO_ATOR_DA_ESTRATEGIA}${pedido.execucaoId}`,
                 organizationId: pedido.organizacaoId,
                 clienteIds: [pedido.clienteId],
                 ferramentas: registrada.ferramentas,
