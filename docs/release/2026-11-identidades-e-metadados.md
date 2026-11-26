@@ -125,8 +125,11 @@ deploy já falhou no pre-flight por isso, crie a versão e repita o `deploy.yml`
 
 **Reversão:** desabilitar a versão (`gcloud secrets versions disable <n> --secret=tria-producao-proxy-secret`) não muda a
 VM em execução; no próximo deploy o `completar-env.sh` não acha versão habilitada e cai no valor que já está no `.env`
-(o da versão desabilitada). Para invalidar de fato um segredo vazado, crie a versão nova antes de desabilitar a antiga e
-faça o deploy. Sem versão nenhuma, apague a linha `TRIA_PROXY_SECRET` do `.env` da VM antes: o app volta ao IP
+(o da versão desabilitada). Isso não cobre o REBOOT: sem versão habilitada, o `startup.sh.tftpl` regrava o `.env` com o
+valor vazio no boot, e o valor antigo não fica de reserva. Não há impacto de segurança, só de disponibilidade: o
+validador reprova o próximo deploy e o app trata todo IP como desconhecido. Passo seguro: mantenha sempre uma versão
+habilitada ao desabilitar a antiga (crie a nova primeiro, faça o deploy e só então desabilite a anterior). Para invalidar
+de fato um segredo vazado, é esse mesmo passo. Sem versão nenhuma, apague a linha `TRIA_PROXY_SECRET` do `.env` da VM antes: o app volta ao IP
 desconhecido em produção (todos num balde só, com aviso limitado no log) e o pre-flight barra o próximo deploy; para voltar ao código anterior, reverter o PR (o Caddy anterior não envia o cabeçalho e o app
 anterior ignora o segredo).
 

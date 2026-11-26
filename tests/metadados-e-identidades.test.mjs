@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { after, beforeEach, describe, it } from 'node:test';
@@ -57,8 +57,10 @@ esac
 exit 1
 `;
 
+const SHELL_DE_TESTE = spawnSync('sh', ['-c', 'command -v dash'], { encoding: 'utf8' }).stdout.trim() ? 'dash' : 'sh';
+
 const rodar = (script, args, extra = {}) => {
-  const r = spawnSync('sh', [script, ...args], {
+  const r = spawnSync(SHELL_DE_TESTE, [script, ...args], {
     cwd: RAIZ,
     encoding: 'utf8',
     env: { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}`, ARQUIVO_DE_ALERTA: join(raiz, 'alerta', 'metadados-bloqueio.log'), ...extra },
@@ -611,5 +613,104 @@ describe('dataset tria_dw com acesso explícito', () => {
 
   it('o vínculo antigo da VM sai do state sem ser destruído', () => {
     assert.match(bigquery, /removed \{\n\s+from = google_bigquery_dataset_iam_member\.vm_editor\n\n\s+lifecycle \{\n\s+destroy = false\n\s+\}\n\}/);
+  });
+});
+
+describe('metadados-bloquear.sh: trava e alerta que não abrem', () => {
+  const script = 'infra/compose/metadados-bloquear.sh';
+  const v4 = () => readFileSync(join(estado, 'v4'), 'utf8');
+  const alvoAlerta = join(raiz, 'alerta', 'metadados-bloqueio.log');
+  const comFlock = () => escreverExecutavel('flock', '#!/bin/sh\nexit 0\n');
+  const travasQueFalham = () => {
+    const diretorio = join(raiz, 'trava-diretorio');
+    mkdirSync(diretorio, { recursive: true });
+    const alvo = join(raiz, 'alvo-da-trava');
+    writeFileSync(alvo, 'intacto\n');
+    const link = join(raiz, 'trava-symlink');
+    symlinkSync(alvo, link);
+    return { diretorio, link, alvo };
+  };
+
+  it('o shell de teste é registrado', () => {
+    console.log(`shell do teste: ${SHELL_DE_TESTE}`);
+    assert.ok(['dash', 'sh'].includes(SHELL_DE_TESTE));
+  });
+
+  it('aplicar aplica o bloqueio e avisa quando a trava é um diretório ou um symlink', () => {
+    comFlock();
+    const { diretorio, link, alvo } = travasQueFalham();
+    for (const trava of [diretorio, link]) {
+      rmSync(estado, { recursive: true, force: true });
+      mkdirSync(estado, { recursive: true });
+      const r = rodar(script, ['aplicar'], { ARQUIVO_DE_TRAVA: trava });
+      assert.equal(r.status, 0, r.saida);
+      assert.match(r.saida, /seguindo sem serializar/);
+      assert.ok(v4().includes('-A DOCKER-USER -j ORLA-METADADOS'));
+    }
+    assert.equal(readFileSync(alvo, 'utf8'), 'intacto\n');
+  });
+
+  it('vigiar aplica, grava o alerta e sai 0 quando a trava é um diretório ou um symlink', () => {
+    comFlock();
+    const { diretorio, link, alvo } = travasQueFalham();
+    for (const trava of [diretorio, link]) {
+      rmSync(estado, { recursive: true, force: true });
+      rmSync(join(raiz, 'alerta'), { recursive: true, force: true });
+      mkdirSync(estado, { recursive: true });
+      const r = rodar(script, ['vigiar'], { ARQUIVO_DE_TRAVA: trava });
+      assert.equal(r.status, 0, r.saida);
+      assert.match(r.saida, /seguindo sem serializar/);
+      assert.ok(v4().includes('-A DOCKER-USER -j ORLA-METADADOS'));
+      assert.equal(JSON.parse(readFileSync(alvoAlerta, 'utf8').trim()).resultado, 'reinstalado');
+    }
+    assert.equal(readFileSync(alvo, 'utf8'), 'intacto\n');
+  });
+
+  it('vigiar com a trava inválida e o restore falhando ainda grava o alerta persistente e sai 1', () => {
+    comFlock();
+    escreverExecutavel('iptables-restore', '#!/bin/sh\ncat > /dev/null\nexit 1\n');
+    const { diretorio } = travasQueFalham();
+    const r = rodar(script, ['vigiar'], { ARQUIVO_DE_TRAVA: diretorio });
+    assert.equal(r.status, 1, r.saida);
+    assert.equal(JSON.parse(readFileSync(alvoAlerta, 'utf8').trim()).resultado, 'persistente');
+  });
+
+  it('arquivo de alerta que é symlink não é seguido nem truncado', () => {
+    const alvo = join(raiz, 'alvo-do-alerta');
+    writeFileSync(alvo, 'intacto\n');
+    mkdirSync(join(raiz, 'alerta'), { recursive: true });
+    symlinkSync(alvo, alvoAlerta);
+    const r = rodar(script, ['vigiar'], { LIMITE_DO_ARQUIVO_DE_ALERTA: '1' });
+    assert.equal(r.status, 0, r.saida);
+    assert.match(r.saida, /é symlink ou não é arquivo comum/);
+    assert.equal(readFileSync(alvo, 'utf8'), 'intacto\n');
+  });
+
+  it('instalar com a pasta das unidades sem escrita aplica o bloqueio, sai diferente de zero e diz que a vigia falhou', (contexto) => {
+    if (process.getuid && process.getuid() === 0) return contexto.skip('root ignora permissão de pasta');
+    const unidades = join(raiz, 'unidades');
+    mkdirSync(unidades, { recursive: true });
+    chmodSync(unidades, 0o555);
+    const r = rodar(script, ['instalar'], { INSTALADO: join(raiz, 'sbin', 'orla-metadados-bloquear'), PASTA_DO_DOCKER: join(raiz, 'docker.service.d'), PASTA_DAS_UNIDADES: unidades });
+    chmodSync(unidades, 0o755);
+    assert.notEqual(r.status, 0, r.saida);
+    assert.match(r.saida, /FALHA: a vigia orla-metadados-vigiar não foi instalada ou ligada/);
+    assert.doesNotMatch(chamadas(), /enable --now/);
+    assert.ok(v4().includes('-A DOCKER-USER -j ORLA-METADADOS'));
+  });
+
+  it('instalar com a pasta das unidades impossível de criar aplica o bloqueio e sai diferente de zero', () => {
+    const arquivo = join(raiz, 'nao-e-pasta');
+    writeFileSync(arquivo, '');
+    const r = rodar(script, ['instalar'], { INSTALADO: join(raiz, 'sbin', 'orla-metadados-bloquear'), PASTA_DO_DOCKER: join(raiz, 'docker.service.d'), PASTA_DAS_UNIDADES: join(arquivo, 'sub') });
+    assert.notEqual(r.status, 0, r.saida);
+    assert.match(r.saida, /FALHA: a vigia/);
+    assert.ok(v4().includes('-A DOCKER-USER -j ORLA-METADADOS'));
+  });
+
+  it('instalar com o daemon-reload da vigia falhando sai diferente de zero mesmo com o enable dando certo', () => {
+    escreverExecutavel('systemctl', '#!/bin/sh\ncase "$*" in *daemon-reload*) exit 1 ;; esac\nexit 0\n');
+    const r = rodar(script, ['instalar'], { INSTALADO: join(raiz, 'sbin', 'orla-metadados-bloquear'), PASTA_DO_DOCKER: join(raiz, 'docker.service.d'), PASTA_DAS_UNIDADES: join(raiz, 'unidades') });
+    assert.notEqual(r.status, 0, r.saida);
   });
 });

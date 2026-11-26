@@ -48,7 +48,13 @@ const DROP_DE_OBJETO_SEM_DADO = /DROP (INDEX|POLICY|TRIGGER|FUNCTION|PROCEDURE|V
 const OBJETOS_COM_CASCATA_PERIGOSA = new Set(['FUNCTION', 'PROCEDURE', 'VIEW'])
 const ALTER = /\bALTER\b/i
 const CASCADE = /\bCASCADE\b/i
-const EXECUTE_COM_CONCATENACAO = /\bEXECUTE\s+'(?:[^']|'')*'\s*\|\|/i
+const EXECUTE_PALAVRA = /\bEXECUTE\b/gi
+const MONTADOR_DE_SQL = /\|\||\b(?:chr|decode|convert_from|reverse|concat|concat_ws)\s*\(/i
+const FIM_DO_ARGUMENTO_DE_EXECUTE = /(?:INTO|USING)(?![A-Za-z0-9_$\u0080-\uffff])/iy
+const INICIO_DE_INTERPOLACAO = /[A-Za-z_'"\u0080-\uffff]/
+const ANTECEDE_CORPO_DE_CODIGO = /(?:^|[^A-Za-z0-9_$])(?:DO(?: LANGUAGE [A-Za-z_"]+)?|AS)$/i
+const SEPARADOR_NEUTRO = '\u0001'
+const LITERAIS_COM_ARGUMENTO_DE_EXECUTE = new Set(['sql', 'sql-com-barra'])
 const META_COMANDO_PSQL = /(?:^|;)[ \t]*\\|\\(?:g|gexec|gset|gx)\b/m
 const ABERTURA_DE_DOLAR = /\$(?:[A-Za-z_\u0080-\uffff][A-Za-z0-9_\u0080-\uffff]*)?\$/y
 const CARACTERE_DE_IDENTIFICADOR = /[A-Za-z0-9_$\u0080-\uffff]/
@@ -87,20 +93,30 @@ function normalizarSql(sql, { bloco, linha, literais }) {
     espacoPendente = false
     saida.push(caractere)
   }
+  const emitirNeutro = (caractere) => emitir(caractere === ';' ? SEPARADOR_NEUTRO : caractere)
   const aspasSimples = literais !== 'nenhum' && literais !== 'dolar'
   const dolar = literais.startsWith('dolar')
+  let gatilho = false
   let dentroDeLiteral = false
+  let dentroDeIdentificador = false
+  let marcaDeCorpoDeCodigo = null
   let posicao = 0
   while (posicao < sql.length) {
     const caractere = sql[posicao]
     if (dentroDeLiteral) {
-      emitir(caractere)
+      emitirNeutro(caractere)
       if (literais.endsWith('sql-com-barra') && caractere === '\\' && posicao + 1 < sql.length) {
-        emitir(sql[posicao + 1])
+        emitirNeutro(sql[posicao + 1])
         posicao += 2
         continue
       }
       if (caractere === "'") dentroDeLiteral = false
+      posicao += 1
+      continue
+    }
+    if (dentroDeIdentificador) {
+      emitirNeutro(caractere)
+      if (caractere === '"') dentroDeIdentificador = false
       posicao += 1
       continue
     }
@@ -109,15 +125,28 @@ function normalizarSql(sql, { bloco, linha, literais }) {
       const abertura = ABERTURA_DE_DOLAR.exec(sql)
       if (abertura) {
         const marca = abertura[0]
+        const fechaCorpoDeCodigo = marcaDeCorpoDeCodigo === marca
+        if (fechaCorpoDeCodigo || (marcaDeCorpoDeCodigo === null && ANTECEDE_CORPO_DE_CODIGO.test(saida.slice(-40).join('')))) {
+          marcaDeCorpoDeCodigo = fechaCorpoDeCodigo ? null : marca
+          for (const letra of marca) emitir(letra)
+          posicao += marca.length
+          continue
+        }
         const fechamento = sql.indexOf(marca, posicao + marca.length)
         const fim = fechamento < 0 ? sql.length : fechamento + marca.length
-        for (let i = posicao; i < fim; i += 1) emitir(sql[i])
+        for (let i = posicao; i < fim; i += 1) emitirNeutro(sql[i])
         posicao = fim
         continue
       }
     }
     if (caractere === "'" && aspasSimples) {
       dentroDeLiteral = true
+      emitir(caractere)
+      posicao += 1
+      continue
+    }
+    if (caractere === '"') {
+      dentroDeIdentificador = true
       emitir(caractere)
       posicao += 1
       continue
@@ -132,10 +161,120 @@ function normalizarSql(sql, { bloco, linha, literais }) {
       espacoPendente = true
       continue
     }
+    if (aspasSimples && caractere === '\\') gatilho = true
+    if (aspasSimples && caractere === ':') {
+      if (sql[posicao + 1] === ':') {
+        emitir(caractere)
+        emitir(caractere)
+        posicao += 2
+        continue
+      }
+      if (posicao + 1 < sql.length && INICIO_DE_INTERPOLACAO.test(sql[posicao + 1])) gatilho = true
+    }
     emitir(caractere)
     posicao += 1
   }
-  return saida.join('')
+  return { texto: saida.join(''), gatilho }
+}
+
+function fimDoLiteralSimples(texto, abertura, comBarra) {
+  let posicao = abertura + 1
+  while (posicao < texto.length) {
+    if (comBarra && texto[posicao] === '\\') {
+      posicao += 2
+    } else if (texto[posicao] === "'") {
+      if (texto[posicao + 1] !== "'") return posicao + 1
+      posicao += 2
+    } else {
+      posicao += 1
+    }
+  }
+  return texto.length
+}
+
+function fimDoIdentificadorEntreAspas(texto, abertura) {
+  let posicao = abertura + 1
+  while (posicao < texto.length) {
+    if (texto[posicao] === '"') {
+      if (texto[posicao + 1] !== '"') return posicao + 1
+      posicao += 2
+    } else {
+      posicao += 1
+    }
+  }
+  return texto.length
+}
+
+function palavraDeFimDoArgumento(texto, posicao) {
+  if (posicao > 0 && CARACTERE_DE_IDENTIFICADOR.test(texto[posicao - 1])) return false
+  FIM_DO_ARGUMENTO_DE_EXECUTE.lastIndex = posicao
+  return FIM_DO_ARGUMENTO_DE_EXECUTE.test(texto)
+}
+
+function lerArgumentoDoExecute(texto, inicio, comBarra) {
+  const partes = []
+  let profundidade = 0
+  let ignorarAteFechar = 0
+  let ultimoFoiLiteral = false
+  let posicao = inicio
+  const guardar = (trecho) => {
+    if (!ignorarAteFechar) partes.push(trecho)
+  }
+  while (posicao < texto.length) {
+    const caractere = texto[posicao]
+    if (caractere === "'") {
+      if (ultimoFoiLiteral && !ignorarAteFechar) return { montado: true, fim: posicao }
+      posicao = fimDoLiteralSimples(texto, posicao, comBarra)
+      guardar("''")
+      ultimoFoiLiteral = true
+      continue
+    }
+    if (caractere === '"') {
+      posicao = fimDoIdentificadorEntreAspas(texto, posicao)
+      guardar('"x"')
+      ultimoFoiLiteral = false
+      continue
+    }
+    if (caractere === ' ') {
+      guardar(caractere)
+      posicao += 1
+      continue
+    }
+    if (caractere === ';') break
+    ultimoFoiLiteral = false
+    if (caractere === '$' && !(posicao > 0 && CARACTERE_DE_IDENTIFICADOR.test(texto[posicao - 1]))) {
+      ABERTURA_DE_DOLAR.lastIndex = posicao
+      const abertura = ABERTURA_DE_DOLAR.exec(texto)
+      if (abertura) {
+        const fechamento = texto.indexOf(abertura[0], posicao + abertura[0].length)
+        posicao = fechamento < 0 ? texto.length : fechamento + abertura[0].length
+        guardar("''")
+        continue
+      }
+    }
+    if (caractere === '(') profundidade += 1
+    if (caractere === ',' && profundidade > 0 && !ignorarAteFechar) ignorarAteFechar = profundidade
+    if (caractere === ')') {
+      if (ignorarAteFechar === profundidade) ignorarAteFechar = 0
+      profundidade = Math.max(0, profundidade - 1)
+    }
+    if (profundidade === 0 && palavraDeFimDoArgumento(texto, posicao)) break
+    guardar(caractere)
+    posicao += 1
+  }
+  return { montado: MONTADOR_DE_SQL.test(partes.join('')), fim: posicao }
+}
+
+function executeMontaSql(texto, comBarra) {
+  EXECUTE_PALAVRA.lastIndex = 0
+  let achado = EXECUTE_PALAVRA.exec(texto)
+  while (achado) {
+    const argumento = lerArgumentoDoExecute(texto, achado.index + achado[0].length, comBarra)
+    if (argumento.montado) return true
+    EXECUTE_PALAVRA.lastIndex = argumento.fim
+    achado = EXECUTE_PALAVRA.exec(texto)
+  }
+  return false
 }
 
 function declaracaoTemDropDestrutivo(declaracao) {
@@ -157,14 +296,16 @@ function declaracaoTemDropDestrutivo(declaracao) {
   return false
 }
 
-function normalizadoTemSqlDestrutivo(normalizado) {
-  if (TRUNCATE.test(normalizado) || EXECUTE_COM_CONCATENACAO.test(normalizado)) return true
-  return normalizado.split(';').some((declaracao) => declaracaoTemDropDestrutivo(declaracao))
+function varianteTemSqlDestrutivo(sql, variante) {
+  const { texto, gatilho } = normalizarSql(sql, variante)
+  if (gatilho || TRUNCATE.test(texto)) return true
+  if (LITERAIS_COM_ARGUMENTO_DE_EXECUTE.has(variante.literais) && executeMontaSql(texto, variante.literais === 'sql-com-barra')) return true
+  return texto.split(';').some((declaracao) => declaracaoTemDropDestrutivo(declaracao))
 }
 
 function temSqlDestrutivo(sql) {
   if (META_COMANDO_PSQL.test(sql)) return true
-  return VARIANTES_DE_NORMALIZACAO.some((variante) => normalizadoTemSqlDestrutivo(normalizarSql(sql, variante)))
+  return VARIANTES_DE_NORMALIZACAO.some((variante) => varianteTemSqlDestrutivo(sql, variante))
 }
 
 function assinaturaDaLinha(texto) {

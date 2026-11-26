@@ -13,7 +13,7 @@ PASTA_DAS_UNIDADES="${PASTA_DAS_UNIDADES:-/etc/systemd/system}"
 NOME_DA_VIGIA=orla-metadados-vigiar
 MARCADOR=orla-metadados-bloqueio-ausente
 ARQUIVO_DE_ALERTA="${ARQUIVO_DE_ALERTA:-/var/log/orla/metadados-bloqueio.log}"
-ARQUIVO_DE_TRAVA="${ARQUIVO_DE_TRAVA:-/run/lock/orla-metadados.lock}"
+ARQUIVO_DE_TRAVA="${ARQUIVO_DE_TRAVA:-/run/orla-metadados.lock}"
 ESPERA_DA_TRAVA="${ESPERA_DA_TRAVA:-60}"
 LIMITE_DO_ARQUIVO_DE_ALERTA="${LIMITE_DO_ARQUIVO_DE_ALERTA:-65536}"
 
@@ -105,7 +105,14 @@ travar() {
   command -v flock > /dev/null 2>&1 || return 0
   pasta_da_trava=$(dirname "$ARQUIVO_DE_TRAVA")
   mkdir -p "$pasta_da_trava" 2> /dev/null && [ -w "$pasta_da_trava" ] || { echo "aviso: sem pasta gravável para a trava $ARQUIVO_DE_TRAVA; seguindo sem serializar" >&2; return 0; }
-  exec 9> "$ARQUIVO_DE_TRAVA"
+  if [ -L "$ARQUIVO_DE_TRAVA" ] || { [ -e "$ARQUIVO_DE_TRAVA" ] && [ ! -f "$ARQUIVO_DE_TRAVA" ]; }; then
+    echo "aviso: $ARQUIVO_DE_TRAVA é symlink ou não é arquivo comum; seguindo sem serializar" >&2
+    return 0
+  fi
+  if ! command exec 9>>"$ARQUIVO_DE_TRAVA"; then
+    echo "aviso: não consegui abrir a trava $ARQUIVO_DE_TRAVA; seguindo sem serializar" >&2
+    return 0
+  fi
   flock -w "$ESPERA_DA_TRAVA" 9 || echo "aviso: não obtive a trava $ARQUIVO_DE_TRAVA em ${ESPERA_DA_TRAVA}s; aplicando sem serializar" >&2
 }
 
@@ -140,14 +147,18 @@ conferir_v4() {
 gravar_no_arquivo_de_alerta() {
   linha="$1"
   pasta=$(dirname "$ARQUIVO_DE_ALERTA")
-  if ! (umask 027; mkdir -p "$pasta" && { [ -e "$ARQUIVO_DE_ALERTA" ] || : > "$ARQUIVO_DE_ALERTA"; }) 2> /dev/null; then
+  if [ -L "$ARQUIVO_DE_ALERTA" ] || { [ -e "$ARQUIVO_DE_ALERTA" ] && [ ! -f "$ARQUIVO_DE_ALERTA" ]; }; then
+    echo "aviso: $ARQUIVO_DE_ALERTA é symlink ou não é arquivo comum; o alerta na nuvem não verá esta ocorrência" >&2
+    return 0
+  fi
+  if ! (umask 027; mkdir -p "$pasta" && { [ -e "$ARQUIVO_DE_ALERTA" ] || command : >> "$ARQUIVO_DE_ALERTA"; }) 2> /dev/null; then
     echo "aviso: não consegui preparar $ARQUIVO_DE_ALERTA; o alerta na nuvem não verá esta ocorrência" >&2
     return 0
   fi
   chmod 0640 "$ARQUIVO_DE_ALERTA" 2> /dev/null || true
   tamanho=$(wc -c < "$ARQUIVO_DE_ALERTA" 2> /dev/null || echo 0)
   if [ "$tamanho" -gt "$LIMITE_DO_ARQUIVO_DE_ALERTA" ]; then
-    : > "$ARQUIVO_DE_ALERTA" 2> /dev/null || true
+    command : > "$ARQUIVO_DE_ALERTA" 2> /dev/null || true
   fi
   printf '%s\n' "$linha" >> "$ARQUIVO_DE_ALERTA" 2> /dev/null \
     || echo "aviso: não consegui gravar em $ARQUIVO_DE_ALERTA; o alerta na nuvem não verá esta ocorrência" >&2
@@ -178,20 +189,20 @@ vigiar() {
 instalar_vigia() {
   servico="$PASTA_DAS_UNIDADES/$NOME_DA_VIGIA.service"
   temporizador="$PASTA_DAS_UNIDADES/$NOME_DA_VIGIA.timer"
-  mkdir -p "$PASTA_DAS_UNIDADES"
+  mkdir -p "$PASTA_DAS_UNIDADES" || return 1
   novo_servico=$(printf '[Unit]\nDescription=Confere o bloqueio de metadados da VM (ORLA)\nAfter=docker.service\n\n[Service]\nType=oneshot\nExecStart=%s vigiar\n' "$INSTALADO")
   novo_temporizador=$(printf '[Unit]\nDescription=Confere o bloqueio de metadados da VM a cada poucos minutos (ORLA)\n\n[Timer]\nOnBootSec=2min\nOnUnitInactiveSec=5min\nAccuracySec=30s\n\n[Install]\nWantedBy=timers.target\n')
   mudou=0
   if [ "$(cat "$servico" 2>/dev/null || true)" != "$novo_servico" ]; then
-    printf '%s\n' "$novo_servico" > "$servico"
+    printf '%s\n' "$novo_servico" > "$servico" || return 1
     mudou=1
   fi
   if [ "$(cat "$temporizador" 2>/dev/null || true)" != "$novo_temporizador" ]; then
-    printf '%s\n' "$novo_temporizador" > "$temporizador"
+    printf '%s\n' "$novo_temporizador" > "$temporizador" || return 1
     mudou=1
   fi
   if [ "$mudou" -eq 1 ]; then
-    systemctl daemon-reload
+    systemctl daemon-reload || return 1
     echo "unidades $NOME_DA_VIGIA gravadas: o timer confere o bloqueio no boot e a cada 5 minutos"
   fi
   systemctl enable --now "$NOME_DA_VIGIA.timer"
