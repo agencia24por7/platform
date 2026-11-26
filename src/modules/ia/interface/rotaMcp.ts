@@ -1,5 +1,5 @@
-import { enderecoConfiavel } from '@/modules/audit/domain/actor';
 import { CorpoAcimaDoLimite, declaradoAcimaDoLimite, lerCorpoLimitado } from '@/shared/http/corpoLimitado';
+import { enderecoDoCliente } from '@/shared/http/enderecoDoCliente';
 import { CABECALHO_DO_REQUEST_ID, resolverRequestId } from '@/shared/http/requestId';
 import type { EscopoDoAgente } from '../domain/ferramenta.ts';
 
@@ -16,6 +16,8 @@ export const METODOS_ACEITOS: readonly string[] = [
   'tools/call',
 ];
 
+export type DominioDoLimiteMcp = 'ip' | 'ia';
+
 type Veredito = { readonly allowed: boolean; readonly retryAfterSeconds: number };
 
 export type DependenciasDaRotaMcp = {
@@ -25,7 +27,7 @@ export type DependenciasDaRotaMcp = {
   readonly corpoMaximo: number;
   autenticar(candidata: string, origem: Pick<EscopoDoAgente, 'requestId' | 'sourceIp'>): Promise<EscopoDoAgente | null>;
   manipular(request: Request, escopo: EscopoDoAgente): Promise<Response>;
-  consumir(chave: string, limite: number, janelaMs: number): Veredito;
+  consumir(dominio: DominioDoLimiteMcp, chave: string, limite: number, janelaMs: number): Veredito;
 };
 
 function recusa(status: number, titulo: string, requestId: string, extras: Record<string, string> = {}): Response {
@@ -93,8 +95,8 @@ export function criarRotaMcp(deps: DependenciasDaRotaMcp): (request: Request) =>
       return recusa(413, 'Corpo da requisição acima do limite.', requestId);
     }
 
-    const sourceIp = enderecoConfiavel(request.headers.get('x-forwarded-for'));
-    const porOrigem = deps.consumir(`mcp:origem:${sourceIp ?? SEM_ORIGEM}`, TENTATIVAS_POR_ORIGEM_POR_MINUTO, JANELA_MS);
+    const sourceIp = enderecoDoCliente(request.headers);
+    const porOrigem = deps.consumir('ip', `mcp:origem:${sourceIp ?? SEM_ORIGEM}`, TENTATIVAS_POR_ORIGEM_POR_MINUTO, JANELA_MS);
     if (!porOrigem.allowed) {
       return recusa(429, 'Limite de chamadas excedido.', requestId, { 'Retry-After': String(porOrigem.retryAfterSeconds) });
     }
@@ -103,7 +105,7 @@ export function criarRotaMcp(deps: DependenciasDaRotaMcp): (request: Request) =>
     const escopo = candidata ? await deps.autenticar(candidata, { requestId, sourceIp }) : null;
     if (!escopo) return recusa(401, 'Credencial de agente ausente ou inválida.', requestId, { 'WWW-Authenticate': 'Bearer' });
 
-    const porCredencial = deps.consumir(`mcp:credencial:${escopo.credencialId}`, deps.chamadasPorMinuto, JANELA_MS);
+    const porCredencial = deps.consumir('ia', `mcp:credencial:${escopo.credencialId}`, deps.chamadasPorMinuto, JANELA_MS);
     if (!porCredencial.allowed) {
       return recusa(429, 'Limite de chamadas excedido.', requestId, { 'Retry-After': String(porCredencial.retryAfterSeconds) });
     }

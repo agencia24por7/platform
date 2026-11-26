@@ -57,13 +57,14 @@ function montar(opcoes: { habilitado?: boolean; chamadasPorMinuto?: number } = {
       return escopo ? { ...escopo, ...origem } : null;
     },
     manipular: criarManipuladorMcp(registro, (evento, dados) => avisos.push({ evento, dados })),
-    consumir(chave, limite) {
-      const usados = (contagem.get(chave) ?? 0) + 1;
-      contagem.set(chave, usados);
+    consumir(dominio, chave, limite) {
+      const balde = `${dominio}|${chave}`;
+      const usados = (contagem.get(balde) ?? 0) + 1;
+      contagem.set(balde, usados);
       return { allowed: usados <= limite, retryAfterSeconds: 30 };
     },
   });
-  return { rota, emitir, execucoes, avisos };
+  return { rota, emitir, execucoes, avisos, contagem };
 }
 
 function pedido(corpo: unknown, cabecalhos: Record<string, string> = {}) {
@@ -217,6 +218,15 @@ describe('servidor MCP (ADR 0057 §6)', () => {
     assert.equal(barrada.status, 429);
     assert.equal(barrada.headers.get('retry-after'), '30');
     assert.equal((await rota(pedido(listar, portador(b)))).status, 200);
+  });
+
+  it('a origem é cobrada no domínio ip e a credencial, só depois de validada, no domínio ia', async () => {
+    const { rota, emitir, contagem } = montar();
+    await rota(pedido(listar, portador('orla_ag_inventada')));
+    assert.deepEqual([...contagem.keys()], ['ip|mcp:origem:desconhecida']);
+    const segredo = emitir({ credencialId: 'cred-a', organizationId: 'org-a', clienteIds: null, ferramentas: ['catalogo_ler'] });
+    await rota(pedido(listar, { ...portador(segredo), 'x-forwarded-for': '203.0.113.7' }));
+    assert.deepEqual([...contagem.keys()], ['ip|mcp:origem:desconhecida', 'ip|mcp:origem:203.0.113.7', 'ia|mcp:credencial:cred-a']);
   });
 
   it('a resposta nunca devolve a credencial', async () => {

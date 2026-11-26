@@ -104,6 +104,8 @@ function leitorDoAgente(agente: AgenteLeitor): Leitor {
   return { actorType: 'agent', actorId: agente.credencialId, requestId: agente.requestId, sourceIp: agente.sourceIp };
 }
 
+const PAPEL_DO_AGENTE: MemberRole = 'viewer';
+
 const NAO_ENCONTRADO = failure('not_found', 'Cliente não encontrado.');
 const ENTRADA_NAO_ENCONTRADA = failure('not_found', 'Entrada não encontrada no catálogo deste cliente.');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -230,7 +232,7 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
     if (agente.clienteIds !== null && !agente.clienteIds.includes(clienteId)) return err(NAO_ENCONTRADO);
     const cliente = { organizationId: agente.organizationId, clienteId };
     if (!(await deps.repositorio.clienteVivo(cliente))) return err(NAO_ENCONTRADO);
-    return montarNaOrganizacao(agente.organizationId, clienteId);
+    return montarNaOrganizacao(agente.organizationId, clienteId, PAPEL_DO_AGENTE);
   }
 
   function paginaDoCatalogo(consulta: FiltrosDoCatalogo & { readonly limite: number; readonly cursor: string | null }) {

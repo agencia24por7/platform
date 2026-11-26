@@ -83,11 +83,12 @@ function servico(opcoes: { repo?: ReturnType<typeof repositorio>; armazenamento?
   const repo = opcoes.repo ?? repositorio();
   const { audit, eventos } = auditoria();
   const medidas: string[] = [];
+  const visoes: string[] = [];
   const s = createBrainService({
     repositorio: repo.repo,
     contexto: opcoes.contexto === false
       ? CARREGADOR_DE_CONTEXTO_INDISPONIVEL
-      : carregadorDoServicoDeContexto({ carregarNaVisao: async () => ({ ok: true as const, value: fx.contexto() }) }),
+      : carregadorDoServicoDeContexto({ carregarNaVisao: async (_escopo: unknown, visao: string) => { visoes.push(visao); return { ok: true as const, value: fx.contexto() }; } }),
     regras: opcoes.regras === false
       ? CARREGADOR_DE_REGRAS_INDISPONIVEL
       : { disponivel: true, carregar: async () => fx.regras() },
@@ -108,7 +109,7 @@ function servico(opcoes: { repo?: ReturnType<typeof repositorio>; armazenamento?
     configuracao: { conjuntoDeDados: 'tria_dw', bytesMaximosPorConsulta: 10_000_000_000, diasDeMedicao: 400 },
     relogio: () => fx.AGORA,
   });
-  return { s, repo, eventos, medidas };
+  return { s, repo, eventos, medidas, visoes };
 }
 
 describe('API de leitura do brain (serviço)', () => {
@@ -240,6 +241,14 @@ describe('leitura do catálogo por agente (ADR 0057)', () => {
       { action: evento.action, actorType: evento.actorType, actorId: evento.actorId, requestId: evento.requestId },
       { action: 'brain.consulta', actorType: 'agent', actorId: 'cred-1', requestId: 'r-agente' },
     );
+  });
+
+  it('lê o contexto na visão do cliente, nunca na da equipe (ADR 0062)', async () => {
+    const { s, visoes } = servico();
+    await s.catalogoDoAgente(agente(), fx.CLIENTE, consulta);
+    assert.deepEqual(visoes, ['cliente']);
+    await s.catalogo(fx.CLIENTE, consulta, WORKER);
+    assert.deepEqual(visoes, ['cliente', 'equipe']);
   });
 
   it('nunca resolve o cliente pela travessia do worker', async () => {
