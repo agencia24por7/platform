@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse, after } from 'next/server';
-import { enderecoConfiavel } from '@/modules/audit/domain/actor';
+import { enderecoDoCliente } from '@/shared/http/enderecoDoCliente';
 import { createAuditRepository } from '@/modules/audit/infrastructure/auditRepository';
 import { auditarPortaria, type ResultadoDaPortaria } from '@/modules/identity/application/auditarPortaria';
 import { createHandoffRepository } from '@/modules/identity/infrastructure/handoffRepository';
@@ -20,7 +20,7 @@ import { logger } from '@/shared/logging/logger';
 
 function agendarAuditoria(request: NextRequest, resultado: ResultadoDaPortaria, userId: string): void {
   const requestId = resolverRequestId(request.headers.get(CABECALHO_DO_REQUEST_ID));
-  const sourceIp = enderecoConfiavel(request.headers.get('x-forwarded-for'));
+  const sourceIp = enderecoDoCliente(request.headers);
   after(() => auditarPortaria(createAuditRepository(), { resultado, userId, requestId, sourceIp }));
 }
 

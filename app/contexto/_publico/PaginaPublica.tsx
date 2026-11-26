@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { ThemeToggle } from '@/../app/_components/ThemeToggle';
 import { FormularioDoCliente } from '@/../app/contexto/_publico/FormularioDoCliente';
 import { modules } from '@/composition';
-import { enderecoConfiavel } from '@/modules/audit/domain/actor';
+import { enderecoDoCliente } from '@/shared/http/enderecoDoCliente';
 import type { CredencialPublica } from '@/modules/clients/application/contextoService';
 import { requestId } from '@/shared/http/actions';
 import { comoPublico } from '@/shared/db/client';
@@ -48,7 +48,7 @@ export function EstadoDoLink({ titulo, texto, organizacao }: { readonly titulo: 
 export async function PaginaPublica({ credencial, voltarPara }: { readonly credencial: CredencialPublica; readonly voltarPara?: string }) {
   const pedido = {
     credencial,
-    ip: enderecoConfiavel((await headers()).get('x-forwarded-for')),
+    ip: enderecoDoCliente(await headers()),
     requestId: await requestId(),
   };
   const resultado = await comoPublico(() => modules().contexto.carregarPeloLink(pedido));

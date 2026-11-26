@@ -32,19 +32,38 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       - name: Auditoria de dependências
         run: npm audit --audit-level=high
 
       - name: Verificação de segurança do código
         run: npm run seguranca:verificar
+
+      - name: Verificação de segurança do intervalo (migração fora do portão, segredo novo)
+        env:
+          EVENTO: ${{ github.event_name }}
+          BASE_DO_PR: ${{ github.event.pull_request.base.sha }}
+          ANTES_DO_PUSH: ${{ github.event.before }}
+        run: |
+          case "$EVENTO" in
+            pull_request) base="$BASE_DO_PR" ;;
+            push) base="$ANTES_DO_PUSH" ;;
+            *) base="" ;;
+          esac
+          if [ -z "$base" ]; then
+            echo "evento sem base de comparação; vale só a verificação da árvore"
+            exit 0
+          fi
+          node scripts/seguranca-verificar.mjs --range "${base}..$(git rev-parse HEAD)"
 
       - run: npm run typecheck
 
@@ -67,7 +86,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       - name: Ambiente descartável
         run: npm run bootstrap

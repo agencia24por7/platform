@@ -4,7 +4,7 @@ import { cache } from 'react';
 import { montarSnapshotDoCliente } from '@/../app/clientes/[id]/_brain/fonte';
 import { modules } from '@/composition';
 import { deveRegistrarLeitura, registrarLeituraDeCliente } from '@/modules/clients/application/registrarLeituraDeCliente';
-import { canAdminister, canOperate } from '@/modules/identity/domain/user';
+import { canAdminister, canOperate, type MemberRole } from '@/modules/identity/domain/user';
 import { idValido } from '@/modules/clients/domain/painel/enderecos';
 import { ROTULO_DA_PLATAFORMA, precisaReautorizar } from '@/modules/connections/domain/connection';
 import { acoesComConexoesDoCliente, prontidaoDoCliente, type ProntidaoDoCliente } from '@/modules/clients/domain/painel/prontidao';
@@ -34,8 +34,8 @@ export const carregarPainel = cache(async (id: string) => {
   };
 });
 
-export const carregarContexto = cache(async (organizationId: string, clientId: string) => {
-  const resultado = await modules().contexto.carregar({ organizationId, clientId });
+export const carregarContexto = cache(async (organizationId: string, clientId: string, papelDeQuemLe: MemberRole) => {
+  const resultado = await modules().contexto.carregar({ organizationId, clientId, papelDeQuemLe });
   return resultado.ok ? resultado.value : null;
 });
 
@@ -54,10 +54,10 @@ export function primeiro(valor: string | readonly string[] | undefined): string 
 
 export const carregarConexoes = cache(async (organizationId: string) => modules().connections.listConnections(organizationId));
 
-export const carregarProntidao = cache(async (organizationId: string, clientId: string): Promise<ProntidaoDoCliente | null> => {
+export const carregarProntidao = cache(async (organizationId: string, clientId: string, papelDeQuemLe: MemberRole): Promise<ProntidaoDoCliente | null> => {
   try {
     const [montado, conexoes, [contas, fontes]] = await Promise.all([
-      montarSnapshotDoCliente(organizationId, clientId),
+      montarSnapshotDoCliente(organizationId, clientId, papelDeQuemLe),
       carregarConexoes(organizationId),
       carregarContas(organizationId, clientId),
     ]);

@@ -94,7 +94,7 @@ export default async function LayoutDoCliente({
 }) {
   const { id } = await params;
   const { ctx, cliente, podeEditar, organizacaoInteira } = await carregarPainel(id);
-  const [prontidao, regras] = await Promise.all([carregarProntidao(ctx.organization.id, cliente.id), carregarProntidaoDeRegras(ctx.organization.id, cliente.id)]);
+  const [prontidao, regras] = await Promise.all([carregarProntidao(ctx.organization.id, cliente.id, ctx.role), carregarProntidaoDeRegras(ctx.organization.id, cliente.id)]);
   const blocoDeRegras = regras ? estadoDoBlocoDeRegras(regras) : null;
   const principal = prontidao ? acaoPrincipal(prontidao.acoes, cliente.id, { podeEditar, organizacaoInteira, tipo: ctx.organization.type }) : null;
   const vocabulario = vocabularioDe(ctx.organization.type);

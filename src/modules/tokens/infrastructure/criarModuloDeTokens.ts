@@ -42,7 +42,7 @@ export function criarModuloDeTokens(audit: AuditRecorder) {
     resolvedor: createResolvedorDeOrigem(),
     cofre,
     audit,
-    limitar: (chave) => consume(chave, PEDIDOS_POR_EXECUCAO, JANELA_MS).allowed,
+    limitar: (chave) => consume('cofre', chave, PEDIDOS_POR_EXECUCAO, JANELA_MS).allowed,
     provaDoSegredoDoApp: provaDoSegredoDaMeta,
   });
 

@@ -1,11 +1,16 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { Feedback } from '@/../app/_components/Feedback';
 import { Wizard } from '@/../app/_components/Wizard';
+import { clienteNoEscopo } from '@/../app/clientes/[id]/_escopo';
 import { modules } from '@/composition';
 import { atorAtual } from '@/shared/http/ator';
 import { list, requestId, text } from '@/shared/http/actions';
-import { currentOrganization, requireContext } from '@/shared/http/currentOrganization';
-import { canOperate } from '@/modules/identity/domain/user';
+import { activeContext, requireContext } from '@/shared/http/currentOrganization';
+import { env } from '@/shared/config/env';
+import { podeCadastrarCliente } from '@/modules/clients/domain/painel/permissoes';
+import { clienteDaRetomada, emitirRetomada } from '@/modules/clients/domain/retomadaDoCadastro';
+import { vocabularioDe } from '@/modules/organizations/domain/vocabulario';
 import { veiculaAnuncio } from '@/modules/connections/domain/connection';
 import type { StoredDiscovery } from '@/modules/connections/infrastructure/discoveredAccountRepository';
 
@@ -16,42 +21,72 @@ async function contasDeAnuncioPendentes(organizationId: string): Promise<readonl
   return pendentes.filter((conta) => veiculaAnuncio(conta.platform));
 }
 
+type Contexto = Awaited<ReturnType<typeof requireContext>>;
+
+function donoDaRetomada(ctx: Contexto) {
+  return { organizationId: ctx.organization.id, userId: ctx.session.user.id };
+}
+
+async function clienteRetomado(ctx: Contexto, bruto: unknown) {
+  const clientId = clienteDaRetomada(bruto, donoDaRetomada(ctx), env().TRIA_SESSION_SECRET, Date.now());
+  return clientId ? clienteNoEscopo(ctx, clientId) : null;
+}
+
+function voltarComErro(mensagem: string, retomada: string | null = null): never {
+  const busca = new URLSearchParams({ erro: mensagem });
+  if (retomada) busca.set('retomar', retomada);
+  redirect(`/comecar/contas?${busca.toString()}`);
+}
+
 async function linkSelected(formData: FormData): Promise<void> {
   'use server';
 
   const ctx = await requireContext();
   if (ctx.clientIds !== null) redirect('/clientes');
-  if (!canOperate(ctx.role)) {
-    redirect(`/comecar/contas?erro=${encodeURIComponent('Seu papel não permite vincular contas.')}`);
-  }
   const organization = ctx.organization;
+  const vocabulario = vocabularioDe(organization.type);
+  if (!podeCadastrarCliente(organization.type, ctx.role)) {
+    redirect(`/comecar/contas?erro=${encodeURIComponent(`Seu papel não permite cadastrar ${vocabulario.cliente} nem vincular contas.`)}`);
+  }
 
   const ator = await atorAtual();
 
   const selected = list(formData, 'selecionadas');
   const clientName = text(formData, 'clientName') || organization.name;
 
-  if (selected.length === 0) redirect('/comecar/contas?erro=nenhuma');
+  const retomada = formData.get('retomada');
+  if (selected.length === 0) voltarComErro('nenhuma', typeof retomada === 'string' ? retomada : null);
 
   const pending = await contasDeAnuncioPendentes(organization.id);
   const chosen = pending.filter((account) => selected.includes(account.id));
 
-  const client = await modules().clients.create(
-    {
-      organizationId: organization.id,
-      parentClientId: null,
-      name: clientName,
-      segment: null,
-      businessModel: 'leads',
-    },
-    ator,
-  );
-
-  const clientId = client.ok
-    ? client.value.id
-    : (await modules().clients.list(organization.id))[0]?.id;
-
-  if (!clientId) redirect('/comecar/contas?erro=cliente');
+  let clientId: string;
+  if (retomada !== null) {
+    const retomado = await clienteRetomado(ctx, retomada);
+    if (!retomado) {
+      voltarComErro(`A tentativa anterior expirou ou não vale para esta sessão. Nenhuma conta foi vinculada; vincule as que faltam pela página do ${vocabulario.cliente}.`);
+    }
+    clientId = retomado.id;
+  } else {
+    const client = await modules().clients.create(
+      {
+        organizationId: organization.id,
+        parentClientId: null,
+        name: clientName,
+        segment: null,
+        businessModel: 'leads',
+        tipoDaOrganizacao: organization.type,
+        papelDeQuemAge: ctx.role,
+        clientIdsDeQuemAge: ctx.clientIds,
+      },
+      ator,
+    );
+    if (!client.ok) {
+      voltarComErro(`Não foi possível criar o ${vocabulario.cliente}: ${client.error.message} Nenhuma conta foi vinculada.`);
+    }
+    clientId = client.value.id;
+  }
+  let falhas = 0;
 
   for (const account of chosen) {
     const linked = await modules().connections.linkAccount(
@@ -72,7 +107,16 @@ async function linkSelected(formData: FormData): Promise<void> {
 
     if (linked.ok) {
       await modules().discoveredAccounts.markLinked(organization.id, account.id, linked.value.id);
+    } else {
+      falhas += 1;
     }
+  }
+
+  if (falhas > 0) {
+    voltarComErro(
+      `${falhas} conta(s) não foram vinculadas. As demais continuam pendentes; tente de novo e elas vão para o mesmo ${vocabulario.cliente}.`,
+      emitirRetomada(donoDaRetomada(ctx), clientId, env().TRIA_SESSION_SECRET, Date.now()),
+    );
   }
 
   for (const account of pending) {
@@ -87,15 +131,18 @@ async function linkSelected(formData: FormData): Promise<void> {
 export default async function SelectAccountsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ erro?: string }>;
+  searchParams: Promise<{ erro?: string; retomar?: string }>;
 }) {
-  const organization = await currentOrganization();
-  if (!organization) redirect('/comecar');
+  const ctx = await activeContext();
+  if (!ctx) redirect('/comecar');
+  const organization = ctx.organization;
+  const vocabulario = vocabularioDe(organization.type);
 
   const [params, pending] = await Promise.all([
     searchParams,
     contasDeAnuncioPendentes(organization.id),
   ]);
+  const retomado = podeCadastrarCliente(organization.type, ctx.role) && ctx.clientIds === null ? await clienteRetomado(ctx, params.retomar) : null;
 
   return (
     <Wizard current="contas">
@@ -110,7 +157,9 @@ export default async function SelectAccountsPage({
 
       {params.erro === 'nenhuma' ? (
         <div className="alert alert--error">Marque ao menos uma conta para continuar.</div>
-      ) : null}
+      ) : (
+        <Feedback message={params.erro} tone="error" />
+      )}
 
       {pending.length === 0 ? (
         <div className="card">
@@ -127,15 +176,25 @@ export default async function SelectAccountsPage({
       ) : (
         <form action={linkSelected} className="card">
           <div className="card__body">
-            <div className="field">
-              <label className="field__label" htmlFor="clientName">
-                Agrupar estas contas sob qual nome?
-              </label>
-              <input className="input" id="clientName" name="clientName" defaultValue={organization.name} maxLength={120} />
-              <span className="field__hint">
-                Dá para reorganizar em clientes e redes depois, sem refazer a autorização.
-              </span>
-            </div>
+            {retomado && params.retomar ? (
+              <div className="field">
+                <input type="hidden" name="retomada" value={params.retomar} />
+                <span className="field__label">As contas marcadas vão para {retomado.name}</span>
+                <span className="field__hint">
+                  É o {vocabulario.cliente} criado na tentativa anterior; as contas que já entraram continuam com ele.
+                </span>
+              </div>
+            ) : (
+              <div className="field">
+                <label className="field__label" htmlFor="clientName">
+                  Agrupar estas contas sob qual nome?
+                </label>
+                <input className="input" id="clientName" name="clientName" defaultValue={organization.name} maxLength={120} />
+                <span className="field__hint">
+                  Dá para reorganizar em clientes e redes depois, sem refazer a autorização.
+                </span>
+              </div>
+            )}
 
             <div className="table-wrap">
               <table className="table">

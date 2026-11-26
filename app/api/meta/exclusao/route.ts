@@ -5,6 +5,7 @@ import { consume } from '@/shared/security/rateLimit';
 import { CorpoAcimaDoLimite, declaradoAcimaDoLimite, lerCorpoLimitado } from '@/shared/http/corpoLimitado';
 import { TAMANHO_MAXIMO_DO_SIGNED_REQUEST } from '@/modules/privacidade/domain/pedidoDeExclusaoMeta';
 import { entradaPublica } from '@/shared/http/entradaPublica';
+import { enderecoDoCliente } from '@/shared/http/enderecoDoCliente';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,8 +14,7 @@ const LIMITE_POR_IP = 30;
 const JANELA_MS = 60_000;
 
 function ipDoClienteViaProxyConfiavel(request: NextRequest): string {
-  const encadeamento = request.headers.get('x-forwarded-for')?.split(',') ?? [];
-  return encadeamento.at(-1)?.trim() || 'desconhecido';
+  return enderecoDoCliente(request.headers) ?? 'desconhecido';
 }
 
 function signedRequestDo(corpo: string, tipo: string | null): string | null {
@@ -33,7 +33,7 @@ const recusar = (erro: string, status: number) => NextResponse.json({ error: err
 
 async function tratarPost(request: NextRequest): Promise<NextResponse> {
   const sourceIp = ipDoClienteViaProxyConfiavel(request);
-  const veredito = consume(`meta:exclusao:${sourceIp}`, LIMITE_POR_IP, JANELA_MS);
+  const veredito = consume('ip', `meta:exclusao:${sourceIp}`, LIMITE_POR_IP, JANELA_MS);
   if (!veredito.allowed) {
     return NextResponse.json(
       { error: 'limite_excedido' },

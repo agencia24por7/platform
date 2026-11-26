@@ -10,7 +10,7 @@ import {
   responderOk,
 } from '@/../app/api/contexto/_upload';
 import { modules } from '@/composition';
-import { enderecoConfiavel } from '@/modules/audit/domain/actor';
+import { enderecoDoCliente } from '@/shared/http/enderecoDoCliente';
 import { requestId } from '@/shared/http/actions';
 import { comRequestId } from '@/shared/http/comRequestId';
 import { entradaPublica } from '@/shared/http/entradaPublica';
@@ -40,7 +40,7 @@ async function receberArquivo(request: Request, params: Promise<{ token: string 
     const resultado = await modules().contexto.anexarArquivoPeloLink(
       {
         credencial: { tipo, token },
-        ip: enderecoConfiavel((await headers()).get('x-forwarded-for')),
+        ip: enderecoDoCliente(await headers()),
         requestId: id,
       },
       lido.pedido,

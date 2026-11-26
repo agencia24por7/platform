@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { LIMITE_DE_REUSO_POR_JANELA, auditarPortaria } from './auditarPortaria.ts';
-import { consume } from '../../../shared/security/rateLimit.ts';
+import { TETO_POR_DOMINIO, consume } from '../../../shared/security/rateLimit.ts';
 import type { AuditEvent } from '../../audit/domain/auditEvent.ts';
 
 function recorderEspiao() {
@@ -41,7 +41,7 @@ describe('auditarPortaria', () => {
   });
 
   it('com o limitador de segurança lotado, o reuso ainda grava e ainda tem teto', async () => {
-    for (let i = 0; i < 10_100; i += 1) consume(`lotacao-teste:${i}`, 1, 600_000);
+    for (let i = 0; i < TETO_POR_DOMINIO.publico + 100; i += 1) consume('publico', `lotacao-teste:${i}`, 1, 600_000);
     const { gravados, recorder } = recorderEspiao();
     for (let i = 0; i < LIMITE_DE_REUSO_POR_JANELA + 5; i += 1) {
       await auditarPortaria(recorder, { resultado: 'reuso', userId: 'u-lotado', requestId: 'req-12345678', sourceIp: null });

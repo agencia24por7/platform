@@ -76,7 +76,7 @@ function MarkdownDoCatalogo({ texto }: { readonly texto: string }) {
 
 export async function BrainView({ clienteId }: { readonly clienteId: string }) {
   const { ctx, cliente } = await carregarPainel(clienteId);
-  const buscado = await buscarBrainDoCliente({ organizationId: ctx.organization.id, clientId: cliente.id });
+  const buscado = await buscarBrainDoCliente({ organizationId: ctx.organization.id, clientId: cliente.id, papelDeQuemLe: ctx.role });
   if (!buscado.ok && buscado.motivo === 'nao_encontrado') notFound();
   if (!buscado.ok) {
     return (
@@ -87,7 +87,7 @@ export async function BrainView({ clienteId }: { readonly clienteId: string }) {
     );
   }
   const brain = buscado.brain;
-  const contexto = await carregarContexto(ctx.organization.id, cliente.id);
+  const contexto = await carregarContexto(ctx.organization.id, cliente.id, ctx.role);
   const mapa = montarMapa(brain);
   const agora = new Date();
   const totalPreenchidas = separarPorPreenchimento(brain.entradas).preenchidas.length;

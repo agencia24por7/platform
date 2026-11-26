@@ -83,7 +83,7 @@ function servico(opcoes: { repo?: ReturnType<typeof repositorio>; armazenamento?
     repositorio: repo.repo,
     contexto: opcoes.contexto === false
       ? CARREGADOR_DE_CONTEXTO_INDISPONIVEL
-      : carregadorDoServicoDeContexto({ carregar: async () => ({ ok: true as const, value: fx.contexto() }) }),
+      : carregadorDoServicoDeContexto({ carregarNaVisao: async () => ({ ok: true as const, value: fx.contexto() }) }),
     regras: opcoes.regras === false
       ? CARREGADOR_DE_REGRAS_INDISPONIVEL
       : { disponivel: true, carregar: async () => fx.regras() },
@@ -181,6 +181,34 @@ describe('API de leitura do brain (serviço)', () => {
     });
     const r = await s.montar(fx.CLIENTE);
     assert.ok(r.ok && r.value.provedores.find((p) => p.id === 'contexto')?.status === 'indisponivel');
+  });
+
+  it('o Brain da tela pede ao contexto a visão do cliente para quem só lê; worker e publicação pedem a da equipe', async () => {
+    const repo = repositorio();
+    const { audit } = auditoria();
+    const visoes: string[] = [];
+    const s = createBrainService({
+      ...{ repositorio: repo.repo, audit },
+      contexto: carregadorDoServicoDeContexto({
+        carregarNaVisao: async (_escopo, visao) => {
+          visoes.push(visao);
+          return { ok: true as const, value: fx.contexto() };
+        },
+      }),
+      armazenamento: criarArmazenamentoNulo(),
+      medidor: { disponivel: false, medir: async () => [] },
+      provedores: PROVEDORES,
+      capacidades: DEFINICOES_DE_CAPACIDADES,
+      conectores: CONECTORES_POSSIVEIS,
+      plataformasDaTabela,
+      objetosDeMedicao,
+      configuracao: { conjuntoDeDados: 'tria_dw', bytesMaximosPorConsulta: 1, diasDeMedicao: 400 },
+      relogio: () => fx.AGORA,
+    });
+    await s.montarNaOrganizacao(fx.ORG, fx.CLIENTE, 'viewer');
+    await s.montarNaOrganizacao(fx.ORG, fx.CLIENTE, 'operator');
+    await s.montar(fx.CLIENTE);
+    assert.deepEqual(visoes, ['cliente', 'equipe', 'equipe']);
   });
 });
 

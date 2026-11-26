@@ -38,6 +38,7 @@
 
 	reverse_proxy app:3000 {
 		header_up X-Forwarded-Proto https
+		header_up X-Orla-Borda "{$TRIA_PROXY_SECRET}"
 	}
 }
 

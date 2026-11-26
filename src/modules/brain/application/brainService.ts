@@ -1,10 +1,11 @@
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import type { ArmazenamentoDeContexto } from '@/shared/storage/tipos';
 import { failure, type Failure } from '@/shared/result/failure';
+import { canOperate, type MemberRole } from '../../identity/domain/user.ts';
 import { err, ok, type Result } from '@/shared/result/result';
 import type { DefinicaoDeCapacidade } from '../domain/capacidades.ts';
 import { filtrarCatalogo, paginar, type FiltrosDoCatalogo } from '../domain/consulta.ts';
-import type { CarregadorDeContexto, ContextoParaCatalogo } from '../domain/contexto.ts';
+import type { CarregadorDeContexto, ContextoParaCatalogo, VisaoDoContexto } from '../domain/contexto.ts';
 import { CARREGADOR_DE_REGRAS_INDISPONIVEL, type CarregadorDeRegras, type RegrasParaCatalogo } from '../domain/regras.ts';
 import type { ConectorDoDiagnostico } from '../domain/diagnostico.ts';
 import { VERSAO_DO_ESQUEMA_DO_CATALOGO, type EntradaDoCatalogo } from '../domain/entrada.ts';
@@ -70,7 +71,7 @@ export type ResumoDaMedicao = { readonly clientes: number; readonly tabelas: num
 
 export type BrainService = {
   montar(clienteId: string): Promise<Result<Snapshot, Failure>>;
-  montarNaOrganizacao(organizationId: string, clienteId: string): Promise<Result<Snapshot, Failure>>;
+  montarNaOrganizacao(organizationId: string, clienteId: string, papelDeQuemLe: MemberRole): Promise<Result<Snapshot, Failure>>;
   catalogo(
     clienteId: string,
     consulta: FiltrosDoCatalogo & { readonly limite: number; readonly cursor: string | null },
@@ -102,10 +103,10 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
   const agora = deps.relogio ?? (() => new Date());
   const aviso = deps.registrarAviso ?? (() => undefined);
 
-  async function carregarContexto(cliente: ClienteResolvido): Promise<ContextoParaCatalogo | null> {
+  async function carregarContexto(cliente: ClienteResolvido, visao: VisaoDoContexto): Promise<ContextoParaCatalogo | null> {
     if (!deps.contexto.disponivel) return null;
     try {
-      return await deps.contexto.carregar({ organizationId: cliente.organizationId, clientId: cliente.clienteId });
+      return await deps.contexto.carregar({ organizationId: cliente.organizationId, clientId: cliente.clienteId }, visao);
     } catch (erro) {
       aviso('brain.contexto_indisponivel', { clienteId: cliente.clienteId, erro: mensagem(erro) });
       return null;
@@ -123,10 +124,10 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
     }
   }
 
-  async function montarResolvido(cliente: ClienteResolvido): Promise<Snapshot | null> {
+  async function montarResolvido(cliente: ClienteResolvido, visao: VisaoDoContexto): Promise<Snapshot | null> {
     const [inventario, contexto, regras] = await Promise.all([
       deps.repositorio.carregarInventario(cliente),
-      carregarContexto(cliente),
+      carregarContexto(cliente, visao),
       carregarRegras(cliente),
     ]);
     if (!inventario) return null;
@@ -155,13 +156,13 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
     if (!UUID.test(clienteId)) return err(NAO_ENCONTRADO);
     const cliente = await deps.repositorio.resolverCliente(clienteId);
     if (!cliente) return err(NAO_ENCONTRADO);
-    const snapshot = await montarResolvido(cliente);
+    const snapshot = await montarResolvido(cliente, 'equipe');
     return snapshot ? ok(snapshot) : err(NAO_ENCONTRADO);
   }
 
-  async function montarNaOrganizacao(organizationId: string, clienteId: string): Promise<Result<Snapshot, Failure>> {
+  async function montarNaOrganizacao(organizationId: string, clienteId: string, papelDeQuemLe: MemberRole): Promise<Result<Snapshot, Failure>> {
     if (!UUID.test(clienteId) || !UUID.test(organizationId)) return err(NAO_ENCONTRADO);
-    const snapshot = await montarResolvido({ organizationId, clienteId });
+    const snapshot = await montarResolvido({ organizationId, clienteId }, canOperate(papelDeQuemLe) ? 'equipe' : 'cliente');
     return snapshot && snapshot.organizationId === organizationId ? ok(snapshot) : err(NAO_ENCONTRADO);
   }
 
@@ -200,7 +201,7 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
   }
 
   async function publicar(cliente: ClienteResolvido): Promise<SituacaoDaPublicacao> {
-    const snapshot = await montarResolvido(cliente);
+    const snapshot = await montarResolvido(cliente, 'equipe');
     if (!snapshot) return 'inalterado';
     const estado = await deps.repositorio.estado(cliente);
     if (estado && estado.ultimoHash === snapshot.catalogHash && estado.publicadoEm) {

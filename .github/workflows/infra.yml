@@ -13,10 +13,6 @@ permissions:
   id-token: write
   pull-requests: write
 
-concurrency:
-  group: infra
-  cancel-in-progress: false
-
 env:
   TF_VERSION: 1.13.1
   TF_IN_AUTOMATION: "true"
@@ -27,6 +23,10 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    environment: plano
+    concurrency:
+      group: infra-plano-${{ github.event.pull_request.number || github.run_id }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -81,6 +81,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: producao
+    concurrency:
+      group: infra-apply
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -107,7 +110,7 @@ jobs:
         run: terraform -chdir=$WORKDIR validate
 
       - name: Plan salvo
-        run: terraform -chdir=$WORKDIR plan -input=false -lock-timeout=120s -out=tfplan
+        run: exec terraform -chdir=$WORKDIR plan -input=false -lock-timeout=120s -out=tfplan
         env:
           TF_VAR_environment: ${{ vars.ENVIRONMENT }}
           TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
@@ -131,4 +134,4 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Apply do plano salvo
-        run: terraform -chdir=$WORKDIR apply -input=false -lock-timeout=120s tfplan
+        run: exec terraform -chdir=$WORKDIR apply -input=false -lock-timeout=120s tfplan

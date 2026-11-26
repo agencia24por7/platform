@@ -8,6 +8,8 @@ import { createContextoService, criarAgendadorEmMemoria } from '@/modules/client
 import { adaptarArmazenamento } from '@/modules/clients/infrastructure/armazenamentoAdaptado';
 import { criarArmazenamentoDeContexto } from '@/shared/storage/criarArmazenamentoDeContexto';
 import { env } from '@/shared/config/env';
+import { criarAvisoLimitado } from '@/shared/logging/avisoLimitado';
+import { logger } from '@/shared/logging/logger';
 import { createRegrasService } from '@/modules/clients/application/regrasService';
 import { createRegrasRepository } from '@/modules/clients/infrastructure/regrasRepository';
 import { createContextoRepository } from '@/modules/clients/infrastructure/contextoRepository';
@@ -69,6 +71,7 @@ function build() {
     repositorio: createContextoRepository(),
     audit,
     armazenamento: armazenamentoDoContexto,
+    ...(config.NODE_ENV === 'production' ? { avisarSemEndereco: criarAvisoDeAcessoSemEndereco() } : {}),
   });
   const agendadorDoBrainDeRegras = criarAgendadorEmMemoria()((escopo) => contexto.publicarBrain(escopo));
   const regras = createRegrasService({
@@ -147,4 +150,11 @@ declare global {
 export function modules(): Modules {
   globalThis.__triaModules ??= build();
   return globalThis.__triaModules;
+}
+
+function criarAvisoDeAcessoSemEndereco(): () => void {
+  return criarAvisoLimitado({
+    janelaMs: 60_000,
+    emitir: (contexto) => logger.warn('contexto.publico.sem_endereco_confiavel', contexto),
+  });
 }

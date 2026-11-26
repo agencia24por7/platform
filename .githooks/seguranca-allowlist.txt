@@ -1,14 +1,37 @@
-# Exceções conscientes ao scripts/seguranca-verificar.mjs, uma por linha: caminho::id
+# Exceções conscientes ao scripts/seguranca-verificar.mjs, uma por linha:
+#   caminho::id::assinatura::contagem
+# - caminho: arquivo, relativo à raiz do repositório.
+# - id: a regra, como aparece entre colchetes no relatório.
+# - assinatura: 12 primeiros caracteres do sha256 da linha do achado, sem espaços nas pontas e com
+#   espaços internos reduzidos a um (o texto da linha, não o valor do segredo, é o que se amarra).
+#   Achado de arquivo inteiro (arquivo-sensivel, migracao-*) usa "-".
+# - contagem: quantas linhas do arquivo têm esse achado com essa assinatura.
+# Mudar a linha, trocar por outra ou acrescentar uma igual muda assinatura ou contagem e a exceção
+# deixa de valer. Na árvore (CI), contagem diferente da esperada, a maior ou a menor, também falha,
+# o que obriga a retirar a entrada quando o código sai.
+# Gere as entradas com: node scripts/seguranca-verificar.mjs --arvore --sugerir
 # Cada linha nova entra por PR e precisa de justificativa no corpo do PR.
 
 # Script de tema com nonce (constante do código, sem entrada de usuário).
-app/layout.tsx::html-injetado
+app/layout.tsx::html-injetado::d97e01be9d92::1
 
-# network.tf: entrada pública 80/443 do app e a regra que nega o resto da entrada.
-infra/terraform/network.tf::terraform-aberto-ao-mundo
+# network.tf: entrada pública 80/443 do app e a regra que nega o resto da entrada (duas linhas iguais).
+infra/terraform/network.tf::terraform-aberto-ao-mundo::4f4fd12760dd::2
 
 # Fixtures de teste com token OAuth falso, usadas para provar a redação e o cofre.
-src/modules/connections/application/authorizationService.test.ts::segredo
-src/modules/tokens/application/acessoDoWorker.test.ts::segredo
-src/modules/tokens/application/cofreDeTokens.test.ts::segredo
-src/shared/logging/redactText.test.ts::segredo
+src/modules/connections/application/authorizationService.test.ts::segredo::ccb28b825089::1
+src/modules/tokens/application/acessoDoWorker.test.ts::segredo::8030ca874deb::1
+src/modules/tokens/application/cofreDeTokens.test.ts::segredo::5f40df99e6e4::1
+src/shared/logging/redactText.test.ts::segredo::a5cb7c1096ed::1
+src/shared/logging/redactText.test.ts::segredo::bd89efa28cb6::1
+
+# Fixtures de teste com JWT falso (exemplo público do jwt.io) para provar a redação.
+src/shared/logging/redactTerceiraRodada.test.ts::segredo::7da8d72ef397::2
+src/shared/logging/redactText.test.ts::segredo::fc274c72c7fb::1
+# JWT falso com terceiro segmento curto, no teste de segredo longo e borda da redação.
+src/shared/logging/redactSegredoLongo.test.ts::segredo::0b7330e5e61c::1
+
+# Fixtures de teste com URL de banco de senha inventada, para provar validação de ambiente, redação e pre-flight.
+src/shared/config/env.test.ts::segredo::2ac2ed725c4c::1
+src/shared/config/env.test.ts::segredo::2e3ca8f13ac9::1
+tests/release-preflight.test.mjs::segredo::d25164051315::1
