@@ -506,58 +506,141 @@ describe('motor: o "não faremos" da vigente não se perde por uma base aberta j
   });
 });
 
-describe('motor: a caminhada das bases do "não faremos" para em decisão de pessoa', () => {
+describe('motor: bases do "não faremos" pela regra de pessoa, revogação e execução', () => {
   const semTiktok = () => {
     const plano = planoCompleto();
     plano.estrategia.nao_faremos = plano.estrategia.nao_faremos.filter((item) => item.id !== 'nf_tiktok');
     return plano;
   };
 
-  async function criarAposVersaoAnterior(status: 'vigente' | 'revogado' | 'rejeitado' | 'cancelado', evento: { tipo: string; atorTipo: 'usuario' | 'sistema' } | null) {
-    const m = await montar({ roteiro: roteiroPadrao({ plano: semTiktok, ajustado: semTiktok }) });
-    const anterior = await m.repositorio.criarVersaoRascunho(ORGANIZACAO_ID, {
-      planoId: m.plano.id,
-      conteudo: planoCompleto(),
-      schemaVersion: 1,
-      supersedesId: null,
-      autoria: { tipo: 'pessoa', userId: 'pessoa-1' },
-      referencias: [],
-      requestId: 'r',
-    });
-    assert.ok(anterior.ok);
-    const interna = m.repositorio.estado.versoes.find((v) => v.id === anterior.value.id)!;
-    Object.assign(interna, { autorTipo: 'agente', autorUsuarioId: null, agentId: 'agente_de_plano', agentRunId: 'run-antiga' });
-    interna.status = status;
-    if (evento) {
-      m.repositorio.estado.eventos.push({
-        id: 'evento-antigo',
-        versaoId: interna.id,
-        tipo: evento.tipo,
-        atorTipo: evento.atorTipo,
-        atorUsuarioId: evento.atorTipo === 'usuario' ? 'pessoa-1' : null,
-        agentId: null,
-        agentRunId: null,
-        payload: {},
-        criadoEm: new Date('2026-11-24T12:00:00Z'),
-        chave: null,
-      } as never);
+  type Semente = {
+    readonly conteudo: () => unknown;
+    readonly autor: 'pessoa' | 'agente';
+    readonly status: 'rascunho' | 'vigente' | 'superado' | 'rejeitado' | 'revogado' | 'cancelado';
+    readonly evento?: { readonly tipo: 'rejeitada' | 'revogada' | 'cancelada'; readonly atorTipo: 'usuario' | 'sistema' };
+  };
+
+  async function semear(m: Montagem, itens: readonly Semente[]): Promise<string[]> {
+    const ids: string[] = [];
+    let vigenteId: string | null = null;
+    for (const [indice, item] of itens.entries()) {
+      const criada = await m.repositorio.criarVersaoRascunho(ORGANIZACAO_ID, {
+        planoId: m.plano.id,
+        conteudo: item.conteudo(),
+        schemaVersion: 1,
+        supersedesId: vigenteId,
+        autoria: { tipo: 'pessoa', userId: 'pessoa-1' },
+        referencias: [],
+        requestId: 'r',
+      });
+      assert.ok(criada.ok);
+      if (item.status === 'vigente') vigenteId = criada.value.id;
+      const interna = m.repositorio.estado.versoes.find((v) => v.id === criada.value.id)!;
+      if (item.autor === 'agente') Object.assign(interna, { autorTipo: 'agente', autorUsuarioId: null, agentId: 'agente_de_plano', agentRunId: `run-semente-${indice}` });
+      interna.status = item.status;
+      if (item.evento) {
+        m.repositorio.estado.eventos.push({
+          id: `evento-semente-${indice}`,
+          versaoId: interna.id,
+          tipo: item.evento.tipo,
+          atorTipo: item.evento.atorTipo,
+          atorUsuarioId: item.evento.atorTipo === 'usuario' ? 'pessoa-1' : null,
+          agentId: null,
+          agentRunId: null,
+          payload: {},
+          criadoEm: new Date('2026-11-24T12:00:00Z'),
+          chave: null,
+        } as never);
+      }
+      ids.push(interna.id);
     }
-    return m;
+    return ids;
   }
 
-  it('criar depois de revogado, rejeitado ou cancelado por pessoa não herda itens da versão descartada', async () => {
-    for (const [status, tipo] of [['revogado', 'revogada'], ['rejeitado', 'rejeitada'], ['cancelado', 'cancelada']] as const) {
-      const m = await criarAposVersaoAnterior(status, { tipo, atorTipo: 'usuario' });
-      const final = await ate(m);
-      assert.equal(final.status, 'concluida', status);
+  async function pedirAjuste(m: Montagem, base: string): Promise<Execucao> {
+    m.repositorio.estado.execucoes[0]!.status = 'cancelada';
+    const pedido = await m.repositorio.criarExecucao(ORGANIZACAO_ID, CLIENTE_ID, {
+      planoId: m.plano.id,
+      pedido: { tipo: 'ajustar', instrucao: 'Ajuste de novo' },
+      versaoBaseId: base,
+      agentRunId: 'run-pedido-novo',
+      solicitadoPor: 'pessoa-1',
+      requestId: 'r',
+    });
+    assert.ok(pedido.ok);
+    return pedido.value;
+  }
+
+  async function rodar(m: Montagem, execucaoId: string): Promise<Execucao> {
+    for (let i = 0; i < 15; i += 1) {
+      const reservada = await m.repositorio.reservarExecucao(ORGANIZACAO_ID, execucaoId, { leaseMs: 60_000, agora: new Date('2026-11-25T12:00:00Z') });
+      if (!reservada) break;
+      const resumo = await m.motor.avancarExecucao(ORGANIZACAO_ID, execucaoId, { orcamentoMs: 10_000_000, ficha: reservada.tentativas });
+      if (resumo.execucao && ['concluida', 'falhou', 'cancelada'].includes(resumo.execucao.status)) return resumo.execucao;
     }
+    throw new Error('a execução não terminou');
+  }
+
+  const roteiroSemTiktok = () => roteiroPadrao({ plano: semTiktok, ajustado: semTiktok });
+  const reprovouPorTiktok = (m: Montagem) => {
+    const checagem = ultimoGate(m).checagens.find((c) => c.chave === 'nao_faremos_preservado')!;
+    assert.equal(checagem.resultado, 'reprovado');
+    assert.ok(checagem.onde.some((o) => o.includes('nf_tiktok')));
+  };
+
+  const vigente: Semente = { conteudo: planoCompleto, autor: 'pessoa', status: 'vigente' };
+  const afrouxada: Semente = { conteudo: semTiktok, autor: 'agente', status: 'rascunho' };
+
+  for (const [status, tipo] of [['rejeitado', 'rejeitada'], ['cancelado', 'cancelada']] as const) {
+    it(`proposta ${status} por pessoa é pulada: a vigente continua nas bases e a versão afrouxada reprova`, async () => {
+      const m = await montar({ roteiro: roteiroSemTiktok() });
+      const [, , aberta] = await semear(m, [vigente, { conteudo: planoCompleto, autor: 'agente', status, evento: { tipo, atorTipo: 'usuario' } }, afrouxada]);
+      const pedido = await pedirAjuste(m, aberta!);
+      const final = await rodar(m, pedido.id);
+      assert.equal(final.erroCodigo, 'gate_reprovado');
+      reprovouPorTiktok(m);
+    });
+  }
+
+  it('criar depois de plano revogado não herda o item do revogado nem de versões anteriores a ele', async () => {
+    const m = await montar({ roteiro: roteiroSemTiktok() });
+    await semear(m, [
+      { conteudo: planoCompleto, autor: 'pessoa', status: 'superado' },
+      { conteudo: planoCompleto, autor: 'agente', status: 'revogado', evento: { tipo: 'revogada', atorTipo: 'usuario' } },
+    ]);
+    assert.equal((await ate(m)).status, 'concluida');
   });
 
-  it('vigente, ou cancelada pelo sistema (substituição), continua impondo o item removido', async () => {
-    const vigente = await criarAposVersaoAnterior('vigente', null);
-    assert.equal((await ate(vigente)).erroCodigo, 'gate_reprovado');
-    const substituida = await criarAposVersaoAnterior('cancelado', { tipo: 'cancelada', atorTipo: 'sistema' });
-    assert.equal((await ate(substituida)).erroCodigo, 'gate_reprovado');
+  it('ajustar com versão aberta depois de revogação não herda o item do plano revogado', async () => {
+    const m = await montar({ roteiro: roteiroSemTiktok() });
+    const [, , aberta] = await semear(m, [
+      { conteudo: planoCompleto, autor: 'pessoa', status: 'superado' },
+      { conteudo: planoCompleto, autor: 'agente', status: 'revogado', evento: { tipo: 'revogada', atorTipo: 'usuario' } },
+      afrouxada,
+    ]);
+    const pedido = await pedirAjuste(m, aberta!);
+    assert.equal((await rodar(m, pedido.id)).status, 'concluida');
+  });
+
+  it('edição manual que removeu o item vale: o pedido seguinte não o exige de volta', async () => {
+    const m = await montar({ roteiro: roteiroSemTiktok() });
+    const [, manual] = await semear(m, [{ ...vigente, autor: 'agente' }, { conteudo: semTiktok, autor: 'pessoa', status: 'rascunho' }]);
+    const pedido = await pedirAjuste(m, manual!);
+    assert.equal((await rodar(m, pedido.id)).status, 'concluida');
+  });
+
+  it('criar compara a cadeia de ajustes da própria execução contra todas as suas versões', async () => {
+    const m = await montar({
+      roteiro: roteiroPadrao({
+        plano: planoCompleto,
+        ajustado: semTiktok,
+        comite: (persona) =>
+          persona === 'redator' ? { ...parecer('redator', 'aprova_com_ajuste', [ponto('p1', 'estrategia', [URN_BENCHMARK_B])]), motivo: 'Precisa de ajuste' } : parecer(persona, 'aprova'),
+      }),
+    });
+    const final = await ate(m);
+    assert.equal(final.erroCodigo, 'gate_reprovado');
+    reprovouPorTiktok(m);
   });
 });
 

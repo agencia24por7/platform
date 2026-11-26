@@ -499,7 +499,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     return lido?.ok ? lido.value : null;
   }
 
-  async function foiDescartadaPorPessoa(execucao: Execucao, versao: VersaoResumo): Promise<boolean> {
+  async function descartadaPorPessoa(execucao: Execucao, versao: VersaoResumo): Promise<boolean> {
     const evento = EVENTO_DE_DESCARTE[versao.status];
     if (evento === undefined) return false;
     const eventos = await repositorio.eventosDaVersao(execucao.organizationId, versao.id);
@@ -507,24 +507,27 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
   }
 
   async function idsDasBasesDoGate(execucao: Execucao, versao: Versao, ajusteRespondeA: string | null): Promise<string[]> {
+    const historico = await repositorio.listarVersoes(execucao.organizationId, execucao.planoId, MAXIMO_DE_VERSOES_LIDAS);
+    const anteriores = historico.slice(historico.findIndex((v) => v.id === versao.id) + 1);
+    if (execucao.tipo === 'criar') {
+      return anteriores.filter((anterior) => anterior.agentRunId === execucao.agentRunId).map((anterior) => anterior.id);
+    }
     const ids = new Set<string>();
     if (execucao.versaoBaseId !== null) ids.add(execucao.versaoBaseId);
     if (ajusteRespondeA !== null) ids.add(ajusteRespondeA);
-    const historico = await repositorio.listarVersoes(execucao.organizationId, execucao.planoId, MAXIMO_DE_VERSOES_LIDAS);
-    const posicao = historico.findIndex((v) => v.id === versao.id);
-    let chegouNaDecisaoDePessoa = false;
-    for (const anterior of historico.slice(posicao + 1)) {
-      if (await foiDescartadaPorPessoa(execucao, anterior)) {
-        chegouNaDecisaoDePessoa = true;
-        break;
-      }
+    let encerrouEmAutorPessoa = false;
+    for (const anterior of anteriores) {
+      const descartada = await descartadaPorPessoa(execucao, anterior);
+      if (descartada && anterior.status === 'revogado') break;
+      if (descartada) continue;
       ids.add(anterior.id);
-      if (anterior.autorTipo === 'usuario' || anterior.status === 'vigente') {
-        chegouNaDecisaoDePessoa = true;
+      if (anterior.autorTipo === 'usuario') {
+        encerrouEmAutorPessoa = true;
         break;
       }
+      if (anterior.status === 'vigente') break;
     }
-    if (!chegouNaDecisaoDePessoa) {
+    if (!encerrouEmAutorPessoa) {
       const vigente = (await estadoDoPlano(execucao))?.vigente;
       if (vigente) ids.add(vigente.id);
     }
