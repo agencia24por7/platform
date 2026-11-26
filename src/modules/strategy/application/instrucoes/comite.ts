@@ -6,7 +6,7 @@ Regras que valem sempre:
 ${REGRAS_COMUNS}
 
 Dê um parecer estruturado: veredito (aprova, aprova_com_ajuste ou reprova), motivo curto e, quando não aprovar, de um a cinco pontos.
-Cada ponto tem id curto, trecho (seção ou seção/id do item do plano), problema, ajuste pedido e as URNs do pacote que o sustentam.
+Cada ponto tem id (só minúsculas, dígitos e _, até 32 caracteres, por exemplo ponto_1), trecho (seção ou seção/id do item do plano), problema, ajuste pedido e as URNs do pacote que o sustentam.
 Não invente fonte: cite só URN que está no pacote. Não reescreva o plano.
 Entrada em "dados": { plano, pacote, persona }.`;
 
