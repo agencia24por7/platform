@@ -40,7 +40,7 @@ Provado por execução em 2026-11-25 (`ai` 7.0.182, zod 4.6.7, Node do projeto):
 
 Provado com fornecedor real em 2026-11-25 (Google, pedido trivial sem dado de cliente): a lista de modelos vem da API com a chave (`GET /v1beta/models`, cabeçalho `x-goog-api-key`); saída estruturada por esquema e laço com uma ferramenta funcionam pelo mesmo contrato. **Chave inválida no Google responde 400, não 401**: o testador de chave tem mapeamento de erro por fornecedor e nunca assume 401.
 
-**Moonshot fica desligado por padrão.** O fornecedor só aparece quando listado em `IA_FORNECEDORES_HABILITADOS`. Ligá-lo é decisão do humano, depois do aceite legal sobre transferência internacional de dados (LGPD).
+**Moonshot e xAI ficam desligados por padrão** (ADR 0058 §7). Só aparecem quando listados em `IA_FORNECEDORES_HABILITADOS`. Ligá-lo é decisão do humano, depois do aceite legal sobre transferência internacional de dados (LGPD).
 
 ### 4. Registro único de ferramentas
 
@@ -106,7 +106,7 @@ O Gate continua determinístico, em código, como no ADR 0056 §5. Passo de IA n
 
 Entregue e testado: registro de ferramentas, ferramenta `brain_consultar_catalogo`, credencial de agente (banco, serviço, tela), servidor MCP, porta de modelo com o adaptador do AI SDK, executor único (`modules().ia.executor`) com orçamento, delimitação de dado, registro de uso e ferramentas de leitura no laço, e a suíte de contrato `scripts/ia-contrato.ts`.
 
-Fica para a próxima entrega: guardar a chave do fornecedor, escolher o modelo por tarefa em `/config`, tabela de uso com teto diário e fila de execução longa. Motivo: o cofre de tokens (ADR 0032, 0042) é amarrado às plataformas de conexão, à rotação do KMS e à varredura de recifragem; a chave de fornecedor de IA precisa entrar por esse mesmo caminho, e isso mexe em `integrations.platform`, no testador de credencial e nas telas de integração. É mudança no cofre e merece PR e revisão próprios. Até lá o executor usa `resolvedorSemConfiguracao`: toda tarefa responde "sem modelo configurado" e nenhuma chamada sai da plataforma. O uso é registrado em log estruturado (`ia.execucao`), só com contagens.
+A chave do fornecedor, o modelo por tarefa em `/config/ia`, a tabela de uso com teto diário e o botão de desligar vieram na entrega seguinte e estão no ADR 0058, que também corrige o caminho previsto aqui: a chave não entra como plataforma de conexão, e sim em tabela própria selada com a cifra do cofre e coberta pela mesma varredura de recifragem. Fila de execução longa continua fora.
 
 ## Etapas
 

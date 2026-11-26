@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 import { z } from 'zod';
 
 await import('../../brain/testes/ganchos.ts');
-const { createExecutor, resolvedorSemConfiguracao } = await import('./execucao.ts');
+const { createExecutor, SEM_MODELO_CONFIGURADO } = await import('./execucao.ts');
 const { definirTarefa, dadosDelimitados, fornecedoresHabilitados, TETO_DO_ORCAMENTO } = await import('../domain/tarefa.ts');
 const { criarRegistro, definirFerramenta } = await import('../domain/ferramenta.ts');
 const { ok, err } = await import('../../../shared/result/result.ts');
@@ -15,10 +15,20 @@ const orcamento = { passos: 3, tokensDeSaida: 200, tempoMs: 5_000 };
 const tarefa = (extra: Record<string, unknown> = {}) =>
   definirTarefa({ chave: 'resumo_de_teste', classe: 'rapido_e_barato' as const, instrucao: 'Resuma.', saida: z.object({ resumo: z.string() }), orcamento, ...extra });
 
-function montar(opcoes: { resolver?: unknown; fornecedores?: readonly string[]; falhaDaPorta?: ReturnType<typeof failure> } = {}) {
+function montar(opcoes: { resolver?: unknown; fornecedores?: readonly string[]; falhaDaPorta?: ReturnType<typeof failure>; bloqueio?: ReturnType<typeof failure>; chaveIlegivel?: boolean; livroQuebrado?: boolean } = {}) {
   const pedidos: Record<string, unknown>[] = [];
   const avisos: Record<string, unknown>[] = [];
   const usos: Record<string, unknown>[] = [];
+  const reservas: Record<string, unknown>[] = [];
+  let aberturasDeChave = 0;
+  const escolhido = (fornecedor: string) => ({
+    fornecedor,
+    modelo: 'modelo-x',
+    abrirChave: async () => {
+      aberturasDeChave += 1;
+      return opcoes.chaveIlegivel ? err(failure('unavailable', 'chave ilegível')) : ok(CHAVE_DO_FORNECEDOR);
+    },
+  });
   const execucoesDeFerramenta: unknown[] = [];
   const registro = criarRegistro([
     definirFerramenta({
@@ -35,7 +45,7 @@ function montar(opcoes: { resolver?: unknown; fornecedores?: readonly string[]; 
     definirFerramenta({ nome: 'outra_ler', descricao: 'Outra.', classe: 'leitura' as const, entrada: z.object({}).strict(), executar: async () => err(failure('not_found', 'Cliente não encontrado.')) }),
   ]);
   const executor = createExecutor({
-    resolver: (opcoes.resolver ?? (async () => ok({ fornecedor: 'google', modelo: 'modelo-x', chave: CHAVE_DO_FORNECEDOR }))) as never,
+    resolver: (typeof opcoes.resolver === 'string' ? async () => ok(escolhido(opcoes.resolver as string)) : (opcoes.resolver ?? (async () => ok(escolhido('google'))))) as never,
     porta: {
       async gerar(pedido: Record<string, unknown>) {
         pedidos.push(pedido);
@@ -45,35 +55,44 @@ function montar(opcoes: { resolver?: unknown; fornecedores?: readonly string[]; 
     } as never,
     registro,
     fornecedores: (opcoes.fornecedores ?? ['google']) as never,
-    registrarUso: async (uso) => { usos.push(uso as never); },
+    livro: {
+      async reservar(reserva) {
+        if (opcoes.bloqueio) return err(opcoes.bloqueio);
+        reservas.push(reserva as never);
+        return ok('reserva-1');
+      },
+      async concluir(organizationId, reservaId, desfecho) {
+        if (opcoes.livroQuebrado) throw new Error('banco fora');
+        usos.push({ organizationId, reservaId, ...desfecho });
+      },
+    },
     avisar: (evento, dados) => { avisos.push({ evento, ...dados }); },
     relogio: () => 1_000,
   });
-  return { executor, pedidos, usos, avisos, execucoesDeFerramenta };
+  return { executor, pedidos, usos, reservas, avisos, execucoesDeFerramenta, aberturas: () => aberturasDeChave };
 }
 
 const agente = (extra: Record<string, unknown> = {}) => ({ credencialId: 'c1', organizationId: ORG, clienteIds: null, ferramentas: ['catalogo_ler', 'outra_ler', 'quebrada_ler'], requestId: 'r1', sourceIp: null, ...extra });
 
 describe('execução de tarefa de IA (ADR 0057 §1, §7 e §8)', () => {
   it('sem modelo configurado a tarefa fica bloqueada e a porta não é chamada', async () => {
-    const { executor, pedidos, usos } = montar({ resolver: resolvedorSemConfiguracao });
+    const { executor, pedidos, reservas, aberturas } = montar({ resolver: async () => err(SEM_MODELO_CONFIGURADO) });
     const r = await executor.executar({ organizationId: ORG, tarefa: tarefa(), dados: {}, requestId: 'r1' });
     assert.equal(r.ok, false);
     if (!r.ok) assert.equal(r.error.code, 'unavailable');
-    assert.equal(pedidos.length, 0);
-    assert.equal(usos[0]!.resultado, 'unavailable');
+    assert.deepEqual([pedidos.length, reservas.length, aberturas()], [0, 0, 0]);
   });
 
   it('fornecedor não habilitado é recusado antes de qualquer chamada', async () => {
-    const { executor, pedidos } = montar({ resolver: async () => ok({ fornecedor: 'moonshot', modelo: 'm', chave: CHAVE_DO_FORNECEDOR }) });
+    const { executor, pedidos, reservas, aberturas } = montar({ resolver: 'moonshot' });
     const r = await executor.executar({ organizationId: ORG, tarefa: tarefa(), dados: {}, requestId: 'r1' });
     assert.equal(r.ok, false);
     if (!r.ok) assert.equal(r.error.code, 'forbidden');
-    assert.equal(pedidos.length, 0);
+    assert.deepEqual([pedidos.length, reservas.length, aberturas()], [0, 0, 0]);
   });
 
   it('moonshot fica fora por padrão e só entra quando listado', () => {
-    assert.equal(fornecedoresHabilitados(undefined).includes('moonshot'), false);
+    assert.deepEqual(fornecedoresHabilitados(undefined), ['anthropic', 'google', 'openai']);
     assert.deepEqual(fornecedoresHabilitados('google,moonshot'), ['google', 'moonshot']);
     assert.deepEqual(fornecedoresHabilitados('inexistente'), []);
   });
@@ -91,13 +110,11 @@ describe('execução de tarefa de IA (ADR 0057 §1, §7 e §8)', () => {
   });
 
   it('registra uso só com contagens, sem chave, sem dado e sem resposta', async () => {
-    const { executor, usos } = montar();
+    const { executor, usos, reservas } = montar();
     await executor.executar({ organizationId: ORG, tarefa: tarefa(), dados: { segredoDoCliente: 'faturamento confidencial' }, requestId: 'req-1' });
-    assert.deepEqual(usos[0], {
-      organizationId: ORG, tarefa: 'resumo_de_teste', fornecedor: 'google', modelo: 'modelo-x', resultado: 'ok',
-      uso: { tokensDeEntrada: 10, tokensDeSaida: 4, passos: 1 }, duracaoMs: 0, requestId: 'req-1',
-    });
-    const texto = JSON.stringify(usos);
+    assert.deepEqual(reservas[0], { organizationId: ORG, tarefa: 'resumo_de_teste', fornecedor: 'google', modelo: 'modelo-x', tokensReservados: 600, requestId: 'req-1' });
+    assert.deepEqual(usos[0], { organizationId: ORG, reservaId: 'reserva-1', resultado: 'ok', uso: { tokensDeEntrada: 10, tokensDeSaida: 4, passos: 1 }, duracaoMs: 0 });
+    const texto = JSON.stringify([usos, reservas]);
     for (const proibido of [CHAVE_DO_FORNECEDOR, 'faturamento confidencial', 'feito']) assert.equal(texto.includes(proibido), false);
   });
 
@@ -106,6 +123,38 @@ describe('execução de tarefa de IA (ADR 0057 §1, §7 e §8)', () => {
     const r = await executor.executar({ organizationId: ORG, tarefa: tarefa(), dados: {}, requestId: 'r1' });
     assert.equal(r.ok, false);
     assert.equal(usos[0]!.resultado, 'rate_limited');
+  });
+
+  it('teto ou IA desligada bloqueia antes de abrir a chave e de chamar o modelo', async () => {
+    for (const bloqueio of [failure('rate_limited', 'teto'), failure('forbidden', 'desligada')]) {
+      const { executor, pedidos, aberturas, usos } = montar({ bloqueio });
+      const r = await executor.executar({ organizationId: ORG, tarefa: tarefa(), dados: {}, requestId: 'r1' });
+      assert.equal(r.ok, false);
+      if (!r.ok) assert.equal(r.error.code, bloqueio.code);
+      assert.deepEqual([pedidos.length, aberturas(), usos.length], [0, 0, 0]);
+    }
+  });
+
+  it('chave ilegível fecha a reserva com o código e não chama o modelo', async () => {
+    const { executor, pedidos, usos } = montar({ chaveIlegivel: true });
+    const r = await executor.executar({ organizationId: ORG, tarefa: tarefa(), dados: {}, requestId: 'r1' });
+    assert.equal(r.ok, false);
+    assert.equal(pedidos.length, 0);
+    assert.equal(usos[0]!.resultado, 'unavailable');
+  });
+
+  it('falha ao registrar o desfecho não derruba a resposta e vira aviso', async () => {
+    const { executor, avisos } = montar({ livroQuebrado: true });
+    const r = await executor.executar({ organizationId: ORG, tarefa: tarefa(), dados: {}, requestId: 'r1' });
+    assert.equal(r.ok, true);
+    assert.deepEqual(avisos, [{ evento: 'ia.execucao.uso_nao_registrado', requestId: 'r1', erro: 'Error' }]);
+  });
+
+  it('a chave só chega à porta, dentro do pedido ao modelo', async () => {
+    const { executor, pedidos, aberturas } = montar();
+    await executor.executar({ organizationId: ORG, tarefa: tarefa(), dados: {}, requestId: 'r1' });
+    assert.equal(aberturas(), 1);
+    assert.deepEqual(pedidos[0]!.modelo, { fornecedor: 'google', modelo: 'modelo-x', chave: CHAVE_DO_FORNECEDOR });
   });
 
   it('sem agente, ou tarefa sem ferramentas, o modelo não recebe ferramenta nenhuma', async () => {

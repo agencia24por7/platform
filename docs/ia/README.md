@@ -1,6 +1,6 @@
 # Camada de IA e MCP
 
-Decisão e motivos: `docs/adr/0057-camada-de-ia-e-mcp.md`. Este arquivo diz o que existe e como usar.
+Decisão e motivos: `docs/adr/0057-camada-de-ia-e-mcp.md` e `docs/adr/0058-chave-de-fornecedor-de-ia-modelo-por-tarefa-e-teto.md`. Este arquivo diz o que existe e como usar.
 
 ## O que existe
 
@@ -11,6 +11,7 @@ Decisão e motivos: `docs/adr/0057-camada-de-ia-e-mcp.md`. Este arquivo diz o qu
 | Credencial de agente | `core.agent_credentials`, `src/modules/ia/application/credencialService.ts`, tela `/config/agentes` | Dá a um agente acesso de leitura a uma organização, com lista de clientes, ferramentas e validade. |
 | Servidor MCP | `POST /api/mcp` | Expõe as ferramentas do escopo da credencial. Desligado por padrão. |
 | Executor | `modules().ia.executor.executar(...)` | Ponto único para chamar modelo de linguagem. Nenhum módulo importa SDK de fornecedor. |
+| Chaves, modelos e limites | tela `/config/ia`, `src/modules/ia/application/modelosService.ts` | A organização guarda a chave de cada fornecedor, escolhe o modelo por tarefa, vê o uso do dia, muda os tetos e desliga a IA. |
 | Suíte de contrato | `scripts/ia-contrato.ts` | Prova um fornecedor com chave real, à mão, fora do CI. |
 
 ## Ligar o servidor MCP
@@ -47,7 +48,19 @@ const resposta = await modules().ia.executor.executar({ organizationId, tarefa: 
 - `dados` é sempre tratado como dado não confiável e vai delimitado no pedido. Instrução vai só em `instrucao`.
 - A saída volta validada pelo esquema. Nunca execute o que o modelo devolveu.
 - `agente` é opcional: sem ele o modelo não recebe ferramenta. Com ele, recebe só a interseção entre as ferramentas da tarefa e as do escopo.
-- Hoje toda tarefa responde "sem modelo configurado": guardar a chave do fornecedor e escolher o modelo por tarefa é a próxima entrega (ADR 0057 §11).
+- A tarefa precisa estar registrada para aparecer em `/config/ia`: acrescente-a à lista de tarefas passada ao serviço de modelos em `src/modules/ia/infrastructure/criarIa.ts`. Sem modelo escolhido pela organização ela responde "sem modelo configurado".
+- Antes da chamada o executor reserva o uso. IA desligada ou teto diário atingido recusa a tarefa sem abrir a chave.
+
+## Configurar a IA de uma organização
+
+1. Em `/config/ia`, quem administra cola a chave de API do fornecedor. A plataforma testa a chave, guarda o valor cifrado e grava a lista de modelos que ela alcança. A chave não é mais exibida.
+2. Em "Modelo por tarefa", escolhe o modelo de cada tarefa.
+3. "Testar modelo" faz uma chamada mínima, sem dado de cliente, e mostra a resposta e os tokens.
+4. "Uso e limites" mostra as chamadas e os tokens do dia. Quem responde pela organização muda os tetos (padrão: 200 chamadas e 2 milhões de tokens por dia). "Desligar a IA" bloqueia todas as tarefas.
+
+## Rotação da chave do KMS
+
+As chaves de fornecedor são seladas com a mesma chave mestra do cofre de tokens. A rota `POST /api/v0/tokens/recifrar` recifra as duas tabelas e devolve um resumo só. A condição do ADR 0042 não muda: só desative uma versão antiga do KMS com `avaliadas = 0` e `falhas = 0`.
 
 ## Provar um fornecedor
 
@@ -63,4 +76,4 @@ Roda três casos com pedido trivial, sem dado de cliente: saída estruturada, la
 | -- | -- | -- |
 | `IA_MCP_HABILITADO` | `false` | Liga `POST /api/mcp`. |
 | `IA_MCP_CHAMADAS_POR_MINUTO` | `60` | Limite por credencial. |
-| `IA_FORNECEDORES_HABILITADOS` | `anthropic,google,openai,xai` | Fornecedores aceitos pelo executor. `moonshot` só entra se listado, depois do aceite legal. |
+| `IA_FORNECEDORES_HABILITADOS` | `anthropic,google,openai` | Fornecedores aceitos. `xai` e `moonshot` só entram se listados; o `moonshot`, depois do aceite legal. |

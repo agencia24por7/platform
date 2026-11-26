@@ -35,6 +35,10 @@ export type ProvaDoSegredoDoApp = (platform: Platform, token: string) => string 
 
 export type LimiteDeChamadas = (chave: string) => boolean;
 
+export type ContagemDaRecifragem = Pick<ResumoDaRecifragem, 'avaliadas' | 'recifradas' | 'falhas'>;
+
+export type RecifradorExtra = (versaoPrimaria: string, limite: number) => Promise<ContagemDaRecifragem>;
+
 export type AcessoDoWorker = {
   emitir(origem: OrigemDoToken, worker: WorkerContext): Promise<Result<AcessoEmitido, Failure>>;
   renovarProativo(input: { readonly limite: number }, worker: WorkerContext): Promise<Result<ResumoDaVarredura, Failure>>;
@@ -78,13 +82,32 @@ function recusa(contexto: ContextoDaOrigem, origem: 'coleta' | 'tarefa'): { read
   return null;
 }
 
+const EXTRA_FALHOU: ContagemDaRecifragem = { avaliadas: 0, recifradas: 0, falhas: 1 };
+
 export function createAcessoDoWorker(deps: {
   readonly resolvedor: ResolvedorDeOrigem;
   readonly cofre: CofreDeTokens;
   readonly audit: AuditRecorder;
   readonly limitar: LimiteDeChamadas;
   readonly provaDoSegredoDoApp?: ProvaDoSegredoDoApp;
+  readonly recifradoresExtras?: readonly RecifradorExtra[];
 }): AcessoDoWorker {
+  async function somarExtras(doCofre: ResumoDaRecifragem, limite: number): Promise<ResumoDaRecifragem> {
+    const versaoPrimaria = doCofre.versaoPrimaria;
+    if (!versaoPrimaria) return doCofre;
+    let resumo = doCofre;
+    for (const recifrar of deps.recifradoresExtras ?? []) {
+      const extra = await recifrar(versaoPrimaria, limite).catch(() => EXTRA_FALHOU);
+      resumo = {
+        versaoPrimaria,
+        avaliadas: resumo.avaliadas + extra.avaliadas,
+        recifradas: resumo.recifradas + extra.recifradas,
+        falhas: resumo.falhas + extra.falhas,
+      };
+    }
+    return resumo;
+  }
+
   return {
     async emitir(origem, worker) {
       const descrita = descreverOrigem(origem);
@@ -149,7 +172,8 @@ export function createAcessoDoWorker(deps: {
     },
 
     async recifrarProativo(input, worker) {
-      const resumo = await deps.cofre.recifrarProativamente(input.limite);
+      const doCofre = await deps.cofre.recifrarProativamente(input.limite);
+      const resumo = await somarExtras(doCofre, input.limite);
       await deps.audit.record({
         organizationId: null,
         actorType: 'worker',

@@ -10,7 +10,13 @@ export type ModeloResolvido = {
   readonly chave: string;
 };
 
-export type ResolvedorDeModelo = (organizationId: string, tarefa: string) => Promise<Result<ModeloResolvido, Failure>>;
+export type ModeloEscolhido = {
+  readonly fornecedor: Fornecedor;
+  readonly modelo: string;
+  abrirChave(): Promise<Result<string, Failure>>;
+};
+
+export type ResolvedorDeModelo = (organizationId: string, tarefa: string) => Promise<Result<ModeloEscolhido, Failure>>;
 
 export type Uso = {
   readonly tokensDeEntrada: number;
@@ -40,15 +46,24 @@ export type PortaDeModelo = {
   gerar<S>(pedido: PedidoAoModelo<S>): Promise<Result<RespostaDoModelo<S>, Failure>>;
 };
 
-export type RegistroDeUso = {
+export type Reserva = {
   readonly organizationId: string;
   readonly tarefa: string;
-  readonly fornecedor: Fornecedor | null;
-  readonly modelo: string | null;
+  readonly fornecedor: Fornecedor;
+  readonly modelo: string;
+  readonly tokensReservados: number;
+  readonly requestId: string;
+};
+
+export type Desfecho = {
   readonly resultado: 'ok' | Failure['code'];
   readonly uso: Uso;
   readonly duracaoMs: number;
-  readonly requestId: string;
+};
+
+export type LivroDeUso = {
+  reservar(reserva: Reserva): Promise<Result<string, Failure>>;
+  concluir(organizationId: string, reservaId: string, desfecho: Desfecho): Promise<void>;
 };
 
 export type PedidoDeExecucao<S> = {
@@ -64,7 +79,7 @@ export type DependenciasDaExecucao = {
   readonly porta: PortaDeModelo;
   readonly registro: RegistroDeFerramentas;
   readonly fornecedores: readonly Fornecedor[];
-  registrarUso(registro: RegistroDeUso): Promise<void>;
+  readonly livro: LivroDeUso;
   readonly avisar?: (evento: string, dados: Record<string, unknown>) => void;
   readonly relogio?: () => number;
 };
@@ -82,11 +97,13 @@ export const SEM_MODELO_CONFIGURADO = failure(
   'Esta tarefa de IA ainda não tem fornecedor e modelo configurados para a organização.',
 );
 
-export const resolvedorSemConfiguracao: ResolvedorDeModelo = async () => err(SEM_MODELO_CONFIGURADO);
-
 export const FALHA_GENERICA_DE_FERRAMENTA = { erro: 'A ferramenta não pôde ser executada agora.' } as const;
 
 type Aviso = NonNullable<DependenciasDaExecucao['avisar']>;
+
+export function tokensReservados(orcamento: Orcamento): number {
+  return orcamento.tokensDeSaida * orcamento.passos;
+}
 
 function ferramentasDoPedido(
   tarefa: Tarefa<unknown>,
@@ -120,46 +137,51 @@ export function createExecutor(deps: DependenciasDaExecucao): Executor {
   const agora = deps.relogio ?? (() => Date.now());
   const avisar: Aviso = deps.avisar ?? (() => undefined);
 
+  async function concluir(organizationId: string, reservaId: string, desfecho: Desfecho, requestId: string): Promise<void> {
+    try {
+      await deps.livro.concluir(organizationId, reservaId, desfecho);
+    } catch (erro) {
+      avisar('ia.execucao.uso_nao_registrado', { requestId, erro: erro instanceof Error ? erro.name : 'desconhecido' });
+    }
+  }
+
   return {
     async executar<S>(pedido: PedidoDeExecucao<S>) {
       const inicio = agora();
-      const registrar = (modelo: ModeloResolvido | null, resultado: RegistroDeUso['resultado'], uso: Uso) =>
-        deps.registrarUso({
-          organizationId: pedido.organizationId,
-          tarefa: pedido.tarefa.chave,
-          fornecedor: modelo?.fornecedor ?? null,
-          modelo: modelo?.modelo ?? null,
-          resultado,
-          uso,
-          duracaoMs: agora() - inicio,
-          requestId: pedido.requestId,
-        });
+      if (pedido.agente && pedido.agente.organizationId !== pedido.organizationId) return err(ESCOPO_DE_OUTRA_ORGANIZACAO);
 
-      if (pedido.agente && pedido.agente.organizationId !== pedido.organizationId) {
-        await registrar(null, ESCOPO_DE_OUTRA_ORGANIZACAO.code, SEM_USO);
-        return err(ESCOPO_DE_OUTRA_ORGANIZACAO);
-      }
+      const escolhido = await deps.resolver(pedido.organizationId, pedido.tarefa.chave);
+      if (!escolhido.ok) return escolhido;
+      const { fornecedor, modelo } = escolhido.value;
+      if (!deps.fornecedores.includes(fornecedor)) return err(FORNECEDOR_DESLIGADO);
 
-      const resolvido = await deps.resolver(pedido.organizationId, pedido.tarefa.chave);
-      if (!resolvido.ok) {
-        await registrar(null, resolvido.error.code, SEM_USO);
-        return resolvido;
-      }
-      const modelo = resolvido.value;
-      if (!deps.fornecedores.includes(modelo.fornecedor)) {
-        await registrar(modelo, FORNECEDOR_DESLIGADO.code, SEM_USO);
-        return err(FORNECEDOR_DESLIGADO);
+      const reserva = await deps.livro.reservar({
+        organizationId: pedido.organizationId,
+        tarefa: pedido.tarefa.chave,
+        fornecedor,
+        modelo,
+        tokensReservados: tokensReservados(pedido.tarefa.orcamento),
+        requestId: pedido.requestId,
+      });
+      if (!reserva.ok) return reserva;
+      const fechar = (resultado: Desfecho['resultado'], uso: Uso) =>
+        concluir(pedido.organizationId, reserva.value, { resultado, uso, duracaoMs: agora() - inicio }, pedido.requestId);
+
+      const chave = await escolhido.value.abrirChave();
+      if (!chave.ok) {
+        await fechar(chave.error.code, SEM_USO);
+        return chave;
       }
 
       const resposta = await deps.porta.gerar<S>({
-        modelo,
+        modelo: { fornecedor, modelo, chave: chave.value },
         sistema: instrucaoDoSistema(pedido.tarefa),
         dados: dadosDelimitados(pedido.dados),
         saida: pedido.tarefa.saida,
         orcamento: pedido.tarefa.orcamento,
         ferramentas: ferramentasDoPedido(pedido.tarefa as Tarefa<unknown>, pedido.agente, deps.registro, avisar),
       });
-      await registrar(modelo, resposta.ok ? 'ok' : resposta.error.code, resposta.ok ? resposta.value.uso : SEM_USO);
+      await fechar(resposta.ok ? 'ok' : resposta.error.code, resposta.ok ? resposta.value.uso : SEM_USO);
       return resposta;
     },
   };

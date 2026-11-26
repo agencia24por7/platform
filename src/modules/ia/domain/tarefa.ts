@@ -6,7 +6,7 @@ export type ClasseDeCapacidade = (typeof CLASSES_DE_CAPACIDADE)[number];
 export const FORNECEDORES = ['anthropic', 'google', 'openai', 'xai', 'moonshot'] as const;
 export type Fornecedor = (typeof FORNECEDORES)[number];
 
-export const FORNECEDORES_PADRAO: readonly Fornecedor[] = ['anthropic', 'google', 'openai', 'xai'];
+export const FORNECEDORES_PADRAO: readonly Fornecedor[] = ['anthropic', 'google', 'openai'];
 
 export function fornecedoresHabilitados(configurado: string | undefined): readonly Fornecedor[] {
   if (!configurado) return FORNECEDORES_PADRAO;

@@ -40,12 +40,15 @@ const registro = criarRegistro([
 type UsoRegistrado = { resultado: string; uso: { tokensDeEntrada: number; tokensDeSaida: number; passos: number }; duracaoMs: number };
 const usos: UsoRegistrado[] = [];
 const executor = createExecutor({
-  resolver: async () => ok({ fornecedor, modelo: modeloPedido, chave }),
+  resolver: async () => ok({ fornecedor, modelo: modeloPedido, abrirChave: async () => ok(chave) }),
   porta: criarPortaAiSdk(),
   registro,
   fornecedores: [fornecedor],
-  registrarUso: async (uso) => {
-    usos.push(uso);
+  livro: {
+    reservar: async () => ok('contrato'),
+    concluir: async (_organizacao, _reserva, desfecho) => {
+      usos.push(desfecho);
+    },
   },
 });
 

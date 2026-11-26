@@ -420,6 +420,16 @@ export default async function ConfiguracoesPage({
         </div>
       ) : null}
 
+      {podeAdministrar ? (
+        <div className="card">
+          <div className="card__head">Inteligência artificial</div>
+          <p className="muted">Chaves dos fornecedores de modelo, modelo de cada tarefa, limites diários e botão de desligar.</p>
+          <Link className="btn" href="/config/ia">
+            Configurar inteligência artificial
+          </Link>
+        </div>
+      ) : null}
+
       {podeVerEquipe && equipe ? (
         <>
           <div id="equipe" />

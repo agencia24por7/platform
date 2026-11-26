@@ -60,7 +60,7 @@ function build() {
   const organizations = createOrganizationService(createOrganizationRepository(), audit);
 
   const clientRepository = createClientRepository();
-  const tokens = criarModuloDeTokens(audit);
+  const tokens = criarModuloDeTokens(audit, [(versaoPrimaria, limite) => ia.modelos.recifrar(versaoPrimaria, limite)]);
   const credentialTester = createCredentialTester();
   const dimensoes = createDimensoesService(createDimensoesRepository(), createDimensoesBigQuery(), audit);
   const politicaDeRevogacao = createPoliticaDeRevogacao(createAcessosCompartilhados());
@@ -83,6 +83,7 @@ function build() {
 
   const identity = createIdentityService(createUserRepository(), audit);
   const brain = criarBrain(audit, contexto, regras);
+  const ia = criarIa(audit, ferramentasDoBrain(brain));
 
   return {
     audit,
@@ -130,7 +131,7 @@ function build() {
       identity.operadorDaPlataforma(userId, env().PLATAFORMA_OPERADORES)),
     dimensoes,
     brain,
-    ia: criarIa(audit, ferramentasDoBrain(brain)),
+    ia,
     tokens,
     expurgoDeFontes,
     pedidosDeExclusao: createPedidosDeExclusaoService(createPedidosDeExclusaoRepository(), {
