@@ -220,6 +220,24 @@ const MIGRACOES_DESTRUTIVAS_DISFARCADAS = {
   'truncate': 'TRUNCATE a;\n',
   'literal com marcador de comentário antes': "select '--'; DROP/**/TABLE a;\n",
   'literal com abertura de bloco antes': "select '/*'; DROP/**/TABLE a; --*/\n",
+  'ALTER TABLE DROP sem COLUMN': 'ALTER TABLE t DROP c;\n',
+  'ALTER TABLE DROP IF EXISTS sem COLUMN': 'ALTER TABLE t DROP IF EXISTS c;\n',
+  'DROP OWNED BY': 'DROP OWNED BY alguem;\n',
+  'DROP TYPE CASCADE': 'DROP TYPE t CASCADE;\n',
+  'DROP DOMAIN CASCADE': 'DROP DOMAIN d CASCADE;\n',
+  'DROP EXTENSION CASCADE': 'DROP EXTENSION IF EXISTS e CASCADE;\n',
+  'DROP MATERIALIZED VIEW': 'DROP MATERIALIZED VIEW v;\n',
+  'DROP VIEW CASCADE': 'DROP VIEW v CASCADE;\n',
+  'DROP FUNCTION CASCADE': 'DROP FUNCTION IF EXISTS f(int) CASCADE;\n',
+  'coluna com nome de objeto permitido': 'ALTER TABLE t DROP policy;\n',
+  'dollar-quote escondendo abertura de comentário': 'SELECT $$/*$$; DROP/**/TABLE a;\n',
+  'dollar-quote com tag escondendo abertura de comentário': 'SELECT $x$/*$x$; DROP/**/TABLE a;\n',
+  'dollar-quote com DROP dentro do corpo': 'DO $$ BEGIN DROP TABLE a; END $$;\n',
+  'meta-comando gexec': "select 'drop table a' \n\\gexec\n",
+  'meta-comando de inclusão': '\\i outro.sql\n',
+  'meta-comando depois de ponto e vírgula': 'select 1; \\set x 1\n',
+  'EXECUTE com literais concatenados': "DO $$ BEGIN EXECUTE 'DR' || 'OP TABLE a'; END $$;\n",
+  'EXECUTE com literal escapado e concatenação': "DO $$ BEGIN EXECUTE 'it''s' /* x */ || 'DROP TABLE a'; END $$;\n",
 }
 
 test('migração destrutiva disfarçada por comentário ou espaço é barrada pelo portão', () => {
@@ -245,6 +263,18 @@ test('migração sem DROP nem TRUNCATE passa, mesmo com comentários e espaços'
     '/* nota */ alter table a add column c int;\n',
     `create table c (id int);${' '.repeat(3000)}\n`,
     'drop index if exists i;\n',
+    'DROP INDEX CONCURRENTLY IF EXISTS i;\n',
+    'ALTER TABLE t DROP CONSTRAINT IF EXISTS c;\n',
+    'ALTER TABLE t ALTER COLUMN c DROP DEFAULT, ALTER COLUMN d DROP NOT NULL;\n',
+    'DROP POLICY IF EXISTS p ON s.t;\n',
+    'DROP TRIGGER IF EXISTS g ON s.t;\n',
+    'DROP FUNCTION IF EXISTS s.f(integer, text);\n',
+    'DROP PROCEDURE IF EXISTS s.p(integer);\n',
+    'DROP VIEW IF EXISTS s.v;\n',
+    "DO $$ BEGIN EXECUTE 'DROP POLICY IF EXISTS p ON s.t'; END $$;\n",
+    "DO $$ BEGIN EXECUTE format('GRANT SELECT ON s.t TO %I', current_user); END $$;\n",
+    'CREATE TEMP TABLE x (id int) ON COMMIT DROP;\n',
+    "select 'a\\n';\n",
     'select 1 /* aberto /* aninhado */ ainda */ ;\n',
   ]
   for (const sql of legitimas) {
@@ -256,6 +286,18 @@ test('migração sem DROP nem TRUNCATE passa, mesmo com comentários e espaços'
     } finally {
       rmSync(pasta, { recursive: true, force: true })
     }
+  }
+})
+
+test('falso positivo aceito: a palavra DROP em comentário ou texto também exige o portão', () => {
+  const pasta = criarRepositorio()
+  try {
+    preparar(pasta, 'db/migrations/0002_x.sql', '-- antes havia um DROP aqui\nselect 1;\n')
+    assert.match(verificar(pasta, ['--staged']).stderr, /\[migracao-destrutiva-fora-do-portao\]/)
+    preparar(pasta, 'db/corte-gate.txt', '# gate\n0002_x.sql\n')
+    assert.equal(verificar(pasta, ['--staged']).status, 0)
+  } finally {
+    rmSync(pasta, { recursive: true, force: true })
   }
 })
 
@@ -289,7 +331,7 @@ test('--arvore: arquivo versionado que não pode ser lido vira achado explícito
   }
 })
 
-const UNIDADES_DE_MIGRACAO = ['DROP ', '/*', '/* /*', '--', "'", 'DROP/**/', ' \n', "'\\", 'DROP -- ']
+const UNIDADES_DE_MIGRACAO = ['DROP ', '/*', '/* /*', '--', "'", 'DROP/**/', ' \n', "'\\", 'DROP -- ', '$$', '$a$ /*', 'DROP INDEX ', 'EXECUTE \'', 'ALTER DROP VIEW ']
 
 function tempoDaMigracaoMs(tamanho) {
   const pasta = criarRepositorio()

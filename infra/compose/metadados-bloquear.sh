@@ -13,6 +13,8 @@ PASTA_DAS_UNIDADES="${PASTA_DAS_UNIDADES:-/etc/systemd/system}"
 NOME_DA_VIGIA=orla-metadados-vigiar
 MARCADOR=orla-metadados-bloqueio-ausente
 ARQUIVO_DE_ALERTA="${ARQUIVO_DE_ALERTA:-/var/log/orla/metadados-bloqueio.log}"
+ARQUIVO_DE_TRAVA="${ARQUIVO_DE_TRAVA:-/run/lock/orla-metadados.lock}"
+ESPERA_DA_TRAVA="${ESPERA_DA_TRAVA:-60}"
 LIMITE_DO_ARQUIVO_DE_ALERTA="${LIMITE_DO_ARQUIVO_DE_ALERTA:-65536}"
 
 uso() {
@@ -78,12 +80,33 @@ reescrever_cadeia() {
   } | "$restaurar" -w --noflush
 }
 
+posicoes_do_salto() {
+  tabelas="$1"
+  "$tabelas" -w -t filter -S DOCKER-USER 2> /dev/null | grep '^-A DOCKER-USER ' | awk -v alvo="-A DOCKER-USER -j $CADEIA" '$0 == alvo { print NR }'
+}
+
+remover_saltos_duplicados() {
+  tabelas="$1"
+  posicoes=$(posicoes_do_salto "$tabelas" | awk 'NR > 1 { print }' | sort -rn) || return 1
+  for posicao in $posicoes; do
+    "$tabelas" -w -t filter -D DOCKER-USER "$posicao" || return 1
+  done
+}
+
 garantir_salto() {
   tabelas="$1"
   "$tabelas" -w -t filter -S DOCKER-USER > /dev/null 2>&1 || "$tabelas" -w -t filter -N DOCKER-USER
   salto_na_frente "$tabelas" && return 0
-  while "$tabelas" -w -t filter -D DOCKER-USER -j "$CADEIA" > /dev/null 2>&1; do :; done
-  "$tabelas" -w -t filter -I DOCKER-USER 1 -j "$CADEIA"
+  "$tabelas" -w -t filter -I DOCKER-USER 1 -j "$CADEIA" || return 1
+  remover_saltos_duplicados "$tabelas"
+}
+
+travar() {
+  command -v flock > /dev/null 2>&1 || return 0
+  pasta_da_trava=$(dirname "$ARQUIVO_DE_TRAVA")
+  mkdir -p "$pasta_da_trava" 2> /dev/null && [ -w "$pasta_da_trava" ] || { echo "aviso: sem pasta gravável para a trava $ARQUIVO_DE_TRAVA; seguindo sem serializar" >&2; return 0; }
+  exec 9> "$ARQUIVO_DE_TRAVA"
+  flock -w "$ESPERA_DA_TRAVA" 9 || echo "aviso: não obtive a trava $ARQUIVO_DE_TRAVA em ${ESPERA_DA_TRAVA}s; aplicando sem serializar" >&2
 }
 
 aplicar_familia() {
@@ -188,14 +211,21 @@ instalar() {
     systemctl daemon-reload
     echo "drop-in $UNIDADE_DO_DOCKER gravado: o docker reaplica o bloqueio antes e depois de cada início"
   fi
-  instalar_vigia
-  aplicar
+  erro_da_vigia=0
+  instalar_vigia || erro_da_vigia=1
+  travar
+  erro_do_bloqueio=0
+  aplicar || erro_do_bloqueio=1
+  if [ "$erro_da_vigia" -eq 1 ]; then
+    echo "FALHA: a vigia $NOME_DA_VIGIA não foi instalada ou ligada; o bloqueio foi aplicado mesmo assim" >&2
+  fi
+  [ "$((erro_da_vigia + erro_do_bloqueio))" -eq 0 ]
 }
 
 case "$ACAO" in
-  aplicar) aplicar ;;
+  aplicar) travar; aplicar ;;
   instalar) instalar ;;
-  vigiar) vigiar ;;
+  vigiar) travar; vigiar ;;
   verificar)
     if conferir_v4; then
       echo "ok: bloqueio de metadados no lugar (cadeia $CADEIA, salto em DOCKER-USER)"

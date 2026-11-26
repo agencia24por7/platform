@@ -41,10 +41,20 @@ const ARQUIVO_DE_CODIGO = /\.(ts|tsx|js|mjs|cjs|sh|yml|yaml|tf)$/
 const ARQUIVO_DE_TESTE = /(^|[/])tests[/]|\.test\.(?:ts|mjs)$/
 const FORMATO_DA_ENTRADA = /^(.+)::([a-z0-9-]+)::([0-9a-f]{12}|-)::([1-9]\d*)$/
 const ASSINATURA_DE_ARQUIVO = '-'
-const DESTRUTIVO = /\b(?:DROP (?:TABLE|COLUMN|SCHEMA)|TRUNCATE)\b/i
+const DROP_QUALQUER = /\bDROP\b/gi
+const TRUNCATE = /\bTRUNCATE\b/i
+const DROP_SEM_PERDA_DE_DADO = /(?<=\bON COMMIT )DROP\b|DROP (?:CONSTRAINT|DEFAULT|NOT NULL)\b/iy
+const DROP_DE_OBJETO_SEM_DADO = /DROP (INDEX|POLICY|TRIGGER|FUNCTION|PROCEDURE|VIEW)\b/iy
+const OBJETOS_COM_CASCATA_PERIGOSA = new Set(['FUNCTION', 'PROCEDURE', 'VIEW'])
+const ALTER = /\bALTER\b/i
+const CASCADE = /\bCASCADE\b/i
+const EXECUTE_COM_CONCATENACAO = /\bEXECUTE\s+'(?:[^']|'')*'\s*\|\|/i
+const META_COMANDO_PSQL = /(?:^|;)[ \t]*\\|\\(?:g|gexec|gset|gx)\b/m
+const ABERTURA_DE_DOLAR = /\$(?:[A-Za-z_\u0080-\uffff][A-Za-z0-9_\u0080-\uffff]*)?\$/y
+const CARACTERE_DE_IDENTIFICADOR = /[A-Za-z0-9_$\u0080-\uffff]/
 const MODOS_DE_BLOCO = ['aninhado', 'simples', 'nenhum']
 const MODOS_DE_LINHA = [true, false]
-const MODOS_DE_LITERAL = ['nenhum', 'sql', 'sql-com-barra']
+const MODOS_DE_LITERAL = ['nenhum', 'sql', 'sql-com-barra', 'dolar', 'dolar-sql', 'dolar-sql-com-barra']
 const VARIANTES_DE_NORMALIZACAO = MODOS_DE_BLOCO.flatMap((bloco) => MODOS_DE_LINHA.flatMap((linha) => MODOS_DE_LITERAL.map((literais) => ({ bloco, linha, literais }))))
 const ESPACO = /\s/
 
@@ -77,13 +87,15 @@ function normalizarSql(sql, { bloco, linha, literais }) {
     espacoPendente = false
     saida.push(caractere)
   }
+  const aspasSimples = literais !== 'nenhum' && literais !== 'dolar'
+  const dolar = literais.startsWith('dolar')
   let dentroDeLiteral = false
   let posicao = 0
   while (posicao < sql.length) {
     const caractere = sql[posicao]
     if (dentroDeLiteral) {
       emitir(caractere)
-      if (literais === 'sql-com-barra' && caractere === '\\' && posicao + 1 < sql.length) {
+      if (literais.endsWith('sql-com-barra') && caractere === '\\' && posicao + 1 < sql.length) {
         emitir(sql[posicao + 1])
         posicao += 2
         continue
@@ -92,7 +104,19 @@ function normalizarSql(sql, { bloco, linha, literais }) {
       posicao += 1
       continue
     }
-    if (caractere === "'" && literais !== 'nenhum') {
+    if (dolar && caractere === '$' && !(posicao > 0 && CARACTERE_DE_IDENTIFICADOR.test(sql[posicao - 1]))) {
+      ABERTURA_DE_DOLAR.lastIndex = posicao
+      const abertura = ABERTURA_DE_DOLAR.exec(sql)
+      if (abertura) {
+        const marca = abertura[0]
+        const fechamento = sql.indexOf(marca, posicao + marca.length)
+        const fim = fechamento < 0 ? sql.length : fechamento + marca.length
+        for (let i = posicao; i < fim; i += 1) emitir(sql[i])
+        posicao = fim
+        continue
+      }
+    }
+    if (caractere === "'" && aspasSimples) {
       dentroDeLiteral = true
       emitir(caractere)
       posicao += 1
@@ -114,8 +138,33 @@ function normalizarSql(sql, { bloco, linha, literais }) {
   return saida.join('')
 }
 
+function declaracaoTemDropDestrutivo(declaracao) {
+  let temAlter
+  let temCascade
+  DROP_QUALQUER.lastIndex = 0
+  for (let achado = DROP_QUALQUER.exec(declaracao); achado; achado = DROP_QUALQUER.exec(declaracao)) {
+    DROP_SEM_PERDA_DE_DADO.lastIndex = achado.index
+    if (DROP_SEM_PERDA_DE_DADO.test(declaracao)) continue
+    DROP_DE_OBJETO_SEM_DADO.lastIndex = achado.index
+    const objeto = DROP_DE_OBJETO_SEM_DADO.exec(declaracao)
+    if (!objeto) return true
+    temAlter ??= ALTER.test(declaracao)
+    if (temAlter) return true
+    if (!OBJETOS_COM_CASCATA_PERIGOSA.has(objeto[1].toUpperCase())) continue
+    temCascade ??= CASCADE.test(declaracao)
+    if (temCascade) return true
+  }
+  return false
+}
+
+function normalizadoTemSqlDestrutivo(normalizado) {
+  if (TRUNCATE.test(normalizado) || EXECUTE_COM_CONCATENACAO.test(normalizado)) return true
+  return normalizado.split(';').some((declaracao) => declaracaoTemDropDestrutivo(declaracao))
+}
+
 function temSqlDestrutivo(sql) {
-  return VARIANTES_DE_NORMALIZACAO.some((variante) => DESTRUTIVO.test(normalizarSql(sql, variante)))
+  if (META_COMANDO_PSQL.test(sql)) return true
+  return VARIANTES_DE_NORMALIZACAO.some((variante) => normalizadoTemSqlDestrutivo(normalizarSql(sql, variante)))
 }
 
 function assinaturaDaLinha(texto) {
@@ -311,7 +360,7 @@ function verificarContexto(contexto) {
         continue
       }
       if (temSqlDestrutivo(contexto.conteudo(arquivo)) && !portao.has(basename(arquivo))) {
-        achar(arquivo, 0, 'migracao-destrutiva-fora-do-portao', 'Migração destrutiva precisa constar em db/corte-gate.txt (ADR 0034)')
+        achar(arquivo, 0, 'migracao-destrutiva-fora-do-portao', 'Migração destrutiva, com meta-comando do psql ou com SQL dinâmico concatenado precisa constar em db/corte-gate.txt (ADR 0034, ADR 0058)')
       }
     }
   }

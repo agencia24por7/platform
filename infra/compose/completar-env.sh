@@ -87,8 +87,11 @@ operadores_da_plataforma=$(valor PLATAFORMA_OPERADORES)
 [ -n "$operadores_da_plataforma" ] || operadores_da_plataforma=$(segredo_opcional plataforma-operadores)
 [ -n "$operadores_da_plataforma" ] || echo "PLATAFORMA_OPERADORES ausente: ninguém entra no n8n nem vê alertas de plataforma (ADR 0043)." >&2
 
-segredo_de_borda=$(valor TRIA_PROXY_SECRET)
-[ -n "$segredo_de_borda" ] || segredo_de_borda=$(segredo_opcional proxy-secret)
+segredo_de_borda=$(segredo_opcional proxy-secret)
+if [ -z "$segredo_de_borda" ]; then
+  segredo_de_borda=$(valor TRIA_PROXY_SECRET)
+  [ -z "$segredo_de_borda" ] || ! vm_identificada || echo "TRIA_PROXY_SECRET: Secret Manager sem resposta, mantido o valor do .env (ADR 0060)." >&2
+fi
 [ -n "$segredo_de_borda" ] || echo "TRIA_PROXY_SECRET ausente: o IP do cliente fica desconhecido para o limitador (ADR 0060)." >&2
 
 bucket_do_contexto=$(valor CONTEXT_BUCKET)

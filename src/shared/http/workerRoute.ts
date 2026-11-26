@@ -9,6 +9,7 @@ import { consume } from '@/shared/security/rateLimit';
 import { fingerprint, secureCompare } from '@/shared/security/tokens';
 import { problem, success } from '@/shared/http/problem';
 import { criarAvisoDoLimiteDoWorker } from '@/shared/http/avisoDoLimiteDoWorker';
+import { criarAvisoDeWorkerNaoAutorizado } from '@/shared/http/avisoDeWorkerNaoAutorizado';
 import { CABECALHO_DO_REQUEST_ID, resolverRequestId } from '@/shared/http/requestId';
 import { CorpoAcimaDoLimite, declaradoAcimaDoLimite, lerCorpoLimitado } from '@/shared/http/corpoLimitado';
 
@@ -19,6 +20,11 @@ const RATE_LIMIT = 120;
 const RATE_WINDOW_MS = 60_000;
 
 const avisarLimiteExcedido = criarAvisoDoLimiteDoWorker({
+  janelaMs: RATE_WINDOW_MS,
+  escrever: (evento, campos) => logger.warn(evento, campos),
+});
+
+const avisarNaoAutorizado = criarAvisoDeWorkerNaoAutorizado({
   janelaMs: RATE_WINDOW_MS,
   escrever: (evento, campos) => logger.warn(evento, campos),
 });
@@ -73,7 +79,7 @@ function handle<I, O>(
 
     const token = readBearer(request);
     if (!token || !secureCompare(token, env().TRIA_WORKER_TOKEN)) {
-      logger.warn('worker.unauthorized', { requestId, path: request.nextUrl.pathname });
+      avisarNaoAutorizado({ requestId, path: request.nextUrl.pathname });
       return problem(failure('unauthorized', 'Credencial de worker ausente ou inválida.'), requestId);
     }
 

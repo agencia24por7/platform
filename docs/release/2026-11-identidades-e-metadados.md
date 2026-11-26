@@ -118,13 +118,16 @@ deploy já falhou no pre-flight por isso, crie a versão e repita o `deploy.yml`
    Esperado: ao menos 1 versão habilitada e 65 caracteres (64 hexadecimais mais a quebra de linha do `wc`).
    Depois do deploy, o `completar-env.sh` grava `TRIA_PROXY_SECRET` no `.env` da VM, e o log do app não pode trazer
    `proxy.segredo_de_borda_ausente`.
-3. Rotação: criar nova versão e fazer um deploy (o `.env` lê `latest`); app e Caddy sobem juntos, então não há
-   janela com valores diferentes além do tempo de `compose up`. Nessa janela o IP cai no balde desconhecido
+3. Rotação: criar nova versão e fazer um deploy (o `completar-env.sh` lê o Secret Manager `latest` primeiro e só usa o
+   valor antigo do `.env` se o Secret Manager não responder, com aviso sem valor no log do deploy); app e Caddy sobem
+   juntos, então não há janela com valores diferentes além do tempo de `compose up`. Nessa janela o IP cai no balde desconhecido
    (conservador), sem abrir o limite.
 
-**Reversão:** desabilitar a versão (`gcloud secrets versions disable <n> --secret=tria-producao-proxy-secret`) volta o
-app ao IP desconhecido em produção (todos num balde só, com aviso limitado no log) e o pre-flight passa a barrar o
-próximo deploy; para voltar ao código anterior, reverter o PR (o Caddy anterior não envia o cabeçalho e o app
+**Reversão:** desabilitar a versão (`gcloud secrets versions disable <n> --secret=tria-producao-proxy-secret`) não muda a
+VM em execução; no próximo deploy o `completar-env.sh` não acha versão habilitada e cai no valor que já está no `.env`
+(o da versão desabilitada). Para invalidar de fato um segredo vazado, crie a versão nova antes de desabilitar a antiga e
+faça o deploy. Sem versão nenhuma, apague a linha `TRIA_PROXY_SECRET` do `.env` da VM antes: o app volta ao IP
+desconhecido em produção (todos num balde só, com aviso limitado no log) e o pre-flight barra o próximo deploy; para voltar ao código anterior, reverter o PR (o Caddy anterior não envia o cabeçalho e o app
 anterior ignora o segredo).
 
 ## Camada 3: deploy (`deploy.yml` no mesmo merge)

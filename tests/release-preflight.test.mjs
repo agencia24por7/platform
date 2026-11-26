@@ -299,6 +299,55 @@ describe('guardas da release 2026-11 (pre-flight, espera do Terraform, smoke)', 
     });
   });
 
+  describe('completar-env.sh: segredo de borda (ADR 0060)', () => {
+    const SEGREDO_NOVO = 'novo'.repeat(16);
+    const SEGREDO_VELHO = 'velho'.repeat(13);
+    const fakeCurl = `#!/bin/sh
+for a in "$@"; do alvo="$a"; done
+case "$alvo" in
+  */project/project-id) printf 'tria-platform' ;;
+  */instance/name) printf 'tria-producao-vm' ;;
+  */instance/zone) printf 'projects/1/zones/us-central1-a' ;;
+  *) exit 22 ;;
+esac
+`;
+    const envSemSegredo = ENV_BASE.filter((linha) => !linha.startsWith('TRIA_PROXY_SECRET='));
+    const chaveGravada = () => /^TRIA_PROXY_SECRET=(.*)$/m.exec(readFileSync(join(pilha, '.env'), 'utf8'))?.[1];
+    const completar = () => rodar(join(pilha, 'completar-env.sh'), [join(pilha, '.env')], { METADADOS_URL: '' });
+
+    before(() => escreverExecutavel('curl', fakeCurl));
+    after(() => rmSync(join(bin, 'curl'), { force: true }));
+
+    it('Secret Manager com valor novo e .env com valor velho: vale o novo', async () => {
+      prepararPilha({ env: [...envSemSegredo, `TRIA_PROXY_SECRET=${SEGREDO_VELHO}`] });
+      writeFileSync(join(fakes, 'segredos', 'tria-producao-proxy-secret'), `${SEGREDO_NOVO}\n`);
+      const r = await completar();
+      assert.equal(r.status, 0, r.saida);
+      assert.equal(chaveGravada(), SEGREDO_NOVO);
+      for (const valor of [SEGREDO_NOVO, SEGREDO_VELHO]) assert.equal(r.saida.includes(valor), false);
+    });
+
+    it('Secret Manager indisponível e .env com valor: vale o .env, sem derrubar o deploy', async () => {
+      prepararPilha({ env: [...envSemSegredo, `TRIA_PROXY_SECRET=${SEGREDO_VELHO}`] });
+      const r = await completar();
+      assert.equal(r.status, 0, r.saida);
+      assert.equal(chaveGravada(), SEGREDO_VELHO);
+      assert.match(r.saida, /Secret Manager sem resposta, mantido o valor do \.env/);
+      assert.equal(r.saida.includes(SEGREDO_VELHO), false);
+    });
+
+    it('ambos vazios: fica vazio e o validador de produção reprova', async () => {
+      prepararPilha({ env: envSemSegredo });
+      const r = await completar();
+      assert.equal(r.status, 0, r.saida);
+      assert.equal(chaveGravada(), '');
+      assert.match(r.saida, /TRIA_PROXY_SECRET ausente/);
+      const pre = await preflightVm();
+      assert.equal(pre.status, 1, pre.saida);
+      assert.match(pre.saida, /TRIA_PROXY_SECRET:/);
+    });
+  });
+
   describe('preflight-release.sh (no runner, antes do migrar.sh)', () => {
     const preparar = (snapshot, codigos) => {
       prepararPilha();

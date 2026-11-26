@@ -26,6 +26,7 @@ case "$nome" in
 esac
 touch "$arquivo"
 echo "$nome $*" >> "${registro}"
+historico() { { echo "$1"; grep -F -- "-A DOCKER-USER " "$arquivo" | sed 's/^/    /'; } >> "${registro}.historico"; }
 case "$nome" in
   *-restore)
     while IFS= read -r linha; do
@@ -47,8 +48,11 @@ case "$acao" in
   -S) grep -qxF -- "-N $cadeia" "$arquivo" || exit 1; grep -xF -- "-N $cadeia" "$arquivo"; grep -F -- "-A $cadeia " "$arquivo"; exit 0 ;;
   -N) echo "-N $cadeia" >> "$arquivo"; exit 0 ;;
   -C) grep -qxF -- "-A $cadeia $*" "$arquivo"; exit $? ;;
-  -I) shift; { echo "-A $cadeia $*"; cat "$arquivo"; } > "$arquivo.tmp"; mv "$arquivo.tmp" "$arquivo"; exit 0 ;;
-  -D) grep -qxF -- "-A $cadeia $*" "$arquivo" || exit 1; grep -vxF -- "-A $cadeia $*" "$arquivo" > "$arquivo.tmp" || true; mv "$arquivo.tmp" "$arquivo"; exit 0 ;;
+  -I) posicao="$1"; shift; awk -v c="-A $cadeia " -v n="$posicao" -v nova="-A $cadeia $*" 'index($0, c) == 1 { k++; if (k == n) { print nova; feita = 1 } } { print } END { if (!feita) print nova }' "$arquivo" > "$arquivo.tmp"; mv "$arquivo.tmp" "$arquivo"; historico "$nome $acao $cadeia $posicao $*"; exit 0 ;;
+  -D) case "$1" in
+        [0-9]*) awk -v c="-A $cadeia " -v n="$1" 'index($0, c) == 1 { k++; if (k == n) next } { print }' "$arquivo" > "$arquivo.tmp"; mv "$arquivo.tmp" "$arquivo"; historico "$nome $acao $cadeia $1"; exit 0 ;;
+      esac
+      grep -qxF -- "-A $cadeia $*" "$arquivo" || exit 1; grep -vxF -- "-A $cadeia $*" "$arquivo" > "$arquivo.tmp" || true; mv "$arquivo.tmp" "$arquivo"; exit 0 ;;
 esac
 exit 1
 `;
@@ -236,6 +240,55 @@ describe('metadados-bloquear.sh: salto na primeira posição e vigia', () => {
     assert.equal(r.status, 0, r.saida);
     assert.ok(r.saida.includes(marcador));
     assert.equal(primeiraDaDockerUser(), '-A DOCKER-USER -j ORLA-METADADOS');
+  });
+
+  it('em nenhum passo da reinserção do salto a DOCKER-USER fica sem ele, e as duplicatas somem', () => {
+    const salto = '-A DOCKER-USER -j ORLA-METADADOS';
+    writeFileSync(join(estado, 'v4'), `-N DOCKER-USER\n-A DOCKER-USER -j RETURN\n${salto}\n-A DOCKER-USER -j RETURN\n${salto}\n`);
+    const r = rodar(script, ['aplicar']);
+    assert.equal(r.status, 0, r.saida);
+    const passos = readFileSync(`${registro}.historico`, 'utf8').split(/\n(?=\S)/).filter((p) => p.startsWith('iptables '));
+    assert.ok(passos.length >= 3, 'espera uma inserção e duas remoções por número');
+    assert.match(passos[0], /^iptables -I DOCKER-USER 1 -j ORLA-METADADOS/);
+    for (const passo of passos) assert.ok(passo.includes(salto), `salto ausente após: ${passo}`);
+    assert.ok(passos.slice(1).every((p) => p.startsWith('iptables -D DOCKER-USER ')));
+    const numeros = passos.slice(1).map((p) => Number(p.split('\n')[0].split(' ').pop()));
+    assert.deepEqual(numeros, [...numeros].sort((a, b) => b - a));
+    assert.equal(v4().split('\n').filter((l) => l === salto).length, 1);
+    assert.equal(primeiraDaDockerUser(), salto);
+  });
+
+  it('aplicar e vigiar pedem a trava com flock quando ele existe', () => {
+    escreverExecutavel('flock', `#!/bin/sh\necho "flock $*" >> "${registro}"\nexit 0\n`);
+    const trava = join(raiz, 'trava', 'orla.lock');
+    assert.equal(rodar(script, ['aplicar'], { ARQUIVO_DE_TRAVA: trava }).status, 0);
+    assert.equal(rodar(script, ['vigiar'], { ARQUIVO_DE_TRAVA: trava }).status, 0);
+    assert.equal(chamadas().split('\n').filter((l) => l.startsWith('flock -w ')).length, 2);
+  });
+
+  it('se a trava não sai no prazo, aplica mesmo assim e avisa', () => {
+    escreverExecutavel('flock', '#!/bin/sh\nexit 1\n');
+    const r = rodar(script, ['aplicar'], { ARQUIVO_DE_TRAVA: join(raiz, 'trava', 'orla.lock') });
+    assert.equal(r.status, 0, r.saida);
+    assert.match(r.saida, /não obtive a trava/);
+    assert.equal(rodar(script, ['verificar']).status, 0);
+  });
+
+  it('instalar com a vigia falhando ainda aplica o bloqueio e sai diferente de zero', () => {
+    escreverExecutavel('systemctl', `#!/bin/sh\necho "systemctl $*" >> "${registro}"\ncase "$*" in *"enable --now"*) exit 1 ;; esac\nexit 0\n`);
+    const r = rodar(script, ['instalar'], { INSTALADO: join(raiz, 'sbin', 'orla-metadados-bloquear'), PASTA_DO_DOCKER: join(raiz, 'docker.service.d'), PASTA_DAS_UNIDADES: join(raiz, 'unidades') });
+    assert.notEqual(r.status, 0, r.saida);
+    assert.match(r.saida, /FALHA: a vigia orla-metadados-vigiar não foi instalada ou ligada/);
+    assert.equal(rodar(script, ['verificar']).status, 0);
+  });
+
+  it('instalar com a vigia e o bloqueio falhando reflete as duas falhas', () => {
+    escreverExecutavel('systemctl', `#!/bin/sh\ncase "$*" in *"enable --now"*) exit 1 ;; esac\nexit 0\n`);
+    escreverExecutavel('iptables-restore', '#!/bin/sh\ncat > /dev/null\nexit 1\n');
+    const r = rodar(script, ['instalar'], { INSTALADO: join(raiz, 'sbin', 'orla-metadados-bloquear'), PASTA_DO_DOCKER: join(raiz, 'docker.service.d'), PASTA_DAS_UNIDADES: join(raiz, 'unidades') });
+    assert.notEqual(r.status, 0, r.saida);
+    assert.match(r.saida, /FALHA: a vigia/);
+    assert.match(r.saida, /FALHA: bloqueio IPv4 de metadados não aplicado/);
   });
 
   it('vigiar no journal prefixa a linha com <3> para o systemd gravar como erro', () => {
