@@ -41,13 +41,27 @@ function emitir(org, { clientes = null, ferramentas = [FERRAMENTA], criadaEm = '
   return { id, segredo };
 }
 
+async function enviarAoMcp(corpo, cabecalhos) {
+  let ultimoErro;
+  for (let tentativa = 1; tentativa <= 3; tentativa++) {
+    try {
+      return await fetch(`${BASE}/api/mcp`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...cabecalhos },
+        body: JSON.stringify(corpo),
+        signal: AbortSignal.timeout(20000),
+      });
+    } catch (erro) {
+      ultimoErro = erro;
+      await new Promise((resolver) => setTimeout(resolver, 500));
+    }
+  }
+  const causa = ultimoErro?.cause;
+  throw new Error(`fetch ao MCP falhou 3 vezes: ${causa?.code ?? ''} ${causa?.message ?? ultimoErro?.message}`, { cause: ultimoErro });
+}
+
 async function mcp(corpo, cabecalhos = {}) {
-  const resposta = await fetch(`${BASE}/api/mcp`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...cabecalhos },
-    body: JSON.stringify(corpo),
-    signal: AbortSignal.timeout(20000),
-  });
+  const resposta = await enviarAoMcp(corpo, cabecalhos);
   const texto = await resposta.text();
   const dados = texto.split('\n').find((linha) => linha.startsWith('data: '));
   let mensagem = null;
