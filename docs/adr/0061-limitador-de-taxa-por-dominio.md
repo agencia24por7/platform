@@ -121,3 +121,14 @@ O ADR 0026 aceita que o limite seja em memória e por réplica; isso não muda.
 - **Derivar o domínio pelo prefixo da chave:** frágil (um prefixo novo cai no domínio errado sem aviso) e invisível ao typecheck.
 - **Limite de taxa no Caddy:** a imagem padrão do Caddy não traz módulo de rate limit; exigiria imagem customizada (`xcaddy` com módulo de terceiro), mais uma peça para manter e atualizar. Pode vir depois como camada extra, não como substituto do limite da aplicação, que conhece o token, a conexão e o worker.
 - **Limitador compartilhado (Redis ou Postgres):** resolve também o limite por réplica, mas adiciona infraestrutura e latência em toda rota; desproporcional ao volume de hoje (ADR 0026).
+
+## Atualização de 2026-11-26 (camada de IA e MCP, issue 24K-131)
+
+A camada de IA (`docs/adr/0057-camada-de-ia-e-mcp.md`) entrou em `dev` depois deste ADR e acrescenta, sem mudar o princípio do item 1:
+
+| Domínio | Quem cria a chave | Chamadores | Teto |
+|---|---|---|---|
+| `ia` | criada só depois de autenticação: credencial de agente validada pelo banco, ou organização da sessão de quem administra | rota MCP por credencial (`mcp:credencial:<id>`), tentativas de guardar chave de fornecedor (`ia:chave:<organização>`) | 10.000 |
+
+- O domínio `ip` ganha um chamador: a rota MCP cobra a origem antes de autenticar (`mcp:origem:<ip>`, 120 por minuto). Cada IP passa a criar até 9 chaves em `ip`, não 8; lotar o domínio pede cerca de 2.200 IPs distintos (20.000 ÷ 9).
+- O pior caso de memória sobe de 160.200 para 170.200 baldes.

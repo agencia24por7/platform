@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { z } from 'zod';
 
+delete process.env.TRIA_PROXY_SECRET;
+Object.assign(process.env, { NODE_ENV: 'test' });
+
 await import('../../brain/testes/ganchos.ts');
 const { criarRotaMcp } = await import('./rotaMcp.ts');
 const { criarManipuladorMcp, CORPO_MAXIMO_DO_MCP } = await import('../infrastructure/servidorMcp.ts');

@@ -70,3 +70,11 @@ Fecha dois achados da revisão de segurança: 24K-118 (o papel leitor recebia co
 3. `clientService.create` recusa operador em anunciante e aceita admin; agência aceita operador (`clientService.test.ts`).
 4. `/comecar/contas` recusa operador de anunciante e, com falha de criação, não vincula nem ignora conta (`tests/anunciante-direto.test.mjs`).
 5. Depois de falha parcial, a nova tentativa vincula o resto ao mesmo cliente sem criar outro; retomada forjada, de outra organização, de outra pessoa ou vencida é recusada (`retomadaDoCadastro.test.ts`, `tests/anunciante-direto.test.mjs`).
+
+## Atualização de 2026-11-26 (camada de IA e MCP, issue 24K-131)
+
+"O catálogo para agentes" do item 2 é o consumo pelo worker (`montar`, rotas `/api/v0/brain/*`), que continua na visão `equipe`. A credencial de agente do servidor MCP (`docs/adr/0057-camada-de-ia-e-mcp.md`) é outro caminho: lê por `montarNaOrganizacao` com o papel leitor e recebe a visão `cliente`, porque a resposta sai da plataforma para um cliente MCP de terceiro.
+
+| Caminho | Tratamento |
+| --- | --- |
+| Ferramenta `brain_consultar_catalogo` (MCP e executor de IA) | `montarNaOrganizacao` com o papel leitor: visão `cliente` |
