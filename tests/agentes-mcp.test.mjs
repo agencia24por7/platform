@@ -346,7 +346,7 @@ describe('credencial de agente e servidor MCP (ADR 0063)', { concurrency: false 
       assert.match(resposta.headers.get('location') ?? '', /\/api\/auth\/google\/start/);
     });
 
-    it('a tela tem título próprio, um h1 e um h2 por seção, e o segredo fora de região viva', async () => {
+    it('a tela tem título próprio, um h1 e um h2 por seção e lista as ferramentas do catálogo', async () => {
       const dono = ensureUser(`mcp-dono-${sufixo()}@tria.local`);
       makeOwner(dono, a.org);
       signIn(dono);
