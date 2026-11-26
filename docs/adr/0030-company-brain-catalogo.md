@@ -87,6 +87,21 @@ Provedores de agora:
   Lista com aviso de dado pessoal sai `restrito`.
 - `arquivos`: metadados dos anexos (nome higienizado, mime, tamanho, seção, prefixo do sha256), sem
   conteúdo.
+- `conhecimento` (ADR 0065 §2): lentes de estratégia, práticas, regras legais e benchmarks lidos de
+  `core.knowledge_entries` (tabela global, imutável, carga por migração; última versão ativa por `key`),
+  projetados em todo cliente nos tipos `conhecimento_lente|pratica|regra_legal|benchmark`, só jurisdição
+  `global` e `br`. Id `{key}-v{version}`. O campo opcional `evidencia` da entrada (categoria, nota A a D, fonte,
+  mercado, jurisdição, datas, obrigatória, maturidade, replicada) existe só nelas: o hash das demais não muda
+  (teste `domain/evidencia.test.ts`). Entrada vencida aparece marcada (`frescor` parado, tag `vencida`, aviso).
+  Sempre conteúdo não confiável; nota A e B é `fato`, C e D é `hipotese`. Falha de leitura deixa o provedor
+  `indisponivel`.
+- `desempenho` (ADR 0065 §2): resumos de meses fechados lidos de `core.client_brain_performance`, nos tipos
+  `desempenho_mensal` (`{platform}-{yyyy-mm}`), `desempenho_campanhas` e `desempenho_recorte`. A medição
+  (`MedidorDeDesempenho`, `desempenhoBigQuery.ts`, SQL em `sqlDoDesempenho.ts`) roda no mesmo acionamento de
+  `POST /api/v0/brain/cobertura/medir`, como passo isolado: 6 meses fechados de total por plataforma, 10
+  maiores campanhas e 8 maiores fatias por recorte nos 3 últimos meses fechados (`periodo` = primeiro mês da
+  janela), sempre com filtro de organização e de `cliente_atual_id`. Cliente sem linhas: nenhuma entrada e
+  provedor `ok`.
 - `capacidades`: derivado, ver 3.
 
 **Contexto sem bloquear o PR do contexto.** O contexto entra por uma porta pequena,
@@ -143,7 +158,7 @@ Ela não entra no manifesto de fatos (não tem chave de fonte) e entrou em `OPER
 
 ### 5. Publicação: sob demanda + foto determinística no bucket
 
-O catálogo é montado sob demanda (5 consultas fixas ao Postgres numa transação de tenant, mais o
+O catálogo é montado sob demanda (6 consultas fixas de inventário ao Postgres numa transação de tenant, mais a do conhecimento global em paralelo e o
 registro estático; teste confere a contagem com centenas de fontes) e publicado pela mesma porta de
 armazenamento do contexto (ADR 0027, `criarArmazenamentoDeContexto`; sem bucket configurado a
 publicação devolve `sem_armazenamento` e nada falha):
@@ -206,6 +221,9 @@ sensibilidade e tipos permitidos); a política passa a receber esse escopo em ve
 - **Uma pergunta nova que os dados respondem**: uma entrada em `dados/capacidades.ts`.
 - **Um tipo novo de contexto** (seção ou lista no catálogo do formulário): sai sozinho pelo provedor de
   contexto.
+- **Conhecimento global novo** (lente, prática, regra legal, benchmark): `INSERT` em
+  `core.knowledge_entries` por migração (versão nova é linha nova); regra legal só é `obrigatoria` com
+  `verificado_em` preenchido. Nada no código muda.
 - **Uma fonte que não está no registro** (planilha, CRM próprio, outro sistema): um arquivo em
   `infrastructure/provedores/` implementando `ProvedorDeCatalogo` com os `tiposDeclarados` novos e uma
   linha em `provedores/index.ts`. O `contrato.test.ts` roda a mesma bateria em todo provedor
