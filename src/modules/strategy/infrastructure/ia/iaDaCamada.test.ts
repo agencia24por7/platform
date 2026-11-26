@@ -65,6 +65,24 @@ describe('iaDaCamada', () => {
     assert.ok(!JSON.stringify(enviado).includes('cli-1'));
   });
 
+  it('só a redação do plano leva o escopo de agente: cliente do pedido, as duas ferramentas e a visão da equipe', async () => {
+    const { executor, vistos } = falso(ok({ saida: { a: 'x' }, uso: { tokensDeEntrada: 1, tokensDeSaida: 1, passos: 1 } }));
+    await criarIaDaCamada(executor).executar(pedido({ tarefa: 'strategy_plan' }));
+    await criarIaDaCamada(executor).executar(pedido({ tarefa: 'comite' }));
+    await criarIaDaCamada(executor).executar(pedido({ tarefa: 'gate' }));
+    assert.deepEqual(vistos[0]!.agente, {
+      credencialId: 'abcdef12-0000',
+      organizationId: 'org-1',
+      clienteIds: ['cli-1'],
+      ferramentas: ['brain_consultar_catalogo', 'brain_consultar_item'],
+      requestId: vistos[0]!.requestId,
+      sourceIp: null,
+      visao: 'equipe',
+    });
+    assert.equal(vistos[1]!.agente, undefined);
+    assert.equal(vistos[2]!.agente, undefined);
+  });
+
   it('as três tarefas estão registradas para a tela /config/ia', () => {
     const chaves = TAREFAS_INTERNAS.map((t) => t.chave);
     for (const chave of ['strategy_plan', 'comite', 'gate']) assert.ok(chaves.includes(chave as never), chave);
@@ -72,7 +90,9 @@ describe('iaDaCamada', () => {
 
   it('orçamento sempre dentro do teto da camada', () => {
     const o = orcamentoDaCamada({ tokensMaximos: 60_000, tempoMaximoMs: 900_000 });
-    assert.deepEqual(o, { passos: 1, tokensDeSaida: TETO_DO_ORCAMENTO.tokensDeSaida, tempoMs: TETO_DO_ORCAMENTO.tempoMs });
+    assert.deepEqual(o, { passos: TETO_DO_ORCAMENTO.passos, tokensDeSaida: TETO_DO_ORCAMENTO.tokensDeSaida, tempoMs: TETO_DO_ORCAMENTO.tempoMs });
+    assert.equal(orcamentoDaCamada({ tokensMaximos: 60_000, tempoMaximoMs: 900_000 }, PLANO_DE_ESTRATEGIA.orcamento).passos, PLANO_DE_ESTRATEGIA.orcamento.passos);
+    assert.equal(orcamentoDaCamada({ tokensMaximos: 60_000, tempoMaximoMs: 900_000 }, COMITE_DA_ESTRATEGIA.orcamento).passos, 1);
     assert.equal(orcamentoDaCamada({ tokensMaximos: 0, tempoMaximoMs: -5 }).tokensDeSaida, 1);
   });
 
@@ -118,7 +138,7 @@ describe('iaDaCamada', () => {
       const doMotor = ORCAMENTO_DA_IA[chave as keyof typeof ORCAMENTO_DA_IA];
       assert.equal(tarefa.orcamento.tokensDeSaida, doMotor.tokensMaximos, chave);
       assert.equal(tarefa.orcamento.tempoMs, doMotor.tempoMaximoMs, chave);
-      assert.equal(tarefa.orcamento.passos, 1, chave);
+      assert.equal(tarefa.orcamento.passos, chave === 'strategy_plan' ? 3 : 1, chave);
     }
   });
 });

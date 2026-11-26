@@ -364,6 +364,63 @@ describe('motor do plano: erros de IA e do Brain', () => {
     assert.equal(outroCliente.repositorio.estado.versoes.length, 0);
   });
 
+  describe('URN citada que o modelo leu por ferramenta e não está no pacote', () => {
+    const urnLida = urnDeTeste('conhecimento', 'lida-por-ferramenta');
+    const hashLido = 'b'.repeat(64);
+    const entradaLida = {
+      urn: urnLida,
+      hash: hashLido,
+      tipo: 'conhecimento',
+      titulo: 'Benchmark lido por ferramenta',
+      resumo: 'Pesquisa com método.',
+      somenteMetadados: false,
+      evidencia: { nota: 'B' as const, categoria: 'benchmark' as const, validoAte: '2027-06-30', verificadoEm: '2026-10-01' },
+    };
+    const planoQueCita = () => {
+      const plano = planoCompleto();
+      plano.metas_e_metricas.metas[0]!.evidencias = [{ urn: urnLida, papel: 'favor' }];
+      return plano;
+    };
+    const brainCom = (resposta: unknown): LeitorDoBrain => ({
+      async lerPacote() { return ok(pacoteDeTeste()); },
+      async entradasPorUrn() { return resposta as never; },
+    });
+
+    it('resolve no Brain, grava a referência com o hash da entrada lida e conclui', async () => {
+      const m = await montar({ brain: brainCom(ok([entradaLida])), roteiro: roteiroPadrao({ plano: planoQueCita }) });
+      const final = await ate(m);
+      assert.equal(final.status, 'concluida');
+      const referencia = m.repositorio.estado.versoes[0]!.referencias.find((r) => r.urn === urnLida);
+      assert.equal(referencia?.hash, hashLido);
+    });
+
+    it('URN que o Brain não devolve continua sendo saida_invalida e nada é gravado', async () => {
+      const m = await montar({ brain: brainCom(ok([])), roteiro: roteiroPadrao({ plano: planoQueCita }) });
+      const final = await ate(m);
+      assert.equal(final.erroCodigo, 'ia_saida_invalida');
+      assert.equal(m.repositorio.estado.versoes.length, 0);
+    });
+
+    it('Brain fora ao resolver a URN falha como brain_indisponivel, não como saída inválida', async () => {
+      const m = await montar({ brain: brainCom(err({ codigo: 'brain_indisponivel', mensagem: 'fora' })), roteiro: roteiroPadrao({ plano: planoQueCita }) });
+      const final = await ate(m);
+      assert.equal(final.erroCodigo, 'brain_indisponivel');
+      assert.equal(m.repositorio.estado.versoes.length, 0);
+    });
+
+    it('só pede ao Brain as URNs que faltam, nunca as que já estão no pacote', async () => {
+      const pedidas: string[][] = [];
+      const brain: LeitorDoBrain = {
+        async lerPacote() { return ok(pacoteDeTeste()); },
+        async entradasPorUrn(_o, _c, urns) { pedidas.push([...urns]); return ok([entradaLida]); },
+      };
+      const m = await montar({ brain, roteiro: roteiroPadrao({ plano: planoQueCita }) });
+      await ate(m);
+      assert.ok(pedidas.length > 0);
+      assert.ok(pedidas.every((urns) => urns.length === 1 && urns[0] === urnLida));
+    });
+  });
+
   it('Brain indisponível: tenta de novo e falha com brain_indisponivel', async () => {
     const m = await montar({ brain: brainFora });
     const final = await ate(m);

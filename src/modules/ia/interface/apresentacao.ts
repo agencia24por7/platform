@@ -13,6 +13,7 @@ export type ApresentacaoDeEstado = {
 
 const ROTULO_DE_FERRAMENTA: Readonly<Record<string, string>> = {
   brain_consultar_catalogo: 'Consultar o catálogo do Brain',
+  brain_consultar_item: 'Consultar um item do catálogo do Brain',
 };
 
 export function rotuloDaFerramenta(nome: string): string {

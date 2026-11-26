@@ -32,6 +32,7 @@ import {
   GRUPOS_DE_REDACAO,
   INDICE_DO_ULTIMO_GRUPO,
   MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA,
+  MAXIMO_DE_ENTRADAS_NO_PACOTE,
   type Ajuste,
   type Argumento,
   type Intencao,
@@ -310,6 +311,19 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     return lida.data;
   }
 
+  async function pacoteComAsCitadas(execucao: Execucao, contexto: Contexto, plano: Plano, pacote: PacoteDeLeitura): Promise<PacoteDeLeitura> {
+    const referencias = referenciasDoPlano(plano, { organizacaoId: execucao.organizationId, clienteId: execucao.clientId });
+    if (!referencias.ok) throw falhaDeIA('saida_invalida');
+    const presentes = new Set(pacote.entradas.map((entrada) => entrada.urn));
+    const faltantes = [...new Set(referencias.value.map((referencia) => referencia.urn))].filter((urn) => !presentes.has(urn));
+    if (faltantes.length === 0 || leitorDoBrain.entradasPorUrn === undefined) return pacote;
+    const lidas = await leitorDoBrain.entradasPorUrn(execucao.organizationId, execucao.clientId, faltantes);
+    if (!lidas.ok) throw new FalhaDaEtapa('brain_indisponivel', true);
+    const ampliado = { ...pacote, entradas: [...pacote.entradas, ...lidas.value].slice(0, MAXIMO_DE_ENTRADAS_NO_PACOTE) };
+    contexto.pacote = ampliado;
+    return ampliado;
+  }
+
   function referenciasConferidas(plano: Plano, execucao: Execucao, pacote: PacoteDeLeitura) {
     const referencias = referenciasDoPlano(plano, { organizacaoId: execucao.organizationId, clienteId: execucao.clientId });
     if (!referencias.ok) throw falhaDeIA('saida_invalida');
@@ -407,7 +421,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     if (!lido.ok) throw falhaDeIA('saida_invalida');
     const plano = lido.value;
     if (!planoSemDadoPessoal(plano).ok) throw falhaDeIA('saida_invalida');
-    const referencias = referenciasConferidas(plano, execucao, pacote);
+    const referencias = referenciasConferidas(plano, execucao, await pacoteComAsCitadas(execucao, contexto, plano, pacote));
     const estado = await estadoDoPlano(execucao);
     const chave = `${execucao.id}:redigir:${execucao.rodada}`;
     const criada = await repositorio.criarVersaoRascunho(execucao.organizationId, {
@@ -546,7 +560,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     if (!lido.ok) throw falhaDeIA('saida_invalida');
     const planoAjustado = lido.value;
     if (!planoSemDadoPessoal(planoAjustado).ok) throw falhaDeIA('saida_invalida');
-    const referencias = referenciasConferidas(planoAjustado, execucao, pacote);
+    const referencias = referenciasConferidas(planoAjustado, execucao, await pacoteComAsCitadas(execucao, contexto, planoAjustado, pacote));
     const estado = await estadoDoPlano(execucao);
 
     const criada = await repositorio.criarVersaoRascunho(execucao.organizationId, {
@@ -626,8 +640,8 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
   }
 
   async function avaliarGate(execucao: Execucao, versao: Versao, eventos: readonly EventoDaVersao[], contexto: Contexto) {
-    const pacote = await lerPacote(execucao, contexto, false);
     const plano = planoDe(versao.conteudo);
+    const pacote = await pacoteComAsCitadas(execucao, contexto, plano, await lerPacote(execucao, contexto, false));
     const cadeia = await carregarCadeia(repositorio, execucao.organizationId, versao.id, eventos);
     const raiz = versaoDaRaizDaCadeia(cadeia, versao.id, execucao.agentRunId);
     const pareceres = raiz === null ? [] : pareceresDe(cadeia.get(raiz) ?? []);
