@@ -137,6 +137,17 @@ describe('IA: chave do fornecedor, modelo por tarefa, uso e teto (ADR 0064)', { 
       signOut();
     });
 
+    it('a tela tem título próprio, um h1 e um h2 por seção', async () => {
+      signIn(a.dono);
+      const pagina = await (await browse(PAGINA)).text();
+      assert.match(pagina, /<title>Inteligência artificial · /);
+      assert.equal((pagina.match(/<h1[ >]/g) ?? []).length, 1);
+      assert.match(pagina, /<h1 class="page__title">Inteligência artificial<\/h1>/);
+      assert.ok((pagina.match(/<h2[ >]/g) ?? []).length >= 5);
+      assert.match(pagina, /id="conteudo"/);
+      signOut();
+    });
+
     it('modelo fora da lista, tarefa desconhecida e fornecedor sem chave não viram escolha', async () => {
       signIn(a.dono);
       const acao = await acaoDoBotao('Salvar</button>');

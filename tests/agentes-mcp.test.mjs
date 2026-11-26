@@ -346,6 +346,19 @@ describe('credencial de agente e servidor MCP (ADR 0063)', { concurrency: false 
       assert.match(resposta.headers.get('location') ?? '', /\/api\/auth\/google\/start/);
     });
 
+    it('a tela tem título próprio, um h1 e um h2 por seção, e o segredo fora de região viva', async () => {
+      const dono = ensureUser(`mcp-dono-${sufixo()}@tria.local`);
+      makeOwner(dono, a.org);
+      signIn(dono);
+      const html = await (await browse('/config/agentes')).text();
+      assert.match(html, /<title>Credenciais de agente · /);
+      assert.equal((html.match(/<h1[ >]/g) ?? []).length, 1);
+      assert.ok((html.match(/<h2[ >]/g) ?? []).length >= 2);
+      assert.equal(html.includes('brain_consultar_catalogo'), true);
+      assert.equal(html.includes('Consultar o catálogo do Brain'), true);
+      signOut();
+    });
+
     it('quem opera ou só enxerga não abre a tela', async () => {
       for (const papel of ['operator', 'viewer']) {
         signIn(membro(a.org, papel));
