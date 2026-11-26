@@ -71,7 +71,7 @@ export function FormularioDeCredencial({ ferramentas, clientes, rotuloDosCliente
           </span>
         </label>
 
-        <fieldset className="grupo">
+        <fieldset className="config-grupo">
           <legend className="field__label">Ferramentas liberadas</legend>
           <div className="opcoes">
             {ferramentas.map((ferramenta) => (
@@ -87,7 +87,7 @@ export function FormularioDeCredencial({ ferramentas, clientes, rotuloDosCliente
           <span className="field__hint">Só leitura. O agente não enxerga ferramenta que não esteja marcada.</span>
         </fieldset>
 
-        <fieldset className="grupo grupo--alcance">
+        <fieldset className="config-grupo grupo--alcance">
           <legend className="field__label">Alcance</legend>
           <div className="opcoes">
             <label className="opcao">

@@ -54,7 +54,7 @@ export default async function InteligenciaArtificialPage({
             <p className="page__sub">
               A organização usa a própria chave de cada fornecedor e escolhe o modelo de cada tarefa. <Link href="/config">Voltar às configurações</Link>
             </p>
-            <ol className="passos">
+            <ol className="config-passos">
               <li>Guarde a chave de um fornecedor.</li>
               <li>Escolha o modelo de cada tarefa.</li>
               <li>Faça um teste e confira o uso do dia.</li>
@@ -111,7 +111,7 @@ export default async function InteligenciaArtificialPage({
           {fornecedores.map(({ fornecedor, chave }) => {
             const nome = ROTULO_DO_FORNECEDOR[fornecedor];
             return (
-              <section key={fornecedor} className="bloco" aria-labelledby={`t-fornecedor-${fornecedor}`}>
+              <section key={fornecedor} className="config-bloco" aria-labelledby={`t-fornecedor-${fornecedor}`}>
                 <div className="bloco__topo">
                   <h3 className="bloco__nome" id={`t-fornecedor-${fornecedor}`}>
                     {nome}
@@ -171,7 +171,7 @@ export default async function InteligenciaArtificialPage({
               <p className="card__ajuda">Estes fornecedores não estão mais habilitados na plataforma. As chaves continuam guardadas e nenhuma tarefa as usa.</p>
             </div>
             {chavesDeFornecedorDesligado.map((chave) => (
-              <div key={chave.fornecedor} className="bloco">
+              <div key={chave.fornecedor} className="config-bloco">
                 <div className="bloco__topo">
                   <span>
                     {ROTULO_DO_FORNECEDOR[chave.fornecedor]} <span className="mono">{chave.rotulo}</span>
@@ -211,7 +211,7 @@ export default async function InteligenciaArtificialPage({
             tarefas.map((tarefa) => {
               const estado = apresentarEstadoDaTarefa(tarefa.estado);
               return (
-                <form key={tarefa.chave} className="bloco" action={escolherModelo}>
+                <form key={tarefa.chave} className="config-bloco" action={escolherModelo}>
                   <input type="hidden" name="tarefa" value={tarefa.chave} />
                   <div className="form--acoes">
                     <label className="field">
@@ -293,7 +293,7 @@ export default async function InteligenciaArtificialPage({
               <span className="uso__valor">
                 {numero.format(usoDeHoje.chamadas)} de {numero.format(configuracao.chamadasPorDia)}
               </span>
-              <progress className="barra" aria-labelledby="uso-chamadas" value={Math.min(usoDeHoje.chamadas, configuracao.chamadasPorDia)} max={configuracao.chamadasPorDia} />
+              <progress className="config-barra" aria-labelledby="uso-chamadas" value={Math.min(usoDeHoje.chamadas, configuracao.chamadasPorDia)} max={configuracao.chamadasPorDia} />
             </div>
             <div className="uso__item">
               <span className="uso__rotulo" id="uso-tokens">
@@ -302,11 +302,11 @@ export default async function InteligenciaArtificialPage({
               <span className="uso__valor">
                 {numero.format(usoDeHoje.tokens)} de {numero.format(configuracao.tokensPorDia)}
               </span>
-              <progress className="barra" aria-labelledby="uso-tokens" value={Math.min(usoDeHoje.tokens, configuracao.tokensPorDia)} max={configuracao.tokensPorDia} />
+              <progress className="config-barra" aria-labelledby="uso-tokens" value={Math.min(usoDeHoje.tokens, configuracao.tokensPorDia)} max={configuracao.tokensPorDia} />
             </div>
           </div>
           {ctx.role === 'owner' ? (
-            <form className="bloco form--acoes" action={definirTetos}>
+            <form className="config-bloco form--acoes" action={definirTetos}>
               <label className="field">
                 <span className="field__label">Chamadas por dia</span>
                 <input className="input" type="number" name="chamadasPorDia" required min={1} max={100000} defaultValue={configuracao.chamadasPorDia} />
@@ -320,7 +320,7 @@ export default async function InteligenciaArtificialPage({
               </BotaoDeEnvio>
             </form>
           ) : (
-            <div className="bloco">
+            <div className="config-bloco">
               <p className="card__ajuda">Só quem responde pela organização muda os tetos.</p>
             </div>
           )}

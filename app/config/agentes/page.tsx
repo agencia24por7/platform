@@ -100,7 +100,7 @@ export default async function CredenciaisDeAgentePage({
                           {credencial.clienteIds ? `${credencial.clienteIds.length} ${vocabulario.cliente}(s)` : 'Organização inteira'}
                         </td>
                         <td>
-                          <div className="etiquetas">
+                          <div className="config-etiquetas">
                             {credencial.ferramentas.map((ferramenta) => (
                               <span key={ferramenta} className="pill" title={ferramenta}>
                                 {rotuloDaFerramenta(ferramenta)}

@@ -558,10 +558,10 @@ table { border-collapse: collapse; width: 100%; }
 .tela-config .card__head { font-size: var(--fs-md); font-weight: 640; letter-spacing: var(--track-tight); }
 .card__ajuda { font-size: var(--fs-sm); color: var(--fg-muted); line-height: var(--lh-base); max-width: 68ch; }
 .tela-config .card > .form--linha, .tela-config .card > .form--acoes { padding: 16px; }
-.passos { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 2px; font-size: var(--fs-sm); color: var(--fg-muted); line-height: var(--lh-base); }
-.card__body + .card__body { padding-top: 0; }
-.bloco { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-top: 1px solid var(--border); }
-.card__head + .bloco { border-top: 0; }
+.config-passos { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 2px; font-size: var(--fs-sm); color: var(--fg-muted); line-height: var(--lh-base); }
+.tela-config .card__body + .card__body { padding-top: 0; }
+.config-bloco { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-top: 1px solid var(--border); }
+.tela-config .card__head + .config-bloco { border-top: 0; }
 .bloco__topo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
 .bloco__nome { font-weight: 640; font-size: var(--fs-md); letter-spacing: var(--track-tight); }
 .form--acoes { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
@@ -572,11 +572,11 @@ table { border-collapse: collapse; width: 100%; }
 .uso__item { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-sunken); }
 .uso__rotulo { font-size: var(--fs-xs); font-weight: 650; text-transform: uppercase; letter-spacing: .07em; color: var(--fg-muted); }
 .uso__valor { font-size: var(--fs-md); font-weight: 620; }
-.barra { width: 100%; height: 6px; accent-color: var(--accent); }
+.config-barra { width: 100%; height: 6px; accent-color: var(--accent); }
 .vazio { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 16px; }
 
-.grupo { border: 0; padding: 0; margin: 0; min-inline-size: 0; display: flex; flex-direction: column; gap: 8px; }
-.grupo > legend { display: block; width: 100%; padding: 0; margin-bottom: 8px; }
+.config-grupo { border: 0; padding: 0; margin: 0; min-inline-size: 0; display: flex; flex-direction: column; gap: 8px; }
+.config-grupo > legend { display: block; width: 100%; padding: 0; margin-bottom: 8px; }
 .opcoes { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
 .opcao { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-elev); cursor: pointer; transition: border-color .12s ease, background .12s ease; }
 .opcao:hover { border-color: var(--border-strong); background: var(--bg-hover); }
@@ -585,12 +585,14 @@ table { border-collapse: collapse; width: 100%; }
 .opcao input { width: 20px; height: 20px; flex: none; margin: 0; accent-color: var(--accent); }
 .opcao__texto { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .opcao__id { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--fg-muted); overflow-wrap: anywhere; }
-.alcance__clientes { display: none; }
-.grupo--alcance:has(input[value='clientes']:checked) .alcance__clientes { display: grid; }
+.alcance__clientes { display: grid; }
+@supports selector(:has(*)) {
+  .grupo--alcance:not(:has(input[value='clientes']:checked)) .alcance__clientes { display: none; }
+}
 
 .segredo { flex-direction: column; align-items: stretch; gap: 10px; }
 .segredo__valor { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--fg); padding: 10px 12px; background: var(--bg-elev); border: 1px dashed currentColor; border-radius: var(--radius-sm); overflow-wrap: anywhere; user-select: all; }
-.etiquetas { display: flex; flex-wrap: wrap; gap: 6px; }
+.config-etiquetas { display: flex; flex-wrap: wrap; gap: 6px; }
 .table--credenciais td { vertical-align: top; }
 .table--credenciais .duas { display: flex; flex-direction: column; gap: 2px; white-space: nowrap; }
 .table--credenciais tr.inativa td:not(:last-child) .strong { color: var(--fg-muted); }
