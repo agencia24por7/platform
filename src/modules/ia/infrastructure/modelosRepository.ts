@@ -106,19 +106,28 @@ export function createModelosRepository(): ModelosRepository {
       return configuracaoDe(rows[0]);
     },
 
-    async salvarConfiguracao(organizationId, configuracao, userId) {
+    async salvarLigada(organizationId, ligada, userId) {
       await withTenant(organizationId, (tx) => tx`
-        INSERT INTO core.ai_settings (organization_id, enabled, daily_calls, daily_tokens, updated_by)
-        VALUES (${organizationId}, ${configuracao.ligada}, ${configuracao.chamadasPorDia}, ${configuracao.tokensPorDia}, ${userId})
+        INSERT INTO core.ai_settings (organization_id, enabled, updated_by)
+        VALUES (${organizationId}, ${ligada}, ${userId})
         ON CONFLICT (organization_id) DO UPDATE SET
-          enabled = EXCLUDED.enabled, daily_calls = EXCLUDED.daily_calls, daily_tokens = EXCLUDED.daily_tokens,
+          enabled = EXCLUDED.enabled, updated_by = EXCLUDED.updated_by, updated_at = now()`);
+    },
+
+    async salvarTetos(organizationId, tetos, userId) {
+      await withTenant(organizationId, (tx) => tx`
+        INSERT INTO core.ai_settings (organization_id, daily_calls, daily_tokens, updated_by)
+        VALUES (${organizationId}, ${tetos.chamadasPorDia}, ${tetos.tokensPorDia}, ${userId})
+        ON CONFLICT (organization_id) DO UPDATE SET
+          daily_calls = EXCLUDED.daily_calls, daily_tokens = EXCLUDED.daily_tokens,
           updated_by = EXCLUDED.updated_by, updated_at = now()`);
     },
 
     async usoDeHoje(organizationId) {
       const rows = (await withTenant(organizationId, (tx) => tx`
         SELECT count(*)::int AS chamadas,
-               coalesce(sum(CASE WHEN result = 'reservada' THEN reserved_tokens ELSE input_tokens + output_tokens END), 0) AS tokens
+               coalesce(sum(CASE WHEN result = 'ok' THEN input_tokens + output_tokens
+                                   ELSE greatest(reserved_tokens, input_tokens + output_tokens) END), 0) AS tokens
           FROM core.ai_usage
          WHERE organization_id = ${organizationId} AND occurred_at >= date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo'`)) as unknown as UsoRow[];
       return usoDe(rows[0]);
@@ -131,7 +140,8 @@ export function createModelosRepository(): ModelosRepository {
           SELECT enabled, daily_calls, daily_tokens FROM core.ai_settings WHERE organization_id = ${reserva.organizationId}`) as unknown as ConfiguracaoRow[];
         const usos = (await tx`
           SELECT count(*)::int AS chamadas,
-                 coalesce(sum(CASE WHEN result = 'reservada' THEN reserved_tokens ELSE input_tokens + output_tokens END), 0) AS tokens
+                 coalesce(sum(CASE WHEN result = 'ok' THEN input_tokens + output_tokens
+                                   ELSE greatest(reserved_tokens, input_tokens + output_tokens) END), 0) AS tokens
             FROM core.ai_usage
            WHERE organization_id = ${reserva.organizationId} AND occurred_at >= date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo'`) as unknown as UsoRow[];
         const bloqueio = bloqueioDoDia(configuracaoDe(configuracoes[0]), usoDe(usos[0]), reserva.tokensReservados);

@@ -143,6 +143,17 @@ describe('execução de tarefa de IA (ADR 0057 §1, §7 e §8)', () => {
     assert.equal(usos[0]!.resultado, 'unavailable');
   });
 
+  it('exceção ao abrir a chave fecha a reserva e vira falha, sem exceção solta', async () => {
+    const { executor, pedidos, usos, avisos } = montar({
+      resolver: async () => ok({ fornecedor: 'google', modelo: 'modelo-x', abrirChave: async () => { throw new Error('banco fora: host 10.0.0.1'); } }),
+    });
+    const r = await executor.executar({ organizationId: ORG, tarefa: tarefa(), dados: {}, requestId: 'r1' });
+    assert.equal(!r.ok && r.error.code, 'unavailable');
+    assert.equal(pedidos.length, 0);
+    assert.equal(usos[0]!.resultado, 'unavailable');
+    assert.equal(JSON.stringify([r, avisos]).includes('10.0.0.1'), false);
+  });
+
   it('falha ao registrar o desfecho não derruba a resposta e vira aviso', async () => {
     const { executor, avisos } = montar({ livroQuebrado: true });
     const r = await executor.executar({ organizationId: ORG, tarefa: tarefa(), dados: {}, requestId: 'r1' });

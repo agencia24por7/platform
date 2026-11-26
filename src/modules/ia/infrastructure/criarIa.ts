@@ -18,6 +18,9 @@ import { createModelosRepository } from './modelosRepository.ts';
 import { criarPortaAiSdk, modeloDoFornecedor } from './portaAiSdk.ts';
 import { CORPO_MAXIMO_DO_MCP, criarManipuladorMcp } from './servidorMcp.ts';
 
+const TENTATIVAS_DE_CHAVE = 10;
+const JANELA_DE_TENTATIVAS_MS = 600_000;
+
 export type ModuloDeIa = {
   readonly registro: RegistroDeFerramentas;
   readonly credenciais: CredencialService;
@@ -41,6 +44,7 @@ export function criarIa(audit: AuditRecorder, ferramentas: readonly FerramentaRe
     fornecedores,
     tarefas: TAREFAS_INTERNAS,
     avisar,
+    permitirTentativa: (organizationId) => consume(`ia:chave:${organizationId}`, TENTATIVAS_DE_CHAVE, JANELA_DE_TENTATIVAS_MS).allowed,
   });
 
   return {

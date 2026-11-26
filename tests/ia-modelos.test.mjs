@@ -161,6 +161,18 @@ describe('IA: chave do fornecedor, modelo por tarefa, uso e teto (ADR 0058)', { 
       signOut();
     });
 
+    it('salvar tetos não religa a IA, e desligar não apaga os tetos', async () => {
+      signIn(a.dono);
+      const acaoDosTetos = await acaoDoBotao('Salvar tetos');
+      await enviar('Desligar a IA da organização', { ligada: 'nao' });
+      await submitAction(PAGINA, acaoDosTetos, { chamadasPorDia: '150', tokensPorDia: '1500000' });
+      assert.equal(query(`select enabled || '|' || daily_calls || '|' || daily_tokens from core.ai_settings where organization_id = '${a.org}'`), 'false|150|1500000');
+      await enviar('Ligar a IA da organização', { ligada: 'sim' });
+      assert.equal(query(`select enabled || '|' || daily_calls || '|' || daily_tokens from core.ai_settings where organization_id = '${a.org}'`), 'true|150|1500000');
+      await submitAction(PAGINA, acaoDosTetos, { chamadasPorDia: '200', tokensPorDia: '2000000' });
+      signOut();
+    });
+
     it('desligada: o teste é recusado e nenhuma linha de uso nasce; religar volta a funcionar', async () => {
       const cookie = signIn(a.dono);
       await enviar('Desligar a IA da organização', { ligada: 'nao' });
@@ -237,6 +249,22 @@ describe('IA: chave do fornecedor, modelo por tarefa, uso e teto (ADR 0058)', { 
       assert.match(recusado(() => psqlComoApp(`${naOrganizacao(a.org)} update core.ai_usage set reserved_tokens = 1 where organization_id = '${a.org}'`)) ?? '', /permission denied/);
       assert.match(recusado(() => psqlComoApp(`${naOrganizacao(a.org)} update core.ai_usage set occurred_at = now() - interval '2 days' where organization_id = '${a.org}'`)) ?? '', /permission denied/);
       assert.match(recusado(() => psqlComoApp(`${naOrganizacao(a.org)} delete from core.ai_usage where organization_id = '${a.org}'`)) ?? '', /permission denied/);
+    });
+
+    it('linha de uso concluída não muda: o app não zera tokens nem volta a reserva', () => {
+      const concluida = query(`select id from core.ai_usage where organization_id = '${a.org}' and result = 'ok' order by id desc limit 1`);
+      for (const mudanca of [`input_tokens = 0, output_tokens = 0`, `result = 'reservada'`, `result = 'unavailable'`]) {
+        assert.match(recusado(() => psqlComoApp(`${naOrganizacao(a.org)} update core.ai_usage set ${mudanca} where id = ${concluida}`)) ?? '', /concluida nao muda/);
+      }
+      assert.equal(query(`select result || '|' || input_tokens || '|' || output_tokens from core.ai_usage where id = ${concluida}`), 'ok|12|8');
+    });
+
+    it('chamada que falhou conta a reserva inteira no teto de tokens', () => {
+      const tokens = () => Number(comoApp(`${naOrganizacao(b.org)} select coalesce(sum(case when result = 'ok' then input_tokens + output_tokens else greatest(reserved_tokens, input_tokens + output_tokens) end), 0) from core.ai_usage`));
+      const antes = tokens();
+      const id = comoApp(`${naOrganizacao(b.org)} insert into core.ai_usage (organization_id, task, provider, model, reserved_tokens) values ('${b.org}', '${TAREFA}', 'google', 'm', 700) returning id`).split('\n')[0].trim();
+      comoApp(`${naOrganizacao(b.org)} update core.ai_usage set result = 'validation' where id = ${id}`);
+      assert.equal(tokens(), antes + 700);
     });
 
     it('a varredura de versão antiga só é executável pelo worker e só devolve ponteiros', () => {

@@ -30,7 +30,7 @@ RLS igual à do cofre: organização do contexto e sem recorte de clientes. Só 
 `POST /api/v0/tokens/recifrar` passa a cobrir as duas tabelas. O serviço do worker recebe recifradores extras e soma as contagens no mesmo resumo e no mesmo evento de auditoria `tokens.recifragem`. O workflow do n8n e o procedimento do ADR 0042 não mudam: **`avaliadas = 0` e `falhas = 0` continuam sendo a única condição para desativar uma versão antiga da chave do KMS**, agora valendo também para as chaves de IA.
 
 - `core.ia_chaves_com_versao_antiga(versão, limite)` (`SECURITY DEFINER`, só `orla_worker`) devolve ponteiros, nunca o selado.
-- A recifragem abre e sela de novo dentro do tenant e só grava se a versão lida ainda for a mesma.
+- A recifragem abre e sela de novo dentro do tenant e só grava se a versão e o próprio selado lidos ainda forem os mesmos: uma troca de chave feita durante a varredura nunca é sobrescrita pela chave antiga.
 - Recifrador extra que quebra conta como falha, para que `avaliadas = 0` nunca esconda segredo pendente.
 - Sem a chave primária disponível os extras não rodam.
 
@@ -44,6 +44,8 @@ Isso faz o processo do app decifrar segredo, o que antes só o worker fazia. É 
 
 Guardar a chave chama o endpoint de lista de modelos do fornecedor, com destino fixo em `https`, sem seguir redirecionamento, com a chave em cabeçalho. A lista filtrada (só modelos de texto, id dentro do padrão) fica gravada com a chave; a página não decifra nada para se desenhar.
 
+Guardar chave tem limite de 10 tentativas a cada 10 minutos por organização, para a plataforma não servir de verificador de chaves alheias. Chave de fornecedor que saiu da lista habilitada continua removível.
+
 Chave recusada é 400, 401 ou 403 (o Google responde 400). Qualquer outra falha é "fornecedor fora". A mensagem nunca traz a chave nem o corpo da resposta.
 
 ### 5. Modelo por tarefa
@@ -56,9 +58,9 @@ A primeira tarefa registrada é `teste_de_modelo`, usada pelo botão "Testar mod
 
 - `core.ai_usage` tem uma linha por chamada, só com contagens. A linha nasce como **reserva antes da chamada** e recebe o desfecho depois.
 - A reserva roda numa transação sob trava por organização: confere o botão de desligar, conta as chamadas do dia e soma os tokens (os consumidos, mais os reservados das chamadas em andamento, mais a reserva nova). Chamadas simultâneas não passam do teto.
-- A reserva de tokens é `passos × tokens de saída` do orçamento da tarefa. Os tokens de entrada só entram na conta depois da chamada.
-- O dia é o de `America/Sao_Paulo`. O app não escolhe `occurred_at`, não cria linha já concluída, não muda a reserva e não apaga uso.
-- `core.ai_settings`: ligada por padrão, 200 chamadas e 2 milhões de tokens por dia. `admin` ou superior liga e desliga; só `owner` muda os tetos.
+- A reserva de tokens é `passos × tokens de saída` do orçamento da tarefa. Chamada que termina bem conta os tokens reais; chamada que falha conta o maior entre a reserva e o que foi medido, porque o fornecedor cobra tentativas que não devolvem resultado utilizável.
+- O dia é o de `America/Sao_Paulo`. O app não escolhe `occurred_at`, não cria linha já concluída, não muda a reserva e não apaga uso. Um gatilho no banco só deixa a linha mudar uma vez, de reservada para o desfecho: ninguém zera tokens nem reabre reserva.
+- `core.ai_settings`: ligada por padrão, 200 chamadas e 2 milhões de tokens por dia. `admin` ou superior liga e desliga; só `owner` muda os tetos. Cada gravação toca só as próprias colunas, então salvar tetos nunca religa a IA e desligar nunca apaga os tetos.
 - Desligada ou no teto, a tarefa é recusada antes de abrir a chave.
 
 ### 7. Fornecedores ligados
@@ -90,4 +92,5 @@ Fila de execução longa (não há consumidor) e tabela de sugestão de modelo p
 
 - Lista de modelos e código de erro de chave inválida de Anthropic, OpenAI, xAI e Moonshot com chave real. Só o Google foi provado, antes desta entrega e fora do catálogo novo.
 - A recifragem das chaves de IA com o KMS real; foi provada com a chave mestra local.
+- **Antes da primeira desativação de versão do KMS:** `core.ia_chaves_com_versao_antiga` e `integrations.tokens_com_chave_antiga` (ADR 0042) leem tabelas com `FORCE ROW LEVEL SECURITY`. Se o dono das funções em produção não for superusuário nem tiver `BYPASSRLS`, elas devolvem zero linhas sem erro e `avaliadas = 0` deixa de significar "nada pendente". Só foi provado com o superusuário do contêiner local. Conferir `rolsuper` e `rolbypassrls` do dono em produção é pré-condição da desativação.
 - O comportamento da tela com centenas de modelos na lista.

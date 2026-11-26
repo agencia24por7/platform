@@ -55,7 +55,8 @@ export type ModelosRepository = {
   escolhas(organizationId: string): Promise<readonly EscolhaDeModelo[]>;
   escolher(organizationId: string, escolha: EscolhaDeModelo, userId: string | null): Promise<void>;
   configuracao(organizationId: string): Promise<ConfiguracaoDeIa>;
-  salvarConfiguracao(organizationId: string, configuracao: ConfiguracaoDeIa, userId: string | null): Promise<void>;
+  salvarLigada(organizationId: string, ligada: boolean, userId: string | null): Promise<void>;
+  salvarTetos(organizationId: string, tetos: Pick<ConfiguracaoDeIa, 'chamadasPorDia' | 'tokensPorDia'>, userId: string | null): Promise<void>;
   usoDeHoje(organizationId: string): Promise<UsoDoDia>;
   reservar(reserva: Reserva): Promise<{ readonly id: string } | { readonly bloqueio: MotivoDoBloqueio }>;
   concluir(organizationId: string, reservaId: string, desfecho: Desfecho): Promise<void>;
@@ -95,8 +96,10 @@ export type DependenciasDosModelos = {
   readonly fornecedores: readonly Fornecedor[];
   readonly tarefas: readonly TarefaConfiguravel[];
   readonly avisar?: (evento: string, dados: Record<string, unknown>) => void;
+  readonly permitirTentativa?: (organizationId: string) => boolean;
 };
 
+const MUITAS_TENTATIVAS = failure('rate_limited', 'Muitas tentativas de guardar chave. Aguarde alguns minutos.');
 const SEM_PERMISSAO = failure('forbidden', 'Só quem administra a organização configura a IA.');
 const SO_RESPONSAVEL = failure('forbidden', 'Só quem responde pela organização muda os tetos de uso.');
 const FORNECEDOR_INVALIDO = failure('validation', 'Fornecedor de modelo desconhecido ou não habilitado.');
@@ -171,6 +174,7 @@ export function createModelosService(deps: DependenciasDosModelos): ModelosServi
       const motivo = validarChaveDeFornecedor(chaveBruta);
       if (motivo) return err(failure('validation', MENSAGEM_DA_CHAVE[motivo]));
       const chave = chaveBruta.trim();
+      if (deps.permitirTentativa && !deps.permitirTentativa(quem.organizationId)) return err(MUITAS_TENTATIVAS);
 
       const listados = await deps.catalogo.listar(fornecedor, chave);
       if (!listados.ok) return listados;
@@ -231,8 +235,7 @@ export function createModelosService(deps: DependenciasDosModelos): ModelosServi
 
     async ligarOuDesligar(quem, ligada, ator) {
       if (!canAdminister(quem.papelDeQuemAge)) return err(SEM_PERMISSAO);
-      const atual = await deps.repositorio.configuracao(quem.organizationId);
-      await deps.repositorio.salvarConfiguracao(quem.organizationId, { ...atual, ligada }, ator.userId);
+      await deps.repositorio.salvarLigada(quem.organizationId, ligada, ator.userId);
       await auditar(quem, ator, ligada ? 'ia.ligada' : 'ia.desligada', {});
       return ok(undefined);
     },
@@ -241,8 +244,7 @@ export function createModelosService(deps: DependenciasDosModelos): ModelosServi
       if (quem.papelDeQuemAge !== 'owner') return err(SO_RESPONSAVEL);
       const lidos = tetosDeIa.safeParse(tetos);
       if (!lidos.success) return err(failure('validation', 'Tetos fora do intervalo permitido.'));
-      const atual = await deps.repositorio.configuracao(quem.organizationId);
-      await deps.repositorio.salvarConfiguracao(quem.organizationId, { ...atual, ...lidos.data }, ator.userId);
+      await deps.repositorio.salvarTetos(quem.organizationId, lidos.data, ator.userId);
       await auditar(quem, ator, 'ia.tetos_definidos', lidos.data);
       return ok(undefined);
     },

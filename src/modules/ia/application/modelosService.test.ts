@@ -15,13 +15,13 @@ const TAREFA = 'teste_de_modelo';
 
 type Linha = { bytes: Buffer; versaoDaChave: string; rotulo: string; modelos: readonly string[] };
 
-function montar(opcoes: { catalogo?: unknown; cofreFora?: boolean; fornecedores?: readonly string[] } = {}) {
+function montar(opcoes: { catalogo?: unknown; cofreFora?: boolean; fornecedores?: readonly string[]; tentativas?: number } = {}) {
   const chaves = new Map<string, Linha>();
   const escolhas = new Map<string, { tarefa: string; fornecedor: string; modelo: string }>();
   const configuracoes = new Map<string, typeof CONFIGURACAO_PADRAO>();
   const eventos: Record<string, unknown>[] = [];
   const avisos: Record<string, unknown>[] = [];
-  const estado = { versao: 'v1', listagens: 0 };
+  const estado = { versao: 'v1', listagens: 0, tentativas: 0 };
   const id = (org: string, fornecedor: string) => `${org}|${fornecedor}`;
 
   const repositorio = {
@@ -55,7 +55,8 @@ function montar(opcoes: { catalogo?: unknown; cofreFora?: boolean; fornecedores?
     async escolhas(org: string) { return [...escolhas.entries()].filter(([k]) => k.startsWith(`${org}|`)).map(([, v]) => v); },
     async escolher(org: string, escolha: { tarefa: string; fornecedor: string; modelo: string }) { escolhas.set(`${org}|${escolha.tarefa}`, escolha); },
     async configuracao(org: string) { return configuracoes.get(org) ?? CONFIGURACAO_PADRAO; },
-    async salvarConfiguracao(org: string, configuracao: typeof CONFIGURACAO_PADRAO) { configuracoes.set(org, configuracao); },
+    async salvarLigada(org: string, ligada: boolean) { configuracoes.set(org, { ...(configuracoes.get(org) ?? CONFIGURACAO_PADRAO), ligada }); },
+    async salvarTetos(org: string, tetos: { chamadasPorDia: number; tokensPorDia: number }) { configuracoes.set(org, { ...(configuracoes.get(org) ?? CONFIGURACAO_PADRAO), ...tetos }); },
     async usoDeHoje() { return { chamadas: 3, tokens: 1200 }; },
     async reservar() { return { id: '1' }; },
     async concluir() {},
@@ -88,6 +89,7 @@ function montar(opcoes: { catalogo?: unknown; cofreFora?: boolean; fornecedores?
     fornecedores: (opcoes.fornecedores ?? ['google', 'anthropic']) as never,
     tarefas: [{ chave: TAREFA, titulo: 'Teste', classe: 'rapido_e_barato' }],
     avisar: (evento, dados) => { avisos.push({ evento, ...dados }); },
+    permitirTentativa: () => { estado.tentativas += 1; return estado.tentativas <= (opcoes.tentativas ?? 1000); },
   });
   return { servico, chaves, escolhas, eventos, avisos, estado, id };
 }
@@ -117,6 +119,22 @@ describe('chave de fornecedor de IA (ADR 0058)', () => {
       if (!r.ok) assert.equal(r.error.code, 'validation');
     }
     assert.equal(chaves.size, 0);
+  });
+
+  it('limite de tentativas barra antes de consultar o fornecedor', async () => {
+    const { servico, chaves, estado } = montar({ tentativas: 1 });
+    assert.ok((await servico.guardarChave(admin, 'google', CHAVE, ATOR)).ok);
+    const barrada = await servico.guardarChave(admin, 'anthropic', CHAVE, ATOR);
+    assert.equal(!barrada.ok && barrada.error.code, 'rate_limited');
+    assert.deepEqual([chaves.size, estado.listagens], [1, 1]);
+  });
+
+  it('chave de fornecedor que saiu da lista habilitada continua removível', async () => {
+    const { servico, chaves, id } = montar({ fornecedores: ['google'] });
+    chaves.set(id(ORG, 'openai'), { bytes: Buffer.from('x'), versaoDaChave: 'v1', rotulo: 'x', modelos: [] });
+    assert.ok((await servico.removerChave(admin, 'openai', ATOR)).ok);
+    assert.equal(chaves.size, 0);
+    assert.equal((await servico.removerChave(admin, 'inexistente', ATOR)).ok, false);
   });
 
   it('cofre fora do ar não guarda nada e não vaza o motivo', async () => {

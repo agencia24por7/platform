@@ -90,6 +90,7 @@ export type Executor = {
 
 const SEM_USO: Uso = { tokensDeEntrada: 0, tokensDeSaida: 0, passos: 0 };
 const FORNECEDOR_DESLIGADO = failure('forbidden', 'O fornecedor de modelo desta tarefa não está habilitado na plataforma.');
+const CHAVE_NAO_ABRIU = failure('unavailable', 'A chave do fornecedor não pôde ser aberta agora.');
 const ESCOPO_DE_OUTRA_ORGANIZACAO = failure('forbidden', 'O escopo do agente não pertence a esta organização.');
 
 export const SEM_MODELO_CONFIGURADO = failure(
@@ -167,7 +168,10 @@ export function createExecutor(deps: DependenciasDaExecucao): Executor {
       const fechar = (resultado: Desfecho['resultado'], uso: Uso) =>
         concluir(pedido.organizationId, reserva.value, { resultado, uso, duracaoMs: agora() - inicio }, pedido.requestId);
 
-      const chave = await escolhido.value.abrirChave();
+      const chave = await escolhido.value.abrirChave().catch((erro: unknown): Result<string, Failure> => {
+        avisar('ia.execucao.chave_nao_abriu', { requestId: pedido.requestId, erro: erro instanceof Error ? erro.name : 'desconhecido' });
+        return err(CHAVE_NAO_ABRIU);
+      });
       if (!chave.ok) {
         await fechar(chave.error.code, SEM_USO);
         return chave;
