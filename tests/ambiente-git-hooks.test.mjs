@@ -280,6 +280,42 @@ test('migração destrutiva disfarçada por comentário ou espaço é barrada pe
   }
 })
 
+const RLS_COM_DROP_POLICY = 'ALTER TABLE s.t ENABLE ROW LEVEL SECURITY;\nDROP POLICY IF EXISTS p ON s.t;\n'
+const PREFIXOS_COM_ASPAS_AMBIGUAS = {
+  'comentário com apóstrofo': "-- regra d'água\n",
+  'dollar-quote com apóstrofo': 'COMMENT ON TABLE s.t IS $$it\'s$$;\n',
+  'literal com aspa dupla ímpar': 'COMMENT ON TABLE s.t IS \'tela 5"\';\n',
+  'regex com aspa dupla': "COMMENT ON TABLE s.t IS '^[^\"]*$';\n",
+  'E com apóstrofo escapado': "COMMENT ON TABLE s.t IS E'\\'';\n",
+}
+const LEGITIMAS_COM_APOSTROFO_OU_BARRA = [
+  ...Object.values(PREFIXOS_COM_ASPAS_AMBIGUAS).map((prefixo) => prefixo + RLS_COM_DROP_POLICY),
+  '-- só dígitos: \\d\nselect 1;\n',
+  '-- TODO:revisar\nselect 1;\n',
+  '/* caminho C:\\x */\nselect 1;\n',
+  'ALTER TABLE s.t ADD CONSTRAINT k CHECK (c ~ $re$^\\d{11}$re$);\n',
+  'COMMENT ON TABLE s.t IS $${"valor":"x"}$$;\n',
+  'COMMENT ON TABLE s.t IS $$ex:abc$$;\n',
+  "select E'it\\'s ok \\'x\\'';\n",
+  "insert into s.t values ('C:\\', 'D:\\x');\n",
+]
+
+test('migrações reais com linha de aspas ambígua na frente continuam liberadas', () => {
+  for (const arquivo of ['0060_contexto_do_cliente.sql', '0141_regras_limites_e_decisoes_do_cliente.sql']) {
+    const original = readFileSync(join(raiz, 'db', 'migrations', arquivo), 'utf8')
+    for (const [nome, prefixo] of Object.entries(PREFIXOS_COM_ASPAS_AMBIGUAS)) {
+      const pasta = criarRepositorio()
+      try {
+        preparar(pasta, `db/migrations/${arquivo}`, prefixo + original)
+        const resultado = verificar(pasta, ['--staged'])
+        assert.equal(resultado.status, 0, `${arquivo} com ${nome}: ${resultado.stderr}`)
+      } finally {
+        rmSync(pasta, { recursive: true, force: true })
+      }
+    }
+  }
+})
+
 test('migração sem DROP nem TRUNCATE passa, mesmo com comentários e espaços', () => {
   const legitimas = [
     'create table b (id int);\n',
@@ -312,6 +348,7 @@ test('migração sem DROP nem TRUNCATE passa, mesmo com comentários e espaços'
     'CREATE TEMP TABLE x (id int) ON COMMIT DROP;\n',
     "select 'a\\n';\n",
     'select 1 /* aberto /* aninhado */ ainda */ ;\n',
+    ...LEGITIMAS_COM_APOSTROFO_OU_BARRA,
   ]
   for (const sql of legitimas) {
     const pasta = criarRepositorio()
@@ -332,6 +369,16 @@ test('falso positivo aceito: a palavra DROP em comentário ou texto também exig
     assert.match(verificar(pasta, ['--staged']).stderr, /\[migracao-destrutiva-fora-do-portao\]/)
     preparar(pasta, 'db/corte-gate.txt', '# gate\n0002_x.sql\n')
     assert.equal(verificar(pasta, ['--staged']).status, 0)
+  } finally {
+    rmSync(pasta, { recursive: true, force: true })
+  }
+})
+
+test('falso positivo aceito: molde em aspas simples com várias declarações exige o portão', () => {
+  const pasta = criarRepositorio()
+  try {
+    preparar(pasta, 'db/migrations/0002_x.sql', "DO $$ BEGIN EXECUTE format('ALTER TABLE s.%I ENABLE ROW LEVEL SECURITY; DROP POLICY IF EXISTS p ON s.%I', t, t); END $$;\n")
+    assert.match(verificar(pasta, ['--staged']).stderr, /\[migracao-destrutiva-fora-do-portao\]/)
   } finally {
     rmSync(pasta, { recursive: true, force: true })
   }

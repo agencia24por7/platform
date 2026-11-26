@@ -99,6 +99,7 @@ function normalizarSql(sql, { bloco, linha, literais }) {
   let gatilho = false
   let dentroDeLiteral = false
   let dentroDeIdentificador = false
+  let dolarSemFechamento = false
   let marcaDeCorpoDeCodigo = null
   let posicao = 0
   while (posicao < sql.length) {
@@ -133,6 +134,7 @@ function normalizarSql(sql, { bloco, linha, literais }) {
           continue
         }
         const fechamento = sql.indexOf(marca, posicao + marca.length)
+        if (fechamento < 0) dolarSemFechamento = true
         const fim = fechamento < 0 ? sql.length : fechamento + marca.length
         for (let i = posicao; i < fim; i += 1) emitirNeutro(sql[i])
         posicao = fim
@@ -174,7 +176,11 @@ function normalizarSql(sql, { bloco, linha, literais }) {
     emitir(caractere)
     posicao += 1
   }
-  return { texto: saida.join(''), gatilho }
+  return { texto: saida.join(''), gatilho, terminouFora: !dentroDeLiteral && !dentroDeIdentificador && !dolarSemFechamento }
+}
+
+function varianteImitaOServidor({ bloco, linha, literais }) {
+  return bloco === 'aninhado' && linha && (literais === 'dolar-sql' || literais === 'dolar-sql-com-barra')
 }
 
 function fimDoLiteralSimples(texto, abertura, comBarra) {
@@ -277,7 +283,7 @@ function executeMontaSql(texto, comBarra) {
   return false
 }
 
-function declaracaoTemDropDestrutivo(declaracao) {
+function declaracaoTemDropDestrutivo(declaracao, leituraFiel) {
   let temAlter
   let temCascade
   DROP_QUALQUER.lastIndex = 0
@@ -287,6 +293,7 @@ function declaracaoTemDropDestrutivo(declaracao) {
     DROP_DE_OBJETO_SEM_DADO.lastIndex = achado.index
     const objeto = DROP_DE_OBJETO_SEM_DADO.exec(declaracao)
     if (!objeto) return true
+    if (!leituraFiel) continue
     temAlter ??= ALTER.test(declaracao)
     if (temAlter) return true
     if (!OBJETOS_COM_CASCATA_PERIGOSA.has(objeto[1].toUpperCase())) continue
@@ -297,10 +304,11 @@ function declaracaoTemDropDestrutivo(declaracao) {
 }
 
 function varianteTemSqlDestrutivo(sql, variante) {
-  const { texto, gatilho } = normalizarSql(sql, variante)
-  if (gatilho || TRUNCATE.test(texto)) return true
+  const { texto, gatilho, terminouFora } = normalizarSql(sql, variante)
+  const leituraFiel = terminouFora && varianteImitaOServidor(variante)
+  if ((leituraFiel && gatilho) || TRUNCATE.test(texto)) return true
   if (LITERAIS_COM_ARGUMENTO_DE_EXECUTE.has(variante.literais) && executeMontaSql(texto, variante.literais === 'sql-com-barra')) return true
-  return texto.split(';').some((declaracao) => declaracaoTemDropDestrutivo(declaracao))
+  return texto.split(';').some((declaracao) => declaracaoTemDropDestrutivo(declaracao, leituraFiel))
 }
 
 function temSqlDestrutivo(sql) {

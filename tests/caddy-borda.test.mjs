@@ -10,6 +10,7 @@ const PADRAO_SEGREDO = /tria_proxy_secret|orla-borda/i;
 const PADRAO_TOKEN = /"[^"]*"|`[^`]*`|\S+/g;
 const DIRETIVAS_DE_DESTINO = new Set(['reverse_proxy', 'forward_auth']);
 const UPSTREAM_DO_APP = 'app:3000';
+const SUBDIRETIVAS_ACEITAS_NO_BLOCO_DO_APP = new Set(['header_up', 'header_down', 'transport', 'flush_interval', 'uri']);
 const PREFIXOS_DE_MATCHER = ['@', '/', '*'];
 
 const arquivosCaddy = () => readdirSync(PASTA).filter((nome) => nome === 'Caddyfile' || nome.endsWith('.caddy'));
@@ -112,6 +113,9 @@ export function analisarCaddy(texto) {
       continue;
     }
     paraApp += 1;
+    for (const filho of unidade.filhos.filter((no) => !SUBDIRETIVAS_ACEITAS_NO_BLOCO_DO_APP.has(diretiva(no)))) {
+      violacoes.push(`${onde}: subdiretiva ${diretiva(filho)} (linha ${filho.linha}) fora da lista aceita no bloco do app, pode mudar o destino`);
+    }
     const validos = unidade.filhos.filter((no) => cabecalhoValido(no.tokens));
     validos.forEach((no) => permitidos.add(no));
     if (nome === 'reverse_proxy' && validos.length === 0) {
@@ -167,6 +171,8 @@ const REPROVADAS = [
   ['app com valor fixo no lugar do segredo', site(proxy('app:3000', 'header_up X-Orla-Borda "valor-fixo"'))],
   ['app com prefixo ? que deixa o cliente sobrescrever', site(proxy('app:3000', `header_up ?X-Orla-Borda "${SEGREDO}"`))],
   ['app com remoção do cabeçalho depois do envio', site(proxy('app:3000', CABECALHO_CANONICO, 'header_up -X-Orla-Borda'))],
+  ['app com subbloco dynamic que muda o destino', site(proxy('app:3000', CABECALHO_CANONICO, 'dynamic a {', 'name n8n', 'port 5678', '}'))],
+  ['app com lb_policy no bloco', site(proxy('app:3000', CABECALHO_CANONICO, 'lb_policy first'))],
   ['chaves desbalanceadas', 'exemplo.test {\n\treverse_proxy n8n:5678 {\n\t}\n'],
   ['fechamento sem abertura', 'exemplo.test {\n}\n}\n'],
 ];
