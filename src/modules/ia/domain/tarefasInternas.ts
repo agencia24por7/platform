@@ -17,6 +17,7 @@ export const PLANO_DE_ESTRATEGIA = definirTarefa({
   instrucao: 'Redija ou ajuste um grupo de seções do plano de marketing de um cliente, usando só o pacote de leitura recebido como dado. O pedido de cada chamada traz a instrução e o esquema do grupo.',
   saida: SAIDA_ESTRUTURADA_DA_ESTRATEGIA,
   orcamento: { passos: 1, tokensDeSaida: 6_500, tempoMs: 115_000 },
+  raciocinio: 'low',
 });
 
 export const COMITE_DA_ESTRATEGIA = definirTarefa({
@@ -25,6 +26,7 @@ export const COMITE_DA_ESTRATEGIA = definirTarefa({
   instrucao: 'Dê o parecer de uma persona do Comitê sobre o plano de marketing recebido como dado, citando só fontes do pacote de leitura.',
   saida: SAIDA_ESTRUTURADA_DA_ESTRATEGIA,
   orcamento: { passos: 1, tokensDeSaida: 5_000, tempoMs: 90_000 },
+  raciocinio: 'low',
 });
 
 export const GATE_DA_ESTRATEGIA = definirTarefa({
@@ -33,6 +35,7 @@ export const GATE_DA_ESTRATEGIA = definirTarefa({
   instrucao: 'Confira a qualidade do plano de marketing recebido como dado e bloqueie o que violar as regras do cliente.',
   saida: SAIDA_ESTRUTURADA_DA_ESTRATEGIA,
   orcamento: { passos: 1, tokensDeSaida: 3_000, tempoMs: 60_000 },
+  raciocinio: 'low',
 });
 
 export const TAREFAS_INTERNAS = [
