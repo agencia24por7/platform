@@ -160,12 +160,12 @@ export function createBrainRepository(): BrainRepository {
         for (const linha of medicao.linhas) {
           await tx`
             INSERT INTO core.client_brain_performance
-              (client_id, organization_id, platform, periodo, recorte, chave, rotulo, investimento_centavos, impressoes, cliques,
+              (client_id, organization_id, platform, periodo, recorte, item, rotulo, investimento_centavos, impressoes, cliques,
                conversoes, receita_centavos, moeda, medido_em)
             VALUES (${cliente.clienteId}, ${cliente.organizationId}, ${linha.platform}, ${linha.periodo}, ${linha.recorte}, ${linha.chave},
                     ${linha.rotulo}, ${linha.investimentoCentavos}, ${linha.impressoes}, ${linha.cliques}, ${linha.conversoes},
                     ${linha.receitaCentavos}, ${linha.moeda}, now())
-            ON CONFLICT (client_id, platform, periodo, recorte, chave) DO UPDATE SET
+            ON CONFLICT (client_id, platform, periodo, recorte, item) DO UPDATE SET
               rotulo = EXCLUDED.rotulo, investimento_centavos = EXCLUDED.investimento_centavos, impressoes = EXCLUDED.impressoes,
               cliques = EXCLUDED.cliques, conversoes = EXCLUDED.conversoes, receita_centavos = EXCLUDED.receita_centavos,
               moeda = EXCLUDED.moeda, medido_em = now()
@@ -185,7 +185,7 @@ export function createBrainRepository(): BrainRepository {
             DELETE FROM core.client_brain_performance
             WHERE client_id = ${cliente.clienteId} AND organization_id = ${cliente.organizationId}
               AND platform = ${escopo.platform} AND recorte = ${escopo.recorte}
-              AND NOT ((periodo::text || '|' || chave) = ANY(${chaves}::text[]))`;
+              AND NOT ((periodo::text || '|' || item) = ANY(${chaves}::text[]))`;
         }
       });
     },

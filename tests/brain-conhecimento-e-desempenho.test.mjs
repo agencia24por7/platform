@@ -136,7 +136,7 @@ const montar = (rotulo) => {
 
 const linha = ({ org, cli, platform = 'meta', periodo = '2026-10-01', recorte = 'total', chave = '', rotulo = 'Total', investimento = 123456, receita = 'NULL', moeda = 'BRL' }) =>
   `INSERT INTO core.client_brain_performance
-     (client_id, organization_id, platform, periodo, recorte, chave, rotulo, investimento_centavos, impressoes, cliques, conversoes, receita_centavos, moeda)
+     (client_id, organization_id, platform, periodo, recorte, item, rotulo, investimento_centavos, impressoes, cliques, conversoes, receita_centavos, moeda)
    VALUES ('${cli}', '${org}', '${platform}', '${periodo}', '${recorte}', '${chave}', '${rotulo}', ${investimento}, 1000, 10, 2.5, ${receita}, '${moeda}')`;
 
 describe('core.client_brain_performance: desempenho por cliente (ADR 0062 §2)', { skip: disponibilidade && !process.env.CI ? disponibilidade : false, concurrency: false }, () => {
@@ -198,8 +198,8 @@ describe('core.client_brain_performance: desempenho por cliente (ADR 0062 §2)',
     const recusa = (sql, padrao) => assert.throws(() => emTransacaoDesfeita(sql), padrao);
     const base = { org: ids.orgA, cli: ids.clienteA1 };
     recusa(linha({ ...base, periodo: '2026-10-15', recorte: 'regiao', chave: 'x' }), /client_brain_performance_mes/);
-    recusa(linha({ ...base, recorte: 'regiao', chave: '', periodo: '2026-06-01' }), /client_brain_performance_chave/);
-    recusa(linha({ ...base, recorte: 'total', chave: 'x', periodo: '2026-06-01' }), /client_brain_performance_chave/);
+    recusa(linha({ ...base, recorte: 'regiao', chave: '', periodo: '2026-06-01' }), /client_brain_performance_item/);
+    recusa(linha({ ...base, recorte: 'total', chave: 'x', periodo: '2026-06-01' }), /client_brain_performance_item/);
     recusa(linha({ ...base, investimento: -1, periodo: '2026-06-01' }), /check/);
     recusa(linha({ ...base, platform: 'ga4', periodo: '2026-06-01' }), /check/);
     recusa(linha({ ...base, moeda: 'br', periodo: '2026-06-01' }), /check/);

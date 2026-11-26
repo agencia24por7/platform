@@ -253,9 +253,9 @@ export async function consultarInventario(tx: ExecutorSql, cliente: { readonly o
     SELECT tabela, desde::text AS desde, ate::text AS ate, linhas, dias_com_dado, medido_em
     FROM core.client_brain_coverage WHERE client_id = ${id} ORDER BY tabela`;
   const desempenho = await tx`
-    SELECT platform, periodo::text AS periodo, recorte, chave, rotulo, investimento_centavos, impressoes, cliques, conversoes,
+    SELECT platform, periodo::text AS periodo, recorte, item AS chave, rotulo, investimento_centavos, impressoes, cliques, conversoes,
            receita_centavos, moeda, medido_em
-    FROM core.client_brain_performance WHERE client_id = ${id} ORDER BY platform, periodo, recorte, chave`;
+    FROM core.client_brain_performance WHERE client_id = ${id} ORDER BY platform, periodo, recorte, item`;
   return { clientes, conexoes, fontes, coletas, cobertura, desempenho } as unknown as LinhasDoInventario;
 }
 

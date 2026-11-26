@@ -41,8 +41,15 @@ describe('rota de worker POST /api/v0/strategy/execucoes/avancar (ADR 0062 §9)'
   });
 
   after(() => {
-    dono(`DELETE FROM core.clients WHERE id = '${ids.cli}'`);
-    dono(`DELETE FROM core.organizations WHERE id = '${ids.org}'`);
+    const tentar = (sql) => {
+      try {
+        dono(sql);
+      } catch {
+        return;
+      }
+    };
+    tentar(`DELETE FROM core.clients WHERE id = '${ids.cli}'`);
+    tentar(`DELETE FROM core.organizations WHERE id = '${ids.org}'`);
   });
 
   it('sem bearer, com bearer errado ou sem Authorization responde 401 e não toca na fila', async () => {

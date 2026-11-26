@@ -67,7 +67,7 @@ const gravar = (organizationId, clienteId, linhas, medidos) =>
 
 const estado = async (cli) => {
   const rows = await admin`
-    SELECT platform || '|' || periodo::text || '|' || recorte || '|' || chave AS k, investimento_centavos::text AS inv, medido_em::text AS em
+    SELECT platform || '|' || periodo::text || '|' || recorte || '|' || item AS k, investimento_centavos::text AS inv, medido_em::text AS em
     FROM core.client_brain_performance WHERE client_id = ${cli} ORDER BY 1`;
   return Object.fromEntries(rows.map((r) => [r.k, { inv: r.inv, em: r.em }]));
 };
