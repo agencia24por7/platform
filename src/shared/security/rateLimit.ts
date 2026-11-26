@@ -1,6 +1,6 @@
 import { logger } from '../logging/logger.ts';
 
-export const DOMINIOS_DE_LIMITE = ['worker', 'cofre', 'alertas', 'ip', 'webhook', 'publico', 'relato', 'validadas', 'recusadas'] as const;
+export const DOMINIOS_DE_LIMITE = ['worker', 'cofre', 'alertas', 'ip', 'webhook', 'publico', 'relato', 'validadas', 'recusadas', 'ia'] as const;
 
 export type DominioDeLimite = (typeof DOMINIOS_DE_LIMITE)[number];
 
@@ -14,6 +14,7 @@ export const TETO_POR_DOMINIO: Readonly<Record<DominioDeLimite, number>> = {
   relato: 100,
   validadas: 50_000,
   recusadas: 50_000,
+  ia: 10_000,
 };
 
 const INTERVALO_DO_AVISO_DE_LOTACAO_MS = 60_000;

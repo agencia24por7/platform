@@ -63,7 +63,7 @@ const rodar = (script, args, extra = {}) => {
   const r = spawnSync(SHELL_DE_TESTE, [script, ...args], {
     cwd: RAIZ,
     encoding: 'utf8',
-    env: { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}`, ARQUIVO_DE_ALERTA: join(raiz, 'alerta', 'metadados-bloqueio.log'), ...extra },
+    env: { ...process.env, JOURNAL_STREAM: '', PATH: `${bin}${delimiter}${process.env.PATH}`, ARQUIVO_DE_ALERTA: join(raiz, 'alerta', 'metadados-bloqueio.log'), ...extra },
   });
   return { status: r.status, saida: `${r.stdout}${r.stderr}` };
 };

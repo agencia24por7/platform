@@ -44,7 +44,7 @@ export function criarIa(audit: AuditRecorder, ferramentas: readonly FerramentaRe
     fornecedores,
     tarefas: TAREFAS_INTERNAS,
     avisar,
-    permitirTentativa: (organizationId) => consume(`ia:chave:${organizationId}`, TENTATIVAS_DE_CHAVE, JANELA_DE_TENTATIVAS_MS).allowed,
+    permitirTentativa: (organizationId) => consume('ia', `ia:chave:${organizationId}`, TENTATIVAS_DE_CHAVE, JANELA_DE_TENTATIVAS_MS).allowed,
   });
 
   return {

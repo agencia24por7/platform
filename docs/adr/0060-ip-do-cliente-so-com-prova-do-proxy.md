@@ -40,3 +40,7 @@ O ADR 0061 dizia que lotar o domínio `ip` exigia mais de 20.000 IPs distintos. 
 - **Confiar por faixa de IP de origem (`private_ranges`):** o n8n está na mesma faixa privada que o Caddy.
 - **Colocar o n8n atrás do Caddy:** tira o tráfego interno da rota direta, mas depende de uma regra de rede para manter e não impede outro container de chamar o app.
 - **Assinar o IP com HMAC no Caddy:** o Caddy padrão não computa HMAC sem módulo de terceiro; o segredo estático cobre o mesmo ator.
+
+## Atualização de 2026-11-26 (camada de IA e MCP, issue 24K-131)
+
+A rota MCP (`/api/mcp`, `docs/adr/0057-camada-de-ia-e-mcp.md`) também usa `enderecoDoCliente` e mapeia o IP `null` para a chave fixa `desconhecida` no domínio `ip`. Com ela, cada IP cria até 9 chaves nesse domínio, e a conta da seção acima passa a ser de cerca de 2.200 IPs (20.000 ÷ 9).
