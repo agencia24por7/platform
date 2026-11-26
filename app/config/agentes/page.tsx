@@ -1,24 +1,22 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Feedback } from '@/../app/_components/Feedback';
+import { EstadoComIcone } from '@/../app/_components/EstadoComIcone';
+import { MensagemDaUrl } from '@/../app/_components/MensagemDaUrl';
 import { Shell } from '@/../app/_components/Shell';
+import { ConfirmarAcao } from '@/../app/clientes/[id]/_componentes/ConfirmarAcao';
 import { FormularioDeCredencial } from '@/../app/config/agentes/FormularioDeCredencial';
 import { revogarCredencial } from '@/../app/config/agentes/acoes';
 import { modules } from '@/composition';
-import { VALIDADE_MAXIMA_EM_DIAS, VALIDADE_PADRAO_EM_DIAS, situacaoDaCredencial, type SituacaoDaCredencial } from '@/modules/ia/domain/credencial';
+import { VALIDADE_MAXIMA_EM_DIAS, VALIDADE_PADRAO_EM_DIAS, situacaoDaCredencial } from '@/modules/ia/domain/credencial';
+import { apresentarSituacaoDaCredencial, dataCurtaDaCredencial, rotuloDaFerramenta } from '@/modules/ia/interface/apresentacao';
 import { canAdminister } from '@/modules/identity/domain/user';
 import { vocabularioDe } from '@/modules/organizations/domain/vocabulario';
 import { requireContext } from '@/shared/http/currentOrganization';
 
 export const dynamic = 'force-dynamic';
 
-const ROTULO_DA_SITUACAO: Record<SituacaoDaCredencial, string> = {
-  ativa: 'Ativa',
-  vencida: 'Vencida',
-  revogada: 'Revogada',
-};
-
-const dia = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeZone: 'America/Sao_Paulo' });
+export const metadata: Metadata = { title: 'Credenciais de agente' };
 
 export default async function CredenciaisDeAgentePage({
   searchParams,
@@ -38,79 +36,110 @@ export default async function CredenciaisDeAgentePage({
 
   return (
     <Shell title="Credenciais de agente" organization={organization} active="/config">
-      <div className="page__head">
-        <div>
-          <div className="page__title">Credenciais de agente</div>
-          <div className="page__sub">
-            Cada credencial deixa um agente ler, por MCP, só o que você marcar desta organização. <Link href="/config">Voltar às configurações</Link>
+      <div className="tela-config">
+        <div className="page__head">
+          <div>
+            <h1 className="page__title">Credenciais de agente</h1>
+            <p className="page__sub">
+              Cada credencial deixa um agente ler, por MCP, só o que você marcar desta organização. <Link href="/config">Voltar às configurações</Link>
+            </p>
           </div>
         </div>
-      </div>
 
-      <Feedback message={params.erro} tone="error" />
-      <Feedback message={params.feito} tone="ok" />
+        <MensagemDaUrl erro={params.erro} feito={params.feito} />
 
-      <div className="card">
-        <div className="card__head">Nova credencial</div>
-        <FormularioDeCredencial
-          ferramentas={modules().ia.registro.nomes()}
-          clientes={clientes.map((cliente) => ({ id: cliente.id, nome: cliente.name }))}
-          rotuloDosClientes={`${vocabulario.cliente}s`}
-          validadePadrao={VALIDADE_PADRAO_EM_DIAS}
-          validadeMaxima={VALIDADE_MAXIMA_EM_DIAS}
-        />
-      </div>
-
-      <div className="card">
-        <div className="card__head">Credenciais</div>
-        {credenciais.length === 0 ? (
-          <p className="muted">Nenhuma credencial criada.</p>
-        ) : (
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th scope="col">Nome</th>
-                  <th scope="col">Credencial</th>
-                  <th scope="col">Alcance</th>
-                  <th scope="col">Ferramentas</th>
-                  <th scope="col">Vence em</th>
-                  <th scope="col">Último uso</th>
-                  <th scope="col">Situação</th>
-                  <th scope="col">Ação</th>
-                </tr>
-              </thead>
-              <tbody>
-                {credenciais.map((credencial) => {
-                  const situacao = situacaoDaCredencial(credencial, agora);
-                  return (
-                    <tr key={credencial.id}>
-                      <td className="strong">{credencial.nome}</td>
-                      <td className="mono muted">{credencial.rotulo}</td>
-                      <td className="muted">
-                        {credencial.clienteIds ? `${credencial.clienteIds.length} ${vocabulario.cliente}(s)` : 'Organização inteira'}
-                      </td>
-                      <td className="mono muted">{credencial.ferramentas.join(', ')}</td>
-                      <td className="muted">{dia.format(credencial.venceEm)}</td>
-                      <td className="muted">{credencial.ultimoUsoEm ? dia.format(credencial.ultimoUsoEm) : 'Nunca'}</td>
-                      <td>{ROTULO_DA_SITUACAO[situacao]}</td>
-                      <td>
-                        {situacao === 'ativa' ? (
-                          <form action={revogarCredencial}>
-                            <input type="hidden" name="credencialId" value={credencial.id} />
-                            <button className="btn btn--compacto" type="submit">
-                              Revogar
-                            </button>
-                          </form>
-                        ) : null}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        <section className="card" aria-labelledby="t-nova">
+          <h2 className="card__head card__title" id="t-nova">
+            Nova credencial
+          </h2>
+          <div className="card__body">
+            <p className="card__ajuda">Dê um nome, marque o que o agente pode usar e até quando. O segredo aparece uma única vez, logo após criar.</p>
           </div>
-        )}
+          <FormularioDeCredencial
+            ferramentas={modules().ia.registro.nomes()}
+            clientes={clientes.map((cliente) => ({ id: cliente.id, nome: cliente.name }))}
+            rotuloDosClientes={`${vocabulario.cliente}s`}
+            validadePadrao={VALIDADE_PADRAO_EM_DIAS}
+            validadeMaxima={VALIDADE_MAXIMA_EM_DIAS}
+          />
+        </section>
+
+        <section className="card" aria-labelledby="t-lista">
+          <h2 className="card__head card__title" id="t-lista">
+            Credenciais criadas
+          </h2>
+          {credenciais.length === 0 ? (
+            <div className="vazio">
+              <p className="card__ajuda">Nenhuma credencial criada ainda. Use o formulário acima para criar a primeira e entregá-la ao agente.</p>
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table className="table table--credenciais">
+                <thead>
+                  <tr>
+                    <th scope="col">Credencial</th>
+                    <th scope="col">Alcance</th>
+                    <th scope="col">Ferramentas</th>
+                    <th scope="col">Datas</th>
+                    <th scope="col">Situação</th>
+                    <th scope="col">Ação</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {credenciais.map((credencial) => {
+                    const situacao = situacaoDaCredencial(credencial, agora);
+                    return (
+                      <tr key={credencial.id} className={situacao === 'ativa' ? undefined : 'inativa'}>
+                        <td>
+                          <div className="duas">
+                            <span className="strong">{credencial.nome}</span>
+                            <span className="mono">{credencial.rotulo}</span>
+                          </div>
+                        </td>
+                        <td className="muted">
+                          {credencial.clienteIds ? `${credencial.clienteIds.length} ${vocabulario.cliente}(s)` : 'Organização inteira'}
+                        </td>
+                        <td>
+                          <div className="etiquetas">
+                            {credencial.ferramentas.map((ferramenta) => (
+                              <span key={ferramenta} className="pill" title={ferramenta}>
+                                {rotuloDaFerramenta(ferramenta)}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="muted">
+                          <div className="duas">
+                            <span>Vence {dataCurtaDaCredencial(credencial.venceEm)}</span>
+                            <span>Uso {credencial.ultimoUsoEm ? dataCurtaDaCredencial(credencial.ultimoUsoEm) : 'nunca'}</span>
+                          </div>
+                        </td>
+                        <td>
+                          <EstadoComIcone estado={apresentarSituacaoDaCredencial(situacao)} />
+                        </td>
+                        <td>
+                          {situacao === 'ativa' ? (
+                            <ConfirmarAcao
+                              gatilho="Revogar"
+                              rotuloDoGatilho={`Revogar a credencial ${credencial.nome}`}
+                              titulo={`Revogar a credencial “${credencial.nome}”?`}
+                              descricao="O agente que usa esta credencial perde o acesso na hora. Não dá para desfazer: seria preciso criar outra."
+                              confirmar="Revogar credencial"
+                              pendente="Revogando…"
+                              action={revogarCredencial}
+                            >
+                              <input type="hidden" name="credencialId" value={credencial.id} />
+                            </ConfirmarAcao>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       </div>
     </Shell>
   );
