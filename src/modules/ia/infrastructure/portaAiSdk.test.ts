@@ -77,6 +77,71 @@ describe('adaptador do AI SDK (ADR 0063 §3)', () => {
     }
   });
 
+  const esquemaRecusado = (mensagem = 'The specified schema produces a constraint that has too many states for serving.') =>
+    new APICallError({ message: mensagem, url: 'https://fornecedor.test/v1', requestBodyValues: {}, statusCode: 400, responseBody: mensagem, isRetryable: false });
+
+  it('repassa o nível de raciocínio da tarefa e não o envia quando a tarefa não o define', async () => {
+    const com = porta(async () => texto('{"ok":true,"nota":1}'));
+    await com.porta.gerar(pedido({ raciocinio: 'low' }));
+    assert.equal(com.chamadas[0]!.reasoning, 'low');
+    const sem = porta(async () => texto('{"ok":true,"nota":1}'));
+    await sem.porta.gerar(pedido());
+    assert.notEqual(sem.chamadas[0]!.reasoning, 'low');
+  });
+
+  it('esquema recusado pelo fornecedor: refaz em JSON livre com o esquema no sistema e valida a saída', async () => {
+    let chamada = 0;
+    const { porta: p, chamadas } = porta(async () => {
+      chamada += 1;
+      if (chamada === 1) throw esquemaRecusado();
+      return texto('```json\n{"ok":true,"nota":4}\n```');
+    });
+    const r = await p.gerar(pedido());
+    assert.equal(chamadas.length, 2);
+    assert.deepEqual(r.ok && r.value.saida, { ok: true, nota: 4 });
+    assert.match(JSON.stringify(chamadas[1]!.prompt), /JSON Schema/);
+  });
+
+  it('em JSON livre, saída que não valida no esquema vira falha de validação sem o texto do modelo', async () => {
+    let chamada = 0;
+    const { porta: p } = porta(async () => {
+      chamada += 1;
+      if (chamada === 1) throw esquemaRecusado();
+      return texto('{"ok":"talvez","conteudo":"texto livre do modelo"}');
+    });
+    const r = await p.gerar(pedido());
+    assert.equal(r.ok, false);
+    if (!r.ok) {
+      assert.equal(r.error.code, 'validation');
+      assert.equal(JSON.stringify(r.error).includes('texto livre'), false);
+    }
+  });
+
+  it('em JSON livre, texto que não é JSON vira falha de validação', async () => {
+    let chamada = 0;
+    const { porta: p } = porta(async () => {
+      chamada += 1;
+      if (chamada === 1) throw esquemaRecusado();
+      return texto('não sei responder');
+    });
+    const r = await p.gerar(pedido());
+    assert.equal(!r.ok && r.error.code, 'validation');
+  });
+
+  it('400 que não é de esquema não é refeito', async () => {
+    const { porta: p, chamadas } = porta(async () => { throw esquemaRecusado('requisição inválida'); });
+    const r = await p.gerar(pedido());
+    assert.equal(chamadas.length, 1);
+    assert.equal(!r.ok && r.error.code, 'unavailable');
+  });
+
+  it('o recuo em JSON livre é uma só vez: segunda recusa do fornecedor vira falha, sem laço', async () => {
+    const { porta: p, chamadas } = porta(async () => { throw esquemaRecusado(); });
+    const r = await p.gerar(pedido());
+    assert.equal(chamadas.length, 2);
+    assert.equal(r.ok, false);
+  });
+
   it('exceção qualquer vira indisponível, sem a mensagem original', async () => {
     const { porta: p } = porta(async () => { throw new Error(`falha interna com ${CHAVE}`); });
     const r = await p.gerar(pedido());

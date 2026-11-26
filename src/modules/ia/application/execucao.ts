@@ -2,7 +2,7 @@ import type { z } from 'zod';
 import { failure, type Failure } from '@/shared/result/failure';
 import { err, type Result } from '@/shared/result/result';
 import { executarFerramenta, type EscopoDoAgente, type RegistroDeFerramentas } from '../domain/ferramenta.ts';
-import { dadosDelimitados, instrucaoDoSistema, type Fornecedor, type Orcamento, type Tarefa } from '../domain/tarefa.ts';
+import { dadosDelimitados, instrucaoDoSistema, type Fornecedor, type Orcamento, type Raciocinio, type Tarefa } from '../domain/tarefa.ts';
 
 export type ModeloResolvido = {
   readonly fornecedor: Fornecedor;
@@ -38,6 +38,7 @@ export type PedidoAoModelo<S> = {
   readonly saida: z.ZodType<S>;
   readonly orcamento: Orcamento;
   readonly ferramentas: readonly FerramentaDoPedido[];
+  readonly raciocinio?: Raciocinio;
 };
 
 export type RespostaDoModelo<S> = { readonly saida: S; readonly uso: Uso };
@@ -183,6 +184,7 @@ export function createExecutor(deps: DependenciasDaExecucao): Executor {
         dados: dadosDelimitados(pedido.dados),
         saida: pedido.tarefa.saida,
         orcamento: pedido.tarefa.orcamento,
+        raciocinio: pedido.tarefa.raciocinio,
         ferramentas: ferramentasDoPedido(pedido.tarefa as Tarefa<unknown>, pedido.agente, deps.registro, avisar),
       });
       await fechar(resposta.ok ? 'ok' : resposta.error.code, resposta.ok ? resposta.value.uso : SEM_USO);

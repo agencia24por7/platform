@@ -22,6 +22,8 @@ export type Orcamento = {
 
 export const TETO_DO_ORCAMENTO: Orcamento = { passos: 8, tokensDeSaida: 8_000, tempoMs: 120_000 };
 
+export type Raciocinio = 'minimal' | 'low' | 'medium' | 'high';
+
 export type Tarefa<S> = {
   readonly chave: string;
   readonly classe: ClasseDeCapacidade;
@@ -29,6 +31,7 @@ export type Tarefa<S> = {
   readonly saida: z.ZodType<S>;
   readonly orcamento: Orcamento;
   readonly ferramentas: readonly string[];
+  readonly raciocinio?: Raciocinio;
 };
 
 const PADRAO_DA_CHAVE = /^[a-z][a-z0-9_]{2,47}$/;
