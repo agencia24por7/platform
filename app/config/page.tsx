@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Feedback } from '@/../app/_components/Feedback';
 import { Shell } from '@/../app/_components/Shell';
@@ -406,6 +407,18 @@ export default async function ConfiguracoesPage({
         )}
         </>
       )}
+
+      {podeAdministrar ? (
+        <div className="card">
+          <div className="card__head">Agentes</div>
+          <p className="muted">
+            Credenciais para agentes lerem dados desta organização por MCP, com alcance e validade definidos por você.
+          </p>
+          <Link className="btn" href="/config/agentes">
+            Gerenciar credenciais de agente
+          </Link>
+        </div>
+      ) : null}
 
       {podeVerEquipe && equipe ? (
         <>

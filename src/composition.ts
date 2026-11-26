@@ -39,6 +39,8 @@ import { createDimensoesService } from '@/modules/coleta/application/dimensoesSe
 import { createDimensoesRepository } from '@/modules/coleta/infrastructure/dimensoesRepository';
 import { createDimensoesBigQuery } from '@/modules/coleta/infrastructure/dimensoesBigQuery';
 import { criarBrain } from '@/modules/brain/infrastructure/criarBrain';
+import { ferramentasDoBrain } from '@/modules/brain/interface/ferramentas';
+import { criarIa } from '@/modules/ia/infrastructure/criarIa';
 import { criarModuloDeTokens } from '@/modules/tokens/infrastructure/criarModuloDeTokens';
 import { createPoliticaDeRevogacao } from '@/modules/privacidade/application/revogacaoNoProvedor';
 import { createExpurgoDeFontesService } from '@/modules/privacidade/application/expurgoDeFontes';
@@ -80,6 +82,7 @@ function build() {
   });
 
   const identity = createIdentityService(createUserRepository(), audit);
+  const brain = criarBrain(audit, contexto, regras);
 
   return {
     audit,
@@ -126,7 +129,8 @@ function build() {
     alertas: createAlertaService(createAlertaRepository(), audit, createNotificadorPorWebhook(), createLimiteDeAlertasNovos(), (userId) =>
       identity.operadorDaPlataforma(userId, env().PLATAFORMA_OPERADORES)),
     dimensoes,
-    brain: criarBrain(audit, contexto, regras),
+    brain,
+    ia: criarIa(audit, ferramentasDoBrain(brain)),
     tokens,
     expurgoDeFontes,
     pedidosDeExclusao: createPedidosDeExclusaoService(createPedidosDeExclusaoRepository(), {

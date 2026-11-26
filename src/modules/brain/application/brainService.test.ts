@@ -30,6 +30,10 @@ function repositorio(opcoes: { excluidos?: string[]; estado?: Estado | null } = 
       conta('resolverCliente');
       return id === fx.CLIENTE ? { organizationId: fx.ORG, clienteId: fx.CLIENTE } : null;
     },
+    async clienteVivo(c: { organizationId: string; clienteId: string }) {
+      conta('clienteVivo');
+      return c.organizationId === fx.ORG && c.clienteId === fx.CLIENTE && !(opcoes.excluidos ?? []).includes(c.clienteId);
+    },
     async carregarInventario() { conta('carregarInventario'); return fx.inventario(); },
     async estado() { conta('estado'); return estado; },
     async registrarPublicacao(_c: unknown, p: { hash: string }) {
@@ -181,6 +185,65 @@ describe('API de leitura do brain (serviço)', () => {
     });
     const r = await s.montar(fx.CLIENTE);
     assert.ok(r.ok && r.value.provedores.find((p) => p.id === 'contexto')?.status === 'indisponivel');
+  });
+});
+
+describe('leitura do catálogo por agente (ADR 0057)', () => {
+  const OUTRA_ORG = '44444444-4444-4444-8444-444444444444';
+  const agente = (extra: Partial<{ organizationId: string; clienteIds: readonly string[] | null }> = {}) => ({
+    credencialId: 'cred-1',
+    organizationId: fx.ORG,
+    clienteIds: null,
+    requestId: 'r-agente',
+    sourceIp: null,
+    ...extra,
+  });
+  const consulta = { limite: 5, cursor: null };
+
+  it('devolve a mesma página do worker e audita o agente como ator', async () => {
+    const { s, eventos } = servico();
+    const doWorker = await s.catalogo(fx.CLIENTE, consulta, WORKER);
+    const doAgente = await s.catalogoDoAgente(agente(), fx.CLIENTE, consulta);
+    assert.ok(doWorker.ok && doAgente.ok);
+    if (!doWorker.ok || !doAgente.ok) return;
+    assert.deepEqual(doAgente.value.corpo, doWorker.value.corpo);
+    const evento = eventos.at(-1) as unknown as { action: string; actorType: string; actorId: string; requestId: string };
+    assert.deepEqual(
+      { action: evento.action, actorType: evento.actorType, actorId: evento.actorId, requestId: evento.requestId },
+      { action: 'brain.consulta', actorType: 'agent', actorId: 'cred-1', requestId: 'r-agente' },
+    );
+  });
+
+  it('nunca resolve o cliente pela travessia do worker', async () => {
+    const repo = repositorio();
+    const { s } = servico({ repo });
+    await s.catalogoDoAgente(agente(), fx.CLIENTE, consulta);
+    assert.equal(repo.chamadas.resolverCliente, undefined);
+    assert.equal(repo.chamadas.clienteVivo, 1);
+  });
+
+  it('cliente fora da lista da credencial responde não encontrado sem tocar o banco', async () => {
+    const repo = repositorio();
+    const { s, eventos } = servico({ repo });
+    const r = await s.catalogoDoAgente(agente({ clienteIds: [fx.OUTRO_CLIENTE] }), fx.CLIENTE, consulta);
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.error.code, 'not_found');
+    assert.deepEqual(repo.chamadas, {});
+    assert.equal(eventos.length, 0);
+  });
+
+  it('credencial de outra organização, cliente excluído e id inválido respondem não encontrado', async () => {
+    const casos = [
+      { s: servico().s, quem: agente({ organizationId: OUTRA_ORG }), cliente: fx.CLIENTE },
+      { s: servico({ repo: repositorio({ excluidos: [fx.CLIENTE] }) }).s, quem: agente(), cliente: fx.CLIENTE },
+      { s: servico().s, quem: agente(), cliente: 'nao-e-uuid' },
+      { s: servico().s, quem: agente({ organizationId: 'nao-e-uuid' }), cliente: fx.CLIENTE },
+    ];
+    for (const caso of casos) {
+      const r = await caso.s.catalogoDoAgente(caso.quem, caso.cliente, consulta);
+      assert.equal(r.ok, false);
+      if (!r.ok) assert.equal(r.error.code, 'not_found');
+    }
   });
 });
 
