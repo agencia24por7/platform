@@ -31,6 +31,7 @@ const montar = (opcoes: { provedores?: readonly Provedor[]; inventario?: Inventa
     inventario: opcoes.inventario ?? fx.inventario(),
     contexto: opcoes.comContexto === false ? null : fx.contexto(),
     regras: opcoes.comRegras === false ? null : fx.regras(),
+    conhecimento: fx.conhecimento(),
   });
 
 const urn = (tipo: string, id: string) => criarUrn(fx.ORG, fx.CLIENTE, tipo, id);

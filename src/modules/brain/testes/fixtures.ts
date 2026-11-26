@@ -1,4 +1,6 @@
 import type { ContextoParaCatalogo } from '../domain/contexto.ts';
+import type { EntradaDeConhecimento } from '../domain/conhecimento.ts';
+import type { DesempenhoMedido } from '../domain/desempenho.ts';
 import type { InventarioDoCliente } from '../domain/inventario.ts';
 import type { DecisaoParaCatalogo, DefinicaoParaCatalogo, RegrasParaCatalogo } from '../domain/regras.ts';
 
@@ -100,7 +102,71 @@ export function inventario(): InventarioDoCliente {
       { tabela: 'fato_ads_diario', desde: '2026-01-01', ate: '2026-11-19', linhas: 5000, diasComDado: 320, medidoEm: new Date('2026-11-20T13:00:00Z') },
       { tabela: 'fato_ga4_diario', desde: '2026-01-01', ate: '2026-10-01', linhas: 900, diasComDado: 270, medidoEm: new Date('2026-11-10T13:00:00Z') },
     ],
+    desempenho: desempenho(),
   };
+}
+
+export const MEDIDO_EM_DO_DESEMPENHO = new Date('2026-11-20T13:00:00Z');
+
+const linhaDeDesempenho = (extra: Partial<DesempenhoMedido> & Pick<DesempenhoMedido, 'platform' | 'periodo' | 'recorte'>): DesempenhoMedido => ({
+  chave: '',
+  rotulo: 'Total',
+  investimentoCentavos: 1_000_000,
+  impressoes: 100_000,
+  cliques: 2_000,
+  conversoes: 50,
+  receitaCentavos: 4_000_000,
+  moeda: 'BRL',
+  medidoEm: MEDIDO_EM_DO_DESEMPENHO,
+  ...extra,
+});
+
+export function desempenho(): DesempenhoMedido[] {
+  const meses = ['2026-05-01', '2026-06-01', '2026-07-01', '2026-08-01', '2026-09-01', '2026-10-01'];
+  const totais = meses.flatMap((periodo, i) => [
+    linhaDeDesempenho({ platform: 'meta', periodo, recorte: 'total', investimentoCentavos: 1_000_000 + i * 10_000 }),
+    linhaDeDesempenho({ platform: 'google', periodo, recorte: 'total', investimentoCentavos: 500_000, receitaCentavos: null, conversoes: 0 }),
+  ]);
+  const janela = '2026-08-01';
+  return [
+    ...totais,
+    linhaDeDesempenho({ platform: 'meta', periodo: janela, recorte: 'campanha', chave: '1001', rotulo: 'Campanha Black Friday', investimentoCentavos: 2_000_000 }),
+    linhaDeDesempenho({ platform: 'meta', periodo: janela, recorte: 'campanha', chave: '1002', rotulo: `Remarketing ${EMAIL_SENSIVEL}`, investimentoCentavos: 900_000, conversoes: 0 }),
+    linhaDeDesempenho({ platform: 'google', periodo: janela, recorte: 'campanha', chave: '2001', rotulo: 'Pesquisa marca', investimentoCentavos: 700_000, receitaCentavos: null }),
+    linhaDeDesempenho({ platform: 'meta', periodo: janela, recorte: 'idade_genero', chave: '25-34|female', rotulo: '25-34 · female', investimentoCentavos: 1_200_000 }),
+    linhaDeDesempenho({ platform: 'meta', periodo: janela, recorte: 'regiao', chave: 'Sao Paulo', rotulo: 'Sao Paulo', investimentoCentavos: 1_500_000 }),
+    linhaDeDesempenho({ platform: 'google', periodo: janela, recorte: 'dispositivo', chave: 'MOBILE', rotulo: 'MOBILE', investimentoCentavos: 400_000, receitaCentavos: null }),
+  ];
+}
+
+const conhecimentoBase = (extra: Partial<EntradaDeConhecimento> & Pick<EntradaDeConhecimento, 'key' | 'categoria'>): EntradaDeConhecimento => ({
+  version: 1,
+  titulo: `Título de ${extra.key}`,
+  resumo: `Resumo de ${extra.key}.`,
+  fonte: 'Fonte de teste (2026).',
+  nota: 'B',
+  maturidade: null,
+  mercado: 'global',
+  jurisdicao: 'global',
+  dataDaFonte: '2026-11-24',
+  validoAte: null,
+  verificadoEm: null,
+  obrigatoria: false,
+  replicada: false,
+  criadaEm: new Date('2026-11-24T12:00:00Z'),
+  ...extra,
+});
+
+export function conhecimento(): EntradaDeConhecimento[] {
+  return [
+    conhecimentoBase({ key: 'rumelt_nucleo', categoria: 'lente' }),
+    conhecimentoBase({ key: 'gordon_2019', categoria: 'benchmark', nota: 'A', replicada: true }),
+    conhecimentoBase({ key: 'att_custo', categoria: 'benchmark', nota: 'C', validoAte: '2027-05-31' }),
+    conhecimentoBase({ key: 'incrementalidade', categoria: 'pratica', nota: 'A', maturidade: 'validado', validoAte: '2027-05-31' }),
+    conhecimentoBase({ key: 'promessa_garantida', categoria: 'pratica', nota: 'D', maturidade: 'rumor', validoAte: '2027-05-31' }),
+    conhecimentoBase({ key: 'lgpd_base_legal', categoria: 'regra_legal', nota: 'C', mercado: 'brasil', jurisdicao: 'br', validoAte: '2026-10-31', resumo: 'Base legal exigida. Texto não verificado por pessoa: confirmar antes de usar.' }),
+    conhecimentoBase({ key: 'consent_mode', categoria: 'regra_legal', nota: 'C', mercado: 'uniao_europeia', jurisdicao: 'ue', validoAte: '2027-02-28' }),
+  ];
 }
 
 const marcacao = (epistemico: 'fato' | 'hipotese' | 'desejo', revisao: 'confirmado' | 'sugerido' = 'confirmado', fonte = 'equipe') => ({

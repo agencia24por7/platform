@@ -19,12 +19,13 @@ type Estado = { publicadoEm: Date | null; ultimoHash: string | null; pendente: b
 
 const WORKER = { requestId: 'r', callerFingerprint: 'f', sourceIp: null };
 
-function repositorio(opcoes: { excluidos?: string[]; estado?: Estado | null } = {}) {
+function repositorio(opcoes: { excluidos?: string[]; estado?: Estado | null; coberturaFalha?: boolean; conhecimentoFalha?: boolean } = {}) {
   const chamadas: Chamadas = {};
   const conta = (nome: string) => { chamadas[nome] = (chamadas[nome] ?? 0) + 1; };
   let estado = opcoes.estado ?? null;
   const falhas: string[] = [];
   const cobertura: unknown[] = [];
+  const desempenhoGravado: unknown[] = [];
   const repo = {
     async resolverCliente(id: string) {
       conta('resolverCliente');
@@ -42,9 +43,15 @@ function repositorio(opcoes: { excluidos?: string[]; estado?: Estado | null } = 
     async clientesExcluidosPublicados() { conta('clientesExcluidosPublicados'); return (opcoes.excluidos ?? []).map((clienteId) => ({ organizationId: fx.ORG, clienteId })); },
     async marcarDespublicado() { conta('marcarDespublicado'); },
     async clientesParaMedir() { conta('clientesParaMedir'); return [{ organizationId: fx.ORG, clienteId: fx.CLIENTE, plataformas: ['meta', 'ga4'] }]; },
-    async gravarCobertura(_c: unknown, medidas: readonly unknown[]) { conta('gravarCobertura'); cobertura.push(...medidas); },
+    async gravarCobertura(_c: unknown, medidas: readonly unknown[]) { conta('gravarCobertura'); if (opcoes.coberturaFalha) throw new Error('cobertura fora'); cobertura.push(...medidas); },
+    async carregarConhecimento() {
+      conta('carregarConhecimento');
+      if (opcoes.conhecimentoFalha) throw new Error('banco fora');
+      return fx.conhecimento();
+    },
+    async gravarDesempenho(_c: unknown, medicao: { linhas: readonly unknown[]; medidos: readonly unknown[] }) { conta('gravarDesempenho'); desempenhoGravado.push(medicao); },
   };
-  return { repo, chamadas, falhas, cobertura, estadoAtual: () => estado };
+  return { repo, chamadas, falhas, cobertura, desempenhoGravado, estadoAtual: () => estado };
 }
 
 function armazenamentoEmMemoria() {
@@ -75,10 +82,11 @@ function auditoria() {
   return { eventos, audit: { record: async (e: { action: string; metadata?: Record<string, unknown> }) => { eventos.push(e); }, list: async () => [], search: async () => [] } };
 }
 
-function servico(opcoes: { repo?: ReturnType<typeof repositorio>; armazenamento?: ReturnType<typeof armazenamentoEmMemoria>['armazenamento'] | ReturnType<typeof criarArmazenamentoNulo>; medidorDisponivel?: boolean; contexto?: boolean; regras?: boolean } = {}) {
+function servico(opcoes: { repo?: ReturnType<typeof repositorio>; armazenamento?: ReturnType<typeof armazenamentoEmMemoria>['armazenamento'] | ReturnType<typeof criarArmazenamentoNulo>; medidorDisponivel?: boolean; contexto?: boolean; regras?: boolean; desempenho?: 'ok' | 'falha' | 'parcial' | 'tudo_falha'; avisos?: Record<string, unknown>[] } = {}) {
   const repo = opcoes.repo ?? repositorio();
   const { audit, eventos } = auditoria();
   const medidas: string[] = [];
+  const medidasDeDesempenho: string[] = [];
   const s = createBrainService({
     repositorio: repo.repo,
     contexto: opcoes.contexto === false
@@ -95,6 +103,21 @@ function servico(opcoes: { repo?: ReturnType<typeof repositorio>; armazenamento?
         return objetos.map((o) => ({ tabela: o.tabela, desde: '2026-01-01', ate: '2026-11-19', linhas: 10, diasComDado: o.dimensao ? null : 5 }));
       },
     },
+    ...(opcoes.desempenho
+      ? {
+          medidorDeDesempenho: {
+            disponivel: true,
+            async medir(_c: unknown, plataformas: readonly string[]) {
+              medidasDeDesempenho.push(plataformas.join(','));
+              if (opcoes.desempenho === 'falha') throw new Error('bigquery fora');
+              const total = { platform: 'meta', periodo: '2026-10-01', recorte: 'total' as const, chave: '', rotulo: 'Total', investimentoCentavos: 1, impressoes: 1, cliques: 1, conversoes: 1, receitaCentavos: null, moeda: 'BRL' };
+              if (opcoes.desempenho === 'tudo_falha') return { linhas: [], medidos: [], falhas: ['total', 'campanha'] };
+              if (opcoes.desempenho === 'parcial') return { linhas: [total], medidos: [{ platform: 'meta', recorte: 'total' as const }], falhas: ['meta:regiao'] };
+              return { linhas: [total], medidos: [{ platform: 'meta', recorte: 'total' as const }], falhas: [] };
+            },
+          },
+        }
+      : {}),
     audit,
     provedores: PROVEDORES,
     capacidades: DEFINICOES_DE_CAPACIDADES,
@@ -103,8 +126,9 @@ function servico(opcoes: { repo?: ReturnType<typeof repositorio>; armazenamento?
     objetosDeMedicao,
     configuracao: { conjuntoDeDados: 'tria_dw', bytesMaximosPorConsulta: 10_000_000_000, diasDeMedicao: 400 },
     relogio: () => fx.AGORA,
+    registrarAviso: (_evento: string, dados: Record<string, unknown>) => { opcoes.avisos?.push(dados); },
   });
-  return { s, repo, eventos, medidas };
+  return { s, repo, eventos, medidas, medidasDeDesempenho };
 }
 
 describe('API de leitura do brain (serviço)', () => {
@@ -160,7 +184,16 @@ describe('API de leitura do brain (serviço)', () => {
     const repo = repositorio();
     const { s } = servico({ repo });
     await s.catalogo(fx.CLIENTE, { limite: 200, cursor: null }, WORKER);
-    assert.deepEqual(repo.chamadas, { resolverCliente: 1, carregarInventario: 1 });
+    assert.deepEqual(repo.chamadas, { resolverCliente: 1, carregarInventario: 1, carregarConhecimento: 1 });
+  });
+
+  it('conhecimento que falha ao carregar deixa o provedor indisponível sem derrubar o catálogo', async () => {
+    const { s } = servico({ repo: repositorio({ conhecimentoFalha: true }) });
+    const r = await s.montar(fx.CLIENTE);
+    assert.ok(r.ok);
+    assert.equal(r.value.provedores.find((p) => p.id === 'conhecimento')?.status, 'indisponivel');
+    assert.ok(!r.value.entradas.some((e) => e.tipo.startsWith('conhecimento_')));
+    assert.ok(r.value.entradas.some((e) => e.tipo === 'desempenho_mensal'));
   });
 
   it('contexto que falha ao carregar não derruba o catálogo', async () => {
@@ -252,6 +285,55 @@ describe('medição de cobertura', () => {
     assert.ok(!medidas.some((t) => t.startsWith('fato_google_')));
     assert.ok(!medidas.includes('gov_snapshot_fontes'));
     assert.equal(repo.chamadas.marcarPendente, 1);
+  });
+
+  it('mede o desempenho no mesmo acionamento, só das plataformas de anúncio, e marca pendente', async () => {
+    const repo = repositorio();
+    const { s, medidasDeDesempenho } = servico({ repo, desempenho: 'ok' });
+    const r = await s.medirCobertura(WORKER, 10);
+    assert.ok(r.ok && r.value.desempenhoLinhas === 1 && r.value.desempenhoFalhas === 0 && r.value.falhas === 0);
+    assert.deepEqual(medidasDeDesempenho, ['meta']);
+    assert.equal(repo.chamadas.gravarDesempenho, 1);
+    assert.equal(repo.chamadas.marcarPendente, 2);
+  });
+
+  it('consulta de recorte que falha é contada, as demais são gravadas e o recorte que falhou não entra nos medidos', async () => {
+    const repo = repositorio();
+    const avisos: Record<string, unknown>[] = [];
+    const { s } = servico({ repo, desempenho: 'parcial', avisos });
+    const r = await s.medirCobertura(WORKER, 10);
+    assert.ok(r.ok && r.value.desempenhoFalhas === 1 && r.value.desempenhoLinhas === 1 && r.value.falhas === 0);
+    assert.equal(repo.chamadas.gravarDesempenho, 1);
+    const gravado = repo.desempenhoGravado[0] as { medidos: { recorte: string }[] };
+    assert.deepEqual(gravado.medidos.map((m) => m.recorte), ['total']);
+    assert.deepEqual(avisos.filter((a) => a.consulta).map((a) => a.consulta), ['meta:regiao']);
+    assert.ok(!JSON.stringify(avisos).match(/SELECT|credential|token/i));
+  });
+
+  it('se todas as consultas falham nada é gravado nem apagado', async () => {
+    const repo = repositorio();
+    const { s } = servico({ repo, desempenho: 'tudo_falha' });
+    const r = await s.medirCobertura(WORKER, 10);
+    assert.ok(r.ok && r.value.desempenhoFalhas === 2 && r.value.desempenhoLinhas === 0);
+    assert.equal(repo.chamadas.gravarDesempenho, undefined);
+    assert.equal(repo.chamadas.marcarPendente, 1, 'só a cobertura marcou pendente');
+  });
+
+  it('falha no desempenho não derruba a cobertura', async () => {
+    const repo = repositorio();
+    const { s } = servico({ repo, desempenho: 'falha' });
+    const r = await s.medirCobertura(WORKER, 10);
+    assert.ok(r.ok && r.value.tabelas > 0 && r.value.falhas === 0 && r.value.desempenhoFalhas === 1);
+    assert.equal(repo.chamadas.gravarCobertura, 1);
+    assert.equal(repo.chamadas.gravarDesempenho, undefined);
+  });
+
+  it('falha na cobertura não derruba o desempenho', async () => {
+    const repo = repositorio({ coberturaFalha: true });
+    const { s } = servico({ repo, desempenho: 'ok' });
+    const r = await s.medirCobertura(WORKER, 10);
+    assert.ok(r.ok && r.value.falhas === 1 && r.value.desempenhoLinhas === 1 && r.value.desempenhoFalhas === 0);
+    assert.equal(repo.chamadas.gravarDesempenho, 1);
   });
 
   it('sem BigQuery responde indisponível', async () => {
