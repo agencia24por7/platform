@@ -45,6 +45,6 @@ export async function criarCredencial(_anterior: EstadoDaCredencial, formData: F
 export async function revogarCredencial(formData: FormData): Promise<void> {
   const quem = await quemAdministra();
   const resultado = await modules().ia.credenciais.revogar(quem, text(formData, 'credencialId'), await atorAtual());
-  const destino = resultado.ok ? 'feito=Credencial revogada.' : `erro=${encodeURIComponent(resultado.error.message)}`;
-  redirect(`/config/agentes?${destino}`);
+  const destino = resultado.ok ? `feito=${encodeURIComponent('Credencial revogada.')}` : `erro=${encodeURIComponent(resultado.error.message)}`;
+  redirect(`/config/agentes?${destino}&n=${Math.random().toString(36).slice(2, 8)}`);
 }

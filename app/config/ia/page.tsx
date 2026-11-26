@@ -31,7 +31,7 @@ const dia = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 's
 export default async function InteligenciaArtificialPage({
   searchParams,
 }: {
-  searchParams: Promise<{ erro?: string; feito?: string }>;
+  searchParams: Promise<{ erro?: string; feito?: string; n?: string }>;
 }) {
   const ctx = await requireContext();
   if (ctx.clientIds !== null || !canAdminister(ctx.role)) redirect('/config');
@@ -62,7 +62,7 @@ export default async function InteligenciaArtificialPage({
           </div>
         </div>
 
-        <MensagemDaUrl erro={params.erro} feito={params.feito} />
+        <MensagemDaUrl erro={params.erro} feito={params.feito} n={params.n} />
 
         <section className="card" aria-labelledby="t-estado">
           <h2 className="card__head card__title" id="t-estado">

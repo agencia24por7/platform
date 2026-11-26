@@ -21,7 +21,7 @@ export const metadata: Metadata = { title: 'Credenciais de agente' };
 export default async function CredenciaisDeAgentePage({
   searchParams,
 }: {
-  searchParams: Promise<{ erro?: string; feito?: string }>;
+  searchParams: Promise<{ erro?: string; feito?: string; n?: string }>;
 }) {
   const ctx = await requireContext();
   if (ctx.clientIds !== null || !canAdminister(ctx.role)) redirect('/config');
@@ -46,7 +46,7 @@ export default async function CredenciaisDeAgentePage({
           </div>
         </div>
 
-        <MensagemDaUrl erro={params.erro} feito={params.feito} />
+        <MensagemDaUrl erro={params.erro} feito={params.feito} n={params.n} />
 
         <section className="card" aria-labelledby="t-nova">
           <h2 className="card__head card__title" id="t-nova">
