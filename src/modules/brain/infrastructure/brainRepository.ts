@@ -25,6 +25,15 @@ export function createBrainRepository(): BrainRepository {
       return rows[0] ? resolvido(rows[0]) : null;
     },
 
+    async clienteVivo(cliente) {
+      const rows = (await withTenant(cliente.organizationId, (tx) => tx`
+        SELECT 1 FROM core.clients c
+          JOIN core.organizations o ON o.id = c.organization_id
+         WHERE c.id = ${cliente.clienteId}::uuid AND c.organization_id = ${cliente.organizationId}::uuid
+           AND c.excluido_em IS NULL AND o.status <> 'archived'`)) as unknown as unknown[];
+      return rows.length === 1;
+    },
+
     async carregarInventario(cliente): Promise<InventarioDoCliente | null> {
       const linhas = await withTenant(cliente.organizationId, (tx) => consultarInventario(tx, cliente));
       return montarInventario(linhas);

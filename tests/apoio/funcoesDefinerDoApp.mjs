@@ -1,5 +1,6 @@
 export const FUNCOES_DEFINER_DO_APP = Object.freeze([
   'core.accept_invitation(p_invitation_id uuid, p_user_id uuid)',
+  'core.agente_resolver(p_token_hash text)',
   'core.any_organization_exists()',
   'core.client_scope_of(p_user_id uuid, p_organization_id uuid)',
   'core.contexto_link_abrir(p_token_hash text)',

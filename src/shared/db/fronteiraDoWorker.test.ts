@@ -22,6 +22,7 @@ const ENTRADAS_PUBLICAS = [
   'app/api/auth/google/callback/route.ts',
   'app/api/contexto/publico/[token]/arquivos/route.ts',
   'app/api/convite/[token]/oauth/[platform]/start/route.ts',
+  'app/api/mcp/route.ts',
   'app/api/meta/exclusao/route.ts',
   'app/api/webhooks/whatsapp/route.ts',
   'app/api/webhooks/zapi/[token]/route.ts',

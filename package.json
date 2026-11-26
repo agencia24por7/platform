@@ -26,9 +26,16 @@
     "ambiente:hooks": "git config core.hooksPath .githooks"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "4.0.109",
+    "@ai-sdk/google": "4.0.127",
+    "@ai-sdk/moonshotai": "3.0.96",
+    "@ai-sdk/openai": "4.0.124",
+    "@ai-sdk/xai": "5.0.51",
     "@google-cloud/bigquery": "^9.6.1",
     "@google-cloud/kms": "6.3.0",
     "@google-cloud/storage": "8.4.0",
+    "@modelcontextprotocol/server": "2.4.0",
+    "ai": "7.0.182",
     "next": "16.4.5",
     "postgres": "4.1.0",
     "react": "19.3.1",

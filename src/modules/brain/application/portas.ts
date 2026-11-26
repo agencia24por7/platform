@@ -23,6 +23,7 @@ export type ClienteParaMedir = ClienteResolvido & { readonly plataformas: readon
 
 export type BrainRepository = {
   resolverCliente(clienteId: string): Promise<ClienteResolvido | null>;
+  clienteVivo(cliente: ClienteResolvido): Promise<boolean>;
   carregarInventario(cliente: ClienteResolvido): Promise<InventarioDoCliente | null>;
   estado(cliente: ClienteResolvido): Promise<EstadoDaPublicacao | null>;
   registrarPublicacao(cliente: ClienteResolvido, publicacao: { readonly hash: string; readonly entradas: number }): Promise<void>;
@@ -48,3 +49,11 @@ export type MedidorDeCobertura = {
 };
 
 export type IdentidadeDoWorker = { readonly requestId: string; readonly callerFingerprint: string; readonly sourceIp: string | null };
+
+export type AgenteLeitor = {
+  readonly credencialId: string;
+  readonly organizationId: string;
+  readonly clienteIds: readonly string[] | null;
+  readonly requestId: string;
+  readonly sourceIp: string | null;
+};

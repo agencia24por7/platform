@@ -1,0 +1,137 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import { APICallError } from 'ai';
+import { MockLanguageModelV4 } from 'ai/test';
+import { z } from 'zod';
+
+await import('../../brain/testes/ganchos.ts');
+const { criarPortaAiSdk, modeloDoFornecedor } = await import('./portaAiSdk.ts');
+const { FORNECEDORES } = await import('../domain/tarefa.ts');
+
+const CHAVE = 'chave-do-fornecedor-de-teste';
+const modelo = { fornecedor: 'google' as const, modelo: 'modelo-x', chave: CHAVE };
+const uso = { inputTokens: { total: 11, noCache: 11, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 5, text: 5, reasoning: 0 } };
+const parada = { unified: 'stop' as const, raw: 'stop' };
+const texto = (conteudo: string) => ({ content: [{ type: 'text' as const, text: conteudo }], finishReason: parada, usage: uso, warnings: [] });
+
+const pedido = (extra: Record<string, unknown> = {}) => ({
+  modelo,
+  sistema: 'Responda só com o objeto.',
+  dados: '<dados>\n{}\n</dados>',
+  saida: z.object({ ok: z.boolean(), nota: z.number().int() }),
+  orcamento: { passos: 3, tokensDeSaida: 100, tempoMs: 5_000 },
+  ferramentas: [],
+  ...extra,
+});
+
+function porta(doGenerate: (opcoes: Record<string, unknown>) => Promise<unknown>) {
+  const chamadas: Record<string, unknown>[] = [];
+  const falso = new MockLanguageModelV4({ doGenerate: (async (opcoes: Record<string, unknown>) => { chamadas.push(opcoes); return doGenerate(opcoes); }) as never });
+  return { porta: criarPortaAiSdk(() => falso as never), chamadas };
+}
+
+describe('adaptador do AI SDK (ADR 0057 §3)', () => {
+  it('os cinco fornecedores constroem modelo só com a chave recebida', () => {
+    for (const fornecedor of FORNECEDORES) {
+      const construido = modeloDoFornecedor({ fornecedor, modelo: 'modelo-x', chave: CHAVE }) as { modelId: string };
+      assert.equal(construido.modelId, 'modelo-x');
+    }
+  });
+
+  it('devolve a saída validada pelo esquema e o uso de tokens', async () => {
+    const { porta: p, chamadas } = porta(async () => texto('{"ok":true,"nota":7}'));
+    const r = await p.gerar(pedido());
+    assert.deepEqual(r, { ok: true, value: { saida: { ok: true, nota: 7 }, uso: { tokensDeEntrada: 11, tokensDeSaida: 5, passos: 1 } } });
+    assert.equal(chamadas[0]!.maxOutputTokens, 100);
+  });
+
+  it('resposta fora do esquema vira falha de validação, sem devolver o texto do modelo', async () => {
+    const { porta: p } = porta(async () => texto('{"ok":"talvez","conteudo":"texto livre do modelo"}'));
+    const r = await p.gerar(pedido());
+    assert.equal(r.ok, false);
+    if (!r.ok) {
+      assert.equal(r.error.code, 'validation');
+      assert.equal(JSON.stringify(r.error).includes('texto livre'), false);
+    }
+  });
+
+  it('erro do fornecedor vira falha genérica por código e nunca carrega a chave nem o corpo', async () => {
+    const casos: [number, string][] = [[401, 'unauthorized'], [403, 'unauthorized'], [404, 'not_found'], [429, 'rate_limited'], [400, 'unavailable'], [500, 'unavailable']];
+    for (const [status, codigo] of casos) {
+      const { porta: p } = porta(async () => {
+        throw new APICallError({
+          message: `API key ${CHAVE} inválida`,
+          url: `https://fornecedor.test/v1?key=${CHAVE}`,
+          requestBodyValues: { segredo: CHAVE },
+          statusCode: status,
+          responseBody: `corpo com ${CHAVE}`,
+          isRetryable: false,
+        });
+      });
+      const r = await p.gerar(pedido());
+      assert.equal(r.ok, false);
+      if (!r.ok) {
+        assert.equal(r.error.code, codigo);
+        assert.equal(JSON.stringify(r.error).includes(CHAVE), false);
+      }
+    }
+  });
+
+  it('exceção qualquer vira indisponível, sem a mensagem original', async () => {
+    const { porta: p } = porta(async () => { throw new Error(`falha interna com ${CHAVE}`); });
+    const r = await p.gerar(pedido());
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(JSON.stringify(r.error).includes(CHAVE), false);
+  });
+
+  it('laço com ferramenta: executa a ferramenta pedida e devolve a saída final', async () => {
+    const execucoes: unknown[] = [];
+    let passo = 0;
+    const { porta: p } = porta(async () => {
+      passo += 1;
+      if (passo === 1) {
+        return {
+          content: [{ type: 'tool-call', toolCallId: 'chamada-1', toolName: 'catalogo_ler', input: JSON.stringify({ clienteId: 'cliente-1' }) }],
+          finishReason: { unified: 'tool-calls', raw: 'tool_calls' },
+          usage: uso,
+          warnings: [],
+        };
+      }
+      return texto('{"ok":true,"nota":2}');
+    });
+    const r = await p.gerar(
+      pedido({
+        ferramentas: [{
+          nome: 'catalogo_ler',
+          descricao: 'Lê o catálogo.',
+          entrada: z.object({ clienteId: z.string() }).strict(),
+          executar: async (entrada: unknown) => { execucoes.push(entrada); return { total: 3 }; },
+        }],
+      }),
+    );
+    assert.deepEqual(execucoes, [{ clienteId: 'cliente-1' }]);
+    assert.ok(r.ok);
+    if (r.ok) assert.deepEqual({ saida: r.value.saida, passos: r.value.uso.passos }, { saida: { ok: true, nota: 2 }, passos: 2 });
+  });
+
+  it('o orçamento de passos corta um modelo que só pede ferramenta', async () => {
+    let chamadasAoModelo = 0;
+    const { porta: p } = porta(async () => {
+      chamadasAoModelo += 1;
+      return {
+        content: [{ type: 'tool-call', toolCallId: `chamada-${chamadasAoModelo}`, toolName: 'catalogo_ler', input: '{"clienteId":"x"}' }],
+        finishReason: { unified: 'tool-calls', raw: 'tool_calls' },
+        usage: uso,
+        warnings: [],
+      };
+    });
+    const r = await p.gerar(
+      pedido({
+        orcamento: { passos: 2, tokensDeSaida: 100, tempoMs: 5_000 },
+        ferramentas: [{ nome: 'catalogo_ler', descricao: 'Lê.', entrada: z.object({ clienteId: z.string() }).strict(), executar: async () => ({}) }],
+      }),
+    );
+    assert.equal(chamadasAoModelo, 2);
+    assert.equal(r.ok, false);
+  });
+});

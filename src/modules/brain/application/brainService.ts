@@ -1,4 +1,5 @@
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
+import type { AuditEvent } from '@/modules/audit/domain/auditEvent';
 import type { ArmazenamentoDeContexto } from '@/shared/storage/tipos';
 import { failure, type Failure } from '@/shared/result/failure';
 import { canOperate, type MemberRole } from '../../identity/domain/user.ts';
@@ -15,6 +16,7 @@ import { hojeEmSaoPaulo, somarDias } from '../domain/tempo.ts';
 import { urnDoCliente } from '../domain/urn.ts';
 import { construirCatalogo, type Snapshot } from './construirCatalogo.ts';
 import type {
+  AgenteLeitor,
   BrainRepository,
   ClienteResolvido,
   IdentidadeDoWorker,
@@ -77,6 +79,11 @@ export type BrainService = {
     consulta: FiltrosDoCatalogo & { readonly limite: number; readonly cursor: string | null },
     worker: IdentidadeDoWorker,
   ): Promise<Result<Resposta<PaginaDeEntradas>, Failure>>;
+  catalogoDoAgente(
+    agente: AgenteLeitor,
+    clienteId: string,
+    consulta: FiltrosDoCatalogo & { readonly limite: number; readonly cursor: string | null },
+  ): Promise<Result<Resposta<PaginaDeEntradas>, Failure>>;
   entrada(clienteId: string, urn: string, worker: IdentidadeDoWorker): Promise<Result<Resposta<EntradaDoCatalogo>, Failure>>;
   capacidades(clienteId: string, worker: IdentidadeDoWorker): Promise<Result<Resposta<Pick<Snapshot, 'schemaVersion' | 'capacidades' | 'catalogHash'>>, Failure>>;
   diagnostico(clienteId: string, worker: IdentidadeDoWorker): Promise<Result<Resposta<Snapshot['diagnostico'] & { readonly catalogHash: string }>, Failure>>;
@@ -86,6 +93,16 @@ export type BrainService = {
   medirCobertura(worker: IdentidadeDoWorker, limite: number): Promise<Result<ResumoDaMedicao, Failure>>;
   marcarPendente(cliente: ClienteResolvido, motivo: string): Promise<void>;
 };
+
+type Leitor = Pick<AuditEvent, 'actorType' | 'actorId'> & { readonly requestId: string; readonly sourceIp: string | null };
+
+function leitorDoWorker(worker: IdentidadeDoWorker): Leitor {
+  return { actorType: 'worker', actorId: worker.callerFingerprint, requestId: worker.requestId, sourceIp: worker.sourceIp };
+}
+
+function leitorDoAgente(agente: AgenteLeitor): Leitor {
+  return { actorType: 'agent', actorId: agente.credencialId, requestId: agente.requestId, sourceIp: agente.sourceIp };
+}
 
 const NAO_ENCONTRADO = failure('not_found', 'Cliente não encontrado.');
 const ENTRADA_NAO_ENCONTRADA = failure('not_found', 'Entrada não encontrada no catálogo deste cliente.');
@@ -166,16 +183,16 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
     return snapshot && snapshot.organizationId === organizationId ? ok(snapshot) : err(NAO_ENCONTRADO);
   }
 
-  async function auditar(worker: IdentidadeDoWorker, snapshot: Snapshot, rota: string, devolvidas: number): Promise<void> {
+  async function auditar(leitor: Leitor, snapshot: Snapshot, rota: string, devolvidas: number): Promise<void> {
     await deps.audit.record({
       organizationId: snapshot.organizationId,
-      actorType: 'worker',
-      actorId: worker.callerFingerprint,
+      actorType: leitor.actorType,
+      actorId: leitor.actorId,
       action: 'brain.consulta',
       targetType: 'client',
       targetId: snapshot.clienteId,
-      requestId: worker.requestId,
-      sourceIp: worker.sourceIp,
+      requestId: leitor.requestId,
+      sourceIp: leitor.sourceIp,
       metadata: {
         rota,
         devolvidas,
@@ -192,12 +209,46 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
     rota: string,
     projetar: (snapshot: Snapshot) => Result<{ corpo: T; devolvidas: number }, Failure>,
   ): Promise<Result<Resposta<T>, Failure>> {
-    const montado = await montar(clienteId);
+    return responder(await montar(clienteId), leitorDoWorker(worker), rota, projetar);
+  }
+
+  async function responder<T>(
+    montado: Result<Snapshot, Failure>,
+    leitor: Leitor,
+    rota: string,
+    projetar: (snapshot: Snapshot) => Result<{ corpo: T; devolvidas: number }, Failure>,
+  ): Promise<Result<Resposta<T>, Failure>> {
     if (!montado.ok) return montado;
     const projetado = projetar(montado.value);
     if (!projetado.ok) return projetado;
-    await auditar(worker, montado.value, rota, projetado.value.devolvidas);
+    await auditar(leitor, montado.value, rota, projetado.value.devolvidas);
     return ok({ corpo: projetado.value.corpo, etag: etag({ catalogHash: montado.value.catalogHash, rota, corpo: projetado.value.corpo }) });
+  }
+
+  async function montarParaAgente(agente: AgenteLeitor, clienteId: string): Promise<Result<Snapshot, Failure>> {
+    if (!UUID.test(clienteId) || !UUID.test(agente.organizationId)) return err(NAO_ENCONTRADO);
+    if (agente.clienteIds !== null && !agente.clienteIds.includes(clienteId)) return err(NAO_ENCONTRADO);
+    const cliente = { organizationId: agente.organizationId, clienteId };
+    if (!(await deps.repositorio.clienteVivo(cliente))) return err(NAO_ENCONTRADO);
+    return montarNaOrganizacao(agente.organizationId, clienteId);
+  }
+
+  function paginaDoCatalogo(consulta: FiltrosDoCatalogo & { readonly limite: number; readonly cursor: string | null }) {
+    return (snapshot: Snapshot): Result<{ corpo: PaginaDeEntradas; devolvidas: number }, Failure> => {
+      const filtradas = filtrarCatalogo(snapshot.entradas, consulta);
+      const pagina = paginar(filtradas, consulta.limite, consulta.cursor);
+      return ok({
+        corpo: {
+          schemaVersion: VERSAO_DO_ESQUEMA_DO_CATALOGO,
+          clienteId: snapshot.clienteId,
+          catalogHash: snapshot.catalogHash,
+          total: pagina.total,
+          proximoCursor: pagina.proximoCursor,
+          entradas: pagina.entradas,
+        },
+        devolvidas: pagina.entradas.length,
+      });
+    };
   }
 
   async function publicar(cliente: ClienteResolvido): Promise<SituacaoDaPublicacao> {
@@ -257,21 +308,11 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
     montarNaOrganizacao,
 
     catalogo(clienteId, consulta, worker) {
-      return consultar(clienteId, worker, 'catalogo', (snapshot) => {
-        const filtradas = filtrarCatalogo(snapshot.entradas, consulta);
-        const pagina = paginar(filtradas, consulta.limite, consulta.cursor);
-        return ok({
-          corpo: {
-            schemaVersion: VERSAO_DO_ESQUEMA_DO_CATALOGO,
-            clienteId: snapshot.clienteId,
-            catalogHash: snapshot.catalogHash,
-            total: pagina.total,
-            proximoCursor: pagina.proximoCursor,
-            entradas: pagina.entradas,
-          },
-          devolvidas: pagina.entradas.length,
-        });
-      });
+      return consultar(clienteId, worker, 'catalogo', paginaDoCatalogo(consulta));
+    },
+
+    async catalogoDoAgente(agente, clienteId, consulta) {
+      return responder(await montarParaAgente(agente, clienteId), leitorDoAgente(agente), 'catalogo', paginaDoCatalogo(consulta));
     },
 
     entrada(clienteId, urn, worker) {

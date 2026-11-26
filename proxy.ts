@@ -15,6 +15,7 @@ const ROTAS_ABERTAS = [
   '/api/auth',
   '/api/health',
   '/api/v0',
+  '/api/mcp',
   '/api/portaria',
   '/api/erros',
   '/api/webhooks',

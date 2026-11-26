@@ -7,7 +7,7 @@ import { env } from '@/shared/config/env';
 import { logger } from '@/shared/logging/logger';
 import { consume } from '@/shared/security/rateLimit';
 import { createCofreDeTokens } from '@/modules/tokens/application/cofreDeTokens';
-import { createAcessoDoWorker } from '@/modules/tokens/application/acessoDoWorker';
+import { createAcessoDoWorker, type RecifradorExtra } from '@/modules/tokens/application/acessoDoWorker';
 import { escolherChaveMestra } from '@/modules/tokens/infrastructure/chavesMestras';
 import { createCifraEnvelope } from '@/modules/tokens/infrastructure/envelope';
 import { createFabricaDeProvedores } from '@/modules/tokens/infrastructure/provedores';
@@ -24,7 +24,7 @@ export function provaDoSegredoDaMeta(platform: Platform, token: string): string 
 }
 const JANELA_MS = 60_000;
 
-export function criarModuloDeTokens(audit: AuditRecorder) {
+export function criarModuloDeTokens(audit: AuditRecorder, recifradoresExtras: readonly RecifradorExtra[] = []) {
   const config = env();
   const provedoresReais = createFabricaDeProvedores((platform) =>
     falaOauth(platform) ? credenciaisDaPlataforma(platform) : {},
@@ -44,6 +44,7 @@ export function criarModuloDeTokens(audit: AuditRecorder) {
     audit,
     limitar: (chave) => consume('cofre', chave, PEDIDOS_POR_EXECUCAO, JANELA_MS).allowed,
     provaDoSegredoDoApp: provaDoSegredoDaMeta,
+    recifradoresExtras,
   });
 
   return { cofre, acesso };
