@@ -124,7 +124,7 @@ O ADR 0026 aceita que o limite seja em memória e por réplica; isso não muda.
 
 ## Atualização de 2026-11-26 (camada de IA e MCP, issue 24K-131)
 
-A camada de IA (`docs/adr/0057-camada-de-ia-e-mcp.md`) entrou em `dev` depois deste ADR e acrescenta, sem mudar o princípio do item 1:
+A camada de IA (`docs/adr/0063-camada-de-ia-e-mcp.md`) entrou em `dev` depois deste ADR e acrescenta, sem mudar o princípio do item 1:
 
 | Domínio | Quem cria a chave | Chamadores | Teto |
 |---|---|---|---|

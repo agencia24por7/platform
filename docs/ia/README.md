@@ -1,6 +1,6 @@
 # Camada de IA e MCP
 
-Decisão e motivos: `docs/adr/0057-camada-de-ia-e-mcp.md` e `docs/adr/0058-chave-de-fornecedor-de-ia-modelo-por-tarefa-e-teto.md`. Este arquivo diz o que existe e como usar.
+Decisão e motivos: `docs/adr/0063-camada-de-ia-e-mcp.md` e `docs/adr/0064-chave-de-fornecedor-de-ia-modelo-por-tarefa-e-teto.md`. Este arquivo diz o que existe e como usar.
 
 ## O que existe
 

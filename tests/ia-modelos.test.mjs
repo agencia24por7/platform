@@ -74,7 +74,7 @@ async function testarModelo(cookie) {
 
 const usos = (org) => Number(query(`select count(*) from core.ai_usage where organization_id = '${org}'`));
 
-describe('IA: chave do fornecedor, modelo por tarefa, uso e teto (ADR 0058)', { concurrency: false }, () => {
+describe('IA: chave do fornecedor, modelo por tarefa, uso e teto (ADR 0064)', { concurrency: false }, () => {
   let a;
   let b;
 

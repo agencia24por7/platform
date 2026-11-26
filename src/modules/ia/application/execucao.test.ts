@@ -74,7 +74,7 @@ function montar(opcoes: { resolver?: unknown; fornecedores?: readonly string[]; 
 
 const agente = (extra: Record<string, unknown> = {}) => ({ credencialId: 'c1', organizationId: ORG, clienteIds: null, ferramentas: ['catalogo_ler', 'outra_ler', 'quebrada_ler'], requestId: 'r1', sourceIp: null, ...extra });
 
-describe('execução de tarefa de IA (ADR 0057 §1, §7 e §8)', () => {
+describe('execução de tarefa de IA (ADR 0063 §1, §7 e §8)', () => {
   it('sem modelo configurado a tarefa fica bloqueada e a porta não é chamada', async () => {
     const { executor, pedidos, reservas, aberturas } = montar({ resolver: async () => err(SEM_MODELO_CONFIGURADO) });
     const r = await executor.executar({ organizationId: ORG, tarefa: tarefa(), dados: {}, requestId: 'r1' });

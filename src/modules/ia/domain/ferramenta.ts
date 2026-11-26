@@ -53,7 +53,7 @@ export function clienteNoEscopo(escopo: Pick<EscopoDoAgente, 'clienteIds'>, clie
 function recusa(ferramenta: FerramentaRegistrada): string | null {
   if (!PADRAO_DO_NOME_DE_FERRAMENTA.test(ferramenta.nome)) return 'nome fora do padrão';
   if (ferramenta.descricao.length === 0 || ferramenta.descricao.length > DESCRICAO_MAXIMA) return 'descrição vazia ou longa demais';
-  if (!CLASSES_LIBERADAS.includes(ferramenta.classe)) return `classe ${ferramenta.classe} ainda não é liberada (ADR 0057 §4)`;
+  if (!CLASSES_LIBERADAS.includes(ferramenta.classe)) return `classe ${ferramenta.classe} ainda não é liberada (ADR 0063 §4)`;
   return null;
 }
 

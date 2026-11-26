@@ -45,7 +45,7 @@ export function definirTarefa<S>(tarefa: Omit<Tarefa<S>, 'ferramentas'> & { read
   if (tarefa.instrucao.trim().length === 0 || tarefa.instrucao.length > INSTRUCAO_MAXIMA) {
     throw new Error(`Tarefa ${tarefa.chave}: instrução vazia ou longa demais.`);
   }
-  if (!dentroDoTeto(tarefa.orcamento)) throw new Error(`Tarefa ${tarefa.chave}: orçamento fora do teto (ADR 0057 §7).`);
+  if (!dentroDoTeto(tarefa.orcamento)) throw new Error(`Tarefa ${tarefa.chave}: orçamento fora do teto (ADR 0063 §7).`);
   return { ...tarefa, ferramentas: tarefa.ferramentas ?? [] };
 }
 

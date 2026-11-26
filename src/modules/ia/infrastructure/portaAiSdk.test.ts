@@ -30,7 +30,7 @@ function porta(doGenerate: (opcoes: Record<string, unknown>) => Promise<unknown>
   return { porta: criarPortaAiSdk(() => falso as never), chamadas };
 }
 
-describe('adaptador do AI SDK (ADR 0057 §3)', () => {
+describe('adaptador do AI SDK (ADR 0063 §3)', () => {
   it('os cinco fornecedores constroem modelo só com a chave recebida', () => {
     for (const fornecedor of FORNECEDORES) {
       const construido = modeloDoFornecedor({ fornecedor, modelo: 'modelo-x', chave: CHAVE }) as { modelId: string };

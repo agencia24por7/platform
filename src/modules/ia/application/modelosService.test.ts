@@ -97,7 +97,7 @@ function montar(opcoes: { catalogo?: unknown; cofreFora?: boolean; fornecedores?
 const admin = { organizationId: ORG, papelDeQuemAge: 'admin' as const };
 const dono = { organizationId: ORG, papelDeQuemAge: 'owner' as const };
 
-describe('chave de fornecedor de IA (ADR 0058)', () => {
+describe('chave de fornecedor de IA (ADR 0064)', () => {
   it('testa a chave no fornecedor, sela e guarda só o selado, o rótulo e os modelos de texto', async () => {
     const { servico, chaves, eventos, id } = montar();
     const r = await servico.guardarChave(admin, 'google', `  ${CHAVE}  `, ATOR);
@@ -196,7 +196,7 @@ describe('chave de fornecedor de IA (ADR 0058)', () => {
   });
 });
 
-describe('modelo por tarefa (ADR 0057 §2)', () => {
+describe('modelo por tarefa (ADR 0063 §2)', () => {
   it('só aceita tarefa registrada, fornecedor com chave e modelo da lista que a chave alcança', async () => {
     const { servico, escolhas } = montar();
     assert.equal((await servico.escolherModelo(admin, TAREFA, 'google', 'modelo-a', ATOR)).ok, false);
@@ -255,7 +255,7 @@ describe('modelo por tarefa (ADR 0057 §2)', () => {
   });
 });
 
-describe('recifragem das chaves de IA depois da rotação do KMS (ADR 0058)', () => {
+describe('recifragem das chaves de IA depois da rotação do KMS (ADR 0064)', () => {
   it('recifra o que está em versão antiga e a chave continua abrindo', async () => {
     const { servico, chaves, estado, id } = montar();
     await servico.guardarChave(admin, 'google', CHAVE, ATOR);

@@ -3,7 +3,7 @@ import { z } from 'zod';
 const [fornecedorPedido, variavelDaChave, modeloPedido] = process.argv.slice(2);
 
 if (!fornecedorPedido || !variavelDaChave || !modeloPedido || fornecedorPedido === '--help') {
-  console.log('Suíte de contrato de fornecedor de IA (ADR 0057). Chama o fornecedor real com um pedido trivial, sem dado de cliente.');
+  console.log('Suíte de contrato de fornecedor de IA (ADR 0063). Chama o fornecedor real com um pedido trivial, sem dado de cliente.');
   console.log('Uso: node --env-file=<arquivo de ambiente> --experimental-strip-types scripts/ia-contrato.ts <fornecedor> <VARIAVEL_COM_A_CHAVE> <id-do-modelo>');
   console.log('Fornecedores: anthropic, google, openai, xai, moonshot. O valor da chave nunca é impresso.');
   process.exit(fornecedorPedido === '--help' ? 0 : 1);

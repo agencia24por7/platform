@@ -89,7 +89,7 @@ const chamar = (nome: string, argumentos: Record<string, unknown>) => ({ jsonrpc
 const portador = (segredo: string) => ({ authorization: `Bearer ${segredo}` });
 const conteudo = (m: { result?: Record<string, unknown> }) => (m.result?.content as { text: string }[])[0]!.text;
 
-describe('servidor MCP (ADR 0057 §6)', () => {
+describe('servidor MCP (ADR 0063 §6)', () => {
   it('desligado responde 404 antes de qualquer coisa', async () => {
     const { rota, emitir } = montar({ habilitado: false });
     const segredo = emitir({ credencialId: 'c1', organizationId: 'org-a', clienteIds: null, ferramentas: ['catalogo_ler'] });
