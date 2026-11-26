@@ -20,9 +20,13 @@ async function quemConfigura() {
   return { organizationId: ctx.organization.id, papelDeQuemAge: ctx.role };
 }
 
+function marcaDeEnvio(): string {
+  return Math.random().toString(36).slice(2, 8);
+}
+
 function voltar(resultado: Result<unknown, Failure>, feito: string): never {
   const destino = resultado.ok ? `feito=${encodeURIComponent(feito)}` : `erro=${encodeURIComponent(resultado.error.message)}`;
-  redirect(`/config/ia?${destino}`);
+  redirect(`/config/ia?${destino}&n=${marcaDeEnvio()}`);
 }
 
 export async function guardarChave(formData: FormData): Promise<void> {
