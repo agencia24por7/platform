@@ -95,6 +95,7 @@ describe('serviço de credencial de agente', () => {
     if (!criada.ok) return;
     const escopo = await servico.autenticar(criada.value.segredo, ORIGEM);
     assert.deepEqual(escopo, { credencialId: criada.value.credencial.id, organizationId: ORG, clienteIds: [CLIENTE], ferramentas: [FERRAMENTA], ...ORIGEM });
+    assert.equal(escopo !== null && 'visao' in escopo, false);
     assert.equal(await servico.autenticar(gerarCredencial(), ORIGEM), null);
     assert.equal(await servico.autenticar('formato-estranho', ORIGEM), null);
     assert.equal(await servico.autenticar('', ORIGEM), null);

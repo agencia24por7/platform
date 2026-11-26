@@ -76,6 +76,9 @@ function opcoesComuns<S>(pedido: PedidoAoModelo<S>, fabricar: FabricaDeModelo) {
     prompt: pedido.dados,
     tools: ferramentasDoSdk(pedido.ferramentas),
     stopWhen: isStepCount(pedido.orcamento.passos),
+    ...(pedido.ferramentas.length > 0 && pedido.orcamento.passos > 1
+      ? { prepareStep: ({ stepNumber }: { stepNumber: number }) => (stepNumber >= pedido.orcamento.passos - 1 ? { toolChoice: 'none' as const } : undefined) }
+      : {}),
     maxOutputTokens: pedido.orcamento.tokensDeSaida,
     maxRetries: TENTATIVAS_EXTRAS,
     abortSignal: AbortSignal.timeout(pedido.orcamento.tempoMs),

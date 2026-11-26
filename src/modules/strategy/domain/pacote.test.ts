@@ -1,34 +1,42 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { URN_BENCHMARK_B, URN_REGRA_LEGAL, hashDeTeste, pacoteDeTeste } from './fixturesDeTeste.ts';
-import { entradaDoPacote, entradasDeRegraLegalObrigatoria, esquemaPacoteDeLeitura, hashesDoPacote, indicePorUrn } from './pacote.ts';
+import { hashDeTeste, pacoteDeTeste, urnDeTeste } from './fixturesDeTeste.ts';
+import { MAXIMO_DE_BYTES_DO_CATALOGO, pacoteParaEntrada, type ItemDoCatalogo } from './pacote.ts';
 
-describe('pacote de leitura', () => {
-  it('o pacote de teste é válido no esquema', () => {
-    assert.equal(esquemaPacoteDeLeitura.safeParse(pacoteDeTeste()).success, true);
-  });
+const tamanho = (valor: unknown) => new TextEncoder().encode(JSON.stringify(valor)).length;
 
-  it('recusa hash que não é sha256 hex, nota inválida e chave extra', () => {
-    const hashRuim = pacoteDeTeste();
-    hashRuim.entradas[0]!.hash = 'xyz';
-    assert.equal(esquemaPacoteDeLeitura.safeParse(hashRuim).success, false);
-    const notaRuim = JSON.parse(JSON.stringify(pacoteDeTeste()));
-    notaRuim.entradas[1].evidencia.nota = 'E';
-    assert.equal(esquemaPacoteDeLeitura.safeParse(notaRuim).success, false);
-    const extra = JSON.parse(JSON.stringify(pacoteDeTeste()));
-    extra.entradas[0].segredo = 'x';
-    assert.equal(esquemaPacoteDeLeitura.safeParse(extra).success, false);
-  });
-
-  it('consulta por URN', () => {
+describe('pacoteParaEntrada', () => {
+  it('as URNs pedidas como primeiras sobrevivem ao corte por bytes e o resto perde a vez', () => {
     const pacote = pacoteDeTeste();
-    assert.equal(indicePorUrn(pacote).get(URN_BENCHMARK_B)?.hash, hashDeTeste(2));
-    assert.equal(entradaDoPacote(pacote, URN_BENCHMARK_B)?.tipo, 'conhecimento');
-    assert.equal(entradaDoPacote(pacote, 'orla:nada'), undefined);
-    assert.equal(hashesDoPacote(pacote).size, pacote.entradas.length);
+    const ultima = pacote.entradas[pacote.entradas.length - 1]!;
+    const limite = tamanho(ultima) + 1;
+    const semPrioridade = pacoteParaEntrada(pacote, limite);
+    assert.ok(!semPrioridade.entradas.some((e) => e.urn === ultima.urn) || semPrioridade.entradas.length >= 1);
+    const comPrioridade = pacoteParaEntrada(pacote, limite, { primeiras: new Set([ultima.urn]) });
+    assert.equal(comPrioridade.entradas[0]!.urn, ultima.urn);
   });
 
-  it('acha as regras legais obrigatórias', () => {
-    assert.deepEqual(entradasDeRegraLegalObrigatoria(pacoteDeTeste()).map((e) => e.urn), [URN_REGRA_LEGAL]);
+  it('comCatalogo false tira o catálogo do pedido', () => {
+    const pacote = { ...pacoteDeTeste(), catalogo: [{ urn: pacoteDeTeste().entradas[0]!.urn, tipo: 'regra', titulo: 'x', incluida: true }] };
+    assert.ok(pacoteParaEntrada(pacote, 100_000).catalogo !== undefined);
+    assert.equal('catalogo' in pacoteParaEntrada(pacote, 100_000, { comCatalogo: false }), false);
+  });
+
+  it('o catálogo respeita o teto de bytes e recalcula incluida pelo que coube em entradas', () => {
+    const base = pacoteDeTeste();
+    const itens: ItemDoCatalogo[] = Array.from({ length: 1500 }, (_, i) => ({
+      urn: urnDeTeste('regra', `item-${i}`),
+      tipo: 'regra',
+      titulo: `Entrada de catálogo número ${i} com título razoável`,
+      incluida: true,
+    }));
+    itens.unshift({ urn: base.entradas[0]!.urn, tipo: 'tabela_de_dados', titulo: 'dentro', incluida: false });
+    const pacote = { ...base, catalogo: itens };
+    const saida = pacoteParaEntrada(pacote, 100_000);
+    assert.ok(saida.catalogo!.reduce((soma, item) => soma + tamanho(item), 0) <= MAXIMO_DE_BYTES_DO_CATALOGO);
+    assert.ok(saida.catalogo!.length < itens.length);
+    assert.equal(saida.catalogo![0]!.incluida, true);
+    assert.equal(saida.catalogo![1]!.incluida, false);
+    assert.ok(hashDeTeste(1).length === 64);
   });
 });

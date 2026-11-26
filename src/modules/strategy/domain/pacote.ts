@@ -82,20 +82,43 @@ export const MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA = {
   gate: 60_000,
 } as const;
 
-export function pacoteParaEntrada(pacote: PacoteDeLeitura, maximoDeBytes: number): PacoteDeLeitura {
+export const MAXIMO_DE_BYTES_DO_CATALOGO = 40_000;
+
+export type OpcoesDoPacoteParaEntrada = {
+  readonly primeiras?: ReadonlySet<string>;
+  readonly comCatalogo?: boolean;
+};
+
+export function pacoteParaEntrada(pacote: PacoteDeLeitura, maximoDeBytes: number, opcoes: OpcoesDoPacoteParaEntrada = {}): PacoteDeLeitura {
+  const primeiras = opcoes.primeiras ?? new Set<string>();
+  const ordenadas = [...pacote.entradas.filter((e) => primeiras.has(e.urn)), ...pacote.entradas.filter((e) => !primeiras.has(e.urn))];
   const mantidas: EntradaDoPacote[] = [];
   let bytes = 0;
-  for (const entrada of pacote.entradas) {
+  for (const entrada of ordenadas) {
     const tamanho = new TextEncoder().encode(JSON.stringify(entrada)).length;
     if (bytes + tamanho > maximoDeBytes) continue;
     mantidas.push(entrada);
     bytes += tamanho;
   }
   const urnsMantidas = new Set(mantidas.map((entrada) => entrada.urn));
+  const { catalogo, ...semCatalogo } = pacote;
   return {
-    ...pacote,
+    ...semCatalogo,
     entradas: mantidas,
-    ...(pacote.catalogo === undefined ? {} : { catalogo: pacote.catalogo.map((item) => ({ ...item, incluida: urnsMantidas.has(item.urn) })) }),
+    ...(catalogo === undefined || opcoes.comCatalogo === false ? {} : { catalogo: catalogoDentroDoLimite(catalogo, urnsMantidas) }),
     omitidasPorTamanho: (pacote.omitidasPorTamanho ?? 0) + (pacote.entradas.length - mantidas.length),
   };
+}
+
+function catalogoDentroDoLimite(catalogo: readonly ItemDoCatalogo[], urnsMantidas: ReadonlySet<string>): ItemDoCatalogo[] {
+  const itens: ItemDoCatalogo[] = [];
+  let bytes = 0;
+  for (const item of catalogo) {
+    const marcado = { ...item, incluida: urnsMantidas.has(item.urn) };
+    const tamanho = new TextEncoder().encode(JSON.stringify(marcado)).length;
+    if (bytes + tamanho > MAXIMO_DE_BYTES_DO_CATALOGO) break;
+    itens.push(marcado);
+    bytes += tamanho;
+  }
+  return itens;
 }

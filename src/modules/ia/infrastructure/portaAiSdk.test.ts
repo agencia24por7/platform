@@ -142,6 +142,31 @@ describe('adaptador do AI SDK (ADR 0063 §3)', () => {
     assert.equal(r.ok, false);
   });
 
+  it('com ferramenta e mais de um passo, o último passo não deixa chamar ferramenta', async () => {
+    let passo = 0;
+    const { porta: p, chamadas } = porta(async () => {
+      passo += 1;
+      if (passo < 2) {
+        return {
+          content: [{ type: 'tool-call', toolCallId: `c-${passo}`, toolName: 'catalogo_ler', input: JSON.stringify({ clienteId: 'cliente-1' }) }],
+          finishReason: { unified: 'tool-calls', raw: 'tool_calls' },
+          usage: uso,
+          warnings: [],
+        };
+      }
+      return texto('{"ok":true,"nota":2}');
+    });
+    const r = await p.gerar(
+      pedido({
+        orcamento: { passos: 2, tokensDeSaida: 100, tempoMs: 5_000 },
+        ferramentas: [{ nome: 'catalogo_ler', descricao: 'Lê.', entrada: z.object({ clienteId: z.string() }).strict(), executar: async () => ({ total: 1 }) }],
+      }),
+    );
+    assert.ok(r.ok);
+    assert.notDeepEqual(chamadas[0]!.toolChoice, { type: 'none' });
+    assert.deepEqual(chamadas[1]!.toolChoice, { type: 'none' });
+  });
+
   it('exceção qualquer vira indisponível, sem a mensagem original', async () => {
     const { porta: p } = porta(async () => { throw new Error(`falha interna com ${CHAVE}`); });
     const r = await p.gerar(pedido());

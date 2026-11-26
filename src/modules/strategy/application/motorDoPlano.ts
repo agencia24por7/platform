@@ -439,7 +439,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
 
   async function executarPersona(execucao: Execucao, contexto: Contexto, versao: Versao, plano: Plano, pacote: PacoteDeLeitura, persona: Persona) {
     const chave = `${execucao.id}:parecer:${persona.chave}`;
-    const dados = { plano, pacote: pacoteParaEntrada(pacote, MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA.comite), persona: { chave: persona.chave, nome: persona.nome, foco: persona.foco } };
+    const dados = { plano, pacote: pacoteParaEntrada(pacote, MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA.comite, { comCatalogo: false }), persona: { chave: persona.chave, nome: persona.nome, foco: persona.foco } };
     const bruto = await executarIA(execucao, contexto, 'comite', instrucaoDaPersona(persona), dados, esquemaParecer, chave);
     const urns = new Set(pacote.entradas.map((e) => e.urn));
     let descartadas = 0;
@@ -667,7 +667,11 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
 
     let modelo: SaidaDoGateDoModelo | null = null;
     if (veredito.resultado === 'aprovado') {
-      const pacoteDoGate = pacoteParaEntrada(pacote, MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA.gate);
+      const citadasPeloPlano = referenciasDoPlano(plano, { organizacaoId: execucao.organizationId, clienteId: execucao.clientId });
+      const pacoteDoGate = pacoteParaEntrada(pacote, MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA.gate, {
+        primeiras: new Set(citadasPeloPlano.ok ? citadasPeloPlano.value.map((referencia) => referencia.urn) : []),
+        comCatalogo: false,
+      });
       const chave = `${execucao.id}:gate-modelo:${execucao.rodada}`;
       const dadosDoGate = {
         plano,
