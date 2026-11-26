@@ -49,3 +49,49 @@ export function IconeAuditoria({ className }: Props) {
     </svg>
   );
 }
+
+export function IconeCheck({ className }: Props) {
+  return (
+    <svg className={className} {...BASE}>
+      <circle cx="10" cy="10" r="7.2" />
+      <path d="m6.8 10.2 2.2 2.2 4.2-4.6" />
+    </svg>
+  );
+}
+
+export function IconeRelogio({ className }: Props) {
+  return (
+    <svg className={className} {...BASE}>
+      <circle cx="10" cy="10" r="7.2" />
+      <path d="M10 5.8V10l2.8 1.8" />
+    </svg>
+  );
+}
+
+export function IconeBloqueio({ className }: Props) {
+  return (
+    <svg className={className} {...BASE}>
+      <circle cx="10" cy="10" r="7.2" />
+      <path d="m5 5 10 10" />
+    </svg>
+  );
+}
+
+export function IconeAlerta({ className }: Props) {
+  return (
+    <svg className={className} {...BASE}>
+      <path d="M10 3.2 17.4 16H2.6L10 3.2Z" />
+      <path d="M10 8.2v3.6" />
+      <path d="M10 14.1h.01" />
+    </svg>
+  );
+}
+
+export function IconePausa({ className }: Props) {
+  return (
+    <svg className={className} {...BASE}>
+      <circle cx="10" cy="10" r="7.2" />
+      <path d="M8.2 7.6v4.8M11.8 7.6v4.8" />
+    </svg>
+  );
+}
