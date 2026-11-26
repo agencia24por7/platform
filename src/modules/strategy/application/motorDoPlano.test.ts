@@ -421,6 +421,24 @@ describe('motor do plano: erros de IA e do Brain', () => {
     });
   });
 
+  it('a falha por saída inválida registra na auditoria o motivo, sem conteúdo do cliente', async () => {
+    const urnForaDoPacote = urnDeTeste('conhecimento', 'inventada-motivo');
+    const m = await montar({
+      roteiro: roteiroPadrao({
+        plano: () => {
+          const plano = planoCompleto();
+          plano.metas_e_metricas.metas[0]!.evidencias = [{ urn: urnForaDoPacote, papel: 'favor' }];
+          return plano;
+        },
+      }),
+    });
+    await ate(m);
+    const falhas = m.auditorias.filter((a) => a.metadata?.status === 'adiada' || a.metadata?.status === 'falhou');
+    assert.ok(falhas.length > 0);
+    assert.ok(falhas.every((a) => /^urn_fora_do_pacote:\d+$/.test(String(a.metadata?.motivo))));
+    assert.ok(!JSON.stringify(falhas).includes('inventada-motivo'));
+  });
+
   it('Brain indisponível: tenta de novo e falha com brain_indisponivel', async () => {
     const m = await montar({ brain: brainFora });
     const final = await ate(m);

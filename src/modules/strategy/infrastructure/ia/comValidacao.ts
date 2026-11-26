@@ -5,6 +5,11 @@ const FALHA_INESPERADA: ErroDeIA = { codigo: 'falha_do_fornecedor', mensagem: 'A
 const TEMPO_ESGOTADO: ErroDeIA = { codigo: 'tempo_esgotado', mensagem: 'A chamada à camada de IA passou do tempo máximo.' };
 const SAIDA_INVALIDA: ErroDeIA = { codigo: 'saida_invalida', mensagem: 'A saída da camada de IA não bate com o esquema do pedido.' };
 
+function caminhosDoEsquema(erro: { readonly issues: readonly { readonly path: readonly PropertyKey[] }[] }): string {
+  const caminhos = [...new Set(erro.issues.slice(0, 3).map((problema) => problema.path.map(String).join('.').replace(/[^a-z0-9_.]/gi, '').slice(0, 60)))];
+  return `esquema:${caminhos.join(',')}`.slice(0, 160);
+}
+
 type Corrida<T> = { readonly tipo: 'resposta'; readonly resultado: Result<RespostaDeIA<T>, ErroDeIA> } | { readonly tipo: 'tempo' };
 
 export function comValidacao(executor: ExecutorDeIA): ExecutorDeIA {
@@ -37,7 +42,7 @@ export function comValidacao(executor: ExecutorDeIA): ExecutorDeIA {
         if (corrida.tipo === 'tempo') return err(TEMPO_ESGOTADO);
         if (!corrida.resultado.ok) return err(corrida.resultado.error);
         const lida = pedido.esquema.safeParse(corrida.resultado.value.saida);
-        if (!lida.success) return err(SAIDA_INVALIDA);
+        if (!lida.success) return err({ ...SAIDA_INVALIDA, mensagem: `${SAIDA_INVALIDA.mensagem} [${caminhosDoEsquema(lida.error)}]` });
         return ok({ saida: lida.data, uso: corrida.resultado.value.uso });
       } catch {
         return err(FALHA_INESPERADA);

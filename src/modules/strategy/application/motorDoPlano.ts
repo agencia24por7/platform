@@ -156,12 +156,14 @@ class FalhaDaEtapa extends Error {
   readonly codigo: CodigoDeErroDaExecucao;
   readonly transitoria: boolean;
   readonly perdida: boolean;
+  readonly motivo: string | null;
 
-  constructor(codigo: CodigoDeErroDaExecucao, transitoria: boolean, perdida = false) {
+  constructor(codigo: CodigoDeErroDaExecucao, transitoria: boolean, perdida = false, motivo: string | null = null) {
     super(codigo);
     this.codigo = codigo;
     this.transitoria = transitoria;
     this.perdida = perdida;
+    this.motivo = motivo;
   }
 }
 
@@ -172,8 +174,18 @@ type Efeito = {
   readonly contagens?: Readonly<Record<string, number | string>>;
 };
 
-function falhaDeIA(codigo: CodigoDeErroDeIA): FalhaDaEtapa {
-  return new FalhaDaEtapa(CODIGO_DA_FALHA_DE_IA[codigo], codigo !== 'nao_configurada' && codigo !== 'limite_atingido');
+function falhaDeIA(codigo: CodigoDeErroDeIA, motivo: string | null = null): FalhaDaEtapa {
+  return new FalhaDaEtapa(CODIGO_DA_FALHA_DE_IA[codigo], codigo !== 'nao_configurada' && codigo !== 'limite_atingido', false, motivo);
+}
+
+function motivoDoEsquema(erro: { readonly issues: readonly { readonly path: readonly PropertyKey[] }[] }): string {
+  const caminhos = [...new Set(erro.issues.slice(0, 3).map((problema) => problema.path.map(String).join('.').replace(/[^a-z0-9_.]/gi, '').slice(0, 60)))];
+  return `esquema:${caminhos.join(',')}`.slice(0, 160);
+}
+
+function motivoDaFalhaDeIA(erro: { readonly codigo: string; readonly mensagem: string }): string {
+  const caminhos = erro.codigo === 'saida_invalida' ? /\[(esquema:[a-z0-9_.,\[\]]*)\]$/i.exec(erro.mensagem)?.[1] : undefined;
+  return caminhos ? `ia:${erro.codigo}:${caminhos}` : `ia:${erro.codigo}`;
 }
 
 function falhaDoBanco(erro: ErroDeEstrategia): FalhaDaEtapa {
@@ -305,15 +317,15 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
       throw new FalhaDaEtapa('ia_falha', true);
     }
     await renovarLease(execucao, contexto);
-    if (!resposta.ok) throw falhaDeIA(resposta.error.codigo);
+    if (!resposta.ok) throw falhaDeIA(resposta.error.codigo, motivoDaFalhaDeIA(resposta.error));
     const lida = esquema.safeParse(resposta.value.saida);
-    if (!lida.success) throw falhaDeIA('saida_invalida');
+    if (!lida.success) throw falhaDeIA('saida_invalida', motivoDoEsquema(lida.error));
     return lida.data;
   }
 
   async function pacoteComAsCitadas(execucao: Execucao, contexto: Contexto, plano: Plano, pacote: PacoteDeLeitura): Promise<PacoteDeLeitura> {
     const referencias = referenciasDoPlano(plano, { organizacaoId: execucao.organizationId, clienteId: execucao.clientId });
-    if (!referencias.ok) throw falhaDeIA('saida_invalida');
+    if (!referencias.ok) throw falhaDeIA('saida_invalida', 'referencias_invalidas');
     const presentes = new Set(pacote.entradas.map((entrada) => entrada.urn));
     const faltantes = [...new Set(referencias.value.map((referencia) => referencia.urn))].filter((urn) => !presentes.has(urn));
     if (faltantes.length === 0 || leitorDoBrain.entradasPorUrn === undefined) return pacote;
@@ -326,10 +338,10 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
 
   function referenciasConferidas(plano: Plano, execucao: Execucao, pacote: PacoteDeLeitura) {
     const referencias = referenciasDoPlano(plano, { organizacaoId: execucao.organizationId, clienteId: execucao.clientId });
-    if (!referencias.ok) throw falhaDeIA('saida_invalida');
+    if (!referencias.ok) throw falhaDeIA('saida_invalida', 'referencias_invalidas');
     const hashes = hashesDoPacote(pacote);
     const comHash = referencias.value.map((ref) => ({ urn: ref.urn, papel: ref.papel, hash: hashes.get(ref.urn) }));
-    if (comHash.some((ref) => ref.hash === undefined)) throw falhaDeIA('saida_invalida');
+    if (comHash.some((ref) => ref.hash === undefined)) throw falhaDeIA('saida_invalida', `urn_fora_do_pacote:${comHash.filter((ref) => ref.hash === undefined).length}`);
     const citadas = comHash.map((ref) => ({ urn: ref.urn, papel: ref.papel, hash: ref.hash! }));
     return combinarReferencias(citadas, referenciasImplicitasDoPacote(pacote));
   }
@@ -415,12 +427,12 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
         chaveDoGrupo,
       );
       Object.assign(secoes, doGrupo);
-      if (problemasDoRascunho(secoes).length > 0) throw falhaDeIA('saida_invalida');
+      if (problemasDoRascunho(secoes).length > 0) throw falhaDeIA('saida_invalida', 'rascunho_fora_da_integridade');
     }
     const lido = lerPlano(montarPlanoDeSecoes(intencaoConfiavel, secoes));
-    if (!lido.ok) throw falhaDeIA('saida_invalida');
+    if (!lido.ok) throw falhaDeIA('saida_invalida', 'plano_fora_do_esquema');
     const plano = lido.value;
-    if (!planoSemDadoPessoal(plano).ok) throw falhaDeIA('saida_invalida');
+    if (!planoSemDadoPessoal(plano).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano');
     const referencias = referenciasConferidas(plano, execucao, await pacoteComAsCitadas(execucao, contexto, plano, pacote));
     const estado = await estadoDoPlano(execucao);
     const chave = `${execucao.id}:redigir:${execucao.rodada}`;
@@ -452,7 +464,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
         return { ...ponto, fontes };
       }),
     };
-    if (!parecerSemDadoPessoal(parecer).ok) throw falhaDeIA('saida_invalida');
+    if (!parecerSemDadoPessoal(parecer).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_parecer');
     const gravado = await repositorio.registrarEvento(execucao.organizationId, {
       versaoId: versao.id,
       tipo: 'parecer',
@@ -544,7 +556,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
       );
       const dadas = doGrupo.respostas.map((r) => `${r.persona}/${r.pontoId}`);
       if (new Set(dadas).size !== dadas.length || dadas.length !== esperadas.size || dadas.some((d) => !esperadas.has(d))) {
-        throw falhaDeIA('saida_invalida');
+        throw falhaDeIA('saida_invalida', `respostas_do_grupo:g${indice}:esperadas${esperadas.size}:dadas${dadas.length}`);
       }
       corrente = { ...corrente, ...doGrupo.secoes };
       respostas.push(...doGrupo.respostas);
@@ -553,13 +565,13 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     const chave = `${execucao.id}:ajustar:${execucao.rodada}`;
     const ajuste: Ajuste = { responde_a: versao.id, respostas };
     const validado = esquemaAjuste.safeParse(ajuste);
-    if (!validado.success) throw falhaDeIA('saida_invalida');
-    if (!validarAjuste(pareceres, validado.data, personas).ok) throw falhaDeIA('saida_invalida');
-    if (!respostasDoAjusteSemDadoPessoal(validado.data.respostas).ok) throw falhaDeIA('saida_invalida');
+    if (!validado.success) throw falhaDeIA('saida_invalida', motivoDoEsquema(validado.error));
+    if (!validarAjuste(pareceres, validado.data, personas).ok) throw falhaDeIA('saida_invalida', 'ajuste_nao_responde_aos_pontos');
+    if (!respostasDoAjusteSemDadoPessoal(validado.data.respostas).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_ajuste');
     const lido = lerPlano(corrente);
-    if (!lido.ok) throw falhaDeIA('saida_invalida');
+    if (!lido.ok) throw falhaDeIA('saida_invalida', 'plano_ajustado_fora_do_esquema');
     const planoAjustado = lido.value;
-    if (!planoSemDadoPessoal(planoAjustado).ok) throw falhaDeIA('saida_invalida');
+    if (!planoSemDadoPessoal(planoAjustado).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano_ajustado');
     const referencias = referenciasConferidas(planoAjustado, execucao, await pacoteComAsCitadas(execucao, contexto, planoAjustado, pacote));
     const estado = await estadoDoPlano(execucao);
 
@@ -683,7 +695,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
           .map((e) => ({ urn: e.urn, tipo: e.tipo, titulo: e.titulo, resumo: e.resumo.slice(0, 600) })),
       };
       modelo = await executarIA(execucao, contexto, 'gate', INSTRUCAO_DO_GATE_POR_MODELO, dadosDoGate, esquemaDoGateDoModelo, chave);
-      if (!problemasDoGateSemDadoPessoal(modelo.problemas).ok) throw falhaDeIA('saida_invalida');
+      if (!problemasDoGateSemDadoPessoal(modelo.problemas).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_gate');
     }
     const resultado: 'aprovado' | 'reprovado' = veredito.resultado === 'aprovado' && modelo?.resultado === 'aprovado' ? 'aprovado' : 'reprovado';
     const payload = truncarPayloadDoGate({ ...payloadDoGate(veredito), resultado }, modelo);
@@ -763,7 +775,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
       : { status: 'falhou', falhas: execucao.falhas + 1, erroCodigo: falha.codigo, leaseAte: null };
     const resultado = await aplicar(execucao, mudanca, ficha);
     if ('estado' in resultado) return resultado;
-    await auditar(execucao, execucao.etapa, reintentar ? 'adiada' : 'falhou', { codigo: falha.codigo, transitoria: falha.transitoria });
+    await auditar(execucao, execucao.etapa, reintentar ? 'adiada' : 'falhou', { codigo: falha.codigo, transitoria: falha.transitoria, ...(falha.motivo === null ? {} : { motivo: falha.motivo }) });
     return { estado: reintentar ? 'adiado' : 'final', execucao: resultado };
   }
 
