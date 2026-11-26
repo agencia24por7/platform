@@ -191,7 +191,7 @@ export default async function LayoutDoCliente({
         ) : null}
         <FaixaDeProntidao prontidao={prontidao} regras={regras} clienteId={cliente.id} podeDefinir={podeRegistrarOuMexer(ctx.role, 'limite')} />
       </header>
-      <AbasDoCliente clienteId={cliente.id} blocos={{ conexoes: prontidao?.conexoes ?? null, contexto: prontidao?.contexto ?? null, regras: blocoDeRegras }} contadores={{ regras: contadorDeRegras }} />
+      <AbasDoCliente clienteId={cliente.id} blocos={{ conexoes: prontidao?.conexoes ?? null, contexto: prontidao?.contexto ?? null, regras: blocoDeRegras, estrategia: null }} contadores={{ regras: contadorDeRegras }} />
       <div className="cliente-aba">{children}</div>
     </Shell>
   );
