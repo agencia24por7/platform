@@ -102,7 +102,7 @@ describe('Strategy Plan, juiz do Comitê, correção do Gate e lacunas com suges
         ...process.env,
         DATABASE_URL: banco('orla_app', variavel('APP_DB_PASSWORD')),
         DATABASE_URL_WORKER: banco('orla_worker', variavel('WORKER_DB_PASSWORD')),
-        STRATEGY_ADMIN_URL: banco('postgres', 'sem-senha'),
+        STRATEGY_ADMIN_URL: banco('postgres', process.env.POSTGRES_PASSWORD ?? 'postgres'),
         STRATEGY_CENARIO: JSON.stringify(cenario),
       },
       timeout: 300_000,
