@@ -51,3 +51,7 @@ Release seguinte, só de código de domínio: Display, Performance Max, Demand G
 - Depois do deploy: smoke verde e, num cliente de teste, o Google aparece com os canais novos no plano de mídia.
 - Reversão: voltar a imagem basta; não há esquema novo.
 - Fora: Shopping (sem Merchant Center vinculado), carousel e product ad do Demand Gen, audiência e listing group do Performance Max, app da Apple.
+
+## Adendo: correção da instrução do plano (PR 197)
+
+Em produção, a redação falhou com `ia_saida_invalida` (canal com plataforma `whatsapp` e campos repetidos no plano de mídia). O release leva só a instrução do agente de plano: sem migração e sem mudança de infra. Depois do deploy, gerar um plano no cliente de teste e conferir o `motivo` em `strategy.run.step`. Reversão: voltar a imagem.
