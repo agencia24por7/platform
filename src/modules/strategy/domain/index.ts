@@ -5,6 +5,7 @@ export * from './dinheiro.ts';
 export * from './plano.ts';
 export * from './gruposDoPlano.ts';
 export * from './pacote.ts';
+export * from './codigosCurtos.ts';
 export * from './referencias.ts';
 export * from './impacto.ts';
 export * from './gate/resultado.ts';

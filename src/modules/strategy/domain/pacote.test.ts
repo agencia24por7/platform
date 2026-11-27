@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { hashDeTeste, pacoteDeTeste, urnDeTeste } from './fixturesDeTeste.ts';
+import { codigosDoPacote } from './codigosCurtos.ts';
 import { MAXIMO_DE_BYTES_DO_CATALOGO, pacoteParaEntrada, type ItemDoCatalogo } from './pacote.ts';
 
 const tamanho = (valor: unknown) => new TextEncoder().encode(JSON.stringify(valor)).length;
@@ -38,5 +39,16 @@ describe('pacoteParaEntrada', () => {
     assert.equal(saida.catalogo![0]!.incluida, true);
     assert.equal(saida.catalogo![1]!.incluida, false);
     assert.ok(hashDeTeste(1).length === 64);
+  });
+
+  it('entradas e itens do catálogo levam o ref do pacote inteiro, mesmo depois do corte por bytes', () => {
+    const base = pacoteDeTeste();
+    const catalogo = base.entradas.map((e) => ({ urn: e.urn, tipo: 'regra', titulo: 'x', incluida: true }));
+    const pacote = { ...base, catalogo };
+    const { codigoDaUrn } = codigosDoPacote(pacote);
+    const ultima = base.entradas[base.entradas.length - 1]!;
+    const saida = pacoteParaEntrada(pacote, tamanho(ultima) + 1, { primeiras: new Set([ultima.urn]) });
+    assert.equal(saida.entradas[0]!.ref, codigoDaUrn.get(ultima.urn));
+    for (const item of saida.catalogo!) assert.equal(item.ref, codigoDaUrn.get(item.urn));
   });
 });
