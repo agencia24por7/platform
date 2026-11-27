@@ -23,13 +23,14 @@
       "Bash(git push --force:*)"
     ],
     "allow": [
-      "Bash(terraform:*)",
-      "Bash(gcloud:*)",
-      "Bash(gh:*)",
-      "Bash(bq:*)",
+      "Bash(terraform plan:*)",
+      "Bash(terraform apply:*)",
+      "Bash(gcloud compute ssh:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh workflow run:*)",
+      "Bash(gh release create:*)",
       "Bash(scripts/vm-ligar.sh:*)",
       "Bash(scripts/vm-desligar.sh:*)",
-      "Bash(ssh:*)",
       "mcp__claude-in-chrome__*"
     ]
   },
