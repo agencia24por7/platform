@@ -26,7 +26,7 @@ Decisão e porquês: ADR 0037 (`docs/adr/0037-ambiente-de-agentes-claude-e-orca.
 | Item | Onde | O que faz |
 |---|---|---|
 | Escolha de modelo e esforço | `.claude/hooks/lib/politicas.mjs`, `scripts/start.sh` | classifica a tarefa; modelo fixo na sessão (cache por modelo) |
-| Guarda pré-uso | `.claude/hooks/guarda-pre-uso.mjs`, `.claude/hooks/lib/guarda.mjs`, `.claude/hooks/lib/politicas.mjs` | `deny` para ler segredo, apagar backup ou instância do Postgres, e push direto em `main`; `ask` para KMS destrutivo, migração versionada editada e comando que descarta trabalho. O resto é livre (ADR 0069). Editar `.claude/hooks/` e `.claude/settings*.json` é `ask`; `gcloud secrets versions access` direto é `deny`. `permissions.allow` no settings fica restrito a terraform plan e apply, SSH, merge, workflow, release, scripts da VM e Chrome |
+| Guarda pré-uso | `.claude/hooks/guarda-pre-uso.mjs`, `.claude/hooks/lib/guarda.mjs`, `.claude/hooks/lib/politicas.mjs` | `deny` para ler segredo, apagar backup ou instância do Postgres, e push direto em `main`; `ask` para KMS destrutivo, migração versionada editada e comando que descarta trabalho. O resto é livre (ADR 0069). Editar `.claude/hooks/` e `.claude/settings*.json` é `ask`, pela ferramenta de escrita e por shell (`>`, `tee`, `sed -i`, `cp`, `mv`, `rm`; um script que grave por dentro não é detectado); `gcloud secrets versions access` direto é `deny`. `permissions.allow` no settings fica restrito a terraform plan e apply, SSH, merge, workflow, release, scripts da VM e Chrome |
 | Limites de saída | `settings.env` | `BASH_MAX_OUTPUT_LENGTH`, `MAX_MCP_OUTPUT_TOKENS`, `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` |
 | Esforço | `effortLevel` e `effort` dos agentes | medium padrão; explorer low; security-reviewer high |
 
