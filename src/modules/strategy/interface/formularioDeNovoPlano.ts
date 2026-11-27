@@ -11,6 +11,7 @@ export type FormularioDeNovoPlano = {
   readonly plataformas: readonly OpcaoDoFormulario[];
   readonly landingPages: readonly OpcaoDoFormulario[];
   readonly ousadias: readonly OpcaoDoFormulario[];
+  readonly selecionados: { readonly tipo: string; readonly landingPage: string; readonly ousadia: string };
   readonly whatsapp: { readonly texto: string; readonly ausente: boolean; readonly link: { readonly rotulo: string; readonly href: string } | null };
   readonly semLandingPage: { readonly texto: string; readonly link: { readonly rotulo: string; readonly href: string } } | null;
   readonly podeCriar: boolean;
@@ -45,6 +46,11 @@ export function formularioDeNovoPlano(modelo: ModeloDeCriacao, valores: CamposBr
     plataformas: modelo.plataformas.map((p) => ({ valor: p.plataforma, rotulo: p.rotulo, marcada: plataformasEscolhidas.has(p.plataforma) })),
     landingPages: modelo.landingPages.map((pagina) => ({ valor: pagina.id, rotulo: `${pagina.rotulo} (${pagina.url})`, marcada: pagina.id === paginaEscolhida })),
     ousadias: OUSADIAS.map((nivel) => ({ valor: nivel, rotulo: ROTULO_DA_OUSADIA[nivel] ?? nivel, marcada: nivel === ousadiaEscolhida })),
+    selecionados: {
+      tipo: tipoEscolhido ?? '',
+      landingPage: modelo.landingPages.some((pagina) => pagina.id === paginaEscolhida) ? (paginaEscolhida ?? '') : '',
+      ousadia: ousadiaEscolhida,
+    },
     whatsapp: modelo.whatsappAusente
       ? { texto: 'O cliente ainda não tem WhatsApp cadastrado.', ausente: true, link: { rotulo: 'Cadastrar o WhatsApp do cliente', href: destino } }
       : { texto: modelo.whatsapp ?? '', ausente: false, link: null },

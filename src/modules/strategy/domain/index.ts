@@ -1,4 +1,5 @@
 export * from './status.ts';
+export * from './repeticaoDaExecucao.ts';
 export * from './papeis.ts';
 export * from './datas.ts';
 export * from './dinheiro.ts';
