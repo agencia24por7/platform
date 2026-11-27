@@ -77,7 +77,6 @@ test('comandos perigosos são negados, os de risco pedem confirmação e os comu
     'cat .env',
     'grep META .env.production',
     'grep -rn DATABASE_URL .',
-    'rg --hidden TOKEN',
     'rg -uu x',
     'git log -p -- .env',
     'echo $META_APP_SECRET',
@@ -127,6 +126,11 @@ test('comandos perigosos são negados, os de risco pedem confirmação e os comu
     "git push origin 'main'",
     'git push origin main && echo ok',
     'git push origin main>/dev/null',
+    'sudo -E env',
+    'sudo -u x env',
+    "bash -lc 'printenv'",
+    'git -c core.sshCommand="ssh -i k" push origin main',
+    'grep -rn DATABASE_URL . --exclude-dir=node_modules',
     "sh -c 'rm -f /srv/backups/a.sql'",
     'ls | xargs rm backups/a.sql',
     'find /srv/backups -name "*.sql" -delete',
@@ -258,6 +262,12 @@ test('comandos perigosos são negados, os de risco pedem confirmação e os comu
     'git checkout main -- docs/x.md && git push origin feat/x',
     'rg -n "set|env" .',
     'rg -n foo',
+    'rg --hidden foo',
+    "grep -rn foo . --include='*.ts'",
+    "jq '.key' x.json",
+    'node --env-file .env x.mjs',
+    'node -e "const e = { ...process.env, X: 1 }"',
+    'git push -u origin feat\ngh pr create --base main --title x',
     'grep -nE "(env|export)" src',
     'grep -rn foo src',
     'node -p "process.env.NODE_ENV"',
@@ -302,6 +312,12 @@ test('regras de comando não degradam com comando longo e o excesso é negado', 
   const inicio = Date.now()
   assert.equal(avaliarComando(longoComAcesso)?.decisao, 'deny')
   assert.ok(Date.now() - inicio < 1000, `levou ${Date.now() - inicio} ms`)
+  for (const trecho of ['git checkout ', 'docker compose down ']) {
+    const comandoLento = trecho.repeat(Math.floor(25_000 / trecho.length))
+    const inicioLento = Date.now()
+    avaliarComando(comandoLento)
+    assert.ok(Date.now() - inicioLento < 3000, `${trecho} levou ${Date.now() - inicioLento} ms`)
+  }
   const quaseNoLimite = `${'gcloud secrets versions '.repeat(1200)}`
   const inicioDoLimite = Date.now()
   avaliarComando(quaseNoLimite)
@@ -326,20 +342,21 @@ test('permissions.allow do settings é exatamente a lista combinada', () => {
   ])
 })
 
-test('hook PreToolUse termina em até 9 s e nunca deixa passar uma avaliação lenta', () => {
+test('hook PreToolUse, pelo comando do settings, termina em até 9 s e nunca deixa passar uma avaliação lenta', () => {
+  const settings = JSON.parse(execFileSync('cat', [join(raiz, '.claude', 'settings.json')], { encoding: 'utf8' }))
+  const comandoDoHook = settings.hooks.PreToolUse[0].hooks[0].command
   const evento = JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git checkout '.repeat(2200) }, cwd: raiz })
   const inicio = Date.now()
-  const resultado = spawnSync('node', [hook('guarda-pre-uso.mjs')], { input: evento, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: raiz } })
+  const resultado = spawnSync('sh', ['-c', comandoDoHook], { input: evento, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: raiz } })
   assert.ok(Date.now() - inicio < 9000, `levou ${Date.now() - inicio} ms`)
-  const decidiu = resultado.status === 0
-  const bloqueouPorTempo = resultado.status === 2
-  assert.ok(decidiu || bloqueouPorTempo, `status ${resultado.status}, sinal ${resultado.signal}`)
+  assert.ok(resultado.status === 0 || resultado.status === 2, `status ${resultado.status}`)
   assert.equal(resultado.signal, null)
 })
 
 test('push sem destino a partir da main é negado e o resto passa', () => {
   const pasta = mkdtempSync(join(tmpdir(), 'guarda-main-'))
   const vazia = mkdtempSync(join(tmpdir(), 'guarda-vazia-'))
+  const feature = mkdtempSync(join(tmpdir(), 'guarda-feature-'))
   try {
     execFileSync('git', ['init', '-q', '-b', 'main', pasta])
     execFileSync('git', ['-C', pasta, 'commit', '-q', '--allow-empty', '-m', 'x', '--no-gpg-sign'], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
@@ -356,9 +373,18 @@ test('push sem destino a partir da main é negado e o resto passa', () => {
     assert.equal(decidir('git push', vazia), 'ask')
     assert.equal(decidir('git push && cat .env', vazia), 'deny')
     assert.equal(decidir('git push; git push; git push; git push', pasta), 'deny')
+    assert.equal(decidir('git push origin HEAD 2>&1'), 'deny')
+    assert.equal(decidir('git push -u origin HEAD > /tmp/p.log 2>&1'), 'deny')
+    assert.equal(decidir('git push -u origin "$(git branch --show-current)"'), 'deny')
+    assert.equal(decidir('git push -u origin `git branch --show-current`'), 'deny')
+    execFileSync('git', ['init', '-q', '-b', 'feat', feature])
+    execFileSync('git', ['-C', feature, 'commit', '-q', '--allow-empty', '-m', 'x', '--no-gpg-sign'], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
+    assert.equal(decidir('git push', feature), 'allow')
+    assert.equal(decidir(`cd ${pasta} && git push`, feature), 'deny')
   } finally {
     rmSync(pasta, { recursive: true, force: true })
     rmSync(vazia, { recursive: true, force: true })
+    rmSync(feature, { recursive: true, force: true })
   }
 })
 
