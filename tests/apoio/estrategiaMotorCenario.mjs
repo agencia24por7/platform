@@ -16,6 +16,8 @@ const { issueSession } = await import('@/modules/identity/domain/session.ts');
 const { comoWorker, foraDoContextoDeChamada } = await import('@/shared/db/client.ts');
 const { createEstrategiaRepository } = await import('@/modules/strategy/infrastructure/estrategiaRepository.ts');
 const { createEstrategiaService } = await import('@/modules/strategy/application/estrategiaService.ts');
+const { createDestinoService } = await import('@/modules/clients/application/destinoService.ts');
+const { createDestinoRepository } = await import('@/modules/clients/infrastructure/destinoRepository.ts');
 const { createMotorDoPlano } = await import('@/modules/strategy/application/motorDoPlano.ts');
 const { createProcessadorDeExecucoes } = await import('@/modules/strategy/application/processadorDeExecucoes.ts');
 const { criarIaFalsa } = await import('@/modules/strategy/infrastructure/ia/iaFalsa.ts');
@@ -63,12 +65,18 @@ const roteiroBase = (pedido) => {
 };
 const iaFalsa = criarIaFalsa(roteiroBase);
 
-const servico = createEstrategiaService({ repositorio: repo, audit, leitorDoBrain });
-const motorCom = (executorDeIA) => createMotorDoPlano({ repositorio: repo, executorDeIA, leitorDoBrain, avaliadorDeLimites, audit });
-const intencao = plano.intencao;
+const destino = createDestinoService(createDestinoRepository(), audit);
+const servico = createEstrategiaService({ repositorio: repo, audit, leitorDoBrain, destino, catalogos: fixtures.CATALOGOS_DE_TESTE });
+const motorCom = (executorDeIA) => createMotorDoPlano({ repositorio: repo, executorDeIA, leitorDoBrain, avaliadorDeLimites, audit, catalogos: fixtures.CATALOGOS_DE_TESTE });
+const { plataformas: _p, whatsapp: _w, destino: _d, utm: _u, ...intencao } = plano.intencao;
 
 como(c.operator);
-const pedido = await servico.pedirPlano(comando('operator'), { clienteId: c.cliA, tipoDePlano: 'aquisicao', intencao }, ator(c.operator));
+const landing = await destino.criarLandingPage({ organizationId: c.orgA, clientId: c.cliA, papelDeQuemAge: 'operator', url: plano.intencao.destino.url, rotulo: 'Oferta' }, ator(c.operator));
+assert.ok(landing.ok, JSON.stringify(landing));
+assert.ok((await destino.gravarWhatsapp({ organizationId: c.orgA, clientId: c.cliA, papelDeQuemAge: 'operator', whatsapp: plano.intencao.whatsapp }, ator(c.operator))).ok);
+const novoPedido = (tipoDePlano) => ({ clienteId: c.cliA, tipoDePlano, plataformas: ['google', 'meta'], landingPageId: landing.value.id, intencao });
+
+const pedido = await servico.pedirPlano(comando('operator'), novoPedido('aquisicao'), ator(c.operator));
 assert.ok(pedido.ok, JSON.stringify(pedido));
 const planoId = pedido.value.plano.id;
 const execucaoId = pedido.value.execucao.id;
@@ -141,7 +149,7 @@ assert.ok(nova);
 assert.equal((await repo.lerVersao(c.orgA, v2.id)).status, 'vigente', 'a vigente continua até autorizarem a nova');
 
 como(c.operator);
-const segundoPlano = await servico.pedirPlano(comando('operator'), { clienteId: c.cliA, tipoDePlano: 'marca', intencao }, ator(c.operator));
+const segundoPlano = await servico.pedirPlano(comando('operator'), novoPedido('marca'), ator(c.operator));
 assert.ok(segundoPlano.ok, JSON.stringify(segundoPlano));
 const semIA = createProcessadorDeExecucoes({ repositorio: repo, motor: motorCom(comValidacao(criarIaNaoConfigurada())) });
 const resumoSemIA = await comoWorker(() => semIA.avancar({ limite: 50 }));
@@ -153,7 +161,7 @@ assert.equal(falha.erroCodigo, 'ia_nao_configurada');
 assert.equal((await repo.listarVersoes(c.orgA, segundoPlano.value.plano.id, 10)).length, 0, 'nada gravado sem IA');
 
 
-const tipoNovo = (nome) => ({ clienteId: c.cliA, tipoDePlano: nome, intencao });
+const tipoNovo = (nome) => novoPedido(nome);
 const reservarComoWorker = (id, agora, leaseMs = 300_000) => comoWorker(() => repo.reservarExecucao(c.orgA, id, { leaseMs, agora }));
 const versoesDoPlano = (idDoPlano) => repo.listarVersoes(c.orgA, idDoPlano, 20);
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import '../../../shared/testing/registrarAlias.mjs';
-import { CLIENTE_ID, ORGANIZACAO_ID, pacoteDeTeste, planoCompleto, secoesDoGrupoDaChave } from '../domain/fixturesDeTeste.ts';
+import { CLIENTE_ID, ORGANIZACAO_ID, CATALOGOS_DE_TESTE, pacoteDeTeste, planoCompleto, secoesDoGrupoDaChave } from '../domain/fixturesDeTeste.ts';
 import { parecer } from '../domain/comite/fixturesDeParecer.ts';
 
 Object.assign(process.env, {
@@ -26,7 +26,7 @@ async function montar(executor: 'falsa' | 'nao_configurada', quantidade: number)
     if (p.tarefa === 'comite') return parecer((p.dados as { persona: { chave: string } }).persona.chave, 'aprova');
     return { resultado: 'aprovado', problemas: [] };
   });
-  const motor = createMotorDoPlano({
+  const motor = createMotorDoPlano({ catalogos: CATALOGOS_DE_TESTE,
     repositorio,
     executorDeIA: executor === 'falsa' ? ia : criarIaNaoConfigurada(),
     leitorDoBrain: { async lerPacote() { return ok(pacoteDeTeste()); } },
@@ -35,7 +35,7 @@ async function montar(executor: 'falsa' | 'nao_configurada', quantidade: number)
   });
   const tipos = ['aquisicao', 'marca', 'comunidade', 'retencao'] as const;
   for (let i = 0; i < quantidade; i += 1) {
-    const plano = await repositorio.criarPlano({ organizationId: ORGANIZACAO_ID, clientId: CLIENTE_ID }, tipos[i]!, 'r');
+    const plano = await repositorio.criarPlano({ organizationId: ORGANIZACAO_ID, clientId: CLIENTE_ID }, tipos[i]!);
     assert.ok(plano.ok);
     await repositorio.criarExecucao(ORGANIZACAO_ID, CLIENTE_ID, {
       planoId: plano.value.id,
@@ -81,9 +81,30 @@ describe('processadorDeExecucoes', () => {
     assert.deepEqual(resultado.value.codigos, { ia_nao_configurada: 2 });
   });
 
+  it('exceção numa execução não derruba o lote: as demais seguem e a falha é contada', async () => {
+    const { repositorio } = await montar('falsa', 3);
+    const original = repositorio.reservarExecucao.bind(repositorio);
+    let chamadas = 0;
+    const comExcecao = createProcessadorDeExecucoes({
+      repositorio: { ...repositorio, reservarExecucao: async (org, id, opcoes) => { if ((chamadas += 1) === 1) throw new Error('banco caiu'); return original(org, id, opcoes); } },
+      motor: createMotorDoPlano({ catalogos: CATALOGOS_DE_TESTE,
+        repositorio,
+        executorDeIA: criarIaFalsa((p) => (p.tarefa === 'strategy_plan' ? secoesDoGrupoDaChave(p.chaveDeIdempotencia) : p.tarefa === 'comite' ? parecer((p.dados as { persona: { chave: string } }).persona.chave, 'aprova') : { resultado: 'aprovado', problemas: [] })),
+        leitorDoBrain: { async lerPacote() { return ok(pacoteDeTeste()); } },
+        avaliadorDeLimites: { async avaliador() { return ok(Object.assign(() => 'ok' as const, { medidasComLimite: [] as const })); } },
+        audit: { async record() {}, async list() { return []; }, async search() { return []; } },
+      }),
+    });
+    const r = await comExcecao.avancar({ limite: 10 });
+    assert.ok(r.ok);
+    assert.equal(r.value.falhas, 1);
+    assert.deepEqual(r.value.codigos, { excecao: 1 });
+    assert.equal(r.value.concluidas, 2);
+  });
+
   it('sem orçamento de tempo não reserva nada; falha ao descobrir vira unavailable', async () => {
     const { processador, repositorio } = await montar('falsa', 2);
-    const semTempo = createProcessadorDeExecucoes({ repositorio, motor: createMotorDoPlano({
+    const semTempo = createProcessadorDeExecucoes({ repositorio, motor: createMotorDoPlano({ catalogos: CATALOGOS_DE_TESTE,
       repositorio,
       executorDeIA: criarIaNaoConfigurada(),
       leitorDoBrain: { async lerPacote() { return ok(pacoteDeTeste()); } },
@@ -96,7 +117,7 @@ describe('processadorDeExecucoes', () => {
 
     const quebrado = createProcessadorDeExecucoes({
       repositorio: { ...repositorio, descobrirExecucoesPendentes: async () => { throw new Error('banco'); } },
-      motor: createMotorDoPlano({
+      motor: createMotorDoPlano({ catalogos: CATALOGOS_DE_TESTE,
         repositorio,
         executorDeIA: criarIaNaoConfigurada(),
         leitorDoBrain: { async lerPacote() { return ok(pacoteDeTeste()); } },

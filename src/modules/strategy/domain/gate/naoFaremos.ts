@@ -18,7 +18,10 @@ function usosDoPlano(plano: Plano): Uso[] {
     canal: c.canal,
     plataforma: c.plataforma,
   }));
-  return [...campanhas, ...canais];
+  const intencao = plano.intencao.plataformas ?? [];
+  const midia = plano.plano_de_midia.plataformas.map((m) => ({ onde: `plano_de_midia/${m.plataforma}`, plataforma: m.plataforma }));
+  const escolhidas = intencao.map((plataforma) => ({ onde: `intencao/${plataforma}`, plataforma }));
+  return [...campanhas, ...canais, ...midia, ...escolhidas];
 }
 
 function violaTeste(teste: TesteEstruturado, uso: Uso): boolean {

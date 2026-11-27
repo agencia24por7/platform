@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { err, ok, type Result } from '../../../shared/result/result.ts';
 import { dataIsoValida } from '../domain/datas.ts';
-import { OUSADIAS, SECOES_DO_PLANO, TAMANHO_MAXIMO_DO_PLANO_BYTES, type SecaoDoPlano } from '../domain/plano.ts';
+import { OUSADIAS, PLATAFORMAS, SECOES_DO_PLANO, TAMANHO_MAXIMO_DO_PLANO_BYTES, type Plataforma, type SecaoDoPlano } from '../domain/plano.ts';
 import { TIPOS_DE_PLANO, type TipoDePlano } from '../domain/tipoDePlano.ts';
 import { centavosDeReais } from './formatosDoPlano.ts';
 
@@ -22,6 +22,8 @@ export function lerIdDoCampo(campos: CamposBrutos, chave: string): Result<string
 
 export type IntencaoDoFormulario = {
   readonly tipoDePlano: TipoDePlano;
+  readonly plataformas: readonly Plataforma[];
+  readonly landingPageId: string;
   readonly intencao: {
     readonly objetivo: string;
     readonly horizonte: { readonly inicio: string; readonly fim: string };
@@ -39,6 +41,13 @@ export function lerIntencaoDoFormulario(campos: CamposBrutos): Result<IntencaoDo
 
   const tipo = z.enum(TIPOS_DE_PLANO).safeParse(aparado('tipoDePlano'));
   if (!tipo.success) erros['tipoDePlano'] = 'Escolha o tipo de plano.';
+
+  const plataformas = [...new Set(aparado('plataformas').split(',').map((item) => item.trim()).filter((item) => item !== ''))];
+  const plataformasLidas = z.array(z.enum(PLATAFORMAS)).min(1).safeParse(plataformas);
+  if (!plataformasLidas.success) erros['plataformas'] = 'Escolha ao menos uma plataforma.';
+
+  const landingPage = identificador.safeParse(aparado('landingPageId'));
+  if (!landingPage.success) erros['landingPageId'] = 'Escolha a landing page.';
 
   const objetivo = aparado('objetivo');
   if (objetivo.length < 3) erros['objetivo'] = 'Descreva o objetivo (mínimo 3 caracteres).';
@@ -61,10 +70,12 @@ export function lerIntencaoDoFormulario(campos: CamposBrutos): Result<IntencaoDo
   if (centavos === null) erros['verba'] = 'Informe a verba em reais, por exemplo 15.000,00.';
   else if (BigInt(centavos) <= 0n) erros['verba'] = 'A verba precisa ser maior que zero.';
 
-  if (Object.keys(erros).length > 0 || !tipo.success || !inicio.success || !fim.success || !ousadia.success || centavos === null) return err(erros);
+  if (Object.keys(erros).length > 0 || !plataformasLidas.success || !landingPage.success || !tipo.success || !inicio.success || !fim.success || !ousadia.success || centavos === null) return err(erros);
 
   return ok({
     tipoDePlano: tipo.data,
+    plataformas: plataformasLidas.data,
+    landingPageId: landingPage.data,
     intencao: {
       objetivo,
       horizonte: { inicio: inicio.data, fim: fim.data },

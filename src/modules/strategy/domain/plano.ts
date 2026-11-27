@@ -79,11 +79,11 @@ export const SECOES_DO_PLANO = [
   'estrategia',
   'canais_e_plataformas',
   'campanhas',
-  'criativos',
   'orcamento',
   'metas_e_metricas',
   'medicao',
   'calendario',
+  'plano_de_midia',
   'riscos_e_regras',
   'lacunas',
 ] as const;
@@ -127,14 +127,81 @@ const esquemaQuantia = z.discriminatedUnion('unidade', [
 ]);
 export type Quantia = z.infer<typeof esquemaQuantia>;
 
-export const esquemaIntencao = z.strictObject({
+const esquemaPlataformasEscolhidas = z
+  .array(z.enum(PLATAFORMAS))
+  .min(1)
+  .max(PLATAFORMAS.length)
+  .refine((itens) => new Set(itens).size === itens.length, 'Plataforma repetida.');
+
+const esquemaWhatsapp = z.string().regex(/^\+[1-9]\d{7,14}$/, 'WhatsApp no formato E.164, por exemplo +5511999998888.');
+
+const esquemaDestino = z.strictObject({
+  landingPageId: z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/, 'Id de landing page inválido.'),
+  url: z
+    .string()
+    .max(2048)
+    .refine((valor) => {
+      try {
+        return new URL(valor).protocol === 'https:';
+      } catch {
+        return false;
+      }
+    }, 'URL https válida.'),
+});
+export type Destino = z.infer<typeof esquemaDestino>;
+
+const esquemaUtm = z.strictObject({
+  utm_source: z.string().min(1).max(50).regex(/^[a-z0-9_-]+$/),
+  utm_medium: z.string().min(1).max(50).regex(/^[a-z0-9_-]+$/),
+  utm_campaign: z.string().min(1).max(50).regex(/^[a-z0-9_-]+$/),
+});
+const esquemaUtmPorPlataforma = z.partialRecord(z.enum(PLATAFORMAS), esquemaUtm);
+
+const formaBaseDaIntencao = {
   objetivo: texto(600),
   horizonte: esquemaPeriodo,
   ousadia: z.enum(OUSADIAS),
   retorno_esperado: z.strictObject({ descricao: texto(400), valor: esquemaQuantia.optional() }),
   verba: esquemaDinheiro,
-});
+};
+
+export const esquemaIntencaoBase = z.strictObject(formaBaseDaIntencao);
+export type IntencaoBase = z.infer<typeof esquemaIntencaoBase>;
+export const esquemaPlataformasDoPedido = esquemaPlataformasEscolhidas;
+
+type ComEntradasDeCanal = {
+  readonly plataformas?: readonly Plataforma[] | undefined;
+  readonly utm?: Partial<Record<Plataforma, unknown>> | undefined;
+};
+
+function utmSoDasPlataformasEscolhidas(intencao: ComEntradasDeCanal): boolean {
+  if (intencao.utm === undefined) return true;
+  const escolhidas = new Set<string>(intencao.plataformas ?? []);
+  return Object.keys(intencao.utm).every((plataforma) => escolhidas.has(plataforma));
+}
+const MENSAGEM_DE_UTM = 'UTM só para plataforma escolhida.';
+
+export const esquemaIntencao = z
+  .strictObject({
+    ...formaBaseDaIntencao,
+    plataformas: esquemaPlataformasEscolhidas,
+    whatsapp: esquemaWhatsapp.optional(),
+    destino: esquemaDestino,
+    utm: esquemaUtmPorPlataforma,
+  })
+  .refine(utmSoDasPlataformasEscolhidas, MENSAGEM_DE_UTM);
 export type Intencao = z.infer<typeof esquemaIntencao>;
+
+export const esquemaIntencaoDoPlano = z
+  .strictObject({
+    ...formaBaseDaIntencao,
+    plataformas: esquemaPlataformasEscolhidas.optional(),
+    whatsapp: esquemaWhatsapp.optional(),
+    destino: esquemaDestino.optional(),
+    utm: esquemaUtmPorPlataforma.optional(),
+  })
+  .refine(utmSoDasPlataformasEscolhidas, MENSAGEM_DE_UTM);
+export type IntencaoDoPlano = z.infer<typeof esquemaIntencaoDoPlano>;
 
 const esquemaResumoExecutivo = z.strictObject({
   objetivo: texto(400),
@@ -233,21 +300,12 @@ const esquemaCampanha = z.strictObject({
   segmento_id: esquemaId,
   oferta: texto(300),
   formato: z.enum(FORMATOS),
-  conceito_id: esquemaId,
   verba: esquemaDinheiro,
   periodo: esquemaPeriodo,
   metrica_de_sucesso: texto(200),
   meta_id: esquemaId,
 });
 export type Campanha = z.infer<typeof esquemaCampanha>;
-
-const esquemaConceito = z.strictObject({
-  id: esquemaId,
-  titulo: texto(120),
-  ideia: texto(500),
-  o_que_testar: texto(300),
-  hipotese_id: esquemaId.optional(),
-});
 
 const esquemaOrcamento = z.strictObject({
   total: esquemaDinheiro,
@@ -333,9 +391,49 @@ const esquemaLimiteNaoAplicavel = z.strictObject({
 });
 export type LimiteNaoAplicavel = z.infer<typeof esquemaLimiteNaoAplicavel>;
 
+export const SECOES_PADRAO_DO_PLANO_DE_MIDIA = [
+  'objetivo',
+  'publico',
+  'orcamento_e_lances',
+  'programacao',
+  'posicionamentos',
+  'conversao',
+  'copy',
+  'testes_ab',
+  'metas',
+] as const;
+
+export const MAXIMO_DE_CAMPOS_DO_PLANO_DE_MIDIA = 400;
+
+export const esquemaChaveDeCampo = z.string().regex(/^[a-z][a-z0-9_.]{0,63}$/, 'Chave de campo em minúsculas, dígitos, _ e . (até 64).');
+
+const esquemaValorDoCampo = z.union([texto(600), z.number(), z.boolean(), lista(texto(200), 50)]);
+export type ValorDoCampo = z.infer<typeof esquemaValorDoCampo>;
+
+const esquemaCampoDeMidia = z.strictObject({
+  campo: esquemaChaveDeCampo,
+  valor: esquemaValorDoCampo,
+  justificativa: z.string().max(300),
+  evidencias: lista(esquemaEvidencia, 3).default([]),
+});
+export type CampoDeMidia = z.infer<typeof esquemaCampoDeMidia>;
+
+const esquemaSecaoDeMidia = z.strictObject({
+  secao: esquemaId,
+  campos: lista(esquemaCampoDeMidia, 80),
+});
+
+export const esquemaMidiaDaPlataforma = z.strictObject({
+  plataforma: z.enum(PLATAFORMAS),
+  secoes: lista(esquemaSecaoDeMidia, 20),
+});
+export type MidiaDaPlataforma = z.infer<typeof esquemaMidiaDaPlataforma>;
+
+export const esquemaPlanoDeMidia = z.strictObject({ plataformas: lista(esquemaMidiaDaPlataforma, PLATAFORMAS.length) });
+
 export const ESQUEMAS_DAS_SECOES = {
   resumo_executivo: esquemaResumoExecutivo,
-  intencao: esquemaIntencao,
+  intencao: esquemaIntencaoDoPlano,
   diagnostico: esquemaDiagnostico,
   publico_alvo: z.strictObject({ segmentos: lista(esquemaSegmento, 12) }),
   comunidades_alvo: z.strictObject({ comunidades: lista(esquemaComunidade, 20) }),
@@ -343,11 +441,11 @@ export const ESQUEMAS_DAS_SECOES = {
   estrategia: esquemaEstrategia,
   canais_e_plataformas: esquemaCanaisEPlataformas,
   campanhas: z.strictObject({ campanhas: lista(esquemaCampanha, 30) }),
-  criativos: z.strictObject({ conceitos: lista(esquemaConceito, 30) }),
   orcamento: esquemaOrcamento,
   metas_e_metricas: z.strictObject({ metas: lista(esquemaMeta, 40) }),
   medicao: z.strictObject({ itens: lista(esquemaItemDeMedicao, 40) }),
   calendario: z.strictObject({ fases: lista(esquemaFase, 20) }),
+  plano_de_midia: esquemaPlanoDeMidia,
   riscos_e_regras: z.strictObject({
     riscos: lista(esquemaRisco, 30),
     regras_aplicaveis: lista(esquemaRegraAplicavel, 30),
@@ -386,7 +484,6 @@ function problemasDeIntegridade(plano: SecoesParciaisDoPlano): Problema[] {
     [['estrategia', 'hipoteses'], plano.estrategia?.hipoteses],
     [['canais_e_plataformas', 'canais'], plano.canais_e_plataformas?.canais],
     [['campanhas', 'campanhas'], plano.campanhas?.campanhas],
-    [['criativos', 'conceitos'], plano.criativos?.conceitos],
     [['metas_e_metricas', 'metas'], plano.metas_e_metricas?.metas],
     [['calendario', 'fases'], plano.calendario?.fases],
     [['riscos_e_regras', 'riscos'], plano.riscos_e_regras?.riscos],
@@ -400,9 +497,7 @@ function problemasDeIntegridade(plano: SecoesParciaisDoPlano): Problema[] {
   }
 
   const segmentos = plano.publico_alvo ? new Set(plano.publico_alvo.segmentos.map((s) => s.id)) : null;
-  const conceitos = plano.criativos ? new Set(plano.criativos.conceitos.map((c) => c.id)) : null;
   const canais = plano.canais_e_plataformas ? new Set(plano.canais_e_plataformas.canais.map((c) => c.id)) : null;
-  const hipoteses = plano.estrategia ? new Set(plano.estrategia.hipoteses.map((h) => h.id)) : null;
   const metas = plano.metas_e_metricas ? new Map(plano.metas_e_metricas.metas.map((m) => [m.id, m])) : null;
 
   plano.comunidades_alvo?.comunidades.forEach((c, i) => {
@@ -417,17 +512,39 @@ function problemasDeIntegridade(plano: SecoesParciaisDoPlano): Problema[] {
   });
   plano.campanhas?.campanhas.forEach((c, i) => {
     if (segmentos && !segmentos.has(c.segmento_id)) registrar(['campanhas', 'campanhas', i, 'segmento_id'], `Segmento inexistente: ${c.segmento_id}.`);
-    if (conceitos && !conceitos.has(c.conceito_id)) registrar(['campanhas', 'campanhas', i, 'conceito_id'], `Conceito inexistente: ${c.conceito_id}.`);
     if (metas && !metas.has(c.meta_id)) registrar(['campanhas', 'campanhas', i, 'meta_id'], `Meta inexistente: ${c.meta_id}.`);
-  });
-  plano.criativos?.conceitos.forEach((c, i) => {
-    if (hipoteses && c.hipotese_id !== undefined && !hipoteses.has(c.hipotese_id)) {
-      registrar(['criativos', 'conceitos', i, 'hipotese_id'], `Hipótese inexistente: ${c.hipotese_id}.`);
-    }
   });
   plano.orcamento?.por_canal.forEach((p, i) => {
     if (canais && !canais.has(p.canal_id)) registrar(['orcamento', 'por_canal', i, 'canal_id'], `Canal inexistente: ${p.canal_id}.`);
   });
+  const escolhidas = plano.intencao?.plataformas === undefined ? null : new Set<string>(plano.intencao.plataformas);
+  if (escolhidas) {
+    plano.canais_e_plataformas?.canais.forEach((c, i) => {
+      if (c.plataforma !== undefined && !escolhidas.has(c.plataforma)) {
+        registrar(['canais_e_plataformas', 'canais', i, 'plataforma'], `Plataforma não escolhida: ${c.plataforma}.`);
+      }
+    });
+    plano.campanhas?.campanhas.forEach((c, i) => {
+      if (c.plataforma !== undefined && !escolhidas.has(c.plataforma)) {
+        registrar(['campanhas', 'campanhas', i, 'plataforma'], `Plataforma não escolhida: ${c.plataforma}.`);
+      }
+    });
+  }
+  const midia = plano.plano_de_midia?.plataformas ?? [];
+  midia.forEach((entrada, i) => {
+    if (escolhidas && !escolhidas.has(entrada.plataforma)) {
+      registrar(['plano_de_midia', 'plataformas', i, 'plataforma'], `Plataforma não escolhida: ${entrada.plataforma}.`);
+    }
+    const chaves = entrada.secoes.flatMap((secao) => secao.campos.map((campo) => campo.campo));
+    for (const repetido of idsRepetidos(chaves)) registrar(['plano_de_midia', 'plataformas', i, 'secoes'], `Campo repetido: ${repetido}.`);
+  });
+  for (const repetida of idsRepetidos(midia.map((entrada) => entrada.plataforma))) {
+    registrar(['plano_de_midia', 'plataformas'], `Plataforma repetida: ${repetida}.`);
+  }
+  const totalDeCampos = midia.reduce((total, entrada) => total + entrada.secoes.reduce((soma, secao) => soma + secao.campos.length, 0), 0);
+  if (totalDeCampos > MAXIMO_DE_CAMPOS_DO_PLANO_DE_MIDIA) {
+    registrar(['plano_de_midia'], `Plano de mídia com ${totalDeCampos} campos; o máximo é ${MAXIMO_DE_CAMPOS_DO_PLANO_DE_MIDIA}.`);
+  }
   plano.metas_e_metricas?.metas.forEach((m, i) => {
     if (m.nivel === 'negocio' && m.pai_id !== null) {
       registrar(['metas_e_metricas', 'metas', i, 'pai_id'], 'Meta de negócio não tem pai.');
@@ -446,14 +563,37 @@ export function problemasDeIntegridadeParcial(secoes: SecoesParciaisDoPlano): re
   return problemasDeIntegridade(secoes).map((problema) => ({ caminho: problema.caminho.join('.'), mensagem: problema.mensagem }));
 }
 
-export const esquemaPlano = z
-  .strictObject({ schema_version: z.literal(SCHEMA_VERSION), ...secoesDoPlano })
-  .superRefine((plano, contexto) => {
+function ehRegistro(valor: unknown): valor is Record<string, unknown> {
+  return valor !== null && typeof valor === 'object' && !Array.isArray(valor);
+}
+
+function semChave(registro: Record<string, unknown>, chave: string): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(registro).filter(([nome]) => nome !== chave));
+}
+
+export function normalizarPlanoLegado(json: unknown): unknown {
+  if (!ehRegistro(json)) return json;
+  const plano: Record<string, unknown> = semChave(json, 'criativos');
+  const campanhas = plano.campanhas;
+  if (ehRegistro(campanhas) && Array.isArray(campanhas.campanhas)) {
+    plano.campanhas = {
+      ...campanhas,
+      campanhas: campanhas.campanhas.map((campanha: unknown) => (ehRegistro(campanha) ? semChave(campanha, 'conceito_id') : campanha)),
+    };
+  }
+  if (plano.plano_de_midia === undefined) plano.plano_de_midia = { plataformas: [] };
+  return plano;
+}
+
+export const esquemaPlano = z.preprocess(
+  normalizarPlanoLegado,
+  z.strictObject({ schema_version: z.literal(SCHEMA_VERSION), ...secoesDoPlano }).superRefine((plano, contexto) => {
     for (const problema of problemasDeIntegridade(plano)) {
       contexto.addIssue({ code: 'custom', path: problema.caminho, message: problema.mensagem });
     }
-  });
-export type Plano = z.infer<typeof esquemaPlano>;
+  }),
+);
+export type Plano = z.output<typeof esquemaPlano>;
 
 export function tamanhoDoPlano(plano: unknown): number {
   return new TextEncoder().encode(JSON.stringify(plano)).length;

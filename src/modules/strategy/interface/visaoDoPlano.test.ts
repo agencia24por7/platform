@@ -77,7 +77,7 @@ function evento(tipo: EventoDaVersao['tipo'], payload: Record<string, unknown>, 
 function painel(sobrescrita: Partial<PainelDoPlano> = {}): PainelDoPlano {
   const exibida = sobrescrita.versaoExibida === undefined ? versao() : sobrescrita.versaoExibida;
   return {
-    plano: { id: PLANO_ID, organizationId: 'org', clientId: CLIENTE_ID, tipo: 'aquisicao', criadoEm: AGORA },
+    plano: { id: PLANO_ID, organizationId: 'org', clientId: CLIENTE_ID, tipo: 'aquisicao', plataformas: ['meta'], whatsapp: '+5511912345678', landingPageId: '00000000-0000-4000-8000-0000000000aa', criadoEm: AGORA },
     versaoExibida: exibida,
     status: exibida?.status ?? null,
     rotulo: null,

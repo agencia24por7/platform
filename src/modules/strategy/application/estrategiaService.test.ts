@@ -13,6 +13,7 @@ import type {
 } from '@/modules/strategy/application/portas';
 import type { MemberRole } from '@/modules/identity/domain/user';
 import {
+  CATALOGOS_DE_TESTE,
   CLIENTE_ID,
   ORGANIZACAO_ID,
   URN_BENCHMARK_B,
@@ -33,6 +34,7 @@ Object.assign(process.env, {
 });
 
 const { createEstrategiaService } = await import('./estrategiaService.ts');
+type DestinoParaEstrategia = import('./estrategiaService.ts').DestinoParaEstrategia;
 const { err, ok } = await import('../../../shared/result/result.ts');
 const { referenciasImplicitasDoPacote } = await import('../domain/referencias.ts');
 
@@ -64,12 +66,26 @@ function criarRepositorio(estado: Estado): RepositorioDeEstrategia {
     return resto;
   };
   const ativa = (planoId: string) => estado.execucoes.find((e) => e.planoId === planoId && (e.status === 'pendente' || e.status === 'rodando')) ?? null;
+  const estadoDe = (plano: Plano) => {
+    const doPlano = estado.versoes.filter((v) => v.planoId === plano.id);
+    const recente = doPlano.at(-1);
+    const vigente = doPlano.find((v) => v.status === 'vigente');
+    const aberta = doPlano.find((v) => v.status === 'rascunho' || v.status === 'proposto');
+    const execucoes = estado.execucoes.filter((e) => e.planoId === plano.id);
+    const objetivo = execucoes.find((e) => e.tipo === 'criar')?.pedido.objetivo;
+    return {
+      plano,
+      maisRecente: recente ? resumo(recente) : null,
+      vigente: vigente ? resumo(vigente) : null,
+      aberta: aberta ? resumo(aberta) : null,
+      objetivo: typeof objetivo === 'string' ? objetivo : null,
+      ultimaExecucao: execucoes.at(-1) ?? null,
+      atualizadoEm: new Date('2026-11-25T12:00:00Z'),
+    };
+  };
   const repo: RepositorioDeEstrategia = {
     async clienteVisivel() {
       return estado.clienteExiste;
-    },
-    async buscarPlano(escopo, tipo) {
-      return estado.planos.find((p) => p.clientId === escopo.clientId && p.tipo === tipo) ?? null;
     },
     async buscarPlanoPorId(_org, id) {
       return estado.planos.find((p) => p.id === id) ?? null;
@@ -78,21 +94,28 @@ function criarRepositorio(estado: Estado): RepositorioDeEstrategia {
       const lista = tipo === 'plano' ? estado.planos : tipo === 'versao' ? estado.versoes : estado.execucoes;
       return lista.find((item) => item.id === recursoId)?.clientId ?? null;
     },
-    async criarPlano(escopo, tipo) {
-      const plano: Plano = { id: idFalso(estado), organizationId: escopo.organizationId, clientId: escopo.clientId, tipo, criadoEm: new Date() };
+    async criarPlanoComExecucao(escopo, novo, execucao) {
+      const plano: Plano = {
+        id: idFalso(estado),
+        organizationId: escopo.organizationId,
+        clientId: escopo.clientId,
+        tipo: novo.tipo,
+        plataformas: novo.plataformas,
+        whatsapp: novo.whatsapp,
+        landingPageId: novo.landingPageId,
+        criadoEm: new Date(),
+      };
       estado.planos.push(plano);
-      return ok(plano);
+      const criada = await repo.criarExecucao(escopo.organizationId, escopo.clientId, { ...execucao, planoId: plano.id });
+      if (!criada.ok) return err(criada.error);
+      return ok({ plano, execucao: criada.value });
     },
     async listarPlanosDoCliente(escopo) {
-      return estado.planos
-        .filter((p) => p.clientId === escopo.clientId)
-        .map((plano) => {
-          const doPlano = estado.versoes.filter((v) => v.planoId === plano.id);
-          const recente = doPlano.at(-1);
-          const vigente = doPlano.find((v) => v.status === 'vigente');
-          const aberta = doPlano.find((v) => v.status === 'rascunho' || v.status === 'proposto');
-          return { plano, maisRecente: recente ? resumo(recente) : null, vigente: vigente ? resumo(vigente) : null, aberta: aberta ? resumo(aberta) : null };
-        });
+      return estado.planos.filter((p) => p.clientId === escopo.clientId).map(estadoDe).reverse();
+    },
+    async estadoDoPlano(_org, planoId) {
+      const plano = estado.planos.find((p) => p.id === planoId);
+      return plano ? estadoDe(plano) : null;
     },
     async criarVersaoRascunho(org, nova) {
       if (estado.falharCriarVersao) return err(estado.falharCriarVersao);
@@ -215,7 +238,38 @@ function criarRepositorio(estado: Estado): RepositorioDeEstrategia {
 const brainOk: LeitorDoBrain = { async lerPacote() { return ok(pacoteDeTeste()); } };
 const brainFora: LeitorDoBrain = { async lerPacote() { return err({ codigo: 'brain_indisponivel', mensagem: 'fora' }); } };
 
-function montar(opcoes: { brain?: LeitorDoBrain; auditFalha?: boolean } = {}) {
+const LANDING_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const LANDING_ARQUIVADA_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const LANDING_DE_OUTRO_CLIENTE_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+
+type OpcoesDoDestino = { whatsapp?: string | null };
+
+function criarDestino(opcoes: OpcoesDoDestino = {}): DestinoParaEstrategia {
+  const pagina = (id: string, clientId: string, arquivadaEm: Date | null) => ({
+    id,
+    organizationId: ORGANIZACAO_ID,
+    clientId,
+    url: 'https://exemplo.com.br/oferta?ref=a',
+    rotulo: 'Oferta',
+    criadaEm: new Date('2026-11-01T00:00:00Z'),
+    arquivadaEm,
+  });
+  const paginas = [
+    pagina(LANDING_ID, CLIENTE_ID, null),
+    pagina(LANDING_ARQUIVADA_ID, CLIENTE_ID, new Date('2026-11-10T00:00:00Z')),
+    pagina(LANDING_DE_OUTRO_CLIENTE_ID, 'ffffffff-ffff-4fff-8fff-ffffffffffff', null),
+  ];
+  return {
+    async listarLandingPages(escopo, o) {
+      return ok(paginas.filter((p) => p.clientId === escopo.clientId && (o?.incluirArquivadas === true || p.arquivadaEm === null)));
+    },
+    async lerWhatsapp() {
+      return ok(opcoes.whatsapp === undefined ? '+5511912345678' : opcoes.whatsapp);
+    },
+  };
+}
+
+function montar(opcoes: { brain?: LeitorDoBrain; auditFalha?: boolean; destino?: OpcoesDoDestino } = {}) {
   const estado = novoEstado();
   const auditorias: AuditEvent[] = [];
   const service = createEstrategiaService({
@@ -229,13 +283,22 @@ function montar(opcoes: { brain?: LeitorDoBrain; auditFalha?: boolean } = {}) {
       async search() { return []; },
     },
     leitorDoBrain: opcoes.brain ?? brainOk,
+    destino: criarDestino(opcoes.destino),
+    catalogos: CATALOGOS_DE_TESTE,
     gerador: { novo: () => `id-${estado.proximoId++}` },
     relogio: { agora: () => new Date('2026-11-25T12:00:00Z') },
   });
   return { estado, auditorias, service };
 }
 
-const pedido = { clienteId: CLIENTE_ID, tipoDePlano: 'aquisicao' as const, intencao: INTENCAO };
+const { plataformas: _p, whatsapp: _w, destino: _d, utm: _u, ...INTENCAO_BASE } = INTENCAO;
+const pedido = {
+  clienteId: CLIENTE_ID,
+  tipoDePlano: 'aquisicao' as const,
+  plataformas: ['meta' as const],
+  landingPageId: LANDING_ID,
+  intencao: INTENCAO_BASE,
+};
 
 function semearVersao(estado: Estado, status: 'rascunho' | 'proposto' | 'vigente', extra: Partial<Versao> = {}): Versao {
   const versao: Versao = {
@@ -257,7 +320,7 @@ function semearVersao(estado: Estado, status: 'rascunho' | 'proposto' | 'vigente
     ...extra,
   };
   if (!estado.planos.some((p) => p.id === PLANO_ID)) {
-    estado.planos.push({ id: PLANO_ID, organizationId: ORGANIZACAO_ID, clientId: CLIENTE_ID, tipo: 'aquisicao', criadoEm: new Date() });
+    estado.planos.push({ id: PLANO_ID, organizationId: ORGANIZACAO_ID, clientId: CLIENTE_ID, tipo: 'aquisicao', plataformas: ['meta'], whatsapp: '+5511912345678', landingPageId: LANDING_ID, criadoEm: new Date() });
   }
   estado.versoes.push(versao);
   return versao;
@@ -308,17 +371,56 @@ describe('pedirPlano', () => {
     assert.equal(!sem.ok && sem.error.code, 'not_found');
   });
 
-  it('segunda solicitação com execução ativa vira conflito; plano com versão vigente também', async () => {
+  it('vários planos do mesmo tipo são independentes: cada pedido cria um plano novo com a UTM gerada por código', async () => {
     const { service, estado } = montar();
-    assert.ok((await service.pedirPlano(como('admin'), pedido, ator)).ok);
-    const segunda = await service.pedirPlano(como('admin'), pedido, ator);
-    assert.equal(!segunda.ok && segunda.error.code, 'conflict');
+    const primeiro = await service.pedirPlano(como('admin'), pedido, ator);
+    const segundo = await service.pedirPlano(como('admin'), pedido, ator);
+    assert.ok(primeiro.ok && segundo.ok);
+    assert.equal(estado.planos.length, 2);
+    assert.notEqual(primeiro.ok && primeiro.value.plano.id, segundo.ok && segundo.value.plano.id);
+    const intencao = estado.execucoes[0]!.pedido as { plataformas: string[]; whatsapp: string; destino: { landingPageId: string; url: string }; utm: Record<string, { utm_source: string; utm_medium: string; utm_campaign: string }> };
+    assert.deepEqual(intencao.plataformas, ['meta']);
+    assert.equal(intencao.whatsapp, '+5511912345678');
+    assert.deepEqual(intencao.destino, { landingPageId: LANDING_ID, url: 'https://exemplo.com.br/oferta?ref=a' });
+    assert.equal(intencao.utm.meta?.utm_medium, 'paid_social');
+    assert.match(intencao.utm.meta!.utm_campaign, /^aquisicao-.*-202612$/);
+    assert.equal(estado.planos[0]!.whatsapp, '+5511912345678');
+    assert.equal(estado.planos[0]!.landingPageId, LANDING_ID);
+  });
 
-    const outro = montar();
-    semearVersao(outro.estado, 'vigente');
-    const jaTem = await outro.service.pedirPlano(como('admin'), pedido, ator);
-    assert.equal(!jaTem.ok && jaTem.error.details?.codigo, 'plano_ja_existe');
-    assert.equal(estado.execucoes.length, 1);
+  it('plataforma sem catálogo, duplicada ou vazia é recusada', async () => {
+    const { service, estado } = montar();
+    const semCatalogo = await service.pedirPlano(como('admin'), { ...pedido, plataformas: ['tiktok'] }, ator);
+    assert.equal(!semCatalogo.ok && semCatalogo.error.code, 'validation');
+    const duplicada = await service.pedirPlano(como('admin'), { ...pedido, plataformas: ['meta', 'meta'] }, ator);
+    assert.equal(!duplicada.ok && duplicada.error.code, 'validation');
+    const vazia = await service.pedirPlano(como('admin'), { ...pedido, plataformas: [] }, ator);
+    assert.equal(!vazia.ok && vazia.error.code, 'validation');
+    assert.equal(estado.planos.length, 0);
+  });
+
+  it('landing page arquivada, inexistente ou de outro cliente é recusada', async () => {
+    const { service, estado } = montar();
+    for (const landingPageId of [LANDING_ARQUIVADA_ID, LANDING_DE_OUTRO_CLIENTE_ID, '99999999-9999-4999-8999-999999999999']) {
+      const r = await service.pedirPlano(como('admin'), { ...pedido, landingPageId }, ator);
+      assert.equal(!r.ok && r.error.code, 'validation', landingPageId);
+      assert.ok(!r.ok && r.error.details?.landingPageId);
+    }
+    assert.equal(estado.planos.length, 0);
+  });
+
+  it('cliente sem WhatsApp: erro tipado whatsapp_do_cliente_ausente e nada é gravado', async () => {
+    const { service, estado } = montar({ destino: { whatsapp: null } });
+    const r = await service.pedirPlano(como('admin'), pedido, ator);
+    assert.equal(!r.ok && r.error.details?.codigo, 'whatsapp_do_cliente_ausente');
+    assert.equal(estado.planos.length, 0);
+    assert.equal(estado.execucoes.length, 0);
+  });
+
+  it('o corpo do pedido não aceita destino, UTM nem WhatsApp vindos do front', async () => {
+    const { service } = montar();
+    const r = await service.pedirPlano(como('admin'), { ...pedido, intencao: { ...INTENCAO_BASE, utm: INTENCAO.utm } } as never, ator);
+    assert.equal(!r.ok && r.error.code, 'validation');
   });
 
   it('falha de auditoria não derruba o fluxo', async () => {
@@ -345,7 +447,7 @@ describe('pedirMudanca', () => {
     assert.equal(!pii.ok && pii.error.code, 'validation');
 
     const vazio = montar();
-    vazio.estado.planos.push({ id: PLANO_ID, organizationId: ORGANIZACAO_ID, clientId: CLIENTE_ID, tipo: 'aquisicao', criadoEm: new Date() });
+    vazio.estado.planos.push({ id: PLANO_ID, organizationId: ORGANIZACAO_ID, clientId: CLIENTE_ID, tipo: 'aquisicao', plataformas: ['meta'], whatsapp: '+5511912345678', landingPageId: '00000000-0000-4000-8000-0000000000aa', criadoEm: new Date() });
     const semVersao = await vazio.service.pedirMudanca(como('operator'), { planoId: PLANO_ID, instrucao: 'mude algo aqui' }, ator);
     assert.equal(!semVersao.ok && semVersao.error.details?.codigo, 'sem_versao');
   });
@@ -435,6 +537,40 @@ describe('editarManual herda as referências implícitas da versão base', () =>
   });
 });
 
+describe('edição manual não muda o destino do plano', () => {
+  it('plataformas, WhatsApp, landing page e UTM voltam aos da versão base; o resto da intenção edita', async () => {
+    const { service, estado } = montar();
+    semearVersao(estado, 'rascunho');
+    const editado = planoCompleto();
+    editado.intencao = {
+      ...editado.intencao,
+      objetivo: 'Objetivo reescrito pela pessoa',
+      whatsapp: '+5511900000000',
+      destino: { landingPageId: 'lp_outra', url: 'https://golpe.example.com/' },
+      utm: { google: { utm_source: 'x', utm_medium: 'y', utm_campaign: 'z' } },
+    };
+    const r = await service.editarManual(como('operator'), { planoId: PLANO_ID, conteudo: editado }, ator);
+    assert.ok(r.ok, JSON.stringify(!r.ok && r.error));
+    if (!r.ok) return;
+    const gravada = (r.value.versao.conteudo as { intencao: typeof INTENCAO }).intencao;
+    assert.equal(gravada.objetivo, 'Objetivo reescrito pela pessoa');
+    assert.deepEqual(gravada.destino, INTENCAO.destino);
+    assert.deepEqual(gravada.utm, INTENCAO.utm);
+    assert.equal(gravada.whatsapp, INTENCAO.whatsapp);
+  });
+
+  it('plano anterior à página única (sem plataformas) recusa mudança, revisão e edição com código claro', async () => {
+    const { service, estado } = montar();
+    semearVersao(estado, 'vigente');
+    Object.assign(estado.planos[0]!, { plataformas: null, whatsapp: null, landingPageId: null });
+    const mudanca = await service.pedirMudanca(como('operator'), { planoId: PLANO_ID, instrucao: 'mais verba' }, ator);
+    const revisao = await service.pedirRevisao(como('operator'), { planoId: PLANO_ID }, ator);
+    const edicao = await service.editarManual(como('operator'), { planoId: PLANO_ID, conteudo: planoCompleto() }, ator);
+    for (const r of [mudanca, revisao, edicao]) assert.equal(!r.ok && r.error.details?.codigo, 'plano_sem_destino');
+    assert.equal(estado.execucoes.length, 0);
+  });
+});
+
 describe('aplicar, autorizar, rejeitar, revogar e cancelar versão', () => {
   it('aplicar devolve o que falta e não grava evento', async () => {
     const { service, estado } = montar();
@@ -520,9 +656,10 @@ describe('aplicar, autorizar, rejeitar, revogar e cancelar versão', () => {
     estado.eventos.push(evento('parecer', { persona: 'a', veredito: 'aprova' }), evento('gate', { resultado: 'aprovado' }));
     const repositorio = criarRepositorio(estado);
     const comFalha = createEstrategiaService({
-      repositorio: { ...repositorio, registrarEvento: async () => err({ codigo: 'sem_permissao', mensagem: 'x' }) },
+      repositorio: { ...repositorio, registrarEvento: async () => err({ codigo: 'sem_permissao' as const, mensagem: 'x' }) },
       audit: { async record() {}, async list() { return []; }, async search() { return []; } },
       leitorDoBrain: brainOk,
+      destino: criarDestino(),
     });
     const negado = await comFalha.aplicar(como('operator'), { versaoId: VERSAO_ID }, ator);
     assert.equal(!negado.ok && negado.error.code, 'forbidden');
@@ -681,7 +818,7 @@ function codigo(resultado: { ok: boolean; error?: { code: string; details?: Reco
 describe('dado pessoal no texto das pessoas', () => {
   it('pedirPlano sanitiza o objetivo com e-mail, telefone e CPF antes de gravar e audita sem o dado', async () => {
     const { service, estado, auditorias } = montar();
-    const intencao = { ...INTENCAO, objetivo: 'Gerar leads; contato maria@exemplo.com, (11) 98888-7777, 123.456.789-09' };
+    const intencao = { ...INTENCAO_BASE, objetivo: 'Gerar leads; contato maria@exemplo.com, (11) 98888-7777, 123.456.789-09' };
     const resultado = await service.pedirPlano(como('operator'), { ...pedido, intencao }, ator);
     assert.ok(resultado.ok);
     const gravado = JSON.stringify(estado.execucoes[0]!.pedido);
@@ -693,7 +830,7 @@ describe('dado pessoal no texto das pessoas', () => {
   it('pedirPlano recusa objetivo que vira só dado pessoal e nada é gravado', async () => {
     for (const dado of ['maria@exemplo.com', '(11) 98888-7777', '123.456.789-09']) {
       const { service, estado } = montar();
-      const resultado = await service.pedirPlano(como('operator'), { ...pedido, intencao: { ...INTENCAO, objetivo: dado } }, ator);
+      const resultado = await service.pedirPlano(como('operator'), { ...pedido, intencao: { ...INTENCAO_BASE, objetivo: dado } }, ator);
       assert.equal(!resultado.ok && resultado.error.code, 'validation');
       assert.ok(!resultado.ok && resultado.error.details?.objetivo);
       assert.ok(!resultado.ok && !JSON.stringify(resultado.error).includes(dado));
@@ -704,7 +841,7 @@ describe('dado pessoal no texto das pessoas', () => {
 
   it('pedirPlano também limpa a descrição do retorno esperado', async () => {
     const { service, estado } = montar();
-    const intencao = { ...INTENCAO, retorno_esperado: { ...INTENCAO.retorno_esperado, descricao: 'Custo baixo, falar com joao@exemplo.com' } };
+    const intencao = { ...INTENCAO_BASE, retorno_esperado: { ...INTENCAO_BASE.retorno_esperado, descricao: 'Custo baixo, falar com joao@exemplo.com' } };
     assert.ok((await service.pedirPlano(como('operator'), { ...pedido, intencao }, ator)).ok);
     assert.ok(!JSON.stringify(estado.execucoes[0]!.pedido).includes('joao@'));
   });
@@ -742,28 +879,24 @@ function leitorQueConta(): { leitor: LeitorDoBrain; chamadas: () => number } {
 }
 
 function semearSegundoPlano(estado: Estado): void {
-  estado.planos.push({ id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', organizationId: ORGANIZACAO_ID, clientId: CLIENTE_ID, tipo: 'retencao', criadoEm: new Date() });
+  estado.planos.push({ id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', organizationId: ORGANIZACAO_ID, clientId: CLIENTE_ID, tipo: 'retencao', plataformas: ['meta'], whatsapp: '+5511912345678', landingPageId: LANDING_ID, criadoEm: new Date() });
 }
 
 describe('painelDoPlano com seleção e catálogo já lido', () => {
-  it('com tipo ou planoId monta o detalhe só daquele plano e devolve resumos de todos', async () => {
+  it('com planoId monta o detalhe só daquele plano e devolve resumos de todos', async () => {
     const { service, estado } = montar();
     semearVersao(estado, 'vigente');
     semearSegundoPlano(estado);
     const todos = await service.painelDoPlano(como('operator'), { clienteId: CLIENTE_ID });
     assert.ok(todos.ok);
     assert.equal(todos.ok && todos.value.planos.length, 2);
-    const porTipo = await service.painelDoPlano(como('operator'), { clienteId: CLIENTE_ID, tipo: 'retencao' });
-    assert.ok(porTipo.ok);
-    if (!porTipo.ok) return;
-    assert.deepEqual(porTipo.value.planos.map((p) => p.plano.tipo), ['retencao']);
     assert.deepEqual(
-      porTipo.value.resumos.map((r) => [r.tipo, r.status, r.rotulo]),
-      [['aquisicao', 'vigente', 'Autorizado'], ['retencao', null, null]],
+      todos.ok && todos.value.resumos.map((r) => [r.tipo, r.status, r.rotulo]),
+      [['retencao', null, null], ['aquisicao', 'vigente', 'Autorizado']],
     );
     const porId = await service.painelDoPlano(como('operator'), { clienteId: CLIENTE_ID, planoId: PLANO_ID });
     assert.deepEqual(porId.ok && porId.value.planos.map((p) => p.plano.id), [PLANO_ID]);
-    const inexistente = await service.painelDoPlano(como('operator'), { clienteId: CLIENTE_ID, tipo: 'marca' });
+    const inexistente = await service.painelDoPlano(como('operator'), { clienteId: CLIENTE_ID, planoId: '99999999-9999-4999-8999-999999999999' });
     assert.equal(inexistente.ok && inexistente.value.planos.length, 0);
     assert.equal(inexistente.ok && inexistente.value.resumos.length, 2);
   });
@@ -778,7 +911,7 @@ describe('painelDoPlano com seleção e catálogo já lido', () => {
     assert.equal(contador.chamadas(), 2);
     const antes = contador.chamadas();
     const snapshot = { organizationId: ORGANIZACAO_ID, clienteId: CLIENTE_ID, entradas: [] };
-    const dado = await service.painelDoPlano(como('operator'), { clienteId: CLIENTE_ID, tipo: 'aquisicao' }, { snapshotDoBrain: snapshot });
+    const dado = await service.painelDoPlano(como('operator'), { clienteId: CLIENTE_ID, planoId: PLANO_ID }, { snapshotDoBrain: snapshot });
     assert.equal(contador.chamadas(), antes);
     assert.ok(referencia.ok && dado.ok);
     if (!referencia.ok || !dado.ok) return;
@@ -840,5 +973,61 @@ describe('painelDoPlano com seleção e catálogo já lido', () => {
     assert.equal(com?.id, VERSAO_ID);
     assert.notEqual(com?.conteudo, null);
     assert.equal(await service.versaoVistaDoPlano(como('operator'), { clienteId: 'outro', planoId: PLANO_ID }), null);
+  });
+});
+
+describe('modelos de visão para a página única', () => {
+  const previa = { clienteId: CLIENTE_ID, tipoDePlano: 'aquisicao' as const, plataformas: ['meta' as const], landingPageId: LANDING_ID, nomeDaCampanha: 'Leads do trimestre', inicio: '2026-12-01' };
+
+  it('modeloDeCriacao entrega tipos, só plataformas com catálogo, landing pages ativas e o WhatsApp do cliente', async () => {
+    const { service } = montar();
+    const r = await service.modeloDeCriacao(como('operator'), { clienteId: CLIENTE_ID });
+    assert.ok(r.ok);
+    assert.equal(r.value.tipos.length, 4);
+    assert.deepEqual(r.value.plataformas.map((p) => p.plataforma), ['google', 'meta']);
+    assert.deepEqual(r.value.landingPages.map((l) => l.id), [LANDING_ID]);
+    assert.equal(r.value.whatsapp, '+5511912345678');
+    assert.equal(r.value.podeCriar, true);
+    const semZap = await montar({ destino: { whatsapp: null } }).service.modeloDeCriacao(como('operator'), { clienteId: CLIENTE_ID });
+    assert.ok(semZap.ok && semZap.value.whatsappAusente && !semZap.value.podeCriar);
+    const viewer = await service.modeloDeCriacao(como('viewer'), { clienteId: CLIENTE_ID });
+    assert.equal(!viewer.ok && viewer.error.code, 'forbidden');
+  });
+
+  it('previaDeUtm calcula no servidor a URL final por plataforma', async () => {
+    const { service } = montar();
+    const r = await service.previaDeUtm(como('operator'), previa);
+    assert.ok(r.ok);
+    assert.equal(r.value.itens.length, 1);
+    assert.match(r.value.itens[0]!.url, /^https:\/\/exemplo\.com\.br\/oferta\?ref=a&utm_source=meta&utm_medium=paid_social&utm_campaign=aquisicao-leads-do-trimestre-202612$/);
+    const ruim = await service.previaDeUtm(como('operator'), { ...previa, landingPageId: LANDING_ARQUIVADA_ID });
+    assert.equal(!ruim.ok && ruim.error.code, 'validation');
+    const semCatalogo = await service.previaDeUtm(como('operator'), { ...previa, plataformas: ['linkedin'] });
+    assert.equal(!semCatalogo.ok && semCatalogo.error.code, 'validation');
+  });
+
+  it('listarPlanos devolve cards de planos em qualquer status, com título, tipo, plataformas, estado e progresso', async () => {
+    const { service, estado } = montar();
+    await service.pedirPlano(como('admin'), pedido, ator);
+    await service.pedirPlano(como('admin'), { ...pedido, tipoDePlano: 'marca' }, ator);
+    (estado.execucoes[0] as { status: string }).status = 'concluida';
+    const r = await service.listarPlanos(como('operator'), { clienteId: CLIENTE_ID });
+    assert.ok(r.ok);
+    assert.equal(r.value.cards.length, 2);
+    const [marca, aquisicao] = r.value.cards;
+    assert.equal(marca!.tipo, 'marca');
+    assert.equal(marca!.estado, 'gerando');
+    assert.ok(marca!.progresso && marca!.progresso.percentual > 0);
+    assert.deepEqual(marca!.plataformas, [{ plataforma: 'meta', rotulo: 'Meta' }]);
+    assert.equal(marca!.titulo, INTENCAO.objetivo);
+    assert.equal(aquisicao!.estado, 'sem_versao');
+    assert.equal(aquisicao!.progresso, null);
+  });
+
+  it('listarPlanos recusa cliente fora do escopo', async () => {
+    const { service, estado } = montar();
+    estado.clienteExiste = false;
+    const r = await service.listarPlanos(como('operator'), { clienteId: CLIENTE_ID });
+    assert.equal(!r.ok && r.error.code, 'not_found');
   });
 });

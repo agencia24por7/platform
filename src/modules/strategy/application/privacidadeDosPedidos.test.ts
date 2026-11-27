@@ -4,7 +4,7 @@ import '../../../shared/testing/registrarAlias.mjs';
 import type { EntradaDoCatalogo, EntradaSemSelo } from '../../brain/domain/entrada.ts';
 import type { PedidoDeIA } from '@/modules/strategy/application/portas';
 import { parecer, ponto } from '../domain/comite/fixturesDeParecer.ts';
-import { CLIENTE_ID, ORGANIZACAO_ID, URN_BENCHMARK_B, pacoteDeTeste, planoCompleto, secoesDoGrupoDaChave, urnDeTeste } from '../domain/fixturesDeTeste.ts';
+import { CLIENTE_ID, ORGANIZACAO_ID, URN_BENCHMARK_B, CATALOGOS_DE_TESTE, pacoteDeTeste, planoCompleto, secoesDoGrupoDaChave, urnDeTeste } from '../domain/fixturesDeTeste.ts';
 
 Object.assign(process.env, {
   DATABASE_URL: 'postgres://teste:teste@localhost:5432/teste',
@@ -121,14 +121,14 @@ describe('o que cada tarefa de IA recebe em dados', () => {
     const leitorDoBrain = criarLeitorDoBrain({
       brain: { async montarNaOrganizacao() { return ok({ organizationId: ORGANIZACAO_ID, clienteId: CLIENTE_ID, entradas: entradasDoCatalogo() } as never); } },
     });
-    const motor = createMotorDoPlano({
+    const motor = createMotorDoPlano({ catalogos: CATALOGOS_DE_TESTE,
       repositorio,
       executorDeIA: comValidacao(ia),
       leitorDoBrain,
       avaliadorDeLimites: { async avaliador() { return ok(Object.assign(() => 'ok' as const, { medidasComLimite: [] as const })); } },
       audit: { async record() {}, async list() { return []; }, async search() { return []; } },
     });
-    const plano = await repositorio.criarPlano({ organizationId: ORGANIZACAO_ID, clientId: CLIENTE_ID }, 'aquisicao', 'req');
+    const plano = await repositorio.criarPlano({ organizationId: ORGANIZACAO_ID, clientId: CLIENTE_ID }, 'aquisicao');
     assert.ok(plano.ok);
     const execucao = await repositorio.criarExecucao(ORGANIZACAO_ID, CLIENTE_ID, {
       planoId: plano.value.id,

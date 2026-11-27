@@ -8,6 +8,7 @@ import type {
   PacoteDeLeitura,
   PapelDaEvidencia,
   Plano as PlanoDeMarketing,
+  Plataforma,
   StatusDaVersao,
   TipoDeEvento,
   VereditoDoLimite,
@@ -62,7 +63,17 @@ export type Plano = {
   readonly organizationId: string;
   readonly clientId: string;
   readonly tipo: string;
+  readonly plataformas: readonly Plataforma[] | null;
+  readonly whatsapp: string | null;
+  readonly landingPageId: string | null;
   readonly criadoEm: Date;
+};
+
+export type NovoPlano = {
+  readonly tipo: string;
+  readonly plataformas: readonly Plataforma[];
+  readonly whatsapp: string;
+  readonly landingPageId: string;
 };
 
 export type AutorDaVersao = 'usuario' | 'agente';
@@ -99,6 +110,9 @@ export type PlanoDoCliente = {
   readonly maisRecente: VersaoResumo | null;
   readonly vigente: VersaoResumo | null;
   readonly aberta: VersaoResumo | null;
+  readonly objetivo: string | null;
+  readonly ultimaExecucao: Execucao | null;
+  readonly atualizadoEm: Date;
 };
 
 export type TipoDeEventoRegistravel = Extract<
@@ -204,11 +218,15 @@ export type TipoDeRecurso = 'plano' | 'versao' | 'execucao';
 
 export type RepositorioDeEstrategia = {
   clienteVisivel(organizationId: string, clientId: string): Promise<boolean>;
-  buscarPlano(escopo: EscopoDoPlano, tipo: string): Promise<Plano | null>;
   buscarPlanoPorId(organizationId: string, planoId: string): Promise<Plano | null>;
   clienteDoRecurso(organizationId: string, tipo: TipoDeRecurso, id: string): Promise<string | null>;
-  criarPlano(escopo: EscopoDoPlano, tipo: string, requestId: string): Promise<Result<Plano, ErroDeEstrategia>>;
+  criarPlanoComExecucao(
+    escopo: EscopoDoPlano,
+    novo: NovoPlano,
+    execucao: Omit<NovaExecucao, 'planoId'>,
+  ): Promise<Result<{ readonly plano: Plano; readonly execucao: Execucao }, ErroDeEstrategia>>;
   listarPlanosDoCliente(escopo: EscopoDoPlano): Promise<readonly PlanoDoCliente[]>;
+  estadoDoPlano(organizationId: string, planoId: string): Promise<PlanoDoCliente | null>;
   criarVersaoRascunho(organizationId: string, nova: NovaVersao): Promise<Result<Versao, ErroDeEstrategia>>;
   registrarEvento(organizationId: string, novo: NovoEvento): Promise<Result<EventoDaVersao, ErroDeEstrategia>>;
   lerVersao(organizationId: string, versaoId: string): Promise<Versao | null>;

@@ -43,6 +43,8 @@ import { createDimensoesBigQuery } from '@/modules/coleta/infrastructure/dimenso
 import { criarBrain } from '@/modules/brain/infrastructure/criarBrain';
 import { ferramentasDoBrain } from '@/modules/brain/interface/ferramentas';
 import { criarIa } from '@/modules/ia/infrastructure/criarIa';
+import { createDestinoService } from '@/modules/clients/application/destinoService';
+import { createDestinoRepository } from '@/modules/clients/infrastructure/destinoRepository';
 import { createEstrategiaService } from '@/modules/strategy/application/estrategiaService';
 import { createMotorDoPlano } from '@/modules/strategy/application/motorDoPlano';
 import { createProcessadorDeExecucoes } from '@/modules/strategy/application/processadorDeExecucoes';
@@ -93,6 +95,7 @@ function build() {
   });
 
   const identity = createIdentityService(createUserRepository(), audit);
+  const destino = createDestinoService(createDestinoRepository(), audit);
   const estrategiaRepository = createEstrategiaRepository();
   const brain = criarBrain(audit, contexto, regras);
   const ia = criarIa(audit, ferramentasDoBrain(brain));
@@ -116,6 +119,7 @@ function build() {
     organizations,
     identity,
     clients: createClientService(clientRepository, audit),
+    destino,
     contexto,
     regras,
     team: createTeamService(createTeamRepository(), audit),
@@ -155,7 +159,7 @@ function build() {
     brain,
     ia,
     strategy: {
-      service: createEstrategiaService({ repositorio: estrategiaRepository, audit, leitorDoBrain: leitorDoBrainDaEstrategia }),
+      service: createEstrategiaService({ repositorio: estrategiaRepository, audit, leitorDoBrain: leitorDoBrainDaEstrategia, destino }),
     },
     strategyDoWorker: {
       processador: createProcessadorDeExecucoes({ repositorio: estrategiaRepository, motor: motorDoPlano }),

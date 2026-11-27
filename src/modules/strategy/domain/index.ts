@@ -30,3 +30,8 @@ export * from './aplicacao.ts';
 export * from './tipoDePlano.ts';
 export * from './privacidadeDoPlano.ts';
 export * from './fixarIntencao.ts';
+export * from './gate/coberturaDoPlanoDeMidia.ts';
+export * from './catalogo/tipos.ts';
+export * from './utm.ts';
+export * from './catalogo/disponiveis.ts';
+export * from './projecaoDoPlano.ts';

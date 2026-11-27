@@ -54,19 +54,24 @@ export function createProcessadorDeExecucoes(deps: DependenciasDoProcessador): P
       for (const pendente of pendentes) {
         const restante = orcamentoTotalMs - (relogio.agora().getTime() - inicio);
         if (restante <= 0) break;
-        const reservada = await deps.repositorio.reservarExecucao(pendente.organizationId, pendente.id, { leaseMs, agora: relogio.agora() });
-        if (!reservada) continue;
-        reservadas += 1;
-        const resumo = await deps.motor.avancarExecucao(pendente.organizationId, pendente.id, { orcamentoMs: restante, ficha: reservada.tentativas });
-        avancadas += resumo.passos;
-        const status = resumo.execucao?.status;
-        if (status === 'concluida') concluidas += 1;
-        else if (status === 'falhou') {
+        try {
+          const reservada = await deps.repositorio.reservarExecucao(pendente.organizationId, pendente.id, { leaseMs, agora: relogio.agora() });
+          if (!reservada) continue;
+          reservadas += 1;
+          const resumo = await deps.motor.avancarExecucao(pendente.organizationId, pendente.id, { orcamentoMs: restante, ficha: reservada.tentativas });
+          avancadas += resumo.passos;
+          const status = resumo.execucao?.status;
+          if (status === 'concluida') concluidas += 1;
+          else if (status === 'falhou') {
+            falhas += 1;
+            const codigo = resumo.execucao?.erroCodigo ?? 'interno';
+            codigos[codigo] = (codigos[codigo] ?? 0) + 1;
+          } else if (resumo.estado === 'adiado') adiadas += 1;
+          else if (resumo.estado === 'perdida') perdidas += 1;
+        } catch {
           falhas += 1;
-          const codigo = resumo.execucao?.erroCodigo ?? 'interno';
-          codigos[codigo] = (codigos[codigo] ?? 0) + 1;
-        } else if (resumo.estado === 'adiado') adiadas += 1;
-        else if (resumo.estado === 'perdida') perdidas += 1;
+          codigos['excecao'] = (codigos['excecao'] ?? 0) + 1;
+        }
       }
       return ok({ encontradas: pendentes.length, reservadas, avancadas, concluidas, falhas, adiadas, perdidas, codigos });
     },

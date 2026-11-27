@@ -12,6 +12,8 @@ const CLIENTE = '22222222-2222-4222-8222-222222222222';
 
 const VALIDO = {
   tipoDePlano: 'aquisicao',
+  plataformas: 'meta',
+  landingPageId: CLIENTE,
   objetivo: 'Gerar leads qualificados',
   inicio: '2026-12-01',
   fim: '2027-02-28',
@@ -25,14 +27,14 @@ describe('intenção do formulário', () => {
     const lida = lerIntencaoDoFormulario(VALIDO);
     assert.ok(lida.ok);
     assert.equal(lida.value.intencao.verba.centavos, '1500000');
-    const servico = PedirPlanoSchema.safeParse({ clienteId: CLIENTE, tipoDePlano: lida.value.tipoDePlano, intencao: lida.value.intencao });
+    const servico = PedirPlanoSchema.safeParse({ clienteId: CLIENTE, tipoDePlano: lida.value.tipoDePlano, plataformas: lida.value.plataformas, landingPageId: lida.value.landingPageId, intencao: lida.value.intencao });
     assert.ok(servico.success);
   });
 
   it('aponta cada campo inválido em linguagem clara', () => {
     const lida = lerIntencaoDoFormulario({ tipoDePlano: 'x', objetivo: 'a', inicio: '2026-12-31', fim: '2026-12-01', ousadia: '', retorno: '', verba: 'abc' });
     assert.ok(!lida.ok);
-    assert.deepEqual(Object.keys(lida.error).sort(), ['fim', 'objetivo', 'ousadia', 'retorno', 'tipoDePlano', 'verba']);
+    assert.deepEqual(Object.keys(lida.error).sort(), ['fim', 'landingPageId', 'objetivo', 'ousadia', 'plataformas', 'retorno', 'tipoDePlano', 'verba']);
     assert.equal(lida.error['fim'], 'O fim não pode ser antes do início.');
   });
 

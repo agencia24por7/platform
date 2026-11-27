@@ -29,7 +29,8 @@ const LIMITE_DA_MENSAGEM = 400;
 function camposDo(formData: FormData): CamposBrutos {
   const campos: Record<string, string> = {};
   for (const [chave, valor] of formData.entries()) {
-    if (typeof valor === 'string') campos[chave] = valor;
+    if (typeof valor !== 'string') continue;
+    campos[chave] = chave === 'plataformas' && campos[chave] !== undefined ? `${campos[chave]},${valor}` : valor;
   }
   return campos;
 }
@@ -80,7 +81,13 @@ export async function novoPlanoAcao(_anterior: EstadoDoFormulario, formData: For
   if (!entrada.ok) return { erro: 'Corrija os campos indicados.', campos: entrada.error, valores: campos };
   const resultado = await modules().strategy.service.pedirPlano(
     { organizationId: escopo.comando.organizationId, papelDeQuemAge: escopo.comando.papelDeQuemAge },
-    { clienteId: escopo.cliente.id, tipoDePlano: entrada.value.tipoDePlano, intencao: entrada.value.intencao },
+    {
+      clienteId: escopo.cliente.id,
+      tipoDePlano: entrada.value.tipoDePlano,
+      plataformas: [...entrada.value.plataformas],
+      landingPageId: entrada.value.landingPageId,
+      intencao: entrada.value.intencao,
+    },
     await atorAtual(),
   );
   return resolver(escopo.cliente.id, resultado, 'Plano pedido. O agente está trabalhando; isso leva alguns minutos.', campos);

@@ -79,7 +79,7 @@ export default async function Estrategia({ params, searchParams }: { readonly pa
   const brain = await brainDaPagina(comando, cliente.id);
   const resultado = await modules().strategy.service.painelDoPlano(
     comando,
-    { clienteId: cliente.id, ...(tipoEscolhido ? { tipo: tipoEscolhido } : {}) },
+    { clienteId: cliente.id },
     brain.snapshot === undefined ? {} : { snapshotDoBrain: brain.snapshot },
   );
 

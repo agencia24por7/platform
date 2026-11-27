@@ -365,7 +365,6 @@ function blocosDaSecao(chave: SecaoDoPlano, plano: Plano, contexto: Contexto): B
   const marcas = (e: readonly Evidencia[]) => marcasDe(e, contexto.clienteId, contexto.entradas, contexto.hoje);
   const canal = (id: string) => plano.canais_e_plataformas.canais.find((c) => c.id === id);
   const segmento = (id: string) => plano.publico_alvo.segmentos.find((s) => s.id === id)?.nome ?? id;
-  const conceito = (id: string) => plano.criativos.conceitos.find((c) => c.id === id)?.titulo ?? id;
   const meta = (id: string) => plano.metas_e_metricas.metas.find((m) => m.id === id)?.nome ?? id;
   const nomeDoCanal = (c: string) => ROTULO_DO_CANAL[c] ?? c;
   const nomeDaPlataforma = (p: string | undefined) => (p ? (ROTULO_DA_PLATAFORMA_DO_PLANO[p] ?? p) : null);
@@ -470,7 +469,6 @@ function blocosDaSecao(chave: SecaoDoPlano, plano: Plano, contexto: Contexto): B
             ['Público', segmento(c.segmento_id)],
             ['Oferta', c.oferta],
             ['Formato', ROTULO_DO_FORMATO[c.formato] ?? c.formato],
-            ['Conceito', conceito(c.conceito_id)],
             ['Verba', reais(c.verba)],
             ['Período', periodoBr(c.periodo)],
             ['Métrica de sucesso', c.metrica_de_sucesso],
@@ -478,8 +476,14 @@ function blocosDaSecao(chave: SecaoDoPlano, plano: Plano, contexto: Contexto): B
           ],
         }),
       );
-    case 'criativos':
-      return plano.criativos.conceitos.map((c) => cartao(c.titulo, { fatos: [['Ideia', c.ideia], ['O que testar', c.o_que_testar], ['Hipótese', c.hipotese_id ?? null]] }));
+    case 'plano_de_midia':
+      return plano.plano_de_midia.plataformas.flatMap((entrada) =>
+        entrada.secoes.map((secao) =>
+          cartao(`${nomeDaPlataforma(entrada.plataforma) ?? entrada.plataforma} · ${secao.secao.replaceAll('_', ' ')}`, {
+            fatos: secao.campos.map((c) => [c.campo, Array.isArray(c.valor) ? c.valor.join(', ') : String(c.valor)] as const),
+          }),
+        ),
+      );
     case 'orcamento': {
       const s = plano.orcamento;
       return [

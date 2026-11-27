@@ -1,4 +1,5 @@
 import { CHAVE_COMITE_COMPLETO, checarComiteCompleto } from './comiteCompleto.ts';
+import { CHAVE_COBERTURA_DO_PLANO_DE_MIDIA, checarCoberturaDoPlanoDeMidia } from './coberturaDoPlanoDeMidia.ts';
 import { CHAVE_EVIDENCIA_VIGENTE, checarEvidenciaVigente } from './evidenciaVigente.ts';
 import { CHAVE_LIMITES_DO_CLIENTE, checarLimitesDoCliente } from './limitesDoCliente.ts';
 import { CHAVE_META_SEM_NOTA_D, checarMetaSemNotaD } from './metaSemNotaD.ts';
@@ -22,5 +23,6 @@ export const CHECAGENS_EM_CODIGO: readonly Checagem[] = [
   { chave: CHAVE_SECOES_OBRIGATORIAS, executar: checarSecoesObrigatorias },
   { chave: CHAVE_ORCAMENTO_FECHA, executar: checarOrcamentoFecha },
   { chave: CHAVE_OBJETIVO_COM_METRICA, executar: checarObjetivoComMetrica },
+  { chave: CHAVE_COBERTURA_DO_PLANO_DE_MIDIA, executar: checarCoberturaDoPlanoDeMidia },
   { chave: CHAVE_COMITE_COMPLETO, executar: checarComiteCompleto },
 ];

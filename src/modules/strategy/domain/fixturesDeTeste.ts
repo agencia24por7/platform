@@ -1,10 +1,14 @@
 import { criarUrn } from '../../brain/domain/urn.ts';
 import type { PacoteDeLeitura } from './pacote.ts';
 import { secoesDoGrupo, type SecoesRedigidas } from './gruposDoPlano.ts';
-import { lerPlano, type Afirmacao, type Evidencia, type PapelDaEvidencia, type Plano } from './plano.ts';
+import { lerPlano, type Afirmacao, type Evidencia, type Intencao, type PapelDaEvidencia, type Plano } from './plano.ts';
+import type { CatalogoDeCampos } from './catalogo/tipos.ts';
+import { gerarUtmPorPlataforma } from './utm.ts';
 import { parecer } from './comite/fixturesDeParecer.ts';
 import { PERSONAS } from './comite/personas.ts';
 import type { ContextoDoGate } from './gate/resultado.ts';
+
+export type PlanoComIntencao = Plano & { intencao: Intencao };
 
 export const HOJE = '2026-11-25';
 export const ORGANIZACAO_ID = '11111111-1111-4111-8111-111111111111';
@@ -79,7 +83,71 @@ export const afirmacao = (texto: string, ...evidencias: Evidencia[]): Afirmacao 
 const BRL = (centavos: string) => ({ centavos, moeda: 'BRL' as const });
 const PERIODO = { inicio: '2026-12-01', fim: '2027-02-28' };
 
-export function planoMinimoBruto(): Plano {
+export function intencaoDeTeste(): Intencao {
+  return {
+    objetivo: 'Gerar 600 leads qualificados no trimestre.',
+    horizonte: PERIODO,
+    ousadia: 'moderado',
+    retorno_esperado: { descricao: 'Custo por lead abaixo de R$ 50.' },
+    verba: BRL('1000000'),
+    plataformas: ['google', 'meta'],
+    whatsapp: '+5511912345678',
+    destino: { landingPageId: 'lp_principal', url: 'https://exemplo.com.br/oferta' },
+    utm: gerarUtmPorPlataforma(['google', 'meta'], { tipoDePlano: 'aquisicao', nomeDaCampanha: 'Leads do trimestre', periodo: '2026-12' }),
+  };
+}
+
+export const CATALOGOS_DE_TESTE: readonly CatalogoDeCampos[] = [
+  {
+    plataforma: 'google',
+    versaoDaApi: 'v99',
+    objetivos: ['leads'],
+    campos: [
+      { chave: 'objetivo_da_campanha', secao: 'objetivo', obrigatorio: true, tipoDoValor: 'escolha', opcoes: ['leads', 'vendas'] },
+      { chave: 'orcamento_diario', secao: 'orcamento_e_lances', obrigatorio: true, tipoDoValor: 'numero' },
+      { chave: 'palavras_negativas', secao: 'publico', obrigatorio: false, tipoDoValor: 'lista' },
+    ],
+  },
+  {
+    plataforma: 'meta',
+    versaoDaApi: 'v99',
+    objetivos: ['leads'],
+    campos: [
+      { chave: 'objetivo_da_campanha', secao: 'objetivo', obrigatorio: true, tipoDoValor: 'texto' },
+      { chave: 'posicionamento_automatico', secao: 'posicionamentos', obrigatorio: true, tipoDoValor: 'booleano' },
+    ],
+  },
+];
+
+const campoDeMidia = (campo: string, valor: string | number | boolean | string[], justificativa = 'Segue o histórico do pacote.') => ({
+  campo,
+  valor,
+  justificativa,
+  evidencias: [] as Evidencia[],
+});
+
+export function planoDeMidiaDeTeste(): Plano['plano_de_midia'] {
+  return {
+    plataformas: [
+      {
+        plataforma: 'google',
+        secoes: [
+          { secao: 'objetivo', campos: [campoDeMidia('objetivo_da_campanha', 'leads')] },
+          { secao: 'orcamento_e_lances', campos: [campoDeMidia('orcamento_diario', 6666)] },
+        ],
+      },
+      {
+        plataforma: 'meta',
+        secoes: [
+          { secao: 'objetivo', campos: [campoDeMidia('objetivo_da_campanha', 'leads')] },
+          { secao: 'posicionamentos', campos: [campoDeMidia('posicionamento_automatico', true)] },
+        ],
+      },
+    ],
+  };
+}
+
+export function planoMinimoBruto(): PlanoComIntencao {
   return {
     schema_version: 1,
     resumo_executivo: {
@@ -88,13 +156,7 @@ export function planoMinimoBruto(): Plano {
       verba: BRL('1000000'),
       resultado_esperado: afirmacao('Custo por lead dentro do benchmark do setor.', evidencia(URN_BENCHMARK_B)),
     },
-    intencao: {
-      objetivo: 'Gerar 600 leads qualificados no trimestre.',
-      horizonte: PERIODO,
-      ousadia: 'moderado',
-      retorno_esperado: { descricao: 'Custo por lead abaixo de R$ 50.' },
-      verba: BRL('1000000'),
-    },
+    intencao: intencaoDeTeste(),
     diagnostico: {
       situacao: afirmacao('A conta tem histórico de gasto em busca e social.', evidencia(URN_DESEMPENHO)),
       historico_de_desempenho: [],
@@ -128,16 +190,12 @@ export function planoMinimoBruto(): Plano {
           segmento_id: 'seg_local',
           oferta: 'Orçamento sem compromisso.',
           formato: 'busca_responsiva',
-          conceito_id: 'cc_orcamento',
           verba: BRL('1000000'),
           periodo: PERIODO,
           metrica_de_sucesso: 'Custo por lead',
           meta_id: 'm_canal',
         },
       ],
-    },
-    criativos: {
-      conceitos: [{ id: 'cc_orcamento', titulo: 'Orçamento rápido', ideia: 'Resposta em até um dia útil.', o_que_testar: 'Promessa de prazo contra promessa de preço.' }],
     },
     orcamento: { total: BRL('1000000'), verba_de_teste: BRL('100000'), por_canal: [] },
     metas_e_metricas: {
@@ -178,6 +236,7 @@ export function planoMinimoBruto(): Plano {
         { meta_id: 'm_canal', como_medir: 'Gasto da campanha dividido por leads.', fonte: 'Painel de anúncios' },
       ],
     },
+    plano_de_midia: planoDeMidiaDeTeste(),
     calendario: { fases: [{ id: 'f1', nome: 'Execução', periodo: PERIODO, marcos: [{ data: '2027-01-15', descricao: 'Revisão de meio de percurso.' }] }] },
     riscos_e_regras: {
       riscos: [{ id: 'r1', descricao: 'Aumento do custo de mídia.', mitigacao: 'Revisão semanal do lance.', severidade: 'media', evidencias: [] }],
@@ -189,17 +248,17 @@ export function planoMinimoBruto(): Plano {
   };
 }
 
-export function planoMinimo(): Plano {
+export function planoMinimo(): PlanoComIntencao {
   return lerValido(planoMinimoBruto());
 }
 
-function lerValido(bruto: unknown): Plano {
+function lerValido(bruto: unknown): PlanoComIntencao {
   const resultado = lerPlano(bruto);
   if (!resultado.ok) throw new Error(`Fixture inválida: ${JSON.stringify(resultado.error.problemas)}`);
-  return resultado.value;
+  return resultado.value as PlanoComIntencao;
 }
 
-export function planoCompletoBruto(): Plano {
+export function planoCompletoBruto(): PlanoComIntencao {
   const base = structuredClone(planoMinimoBruto());
   base.publico_alvo.segmentos.push({
     id: 'seg_empresas',
@@ -253,14 +312,12 @@ export function planoCompletoBruto(): Plano {
       segmento_id: 'seg_empresas',
       oferta: 'Guia de compras para empresas.',
       formato: 'carrossel',
-      conceito_id: 'cc_guia',
       verba: BRL('400000'),
       periodo: PERIODO,
       metrica_de_sucesso: 'Custo por lead',
       meta_id: 'm_social',
     },
   ];
-  base.criativos.conceitos.push({ id: 'cc_guia', titulo: 'Guia de compras', ideia: 'Conteúdo útil antes da oferta.', o_que_testar: 'Guia contra oferta direta.', hipotese_id: 'h_prazo' });
   base.orcamento.por_canal = [
     { canal_id: 'cn_busca', valor: BRL('600000') },
     { canal_id: 'cn_social', valor: BRL('400000') },
@@ -292,13 +349,14 @@ export function planoCompletoBruto(): Plano {
   return base;
 }
 
-export function planoCompleto(): Plano {
+export function planoCompleto(): PlanoComIntencao {
   return lerValido(planoCompletoBruto());
 }
 
 export function contextoDeTeste(sobrescrita: Partial<ContextoDoGate> = {}): ContextoDoGate {
   return {
     plano: planoCompleto(),
+    catalogosDeCampos: CATALOGOS_DE_TESTE,
     pacote: pacoteDeTeste(),
     hoje: HOJE,
     pareceres: PERSONAS.map((persona) => parecer(persona.chave, 'aprova')),
@@ -309,11 +367,15 @@ export function contextoDeTeste(sobrescrita: Partial<ContextoDoGate> = {}): Cont
 }
 
 export function indiceDoGrupoDaChave(chaveDeIdempotencia: string): number {
-  const indice = /:g(\d+)$/.exec(chaveDeIdempotencia)?.[1];
+  const indice = /:g(\d+)(?::[a-z_]+)?$/.exec(chaveDeIdempotencia)?.[1];
   if (indice === undefined) throw new Error(`chave sem grupo: ${chaveDeIdempotencia}`);
   return Number(indice);
 }
 
 export function secoesDoGrupoDaChave(chaveDeIdempotencia: string, plano: Plano = planoCompleto()): SecoesRedigidas {
-  return secoesDoGrupo(plano as unknown as Record<string, unknown>, indiceDoGrupoDaChave(chaveDeIdempotencia));
+  const secoes = secoesDoGrupo(plano as unknown as Record<string, unknown>, indiceDoGrupoDaChave(chaveDeIdempotencia));
+  const plataforma = /:g\d+:([a-z_]+)$/.exec(chaveDeIdempotencia)?.[1];
+  if (plataforma === undefined || secoes.plano_de_midia === undefined) return secoes;
+  const midia = secoes.plano_de_midia as Plano['plano_de_midia'];
+  return { plano_de_midia: { plataformas: midia.plataformas.filter((entrada) => entrada.plataforma === plataforma) } };
 }

@@ -17,10 +17,22 @@ import {
   avaliarImpacto,
   planoSemDadoPessoal,
   sanitizarIntencao,
+  esquemaIntencao,
+  gerarUtmPorPlataforma,
+  plataformasComCatalogo,
+  CATALOGOS_DISPONIVEIS,
+  ROTULO_DO_TIPO_DE_PLANO,
+  TIPOS_DE_PLANO,
+  type CatalogoDeCampos,
+  type Plataforma,
+  type TipoDePlano,
   combinarReferencias,
   type AvaliacaoDeImpacto,
   hashesDoPacote,
   lerPlano,
+  fixarIntencao,
+  type IntencaoDoPlano,
+  type Plano as PlanoLido,
   podeAplicar,
   podeExecutar,
   referenciasDoPlano,
@@ -32,15 +44,19 @@ import {
 } from '@/modules/strategy/domain/index';
 import {
   EditarManualSchema,
+  EscopoDoClienteSchema,
   ExecucaoAlvoSchema,
+  PreviaDeUtmSchema,
   PainelSchema,
   PedirMudancaSchema,
   PedirPlanoSchema,
   PedirRevisaoSchema,
   VersaoAlvoSchema,
   detalhesDoZod,
+  type EntradaDaPreviaDeUtm,
   type EntradaDeEditarManual,
   type EntradaDeExecucaoAlvo,
+  type EntradaDoEscopoDoCliente,
   type EntradaDePedirMudanca,
   type EntradaDePedirPlano,
   type EntradaDePedirRevisao,
@@ -64,6 +80,11 @@ import type {
   VersaoResumo,
 } from '@/modules/strategy/application/portas';
 import { lerUrn } from '@/modules/brain/domain/urn';
+import type { DestinoService } from '@/modules/clients/application/destinoService';
+import type { LandingPage } from '@/modules/clients/domain/destino/tipos';
+import { cardDoPlano, type CardDoPlano } from '@/modules/strategy/interface/cardsDePlano';
+import { ROTULO_DA_PLATAFORMA_DO_PLANO } from '@/modules/strategy/interface/rotulosDoPlano';
+import { aplicarUtm, ErroUtm } from '@/shared/utm/utm';
 import { catalogoAtualDoPacote, type CatalogoAtual } from '@/modules/strategy/application/catalogoAtual';
 import { carregarCadeia } from '@/modules/strategy/application/cadeiaDoComite';
 import { failure, type Failure } from '@/shared/result/failure';
@@ -75,9 +96,33 @@ export type DependenciasDeEstrategia = {
   readonly repositorio: RepositorioDeEstrategia;
   readonly audit: AuditRecorder;
   readonly leitorDoBrain: LeitorDoBrain;
+  readonly destino: DestinoParaEstrategia;
+  readonly catalogos?: readonly CatalogoDeCampos[];
   readonly relogio?: Relogio;
   readonly gerador?: GeradorDeId;
 };
+
+export type DestinoParaEstrategia = Pick<DestinoService, 'listarLandingPages' | 'lerWhatsapp'>;
+
+export type ModeloDeCriacao = {
+  readonly tipos: readonly { readonly tipo: TipoDePlano; readonly rotulo: string }[];
+  readonly plataformas: readonly { readonly plataforma: Plataforma; readonly rotulo: string }[];
+  readonly landingPages: readonly { readonly id: string; readonly rotulo: string; readonly url: string }[];
+  readonly whatsapp: string | null;
+  readonly whatsappAusente: boolean;
+  readonly podeCriar: boolean;
+};
+
+export type ItemDaPreviaDeUtm = {
+  readonly plataforma: Plataforma;
+  readonly rotulo: string;
+  readonly utm: { readonly utm_source: string; readonly utm_medium: string; readonly utm_campaign: string };
+  readonly url: string;
+};
+
+export type PreviaDeUtmDoPedido = { readonly itens: readonly ItemDaPreviaDeUtm[] };
+
+export type PlanosDoCliente = { readonly geradoEm: Date; readonly cards: readonly CardDoPlano[] };
 
 export type PedidoDePlano = { readonly plano: Plano; readonly execucao: Execucao };
 export type EdicaoManual = { readonly versao: Versao; readonly execucao: Execucao };
@@ -114,6 +159,8 @@ export type ResumoDoPlano = {
   readonly rotulo: string | null;
 };
 
+export const CODIGO_WHATSAPP_AUSENTE = 'whatsapp_do_cliente_ausente';
+
 export type PainelDoCliente = {
   readonly geradoEm: Date;
   readonly planos: readonly PainelDoPlano[];
@@ -126,6 +173,9 @@ export type VersaoVistaDoPlano = { readonly id: string; readonly conteudo: unkno
 
 export type EstrategiaService = {
   pedirPlano(comando: ComandoDeEstrategia, entrada: EntradaDePedirPlano, ator: Ator): Promise<Result<PedidoDePlano, Failure>>;
+  modeloDeCriacao(comando: ComandoDeEstrategia, entrada: EntradaDoEscopoDoCliente): Promise<Result<ModeloDeCriacao, Failure>>;
+  previaDeUtm(comando: ComandoDeEstrategia, entrada: EntradaDaPreviaDeUtm): Promise<Result<PreviaDeUtmDoPedido, Failure>>;
+  listarPlanos(comando: ComandoDeEstrategia, entrada: EntradaDoEscopoDoCliente): Promise<Result<PlanosDoCliente, Failure>>;
   pedirRevisao(comando: ComandoDeEstrategia, entrada: EntradaDePedirRevisao, ator: Ator): Promise<Result<Execucao, Failure>>;
   pedirMudanca(comando: ComandoDeEstrategia, entrada: EntradaDePedirMudanca, ator: Ator): Promise<Result<Execucao, Failure>>;
   editarManual(comando: ComandoDeEstrategia, entrada: EntradaDeEditarManual, ator: Ator): Promise<Result<EdicaoManual, Failure>>;
@@ -151,6 +201,11 @@ const CLIENTE_NAO_ENCONTRADO = failure('not_found', 'Cliente não encontrado.');
 const PLANO_NAO_ENCONTRADO = failure('not_found', 'Plano não encontrado.');
 const VERSAO_NAO_ENCONTRADA = failure('not_found', 'Versão do plano não encontrada.');
 const EXECUCAO_NAO_ENCONTRADA = failure('not_found', 'Execução não encontrada.');
+const PLANO_SEM_DESTINO = failure(
+  'conflict',
+  'Este plano foi criado antes da página única de planos e não tem plataformas, landing page nem WhatsApp. Crie um plano novo.',
+  { codigo: 'plano_sem_destino' },
+);
 const EXECUCAO_EM_ANDAMENTO = failure('conflict', 'Já há uma execução em andamento para este plano. Cancele-a ou aguarde.', {
   codigo: 'execucao_ativa',
 });
@@ -189,6 +244,20 @@ export function falhaDeEstrategia(erro: ErroDeEstrategia): Failure {
   }
 }
 
+function comDestinoDaBase(editado: PlanoLido, base: PlanoLido | null): PlanoLido {
+  if (base === null) return editado;
+  const { plataformas, whatsapp, destino, utm } = base.intencao;
+  const { plataformas: _p, whatsapp: _w, destino: _d, utm: _u, ...livres } = editado.intencao;
+  const confiavel: IntencaoDoPlano = {
+    ...livres,
+    ...(plataformas === undefined ? {} : { plataformas }),
+    ...(whatsapp === undefined ? {} : { whatsapp }),
+    ...(destino === undefined ? {} : { destino }),
+    ...(utm === undefined ? {} : { utm }),
+  };
+  return fixarIntencao(editado, confiavel as never).plano;
+}
+
 function detalhesDasFaltas(faltas: readonly FaltaParaAplicar[]): Record<string, string> {
   return Object.fromEntries(faltas.map((falta) => [falta, MENSAGEM_DA_FALTA[falta]]));
 }
@@ -208,7 +277,8 @@ function eventosParaAplicar(eventos: readonly EventoDaVersao[]): EventoParaAplic
 }
 
 export function createEstrategiaService(deps: DependenciasDeEstrategia): EstrategiaService {
-  const { repositorio, audit, leitorDoBrain } = deps;
+  const { repositorio, audit, leitorDoBrain, destino } = deps;
+  const catalogos = deps.catalogos ?? CATALOGOS_DISPONIVEIS;
   const relogio = deps.relogio ?? { agora: () => new Date() };
   const gerador = deps.gerador ?? { novo: () => randomUUID() };
 
@@ -241,8 +311,97 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
   }
 
   async function estadoDoPlano(plano: Plano) {
-    const planos = await repositorio.listarPlanosDoCliente({ organizationId: plano.organizationId, clientId: plano.clientId });
-    return planos.find((candidato) => candidato.plano.id === plano.id) ?? null;
+    return repositorio.estadoDoPlano(plano.organizationId, plano.id);
+  }
+
+  function plataformasSemCatalogo(plataformas: readonly Plataforma[]): Failure | null {
+    const disponiveis = new Set(plataformasComCatalogo(catalogos));
+    const fora = plataformas.filter((plataforma) => !disponiveis.has(plataforma));
+    if (fora.length === 0) return null;
+    return failure(
+      'validation',
+      'Há plataforma sem catálogo de campos disponível. Escolha só plataformas já suportadas.',
+      Object.fromEntries(fora.map((plataforma) => [`plataformas.${plataforma}`, 'Plataforma ainda sem catálogo de campos.'])),
+    );
+  }
+
+  async function landingPageDoCliente(comando: ComandoDeEstrategia, clienteId: string, landingPageId: string): Promise<Result<LandingPage, Failure>> {
+    const paginas = await destino.listarLandingPages({ organizationId: comando.organizationId, clientId: clienteId }, { incluirArquivadas: true });
+    if (!paginas.ok) return paginas;
+    const pagina = paginas.value.find((candidata) => candidata.id === landingPageId);
+    if (!pagina || pagina.organizationId !== comando.organizationId || pagina.clientId !== clienteId) {
+      return err(failure('validation', 'Escolha uma landing page deste cliente.', { landingPageId: 'Landing page não encontrada neste cliente.' }));
+    }
+    if (pagina.arquivadaEm !== null) {
+      return err(failure('validation', 'Esta landing page foi arquivada. Escolha outra.', { landingPageId: 'Landing page arquivada.' }));
+    }
+    return ok(pagina);
+  }
+
+  async function whatsappDoCliente(comando: ComandoDeEstrategia, clienteId: string): Promise<Result<string, Failure>> {
+    const lido = await destino.lerWhatsapp({ organizationId: comando.organizationId, clientId: clienteId });
+    if (!lido.ok) return lido;
+    if (lido.value === null) {
+      return err(failure('validation', 'O cliente não tem WhatsApp cadastrado. Preencha o WhatsApp no cadastro do cliente e tente de novo.', { codigo: CODIGO_WHATSAPP_AUSENTE }));
+    }
+    return ok(lido.value);
+  }
+
+  function utmDoPedido(tipoDePlano: TipoDePlano, plataformas: readonly Plataforma[], nomeDaCampanha: string, inicio: string) {
+    return gerarUtmPorPlataforma(plataformas, { tipoDePlano, nomeDaCampanha, periodo: inicio.slice(0, 7) });
+  }
+
+  async function modeloDeCriacao(comando: ComandoDeEstrategia, entrada: EntradaDoEscopoDoCliente): Promise<Result<ModeloDeCriacao, Failure>> {
+    const lida = EscopoDoClienteSchema.safeParse(entrada);
+    if (!lida.success) return err(failure('validation', 'Dados inválidos.', detalhesDoZod(lida.error)));
+    if (!pode('criar', comando.papelDeQuemAge)) return err(SEM_PERMISSAO);
+    const { clienteId } = lida.data;
+    if (!(await repositorio.clienteVisivel(comando.organizationId, clienteId))) return err(CLIENTE_NAO_ENCONTRADO);
+    const escopo = { organizationId: comando.organizationId, clientId: clienteId };
+    const [paginas, whatsapp] = await Promise.all([destino.listarLandingPages(escopo), destino.lerWhatsapp(escopo)]);
+    if (!paginas.ok) return paginas;
+    if (!whatsapp.ok) return whatsapp;
+    const landingPages = paginas.value.map((pagina) => ({ id: pagina.id, rotulo: pagina.rotulo, url: pagina.url }));
+    return ok({
+      tipos: TIPOS_DE_PLANO.map((tipo) => ({ tipo, rotulo: ROTULO_DO_TIPO_DE_PLANO[tipo] })),
+      plataformas: plataformasComCatalogo(catalogos).map((plataforma) => ({ plataforma, rotulo: ROTULO_DA_PLATAFORMA_DO_PLANO[plataforma] ?? plataforma })),
+      landingPages,
+      whatsapp: whatsapp.value,
+      whatsappAusente: whatsapp.value === null,
+      podeCriar: landingPages.length > 0 && whatsapp.value !== null,
+    });
+  }
+
+  async function previaDeUtm(comando: ComandoDeEstrategia, entrada: EntradaDaPreviaDeUtm): Promise<Result<PreviaDeUtmDoPedido, Failure>> {
+    const lida = PreviaDeUtmSchema.safeParse(entrada);
+    if (!lida.success) return err(failure('validation', 'Dados inválidos.', detalhesDoZod(lida.error)));
+    if (!pode('criar', comando.papelDeQuemAge)) return err(SEM_PERMISSAO);
+    const { clienteId, tipoDePlano, plataformas, landingPageId, nomeDaCampanha, inicio } = lida.data;
+    const semCatalogo = plataformasSemCatalogo(plataformas);
+    if (semCatalogo) return err(semCatalogo);
+    if (!(await repositorio.clienteVisivel(comando.organizationId, clienteId))) return err(CLIENTE_NAO_ENCONTRADO);
+    const pagina = await landingPageDoCliente(comando, clienteId, landingPageId);
+    if (!pagina.ok) return pagina;
+    try {
+      const utm = utmDoPedido(tipoDePlano, plataformas, textoSeguro(nomeDaCampanha), inicio);
+      const itens = plataformas.map((plataforma): ItemDaPreviaDeUtm => {
+        const valor = utm[plataforma]!;
+        return { plataforma, rotulo: ROTULO_DA_PLATAFORMA_DO_PLANO[plataforma] ?? plataforma, utm: valor, url: aplicarUtm(pagina.value.url, valor) };
+      });
+      return ok({ itens });
+    } catch (erro) {
+      if (erro instanceof ErroUtm) return err(failure('validation', 'Não foi possível montar a UTM com esses dados.', { utm: erro.codigo }));
+      throw erro;
+    }
+  }
+
+  async function listarPlanos(comando: ComandoDeEstrategia, entrada: EntradaDoEscopoDoCliente): Promise<Result<PlanosDoCliente, Failure>> {
+    const lida = EscopoDoClienteSchema.safeParse(entrada);
+    if (!lida.success) return err(failure('validation', 'Dados inválidos.', detalhesDoZod(lida.error)));
+    if (!pode('ler', comando.papelDeQuemAge)) return err(SEM_PERMISSAO);
+    if (!(await repositorio.clienteVisivel(comando.organizationId, lida.data.clienteId))) return err(CLIENTE_NAO_ENCONTRADO);
+    const estados = await repositorio.listarPlanosDoCliente({ organizationId: comando.organizationId, clientId: lida.data.clienteId });
+    return ok({ geradoEm: relogio.agora(), cards: estados.map(cardDoPlano) });
   }
 
   async function pedirPlano(comando: ComandoDeEstrategia, entrada: EntradaDePedirPlano, ator: Ator) {
@@ -250,47 +409,55 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
     if (!lida.success) return err(failure('validation', 'Dados inválidos.', detalhesDoZod(lida.error)));
     if (!pode('criar', comando.papelDeQuemAge)) return err(SEM_PERMISSAO);
     if (!ator.userId) return err(SEM_USUARIO);
-    const { clienteId, tipoDePlano } = lida.data;
+    const { clienteId, tipoDePlano, plataformas, landingPageId } = lida.data;
+    const semCatalogo = plataformasSemCatalogo(plataformas);
+    if (semCatalogo) return err(semCatalogo);
     const intencaoLimpa = sanitizarIntencao(lida.data.intencao);
     if (!intencaoLimpa.ok) {
       const detalhes = Object.fromEntries(intencaoLimpa.error.map((erro) => [erro.campo, 'Contém dado pessoal ou ficou vazio.']));
       return err(failure('validation', 'A intenção contém dado pessoal ou ficou vazia. Reescreva sem dados pessoais.', detalhes));
     }
-    const intencao = intencaoLimpa.value;
+    const base = intencaoLimpa.value;
     const escopo = { organizationId: comando.organizationId, clientId: clienteId };
     if (!(await repositorio.clienteVisivel(comando.organizationId, clienteId))) return err(CLIENTE_NAO_ENCONTRADO);
 
-    let plano = await repositorio.buscarPlano(escopo, tipoDePlano);
-    if (!plano) {
-      const criado = await repositorio.criarPlano(escopo, tipoDePlano, ator.requestId);
-      if (criado.ok) plano = criado.value;
-      else if (criado.error.codigo === 'ja_feito') plano = await repositorio.buscarPlano(escopo, tipoDePlano);
-      else return err(falhaDeEstrategia(criado.error));
-    }
-    if (!plano) return err(PLANO_NAO_ENCONTRADO);
+    const pagina = await landingPageDoCliente(comando, clienteId, landingPageId);
+    if (!pagina.ok) return pagina;
+    const whatsapp = await whatsappDoCliente(comando, clienteId);
+    if (!whatsapp.ok) return whatsapp;
 
-    const estado = await estadoDoPlano(plano);
-    if (estado?.vigente || estado?.aberta) {
-      return err(failure('conflict', 'Este cliente já tem plano deste tipo. Peça uma mudança em vez de criar de novo.', { codigo: 'plano_ja_existe' }));
-    }
-
-    const execucao = await repositorio.criarExecucao(comando.organizationId, clienteId, {
-      planoId: plano.id,
-      pedido: { tipo: 'criar', intencao },
-      versaoBaseId: null,
-      agentRunId: novoIdDeExecucao(),
-      solicitadoPor: ator.userId,
-      requestId: ator.requestId,
+    const montada = esquemaIntencao.safeParse({
+      ...base,
+      plataformas,
+      whatsapp: whatsapp.value,
+      destino: { landingPageId: pagina.value.id, url: pagina.value.url },
+      utm: utmDoPedido(tipoDePlano, plataformas, base.objetivo, base.horizonte.inicio),
     });
-    if (!execucao.ok) return err(falhaDeEstrategia(execucao.error));
+    if (!montada.success) return err(failure('validation', 'A intenção do plano ficou inválida.', detalhesDoZod(montada.error)));
+
+    const criado = await repositorio.criarPlanoComExecucao(
+      escopo,
+      { tipo: tipoDePlano, plataformas, whatsapp: whatsapp.value, landingPageId: pagina.value.id },
+      {
+        pedido: { tipo: 'criar', intencao: montada.data },
+        versaoBaseId: null,
+        agentRunId: novoIdDeExecucao(),
+        solicitadoPor: ator.userId,
+        requestId: ator.requestId,
+      },
+    );
+    if (!criado.ok) return err(falhaDeEstrategia(criado.error));
+    const { plano, execucao } = criado.value;
 
     await auditar(comando, ator, 'strategy.plan.requested', 'strategy_plan', plano.id, {
       clientId: clienteId,
       tipoDePlano,
-      execucaoId: execucao.value.id,
+      plataformas,
+      landingPageId: pagina.value.id,
+      execucaoId: execucao.id,
       kind: 'criar',
     });
-    return ok({ plano, execucao: execucao.value });
+    return ok({ plano, execucao });
   }
 
   async function pedirMudanca(comando: ComandoDeEstrategia, entrada: EntradaDePedirMudanca, ator: Ator) {
@@ -306,6 +473,7 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
 
     const plano = await planoDoCliente(comando, lida.data.planoId);
     if (!plano) return err(PLANO_NAO_ENCONTRADO);
+    if (plano.plataformas === null) return err(PLANO_SEM_DESTINO);
     const estado = await estadoDoPlano(plano);
     const base = estado?.aberta ?? estado?.vigente ?? null;
     if (!base) return err(failure('conflict', 'O plano ainda não tem versão para ajustar.', { codigo: 'sem_versao' }));
@@ -337,6 +505,7 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
     if (!ator.userId) return err(SEM_USUARIO);
     const plano = await planoDoCliente(comando, lida.data.planoId);
     if (!plano) return err(PLANO_NAO_ENCONTRADO);
+    if (plano.plataformas === null) return err(PLANO_SEM_DESTINO);
     const estado = await estadoDoPlano(plano);
     if (!estado?.vigente) return err(failure('conflict', 'Só o plano autorizado se revisa por mudança do Brain.', { codigo: 'sem_vigente' }));
 
@@ -438,6 +607,7 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
 
     const plano = await planoDoCliente(comando, lida.data.planoId);
     if (!plano) return err(PLANO_NAO_ENCONTRADO);
+    if (plano.plataformas === null) return err(PLANO_SEM_DESTINO);
 
     const conteudo = lerPlano(lida.data.conteudo);
     if (!conteudo.ok) {
@@ -464,6 +634,8 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
     if (!hashes.ok) return hashes;
     const citadas: ReferenciaDaVersao[] = referencias.value.map((ref) => ({ urn: ref.urn, papel: ref.papel, hash: hashes.value.get(ref.urn)! }));
     const baseCompleta = base ? await repositorio.lerVersao(comando.organizationId, base.id) : null;
+    const baseLida = baseCompleta ? lerPlano(baseCompleta.conteudo) : null;
+    const planoDaBase = baseLida?.ok ? baseLida.value : null;
     const herdadas = (baseCompleta?.referencias ?? []).filter((ref) => {
       const tipo = lerUrn(ref.urn)?.tipo;
       return tipo !== undefined && TIPOS_DE_REGRA_NO_PACOTE.includes(tipo);
@@ -475,7 +647,7 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
       plano.clientId,
       {
         planoId: plano.id,
-        conteudo: conteudo.value,
+        conteudo: comDestinoDaBase(conteudo.value, planoDaBase),
         schemaVersion: SCHEMA_VERSION,
         supersedesId: estado?.vigente?.id ?? null,
         autoria: { tipo: 'pessoa', userId: ator.userId },
@@ -591,8 +763,8 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
     if (!(await repositorio.clienteVisivel(comando.organizationId, lida.data.clienteId))) return err(CLIENTE_NAO_ENCONTRADO);
 
     const planos = await repositorio.listarPlanosDoCliente({ organizationId: comando.organizationId, clientId: lida.data.clienteId });
-    const { planoId, tipo } = lida.data;
-    const detalhados = planoId || tipo ? planos.filter((estado) => (!planoId || estado.plano.id === planoId) && (!tipo || estado.plano.tipo === tipo)) : planos;
+    const { planoId } = lida.data;
+    const detalhados = planoId ? planos.filter((estado) => estado.plano.id === planoId) : planos;
     const catalogoDado = catalogoDoSnapshotDado(comando, lida.data.clienteId, opcoes.snapshotDoBrain);
     const paineis = await Promise.all(detalhados.map((estado) => painelDe(comando, estado, catalogoDado)));
     const resumos = planos.map((estado): ResumoDoPlano => {
@@ -613,9 +785,8 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
     escopo: { readonly clienteId: string; readonly planoId: string; readonly comConteudo?: boolean },
   ): Promise<VersaoVistaDoPlano | null> {
     if (!pode('ler', comando.papelDeQuemAge)) return null;
-    const estado = (await repositorio.listarPlanosDoCliente({ organizationId: comando.organizationId, clientId: escopo.clienteId })).find(
-      (candidato) => candidato.plano.id === escopo.planoId,
-    );
+    const estado = await repositorio.estadoDoPlano(comando.organizationId, escopo.planoId);
+    if (estado && estado.plano.clientId !== escopo.clienteId) return null;
     const vista = estado ? (estado.aberta ?? estado.vigente) : null;
     if (!vista) return null;
     if (!escopo.comConteudo) return { id: vista.id, conteudo: null };
@@ -684,6 +855,9 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
 
   return {
     pedirPlano,
+    modeloDeCriacao,
+    previaDeUtm,
+    listarPlanos,
     pedirRevisao,
     pedirMudanca,
     editarManual,

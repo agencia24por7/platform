@@ -2,7 +2,6 @@ import { withTenant, withoutTenant } from '@/shared/db/tenant';
 import { err, ok, type Result } from '@/shared/result/result';
 import type {
   ErroDeEstrategia,
-  EscopoDoPlano,
   EventoDaVersao,
   Execucao,
   MudancaDaExecucao,
@@ -18,13 +17,25 @@ import type {
   Versao,
   VersaoResumo,
 } from '@/modules/strategy/application/portas';
+import type { Plataforma } from '@/modules/strategy/domain/index';
 import { PAPEL_NO_BANCO } from '@/modules/strategy/domain/referencias';
 import { traduzirErroDoBanco } from '@/modules/strategy/infrastructure/errosDoBanco';
 
 type Tx = Parameters<Parameters<typeof withTenant>[1]>[0];
 type Json = Parameters<Tx['json']>[0];
 
-type PlanoRow = { id: string; organization_id: string; client_id: string; plan_type_key: string; created_at: Date };
+type PlanoRow = {
+  id: string;
+  organization_id: string;
+  client_id: string;
+  plan_type_key: string;
+  plataformas: Plataforma[] | null;
+  whatsapp: string | null;
+  landing_page_id: string | null;
+  created_at: Date;
+};
+
+const colunasDoPlano = (tx: Tx) => tx`id, organization_id, client_id, plan_type_key, plataformas, whatsapp, landing_page_id, created_at`;
 
 type VersaoRow = {
   id: string;
@@ -105,6 +116,9 @@ function paraPlano(row: PlanoRow): Plano {
     organizationId: row.organization_id,
     clientId: row.client_id,
     tipo: row.plan_type_key,
+    plataformas: row.plataformas,
+    whatsapp: row.whatsapp,
+    landingPageId: row.landing_page_id,
     criadoEm: row.created_at,
   };
 }
@@ -318,6 +332,54 @@ async function inserirExecucao(tx: Tx, organizationId: string, clientId: string,
   return paraExecucao(rows[0]!);
 }
 
+async function estadosDosPlanos(tx: Tx, organizationId: string, clientId: string | null, planoId: string | null): Promise<PlanoDoCliente[]> {
+  const porCliente = clientId === null ? tx`` : tx`AND client_id = ${clientId}`;
+  const porPlano = planoId === null ? tx`` : tx`AND id = ${planoId}`;
+  const planos = (await tx`
+    SELECT ${colunasDoPlano(tx)}
+      FROM core.strategy_plans
+     WHERE organization_id = ${organizationId} ${porCliente} ${porPlano}
+     ORDER BY created_at DESC, id DESC
+  `) as unknown as PlanoRow[];
+  if (planos.length === 0) return [];
+  const ids = planos.map((plano) => plano.id);
+  const versoes = (await tx`
+    SELECT ${colunasDaVersao(tx)}
+      FROM core.strategy_plan_versions
+     WHERE organization_id = ${organizationId} AND plan_id IN ${tx(ids)}
+     ORDER BY created_at DESC, id DESC
+  `) as unknown as VersaoRow[];
+  const ultimas = (await tx`
+    SELECT DISTINCT ON (plan_id) ${colunasDaExecucao(tx)}
+      FROM core.strategy_plan_runs
+     WHERE organization_id = ${organizationId} AND plan_id IN ${tx(ids)}
+     ORDER BY plan_id, created_at DESC, id DESC
+  `) as unknown as ExecucaoRow[];
+  const objetivos = (await tx`
+    SELECT DISTINCT ON (plan_id) plan_id, pedido->>'objetivo' AS objetivo
+      FROM core.strategy_plan_runs
+     WHERE organization_id = ${organizationId} AND plan_id IN ${tx(ids)} AND kind = 'criar'
+     ORDER BY plan_id, created_at, id
+  `) as unknown as { plan_id: string; objetivo: string | null }[];
+  return planos.map((plano): PlanoDoCliente => {
+    const doPlano = versoes.filter((v) => v.plan_id === plano.id);
+    const recente = doPlano[0];
+    const vigente = doPlano.find((v) => v.status === 'vigente');
+    const aberta = doPlano.find((v) => v.status === 'rascunho' || v.status === 'proposto');
+    const ultima = ultimas.find((e) => e.plan_id === plano.id);
+    const datas = [plano.created_at, recente?.created_at, ultima?.updated_at].filter((data): data is Date => data instanceof Date);
+    return {
+      plano: paraPlano(plano),
+      maisRecente: recente ? paraVersaoResumo(recente) : null,
+      vigente: vigente ? paraVersaoResumo(vigente) : null,
+      aberta: aberta ? paraVersaoResumo(aberta) : null,
+      objetivo: objetivos.find((o) => o.plan_id === plano.id)?.objetivo ?? null,
+      ultimaExecucao: ultima ? paraExecucao(ultima) : null,
+      atualizadoEm: new Date(Math.max(...datas.map((data) => data.getTime()))),
+    };
+  });
+}
+
 export function createEstrategiaRepository(): RepositorioDeEstrategia {
   return {
     async clienteVisivel(organizationId, clientId) {
@@ -329,21 +391,10 @@ export function createEstrategiaRepository(): RepositorioDeEstrategia {
       });
     },
 
-    async buscarPlano(escopo: EscopoDoPlano, tipo) {
-      return withTenant(escopo.organizationId, async (tx) => {
-        const rows = (await tx`
-          SELECT id, organization_id, client_id, plan_type_key, created_at
-            FROM core.strategy_plans
-           WHERE organization_id = ${escopo.organizationId} AND client_id = ${escopo.clientId} AND plan_type_key = ${tipo}
-        `) as unknown as PlanoRow[];
-        return rows[0] ? paraPlano(rows[0]) : null;
-      });
-    },
-
     async buscarPlanoPorId(organizationId, planoId) {
       return withTenant(organizationId, async (tx) => {
         const rows = (await tx`
-          SELECT id, organization_id, client_id, plan_type_key, created_at
+          SELECT ${colunasDoPlano(tx)}
             FROM core.strategy_plans WHERE id = ${planoId} AND organization_id = ${organizationId}
         `) as unknown as PlanoRow[];
         return rows[0] ? paraPlano(rows[0]) : null;
@@ -361,52 +412,28 @@ export function createEstrategiaRepository(): RepositorioDeEstrategia {
       });
     },
 
-    async criarPlano(escopo, tipo, requestId) {
+    async criarPlanoComExecucao(escopo, novo, execucao) {
       return comTraducao(() =>
         withTenant(escopo.organizationId, async (tx) => {
-          await definirRequestId(tx, requestId);
+          await definirRequestId(tx, execucao.requestId);
           const rows = (await tx`
-            INSERT INTO core.strategy_plans (organization_id, client_id, plan_type_key)
-            VALUES (${escopo.organizationId}, ${escopo.clientId}, ${tipo})
-            RETURNING id, organization_id, client_id, plan_type_key, created_at
+            INSERT INTO core.strategy_plans (organization_id, client_id, plan_type_key, plataformas, whatsapp, landing_page_id)
+            VALUES (${escopo.organizationId}, ${escopo.clientId}, ${novo.tipo}, ${[...novo.plataformas]}::text[], ${novo.whatsapp}, ${novo.landingPageId}::uuid)
+            RETURNING ${colunasDoPlano(tx)}
           `) as unknown as PlanoRow[];
-          return paraPlano(rows[0]!);
+          const plano = paraPlano(rows[0]!);
+          const criada = await inserirExecucao(tx, escopo.organizationId, escopo.clientId, { ...execucao, planoId: plano.id });
+          return { plano, execucao: criada };
         }),
       );
     },
 
     async listarPlanosDoCliente(escopo) {
-      return withTenant(escopo.organizationId, async (tx) => {
-        const planos = (await tx`
-          SELECT id, organization_id, client_id, plan_type_key, created_at
-            FROM core.strategy_plans
-           WHERE organization_id = ${escopo.organizationId} AND client_id = ${escopo.clientId}
-           ORDER BY plan_type_key
-        `) as unknown as PlanoRow[];
-        if (planos.length === 0) return [];
-        const recentes = (await tx`
-          SELECT DISTINCT ON (plan_id) ${colunasDaVersao(tx)}
-            FROM core.strategy_plan_versions WHERE client_id = ${escopo.clientId}
-           ORDER BY plan_id, created_at DESC, id DESC
-        `) as unknown as VersaoRow[];
-        const relevantes = (await tx`
-          SELECT ${colunasDaVersao(tx)}
-            FROM core.strategy_plan_versions
-           WHERE client_id = ${escopo.clientId} AND status IN ('vigente', 'rascunho', 'proposto')
-        `) as unknown as VersaoRow[];
-        return planos.map((plano): PlanoDoCliente => {
-          const doPlano = relevantes.filter((v) => v.plan_id === plano.id);
-          const vigente = doPlano.find((v) => v.status === 'vigente');
-          const aberta = doPlano.find((v) => v.status === 'rascunho' || v.status === 'proposto');
-          const recente = recentes.find((v) => v.plan_id === plano.id);
-          return {
-            plano: paraPlano(plano),
-            maisRecente: recente ? paraVersaoResumo(recente) : null,
-            vigente: vigente ? paraVersaoResumo(vigente) : null,
-            aberta: aberta ? paraVersaoResumo(aberta) : null,
-          };
-        });
-      });
+      return withTenant(escopo.organizationId, (tx) => estadosDosPlanos(tx, escopo.organizationId, escopo.clientId, null));
+    },
+
+    async estadoDoPlano(organizationId, planoId) {
+      return withTenant(organizationId, async (tx) => (await estadosDosPlanos(tx, organizationId, null, planoId))[0] ?? null);
     },
 
     async criarVersaoRascunho(organizationId, nova: NovaVersao) {

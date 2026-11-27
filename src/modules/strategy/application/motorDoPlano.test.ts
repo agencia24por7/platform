@@ -5,8 +5,13 @@ import type { AuditEvent } from '@/modules/audit/domain/auditEvent';
 import type { AvaliadorDeLimites, ErroDeIA, Execucao, LeitorDoBrain, PedidoDeIA } from '@/modules/strategy/application/portas';
 import { parecer, ponto } from '../domain/comite/fixturesDeParecer.ts';
 import { PERSONAS } from '../domain/comite/personas.ts';
-import { CLIENTE_ID, ORGANIZACAO_ID, URN_BENCHMARK_B, URN_DESEMPENHO, pacoteDeTeste, planoCompleto, secoesDoGrupoDaChave, urnDeTeste } from '../domain/fixturesDeTeste.ts';
+import { CLIENTE_ID, ORGANIZACAO_ID, URN_BENCHMARK_B, URN_DESEMPENHO, CATALOGOS_DE_TESTE, pacoteDeTeste, planoCompleto, secoesDoGrupoDaChave, urnDeTeste } from '../domain/fixturesDeTeste.ts';
 import { GRUPOS_DE_REDACAO } from '../domain/gruposDoPlano.ts';
+
+const CHAMADAS_DE_REDACAO = GRUPOS_DE_REDACAO.length + INTENCAO_PLATAFORMAS_COM_CATALOGO() - 1;
+function INTENCAO_PLATAFORMAS_COM_CATALOGO() {
+  return planoCompleto().intencao.plataformas?.length ?? 0;
+}
 import type { Plano } from '../domain/plano.ts';
 
 Object.assign(process.env, {
@@ -70,7 +75,7 @@ async function montar(opcoes: Montagem = {}, tipoDeExecucao: 'criar' | 'ajustar'
   const repositorio = criarRepositorioEmMemoria();
   const ia = criarIaFalsa(opcoes.roteiro ?? roteiroPadrao());
   const auditorias: AuditEvent[] = [];
-  const motor = createMotorDoPlano({
+  const motor = createMotorDoPlano({ catalogos: CATALOGOS_DE_TESTE,
     repositorio,
     executorDeIA: opcoes.executor ?? ia,
     leitorDoBrain: opcoes.brain ?? brainOk,
@@ -78,7 +83,7 @@ async function montar(opcoes: Montagem = {}, tipoDeExecucao: 'criar' | 'ajustar'
     audit: { async record(e) { auditorias.push(e); }, async list() { return []; }, async search() { return []; } },
     ...(opcoes.tempo ? { relogio: { agora: opcoes.tempo } } : {}),
   });
-  const plano = await repositorio.criarPlano(ESCOPO, 'aquisicao', 'req');
+  const plano = await repositorio.criarPlano(ESCOPO, 'aquisicao');
   assert.ok(plano.ok);
 
   let versaoBaseId: string | null = null;
@@ -153,7 +158,7 @@ describe('motor do plano: caminho feliz', () => {
     assert.equal(eventosDe(m, 'ajuste').length, 0);
     assert.equal(eventosDe(m, 'gate').length, 1);
     assert.equal(eventosDe(m, 'gate')[0]!.payload.resultado, 'aprovado');
-    assert.deepEqual(tarefas(m).filter((t) => t === 'strategy_plan').length, GRUPOS_DE_REDACAO.length);
+    assert.deepEqual(tarefas(m).filter((t) => t === 'strategy_plan').length, CHAMADAS_DE_REDACAO);
     assert.equal(tarefas(m).filter((t) => t === 'comite').length, 9);
     assert.equal(tarefas(m).filter((t) => t === 'gate').length, 1);
     assert.equal(eventosDe(m, 'proposta').length + eventosDe(m, 'efetivada').length, 0);
@@ -582,7 +587,7 @@ describe('motor do plano: retomada e idempotência', () => {
     await forcar('redigir');
     assert.equal((await passo()).execucao?.etapa, 'comite');
     assert.equal(m.repositorio.estado.versoes.length, 1);
-    assert.equal(chamadasDoPlano(), GRUPOS_DE_REDACAO.length);
+    assert.equal(chamadasDoPlano(), CHAMADAS_DE_REDACAO);
 
     assert.equal((await passo()).execucao?.etapa, 'ajustar');
     assert.equal(eventosDe(m, 'parecer').length, 9);
@@ -614,7 +619,7 @@ describe('motor do plano: retomada e idempotência', () => {
     assert.equal(eventosDe(m, 'parecer').length, 9);
     assert.equal(new Set(eventosDe(m, 'parecer').map((e) => e.payload.persona)).size, 9);
     assert.equal(m.repositorio.estado.versoes.length, 1);
-    assert.equal(tarefas(m).filter((t) => t === 'strategy_plan').length, GRUPOS_DE_REDACAO.length);
+    assert.equal(tarefas(m).filter((t) => t === 'strategy_plan').length, CHAMADAS_DE_REDACAO);
   });
 
   it('ja_feito do banco é sucesso idempotente (reenvio depois de queda)', async () => {
@@ -667,7 +672,7 @@ describe('motor do plano: Comitê e injeção de instrução', () => {
     assert.equal(eventosDe(m, 'proposta').length, 0);
     assert.equal(eventosDe(m, 'efetivada').length, 0);
     assert.equal(m.repositorio.estado.versoes[0]!.status, 'rascunho');
-    assert.equal(tarefas(m).filter((t) => t === 'strategy_plan').length, GRUPOS_DE_REDACAO.length);
+    assert.equal(tarefas(m).filter((t) => t === 'strategy_plan').length, CHAMADAS_DE_REDACAO);
     assert.ok(!JSON.stringify(m.auditorias).includes('IGNORE'));
   });
 
@@ -708,9 +713,9 @@ describe('motor do plano: ajustar, revisar e o desatualizado', () => {
     const m = await montar({}, 'ajustar');
     const final = await ate(m);
     assert.equal(final.status, 'concluida');
-    const dados = m.ia.pedidos[0]!.dados as { planoBase: unknown; instrucaoDaPessoa: string };
+    const dados = m.ia.pedidos[0]!.dados as { secoesDoPlanoBase: unknown; instrucaoDaPessoa: string };
     assert.equal(dados.instrucaoDaPessoa, 'Aumente a verba de busca');
-    assert.ok(dados.planoBase);
+    assert.ok(dados.secoesDoPlanoBase);
     assert.equal(m.repositorio.estado.versoes.length, 2);
     assert.equal(m.repositorio.estado.versoes[0]!.status, 'cancelado');
     assert.equal(eventosDe(m, 'parecer').length, 9);
@@ -732,9 +737,9 @@ describe('motor do plano: ajustar, revisar e o desatualizado', () => {
     const vigente = m.repositorio.estado.versoes[0]!;
     const final = await ate(m);
     assert.equal(final.status, 'concluida');
-    assert.equal(tarefas(m).filter((t) => t === 'strategy_plan').length, GRUPOS_DE_REDACAO.length);
-    const dados = m.ia.pedidos[0]!.dados as { planoVigente: unknown };
-    assert.ok(dados.planoVigente);
+    assert.equal(tarefas(m).filter((t) => t === 'strategy_plan').length, CHAMADAS_DE_REDACAO);
+    const dados = m.ia.pedidos[0]!.dados as { secoesDoPlanoBase: unknown };
+    assert.ok(dados.secoesDoPlanoBase);
     const nova = m.repositorio.estado.versoes[1]!;
     assert.equal(nova.supersedesId, vigente.id);
     assert.equal(nova.status, 'rascunho');
@@ -761,7 +766,7 @@ describe('motor do plano: auditoria', () => {
 
   it('falha de auditoria não derruba o motor', async () => {
     const m = await montar();
-    const motor = createMotorDoPlano({
+    const motor = createMotorDoPlano({ catalogos: CATALOGOS_DE_TESTE,
       repositorio: m.repositorio,
       executorDeIA: m.ia,
       leitorDoBrain: brainOk,
@@ -839,23 +844,32 @@ describe('motor do plano: redação e ajuste por grupos de seções', () => {
     const final = await ate(m);
     assert.equal(final.status, 'concluida');
     const chamadas = doPlano(m);
-    assert.deepEqual(chamadas.map((p) => p.chaveDeIdempotencia.split(':').at(-1)), GRUPOS_DE_REDACAO.map((_, i) => `g${i}`));
+    const midia = GRUPOS_DE_REDACAO.findIndex((g) => g.includes('plano_de_midia'));
+    const esperadas = GRUPOS_DE_REDACAO.flatMap((_, i) => (i === midia ? (INTENCAO.plataformas ?? []).map((pl) => `g${i}:${pl}`) : [`g${i}`]));
+    assert.deepEqual(chamadas.map((p) => p.chaveDeIdempotencia.split(':').slice(-2).join(':').replace(/^.*?:?(g\d+(:[a-z_]+)?)$/, '$1')), esperadas);
     chamadas.forEach((p, i) => {
-      const dados = p.dados as { intencao: unknown; secoesJaRedigidas: Record<string, unknown> };
+      const dados = p.dados as { intencao: unknown; secoesJaRedigidas: Record<string, unknown>; catalogosDeCampos?: unknown[] };
       assert.deepEqual(dados.intencao, INTENCAO);
-      assert.deepEqual(Object.keys(dados.secoesJaRedigidas), GRUPOS_DE_REDACAO.slice(0, i).flat());
-      assert.ok(p.orcamento.tokensMaximos <= 8000 && p.orcamento.tempoMaximoMs <= 120_000);
+      if (p.chaveDeIdempotencia.includes(`:g${midia}:`)) {
+        assert.equal(dados.catalogosDeCampos?.length, 1);
+        assert.ok(!('plano_de_midia' in dados.secoesJaRedigidas));
+      } else {
+        assert.equal(dados.catalogosDeCampos, undefined);
+        const indice = Number(/:g(\d+)$/.exec(p.chaveDeIdempotencia)![1]);
+        assert.deepEqual(Object.keys(dados.secoesJaRedigidas), GRUPOS_DE_REDACAO.slice(0, indice).flat());
+      }
+      assert.ok(p.orcamento.tokensMaximos <= 8000 && p.orcamento.tempoMaximoMs <= 120_000, String(i));
     });
     assert.deepEqual(m.repositorio.estado.versoes[0]!.conteudo, planoCompleto());
   });
 
-  it('o grupo de campanhas vê segmentos, conceitos e metas definidos em grupos anteriores', async () => {
+  it('o grupo de campanhas vê segmentos e canais definidos em grupos anteriores', async () => {
     const m = await montar();
     await ate(m);
     const indice = GRUPOS_DE_REDACAO.findIndex((g) => g.includes('campanhas'));
     const campanhas = doPlano(m).find((p) => p.chaveDeIdempotencia.endsWith(`:g${indice}`))!;
     const vistas = (campanhas.dados as { secoesJaRedigidas: Record<string, unknown> }).secoesJaRedigidas;
-    for (const secao of ['publico_alvo', 'criativos', 'metas_e_metricas', 'canais_e_plataformas']) assert.ok(vistas[secao], secao);
+    for (const secao of ['publico_alvo', 'canais_e_plataformas']) assert.ok(vistas[secao], secao);
   });
 
   it('grupo que devolve referência a segmento inexistente vira saida_invalida e nada é gravado', async () => {
@@ -924,7 +938,7 @@ describe('motor do plano: redação e ajuste por grupos de seções', () => {
     assert.equal(final.status, 'concluida');
     assert.equal(final.falhas, 1);
     assert.equal(m.repositorio.estado.versoes.length, 1);
-    assert.equal(doPlano(m).length, 4 + GRUPOS_DE_REDACAO.length);
+    assert.equal(doPlano(m).length, 4 + CHAMADAS_DE_REDACAO);
   });
 
   it('limite_atingido no meio dos grupos encerra a execução sem nova tentativa', async () => {

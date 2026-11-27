@@ -1,22 +1,35 @@
 import { z } from 'zod';
-import { TIPOS_DE_PLANO, esquemaIntencao } from '@/modules/strategy/domain/index';
+import { TIPOS_DE_PLANO, dataIsoValida, esquemaIntencaoBase, esquemaPlataformasDoPedido } from '@/modules/strategy/domain/index';
 
 export const TAMANHO_MAXIMO_DA_INSTRUCAO = 2000;
 export const TAMANHO_MAXIMO_DO_PEDIDO_BYTES = 7000;
 
 const identificador = z.string().uuid();
 
+const corpoDoPedido = {
+  clienteId: identificador,
+  tipoDePlano: z.enum(TIPOS_DE_PLANO),
+  plataformas: esquemaPlataformasDoPedido,
+  landingPageId: identificador,
+};
+
 export const PedirPlanoSchema = z
-  .strictObject({
-    clienteId: identificador,
-    tipoDePlano: z.enum(TIPOS_DE_PLANO),
-    intencao: esquemaIntencao,
-  })
+  .strictObject({ ...corpoDoPedido, intencao: esquemaIntencaoBase })
   .refine(
     (entrada) => new TextEncoder().encode(JSON.stringify(entrada.intencao)).length <= TAMANHO_MAXIMO_DO_PEDIDO_BYTES,
     { path: ['intencao'], message: 'Intenção grande demais.' },
   );
 export type EntradaDePedirPlano = z.input<typeof PedirPlanoSchema>;
+
+export const PreviaDeUtmSchema = z.strictObject({
+  ...corpoDoPedido,
+  nomeDaCampanha: z.string().trim().min(3, 'Descreva o objetivo (mínimo 3 caracteres).').max(600),
+  inicio: z.string().refine(dataIsoValida, 'Informe uma data válida.'),
+});
+export type EntradaDaPreviaDeUtm = z.input<typeof PreviaDeUtmSchema>;
+
+export const EscopoDoClienteSchema = z.strictObject({ clienteId: identificador });
+export type EntradaDoEscopoDoCliente = z.input<typeof EscopoDoClienteSchema>;
 
 export const PedirMudancaSchema = z.strictObject({
   planoId: identificador,
@@ -44,7 +57,7 @@ export type EntradaDeVersaoAlvo = z.input<typeof VersaoAlvoSchema>;
 export const ExecucaoAlvoSchema = z.strictObject({ execucaoId: identificador });
 export type EntradaDeExecucaoAlvo = z.input<typeof ExecucaoAlvoSchema>;
 
-export const PainelSchema = z.strictObject({ clienteId: identificador, planoId: identificador.optional(), tipo: z.enum(TIPOS_DE_PLANO).optional() });
+export const PainelSchema = z.strictObject({ clienteId: identificador, planoId: identificador.optional() });
 export type EntradaDoPainel = z.input<typeof PainelSchema>;
 
 export function detalhesDoZod(erro: z.ZodError): Record<string, string> {

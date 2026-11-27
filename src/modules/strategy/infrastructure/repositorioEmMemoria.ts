@@ -33,6 +33,7 @@ export type RepositorioEmMemoria = RepositorioDeEstrategia & {
     readonly eventos: EventoInterno[];
     readonly execucoes: ExecucaoInterna[];
   };
+  criarPlano(escopo: { readonly organizationId: string; readonly clientId: string }, tipo: string, destino?: Partial<Pick<Plano, 'plataformas' | 'whatsapp' | 'landingPageId'>>): Promise<Result<Plano, ErroDeEstrategia>>;
   falharProxima(metodo: keyof RepositorioDeEstrategia, erro: ErroDeEstrategia): void;
   contagemDeChamadas(metodo: keyof RepositorioDeEstrategia): number;
 };
@@ -161,12 +162,29 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
     return ok(publico);
   }
 
+  const estadoDe = (plano: Plano): PlanoDoCliente => {
+    const doPlano = versoes.filter((v) => v.planoId === plano.id);
+    const recente = doPlano.at(-1);
+    const vigente = doPlano.find((v) => v.status === 'vigente');
+    const aberta = doPlano.find((v) => v.status === 'rascunho' || v.status === 'proposto');
+    const ultima = execucoes.filter((e) => e.planoId === plano.id).at(-1);
+    const primeiraDeCriar = execucoes.find((e) => e.planoId === plano.id && e.tipo === 'criar');
+    const objetivo = typeof primeiraDeCriar?.pedido.objetivo === 'string' ? primeiraDeCriar.pedido.objetivo : null;
+    const datas = [plano.criadoEm, recente?.criadaEm, ultima?.atualizadaEm].filter((data): data is Date => data instanceof Date);
+    return {
+      plano,
+      maisRecente: recente ? resumo(recente) : null,
+      vigente: vigente ? resumo(vigente) : null,
+      aberta: aberta ? resumo(aberta) : null,
+      objetivo,
+      ultimaExecucao: ultima ? { ...ultima } : null,
+      atualizadoEm: new Date(Math.max(...datas.map((data) => data.getTime()))),
+    };
+  };
+
   const repositorio: RepositorioDeEstrategia = {
     async clienteVisivel() {
       return true;
-    },
-    async buscarPlano(escopo, tipo) {
-      return planos.find((p) => p.clientId === escopo.clientId && p.tipo === tipo) ?? null;
     },
     async buscarPlanoPorId(_org, planoId) {
       return planos.find((p) => p.id === planoId) ?? null;
@@ -175,24 +193,38 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
       const lista = tipo === 'plano' ? planos : tipo === 'versao' ? versoes : execucoes;
       return lista.find((item) => item.id === recursoId)?.clientId ?? null;
     },
-    async criarPlano(escopo, tipo) {
-      const falha = entrada('criarPlano');
+    async criarPlanoComExecucao(escopo, novo, execucao) {
+      const falha = entrada('criarPlanoComExecucao');
       if (falha) return err(falha);
-      const plano: Plano = { id: id(), organizationId: escopo.organizationId, clientId: escopo.clientId, tipo, criadoEm: agora() };
+      const plano: Plano = {
+        id: id(),
+        organizationId: escopo.organizationId,
+        clientId: escopo.clientId,
+        tipo: novo.tipo,
+        plataformas: novo.plataformas,
+        whatsapp: novo.whatsapp,
+        landingPageId: novo.landingPageId,
+        criadoEm: agora(),
+      };
       planos.push(plano);
-      return ok(plano);
+      const criada = await repositorio.criarExecucao(escopo.organizationId, escopo.clientId, { ...execucao, planoId: plano.id });
+      if (!criada.ok) {
+        planos.splice(planos.indexOf(plano), 1);
+        return err(criada.error);
+      }
+      return ok({ plano, execucao: criada.value });
     },
     async listarPlanosDoCliente(escopo) {
       contar('listarPlanosDoCliente');
       return planos
         .filter((p) => p.clientId === escopo.clientId)
-        .map((plano): PlanoDoCliente => {
-          const doPlano = versoes.filter((v) => v.planoId === plano.id);
-          const recente = doPlano.at(-1);
-          const vigente = doPlano.find((v) => v.status === 'vigente');
-          const aberta = doPlano.find((v) => v.status === 'rascunho' || v.status === 'proposto');
-          return { plano, maisRecente: recente ? resumo(recente) : null, vigente: vigente ? resumo(vigente) : null, aberta: aberta ? resumo(aberta) : null };
-        });
+        .map(estadoDe)
+        .reverse();
+    },
+    async estadoDoPlano(_org, planoId) {
+      contar('estadoDoPlano');
+      const plano = planos.find((p) => p.id === planoId);
+      return plano ? estadoDe(plano) : null;
     },
     async criarVersaoRascunho(org, nova: NovaVersao) {
       const falha = entrada('criarVersaoRascunho');
@@ -382,6 +414,20 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
   return {
     ...repositorio,
     estado: { planos, versoes, eventos, execucoes },
+    async criarPlano(escopo, tipo, destino = {}) {
+      const plano: Plano = {
+        id: id(),
+        organizationId: escopo.organizationId,
+        clientId: escopo.clientId,
+        tipo,
+        plataformas: destino.plataformas ?? ['meta'],
+        whatsapp: destino.whatsapp ?? '+5511912345678',
+        landingPageId: destino.landingPageId ?? '00000000-0000-4000-8000-0000000000aa',
+        criadoEm: agora(),
+      };
+      planos.push(plano);
+      return ok(plano);
+    },
     falharProxima(metodo, erroInjetado) {
       falhas.set(metodo, [...(falhas.get(metodo) ?? []), erroInjetado]);
     },

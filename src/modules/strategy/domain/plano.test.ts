@@ -138,7 +138,7 @@ describe('lerPlano', () => {
 
   it('ids internos seguem o padrão curto', () => {
     const plano = planoMinimoBruto();
-    plano.criativos.conceitos[0]!.id = 'Conceito Com Espaço';
+    plano.publico_alvo.segmentos[0]!.id = 'Segmento Com Espaço';
     assert.equal(lerPlano(plano).ok, false);
   });
 });

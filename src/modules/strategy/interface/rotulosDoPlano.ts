@@ -10,11 +10,11 @@ export const TITULO_DA_SECAO: Readonly<Record<SecaoDoPlano, string>> = {
   estrategia: 'Estratégia',
   canais_e_plataformas: 'Canais e plataformas',
   campanhas: 'Campanhas',
-  criativos: 'Criativos',
   orcamento: 'Orçamento',
   metas_e_metricas: 'Metas e métricas',
   medicao: 'Medição',
   calendario: 'Calendário',
+  plano_de_midia: 'Plano de mídia',
   riscos_e_regras: 'Riscos e regras',
   lacunas: 'Lacunas',
 };
