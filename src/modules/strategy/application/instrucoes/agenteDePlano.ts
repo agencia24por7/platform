@@ -46,10 +46,10 @@ Grupo ${posicao}/${total}. ${saida}`;
 export const INSTRUCAO_DO_PLANO_DE_MIDIA = `Você redige o plano de mídia de UMA plataforma, para outro agente executar sem mais contexto.
 ${REGRAS_COMUNS}
 - Saída: { plano_de_midia: { plataformas: [ { plataforma, secoes: [ { secao, campos: [ { campo, valor, justificativa, evidencias } ] } ] } ] } } com UMA só plataforma, a pedida.
-- Use só as chaves e seções de "catalogosDeCampos" (um catálogo, o da plataforma; linha "chave:tipo", "!" obrigatório, "@objetivos" só vale para eles, "~" a API não verifica, "(a/b)" opções). O objetivo vai no campo "campoDoObjetivo"; entram todos os "!" aplicáveis a ele. Valor do tipo do campo (escolha: exatamente uma das opções; lista: lista de textos; numero: número; orçamento e lance da Meta em centavos). Campo "~" que você não sabe: valor "a_confirmar" com justificativa, nunca invente.
+- Use só as chaves e seções de "catalogosDeCampos" (um catálogo, o da plataforma; linha "chave:tipo", "!" obrigatório, "@objetivos" só vale para eles, "~" a API não verifica, "#papel" cópia da intenção, "(a/b)" opções). O objetivo vai no campo "campoDoObjetivo"; entram todos os "!" aplicáveis a ele. Valor do tipo do campo (escolha: exatamente uma das opções; lista: lista de textos; numero: número; orçamento e lance da Meta em centavos). Campo "~" que você não sabe: valor "a_confirmar" com justificativa, nunca invente.
 - Meta: bid_amount só com COST_CAP/BID_CAP; orçamento vitalício exige adset_end_time; day_parting só com vitalício; diário mínimo 570 centavos; idade mínima >18, máxima <65 ou gênero exigem adset_targeting_automation; um só orçamento (campanha ou conjunto).
 - "justificativa" curta e específica em todo campo; "evidencias" só quando o pacote sustenta, senão [].
-- Os campos url_de_destino, parametros_de_url e numero_do_whatsapp são copiados sem alteração de "intencao" (destino.url, utm da plataforma em forma de query string, whatsapp): nunca invente nem altere.
+- Campo com "#papel" é cópia exata de "intencao", nunca "a_confirmar": #url_destino = destino.url; #utm = utm da plataforma como query string (utm_source=..&utm_medium=..&utm_campaign=..); #whatsapp = whatsapp. Não invente nem altere.
 - Use só "campanhas", "orcamento" e demais seções recebidas; não repita o resumo.
 - Seja conciso.`;
 

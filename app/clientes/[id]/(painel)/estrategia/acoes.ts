@@ -104,6 +104,8 @@ async function previaDoNovoPlano(escopo: EscopoDaAcao, campos: CamposBrutos): Pr
   return estadoDoFormulario(escopo, campos, { previa: previaNaTela(previa.value) });
 }
 
+const CHAVE_VALIDA = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function novoPlanoAcao(_anterior: EstadoDoFormulario, formData: FormData): Promise<EstadoDoFormulario> {
   const campos = camposDo(formData);
   const escopo = await escopoDoClienteNaOrganizacao(campos['clienteId']);
@@ -119,6 +121,7 @@ export async function novoPlanoAcao(_anterior: EstadoDoFormulario, formData: For
       plataformas: [...entrada.value.plataformas],
       landingPageId: entrada.value.landingPageId,
       intencao: entrada.value.intencao,
+      ...(CHAVE_VALIDA.test(campos['chaveDeIdempotencia'] ?? '') ? { chaveDeIdempotencia: campos['chaveDeIdempotencia'] } : {}),
     },
     await atorAtual(),
   );

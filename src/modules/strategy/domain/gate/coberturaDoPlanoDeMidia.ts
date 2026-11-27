@@ -1,4 +1,4 @@
-import { campoAplicavel, campoNaoVerificado, catalogoDaPlataforma, objetivoDoValor, VALOR_A_CONFIRMAR, type CampoDoCatalogo, type CatalogoDeCampos } from '../catalogo/tipos.ts';
+import { campoAplicavel, campoNaoVerificado, catalogoDaPlataforma, objetivoDoValor, VALOR_A_CONFIRMAR, type CampoDoCatalogo, type CatalogoDeCampos, type PapelDoCampo } from '../catalogo/tipos.ts';
 import { problemasDeDependenciaDaMeta } from './dependenciasDaMeta.ts';
 import type { CampoDeMidia, IntencaoDoPlano, MidiaDaPlataforma, Plataforma } from '../plano.ts';
 import { aprovar, reprovar, type ContextoDoGate, type ResultadoDaChecagem } from './resultado.ts';
@@ -22,8 +22,6 @@ function valorCombina(campo: CampoDoCatalogo, valor: CampoDeMidia['valor']): boo
 
 type Presente = { readonly secao: string; readonly campo: CampoDeMidia };
 
-export const CAMPOS_DE_DESTINO = { url: 'url_de_destino', parametrosDeUrl: 'parametros_de_url', whatsapp: 'numero_do_whatsapp' } as const;
-
 function presentesDaEntrada(entrada: MidiaDaPlataforma): Presente[] {
   return entrada.secoes.flatMap((secao) => secao.campos.map((campo) => ({ secao: secao.secao, campo })));
 }
@@ -32,31 +30,42 @@ function textoDoValor(valor: CampoDeMidia['valor']): string {
   return Array.isArray(valor) ? valor.join(',') : String(valor);
 }
 
-function problemasDoDestino(porChave: ReadonlyMap<string, Presente>, intencao: IntencaoDoPlano, plataforma: Plataforma): string[] {
+function utmConfere(valor: CampoDeMidia['valor'], utm: { readonly utm_source: string; readonly utm_medium: string; readonly utm_campaign: string }): boolean {
+  const consulta = new URLSearchParams(textoDoValor(valor).replace(/^\?/, ''));
+  const esperado: Record<string, string> = { utm_source: utm.utm_source, utm_medium: utm.utm_medium, utm_campaign: utm.utm_campaign };
+  return Object.entries(esperado).every(([chave, valorEsperado]) => {
+    const achados = consulta.getAll(chave);
+    return achados.length === 1 && achados[0] === valorEsperado;
+  });
+}
+
+function problemasDoDestino(catalogo: CatalogoDeCampos, porChave: ReadonlyMap<string, Presente>, intencao: IntencaoDoPlano): string[] {
+  const plataforma = catalogo.plataforma;
   const problemas: string[] = [];
   const local = (chave: string) => `plano_de_midia/${plataforma}/${chave}`;
-  const url = porChave.get(CAMPOS_DE_DESTINO.url);
-  if (url !== undefined && intencao.destino !== undefined && textoDoValor(url.campo.valor) !== intencao.destino.url) {
-    problemas.push(`${local(CAMPOS_DE_DESTINO.url)} (difere da landing page da intenção; copie sem alterar)`);
-  }
-  const zap = porChave.get(CAMPOS_DE_DESTINO.whatsapp);
-  if (zap !== undefined && intencao.whatsapp !== undefined && textoDoValor(zap.campo.valor) !== intencao.whatsapp) {
-    problemas.push(`${local(CAMPOS_DE_DESTINO.whatsapp)} (difere do WhatsApp da intenção; copie sem alterar)`);
-  }
-  const parametros = porChave.get(CAMPOS_DE_DESTINO.parametrosDeUrl);
   const utm = intencao.utm?.[plataforma];
-  if (parametros !== undefined && utm !== undefined) {
-    const texto = textoDoValor(parametros.campo.valor);
-    const esperados = [`utm_source=${utm.utm_source}`, `utm_medium=${utm.utm_medium}`, `utm_campaign=${utm.utm_campaign}`];
-    if (!esperados.every((par) => texto.includes(par))) {
-      problemas.push(`${local(CAMPOS_DE_DESTINO.parametrosDeUrl)} (UTM difere da gerada pelo sistema; copie sem alterar)`);
+  const conferencias: ReadonlyArray<{ papel: PapelDoCampo; existe: boolean; confere: (valor: CampoDeMidia['valor']) => boolean; erro: string }> = [
+    { papel: 'url_destino', existe: intencao.destino !== undefined, confere: (valor) => textoDoValor(valor) === intencao.destino?.url, erro: 'difere da landing page da intenção; copie sem alterar' },
+    { papel: 'whatsapp', existe: intencao.whatsapp !== undefined, confere: (valor) => textoDoValor(valor) === intencao.whatsapp, erro: 'difere do WhatsApp da intenção; copie sem alterar' },
+    { papel: 'utm', existe: utm !== undefined, confere: (valor) => utm !== undefined && utmConfere(valor, utm), erro: 'UTM difere da gerada pelo sistema; copie sem alterar' },
+  ];
+  for (const { papel, existe, confere, erro } of conferencias) {
+    const campos = catalogo.campos.filter((campo) => campo.papel === papel);
+    if (existe && campos.length === 0) {
+      problemas.push(`plano_de_midia/${plataforma} (o catálogo não tem campo com papel ${papel}; não dá para garantir o valor da intenção)`);
+    }
+    for (const campo of campos) {
+      const achado = porChave.get(campo.chave);
+      if (achado === undefined || achado.campo.valor === VALOR_A_CONFIRMAR) continue;
+      if (!existe) problemas.push(`${local(campo.chave)} (a intenção não tem o valor do papel ${papel}; não preencha)`);
+      else if (!confere(achado.campo.valor)) problemas.push(`${local(campo.chave)} (${erro})`);
     }
   }
   return problemas;
 }
 
 function ehAConfirmar(campo: CampoDoCatalogo, valor: CampoDeMidia['valor']): boolean {
-  return valor === VALOR_A_CONFIRMAR && campoNaoVerificado(campo);
+  return valor === VALOR_A_CONFIRMAR && campoNaoVerificado(campo) && campo.papel === undefined;
 }
 
 export type AnaliseDaPlataforma = { readonly problemas: string[]; readonly pendencias: string[] };
@@ -99,7 +108,7 @@ export function analisarPlataforma(entrada: MidiaDaPlataforma | undefined, catal
     const valores = new Map(presentes.map((p) => [p.campo.campo, p.campo.valor]));
     problemas.push(...problemasDeDependenciaDaMeta(valores, chavesDoCatalogo, local));
   }
-  return { problemas: [...problemas, ...problemasDoDestino(porChave, intencao, plataforma)], pendencias };
+  return { problemas: [...problemas, ...problemasDoDestino(catalogo, porChave, intencao)], pendencias };
 }
 
 export function problemasDaPlataforma(entrada: MidiaDaPlataforma | undefined, catalogo: CatalogoDeCampos, intencao: IntencaoDoPlano): string[] {

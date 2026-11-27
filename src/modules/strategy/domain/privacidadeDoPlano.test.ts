@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { catalogoMeta } from './catalogo/meta.ts';
 import { planoCompleto } from './fixturesDeTeste.ts';
 import { parecer as fabricarParecer, ponto } from './comite/fixturesDeParecer.ts';
 import {
@@ -53,6 +54,36 @@ describe('planoSemDadoPessoal', () => {
     plano.lacunas.itens[0]!.descricao = 'Contato: joao@exemplo.com';
     const resultado = planoSemDadoPessoal(plano);
     assert.equal(!resultado.ok && resultado.error[0]!.secao, 'lacunas');
+  });
+});
+
+describe('planoSemDadoPessoal: WhatsApp do papel whatsapp', () => {
+  const comWhatsapp = (valor: string) => {
+    const plano = planoCompleto();
+    plano.plano_de_midia.plataformas = [
+      { plataforma: 'meta', secoes: [{ secao: 'adset', campos: [{ campo: 'adset_po_whatsapp_phone', valor, justificativa: 'copiado da intenção', evidencias: [] }] }] },
+    ];
+    return plano;
+  };
+
+  it('isenta só o valor exato da intenção no campo de papel whatsapp', () => {
+    const plano = comWhatsapp(planoCompleto().intencao.whatsapp!);
+    assert.deepEqual(planoSemDadoPessoal(plano, [catalogoMeta]), { ok: true, value: true });
+    assert.equal(planoSemDadoPessoal(plano).ok, false);
+  });
+
+  it('número de terceiro no campo real continua acusado', () => {
+    assert.equal(planoSemDadoPessoal(comWhatsapp('+5511900000000'), [catalogoMeta]).ok, false);
+  });
+
+  it('o número na justificativa ou em campo de outro papel continua acusado', () => {
+    const numero = planoCompleto().intencao.whatsapp!;
+    const plano = comWhatsapp(numero);
+    plano.plano_de_midia.plataformas[0]!.secoes[0]!.campos[0]!.justificativa = `Falar em ${numero}`;
+    assert.equal(planoSemDadoPessoal(plano, [catalogoMeta]).ok, false);
+    const outro = comWhatsapp(numero);
+    outro.plano_de_midia.plataformas[0]!.secoes[0]!.campos[0]!.campo = 'creative_message';
+    assert.equal(planoSemDadoPessoal(outro, [catalogoMeta]).ok, false);
   });
 });
 

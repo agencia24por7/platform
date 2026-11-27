@@ -76,6 +76,7 @@ export type NovoPlano = {
   readonly plataformas: readonly Plataforma[];
   readonly whatsapp: string;
   readonly landingPageId: string;
+  readonly chaveDeIdempotencia?: string;
 };
 
 export type AutorDaVersao = 'usuario' | 'agente';
@@ -226,7 +227,7 @@ export type RepositorioDeEstrategia = {
     escopo: EscopoDoPlano,
     novo: NovoPlano,
     execucao: Omit<NovaExecucao, 'planoId'>,
-  ): Promise<Result<{ readonly plano: Plano; readonly execucao: Execucao }, ErroDeEstrategia>>;
+  ): Promise<Result<{ readonly plano: Plano; readonly execucao: Execucao; readonly reaproveitado?: boolean }, ErroDeEstrategia>>;
   listarPlanosDoCliente(escopo: EscopoDoPlano): Promise<readonly PlanoDoCliente[]>;
   estadoDoPlano(organizationId: string, planoId: string): Promise<PlanoDoCliente | null>;
   criarVersaoRascunho(organizationId: string, nova: NovaVersao): Promise<Result<Versao, ErroDeEstrategia>>;

@@ -68,6 +68,7 @@ export function FormularioDeNovoPlano({ clienteId, voltarPara, inicial }: { read
     <form className="card estrategia-form" action={enviar} noValidate>
       <div className="card__body">
         <input type="hidden" name="clienteId" value={clienteId} />
+        <input type="hidden" name="chaveDeIdempotencia" value={modelo.chaveDeIdempotencia} />
         {estado.erro ? (
           <div className="alert alert--error" role="alert">
             <Icone nome="erro" />

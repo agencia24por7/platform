@@ -12,8 +12,9 @@ function linhaDoCampo(campo: CampoDoCatalogo): string {
   const obrigatorio = campo.obrigatorio ? '!' : '';
   const aplicavel = campo.aplicavelA === undefined ? '' : `@${campo.aplicavelA.join(',')}`;
   const naoVerificado = campoNaoVerificado(campo) ? '~' : '';
+  const papel = campo.papel === undefined ? '' : `#${campo.papel}`;
   const opcoes = campo.opcoes === undefined ? '' : `(${campo.opcoes.join('/')})`;
-  return `${campo.chave}:${campo.tipoDoValor}${obrigatorio}${aplicavel}${naoVerificado}${opcoes}`;
+  return `${campo.chave}:${campo.tipoDoValor}${obrigatorio}${aplicavel}${naoVerificado}${papel}${opcoes}`;
 }
 
 export function catalogoParaModelo(catalogo: CatalogoDeCampos): CatalogoCompacto {

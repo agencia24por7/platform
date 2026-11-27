@@ -417,11 +417,25 @@ export function createEstrategiaRepository(): RepositorioDeEstrategia {
       return comTraducao(() =>
         withTenant(escopo.organizationId, async (tx) => {
           await definirRequestId(tx, execucao.requestId);
+          const chave = novo.chaveDeIdempotencia ?? null;
           const rows = (await tx`
-            INSERT INTO core.strategy_plans (organization_id, client_id, plan_type_key, plataformas, whatsapp, landing_page_id)
-            VALUES (${escopo.organizationId}, ${escopo.clientId}, ${novo.tipo}, ${[...novo.plataformas]}::text[], ${novo.whatsapp}, ${novo.landingPageId}::uuid)
+            INSERT INTO core.strategy_plans (organization_id, client_id, plan_type_key, plataformas, whatsapp, landing_page_id, idempotency_key)
+            VALUES (${escopo.organizationId}, ${escopo.clientId}, ${novo.tipo}, ${[...novo.plataformas]}::text[], ${novo.whatsapp}, ${novo.landingPageId}::uuid, ${chave})
+            ON CONFLICT (organization_id, client_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
             RETURNING ${colunasDoPlano(tx)}
           `) as unknown as PlanoRow[];
+          if (rows.length === 0) {
+            const existentes = (await tx`
+              SELECT ${colunasDoPlano(tx)} FROM core.strategy_plans
+               WHERE organization_id = ${escopo.organizationId} AND client_id = ${escopo.clientId} AND idempotency_key = ${chave}
+            `) as unknown as PlanoRow[];
+            const execucoes = (await tx`
+              SELECT ${colunasDaExecucao(tx)} FROM core.strategy_plan_runs
+               WHERE organization_id = ${escopo.organizationId} AND plan_id = ${existentes[0]!.id}
+               ORDER BY created_at ASC, id ASC LIMIT 1
+            `) as unknown as ExecucaoRow[];
+            return { plano: paraPlano(existentes[0]!), execucao: paraExecucao(execucoes[0]!), reaproveitado: true };
+          }
           const plano = paraPlano(rows[0]!);
           const criada = await inserirExecucao(tx, escopo.organizationId, escopo.clientId, { ...execucao, planoId: plano.id });
           return { plano, execucao: criada };

@@ -85,7 +85,7 @@ function BlocoDeLacunas({ clienteId, planoId, lacunas }: { readonly clienteId: s
               <li key={lacuna.id} className="lacunas-lista__item">
                 {lacuna.podeAprovar ? (
                   <label className="lacunas-lista__marca">
-                    <input type="checkbox" name="lacunaId" value={lacuna.id} defaultChecked />
+                    <input type="checkbox" name="lacunaId" value={lacuna.id} />
                     <span>{lacuna.descricao}</span>
                   </label>
                 ) : (
@@ -100,7 +100,13 @@ function BlocoDeLacunas({ clienteId, planoId, lacunas }: { readonly clienteId: s
                 ) : lacuna.valorLegivel ? (
                   <span>Sugestão: {lacuna.valorLegivel}</span>
                 ) : null}
-                {lacuna.justificativa ? <span className="subtle">Por quê: {lacuna.justificativa}</span> : null}
+                {lacuna.regraAGravar ? (
+                  <span className="subtle">
+                    Será gravado como {lacuna.regraAGravar.natureza === 'limite' ? 'limite' : 'regra'}: {lacuna.regraAGravar.categoria} · {lacuna.regraAGravar.chave ?? 'sem chave'} · escopo {lacuna.regraAGravar.escopo ?? 'cliente'}
+                    {lacuna.valorLegivel ? ` · valor ${lacuna.valorLegivel}` : ''}
+                  </span>
+                ) : null}
+                {lacuna.evidencias.length > 0 ? <span className="subtle">Evidências: {lacuna.evidencias.join(', ')}</span> : null}
                 {erro ? (
                   <span className="field__erro" role="alert">
                     <Icone nome="erro" tamanho={14} /> {erro}

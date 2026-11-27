@@ -20,6 +20,7 @@ const modelo = (sobrescrita: Partial<ModeloDeCriacao> = {}): ModeloDeCriacao => 
   whatsapp: '+5511999998888',
   whatsappAusente: false,
   podeCriar: true,
+  chaveDeIdempotencia: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   ...sobrescrita,
 });
 
@@ -89,5 +90,10 @@ describe('erros do servidor junto do campo', () => {
       landingPageId: 'Landing page arquivada.',
       objetivo: 'Curto.',
     });
+  });
+
+  it('a chave de idempotência vem do modelo e se mantém quando o formulário volta com erro', () => {
+    assert.equal(formularioDeNovoPlano(modelo(), {}, CLIENTE).chaveDeIdempotencia, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+    assert.equal(formularioDeNovoPlano(modelo({ chaveDeIdempotencia: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }), { chaveDeIdempotencia: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' }, CLIENTE).chaveDeIdempotencia, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc');
   });
 });

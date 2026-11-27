@@ -130,4 +130,20 @@ describe('processadorDeExecucoes', () => {
     assert.equal(!falha.ok && falha.error.code, 'unavailable');
     assert.ok(processador);
   });
+
+  it('exceção depois da reserva e não transitória marca a execução como falhou/interno; transitória a deixa para a próxima rodada', async () => {
+    for (const [codigo, esperado] of [[undefined, 'falhou'], ['ECONNRESET', 'rodando']] as const) {
+      const { repositorio } = await montar('falsa', 1);
+      const processador = createProcessadorDeExecucoes({
+        repositorio,
+        motor: { async avancarExecucao() { throw Object.assign(new Error('segredo-do-payload'), codigo ? { code: codigo } : {}); } } as never,
+      });
+      const r = await processador.avancar({ limite: 5 });
+      assert.ok(r.ok);
+      assert.equal(r.value.codigos['excecao'], 1);
+      const execucao = repositorio.estado.execucoes[0]!;
+      assert.equal(execucao.status, esperado);
+      if (esperado === 'falhou') assert.equal(execucao.erroCodigo, 'interno');
+    }
+  });
 });

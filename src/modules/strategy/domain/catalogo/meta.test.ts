@@ -22,6 +22,12 @@ describe('catalogo de campos da Meta', () => {
     for (const campo of catalogoMeta.campos) assert.equal(campo.opcoes !== undefined, campo.tipoDoValor === 'escolha');
   });
 
+  it('os campos de destino real tem papel e nunca aceitam a_confirmar', () => {
+    const papeis = Object.fromEntries(catalogoMeta.campos.filter((campo) => campo.papel !== undefined).map((campo) => [campo.chave, campo.papel]));
+    assert.deepEqual(papeis, { adset_po_whatsapp_phone: 'whatsapp', creative_link: 'url_destino', creative_cta_link: 'url_destino', creative_url_tags: 'utm' });
+    assert.ok(catalogoMeta.campos.filter((campo) => campo.papel !== undefined).every((campo) => campo.evidenciaDaApi !== 'nao_verificado_pela_api'));
+  });
+
   it('so a Meta e selecionavel e o objetivo vem de um campo do catalogo', () => {
     assert.deepEqual(plataformasComCatalogo(CATALOGOS_DISPONIVEIS), ['meta']);
     assert.ok(catalogoMeta.campos.some((campo) => campo.chave === catalogoMeta.campoDoObjetivo));

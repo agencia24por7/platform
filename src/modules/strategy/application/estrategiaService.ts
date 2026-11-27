@@ -32,6 +32,7 @@ import {
   correcoesNaLinhagem,
   lerPlano,
   regraDaLacunaCasa,
+  checarSugestoesDeLacunas,
   podeAprovarSugestoes,
   podeCorrigirMais,
   valoresDeSugestaoIguais,
@@ -131,6 +132,7 @@ export type ModeloDeCriacao = {
   readonly whatsapp: string | null;
   readonly whatsappAusente: boolean;
   readonly podeCriar: boolean;
+  readonly chaveDeIdempotencia: string;
 };
 
 export type ItemDaPreviaDeUtm = {
@@ -409,6 +411,7 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
       whatsapp: whatsapp.value,
       whatsappAusente: whatsapp.value === null,
       podeCriar: landingPages.length > 0 && whatsapp.value !== null,
+      chaveDeIdempotencia: randomUUID(),
     });
   }
 
@@ -477,7 +480,13 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
 
     const criado = await repositorio.criarPlanoComExecucao(
       escopo,
-      { tipo: tipoDePlano, plataformas, whatsapp: whatsapp.value, landingPageId: pagina.value.id },
+      {
+        tipo: tipoDePlano,
+        plataformas,
+        whatsapp: whatsapp.value,
+        landingPageId: pagina.value.id,
+        ...(lida.data.chaveDeIdempotencia === undefined ? {} : { chaveDeIdempotencia: lida.data.chaveDeIdempotencia.toLowerCase() }),
+      },
       {
         pedido: { tipo: 'criar', intencao: montada.data },
         versaoBaseId: null,
@@ -488,6 +497,7 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
     );
     if (!criado.ok) return err(falhaDeEstrategia(criado.error));
     const { plano, execucao } = criado.value;
+    if (criado.value.reaproveitado) return ok({ plano, execucao });
 
     await auditar(comando, ator, 'strategy.plan.requested', 'strategy_plan', plano.id, {
       clientId: clienteId,
@@ -630,7 +640,7 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
     const sugestao = lacuna.sugestao;
     const doBrain = sugestao !== undefined && valoresDeSugestaoIguais(sugestao.valor, valor) && sugestao.origem === 'evidencia';
     const origem = doBrain ? 'evidência do Brain' : 'valor informado pela pessoa';
-    const contexto = `Cadastrada a partir da lacuna "${lacuna.id}" do plano ${planoId}. Origem: ${origem}.${sugestao ? ` Justificativa: ${sugestao.justificativa}` : ''}`.slice(0, 2000);
+    const contexto = `Cadastrada a partir da lacuna "${lacuna.id}" do plano ${planoId}. Origem: ${origem}.`.slice(0, 2000);
     const evidencia = doBrain ? juntarEvidencias(sugestao!.evidencias.filter((e) => e.papel !== 'contra').map((e) => e.urn)) : null;
     if (regra.natureza === 'regra') {
       if (!('texto' in valor)) return err({ codigo: 'valor_invalido', mensagem: 'Esta regra pede um texto.' });
@@ -665,6 +675,38 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
     return mantidas.length === 0 ? null : mantidas.join(' ');
   }
 
+  function statusLiberaSugestoes(status: StatusDaVersao, resultadoDoGate: unknown, execucaoAtiva: boolean): boolean {
+    if (status === 'vigente' || status === 'proposto') return true;
+    return status === 'rascunho' && resultadoDoGate === 'aprovado' && !execucaoAtiva;
+  }
+
+  async function versaoLiberaSugestoes(comando: ComandoDeEstrategia, planoId: string, versaoId: string, status: StatusDaVersao): Promise<boolean> {
+    if (status === 'vigente' || status === 'proposto') return true;
+    if (status !== 'rascunho') return false;
+    const [eventos, ativa] = await Promise.all([repositorio.eventosDaVersao(comando.organizationId, versaoId), repositorio.execucaoAtiva(comando.organizationId, planoId)]);
+    const ultimoGate = [...eventos].reverse().find((evento) => evento.tipo === 'gate');
+    return statusLiberaSugestoes(status, ultimoGate?.payload.resultado, ativa !== null);
+  }
+
+  async function sugestoesReprovadasNoPacote(comando: ComandoDeEstrategia, clienteId: string, plano: PlanoLido): Promise<Result<ReadonlySet<string>, Failure>> {
+    const comValor = plano.lacunas.itens.filter((lacuna) => lacuna.sugestao?.valor != null);
+    if (comValor.length === 0) return ok(new Set<string>());
+    const pacote = await leitorDoBrain.lerPacote(comando.organizationId, clienteId);
+    if (!pacote.ok) return err(failure('unavailable', 'Não foi possível conferir as evidências no Brain agora. Tente de novo em instantes.'));
+    const reprovadas = new Set<string>();
+    for (const lacuna of comValor) {
+      const resultado = checarSugestoesDeLacunas({
+        plano: { ...plano, lacunas: { ...plano.lacunas, itens: [lacuna] } },
+        pacote: pacote.value,
+        hoje: relogio.agora().toISOString().slice(0, 10),
+        medidasComLimite: [],
+        avaliarLimite: () => 'ok',
+      });
+      if (resultado.resultado !== 'aprovado') reprovadas.add(lacuna.id);
+    }
+    return ok(reprovadas);
+  }
+
   async function aprovarSugestoesDeLacunas(comando: ComandoDeEstrategia, entrada: EntradaDeAprovarSugestoes, ator: Ator): Promise<Result<ResultadoDasSugestoes, Failure>> {
     const lida = AprovarSugestoesSchema.safeParse(entrada);
     if (!lida.success) return err(failure('validation', 'Dados inválidos.', detalhesDoZod(lida.error)));
@@ -678,6 +720,11 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
     const versao = exibida ? await repositorio.lerVersao(comando.organizationId, exibida.id) : null;
     const conteudo = versao ? lerPlano(versao.conteudo) : null;
     if (!versao || !conteudo?.ok) return err(failure('conflict', 'O plano ainda não tem versão para aprovar sugestões.', { codigo: 'sem_versao' }));
+    if (!(await versaoLiberaSugestoes(comando, plano.id, versao.id, versao.status))) {
+      return err(failure('conflict', 'Esta versão ainda não passou na conferência ou há trabalho em andamento. Aguarde ou corrija o plano antes de aprovar sugestões.', { codigo: 'versao_nao_liberada' }));
+    }
+    const reprovadas = await sugestoesReprovadasNoPacote(comando, plano.clientId, conteudo.value);
+    if (!reprovadas.ok) return reprovadas;
 
     const cliente = await regrasDoCliente(comando, plano.clientId);
     if (!cliente.ok) return cliente;
@@ -700,6 +747,10 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
         continue;
       }
       const valor = item.valor ?? lacuna.sugestao?.valor ?? null;
+      if (reprovadas.value.has(lacuna.id) && (valor === null || valoresDeSugestaoIguais(lacuna.sugestao?.valor, valor))) {
+        resultados.push(falhou('sugestao_sem_origem_confiavel', 'A sugestão desta lacuna não tem origem confiável no Brain. Informe o valor à mão ou cadastre em Regras do cliente.'));
+        continue;
+      }
       if (valor === null) {
         resultados.push(falhou('sem_valor', 'Informe o valor: o plano não tem sugestão com evidência para esta lacuna.'));
         continue;
@@ -738,16 +789,26 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
     return ok({ itens: resultados, aprovadas: resultados.filter((r) => r.estado === 'aprovada').length, falhas: resultados.filter((r) => r.estado === 'falhou').length });
   }
 
-  async function lacunasDoPainel(comando: ComandoDeEstrategia, plano: Plano, conteudo: unknown): Promise<readonly LacunaDoPlano[]> {
+  async function lacunasDoPainel(comando: ComandoDeEstrategia, plano: Plano, conteudo: unknown, liberada: boolean): Promise<readonly LacunaDoPlano[]> {
     const lido = conteudo === null ? null : lerPlano(conteudo);
     if (!lido?.ok) return [];
     const comRegra = lido.value.lacunas.itens.some((lacuna) => lacuna.regra !== undefined);
     const cliente = comRegra && regras ? await regrasDoCliente(comando, plano.clientId) : null;
+    const reprovadas = liberada && cliente?.ok ? await sugestoesReprovadasNoPacote(comando, plano.clientId, lido.value) : null;
+    const definicoes = cliente?.ok ? cliente.value.definicoes : null;
     return lacunasDoPlano({
       plano: lido.value,
       regrasVigentes: cliente?.ok ? cliente.value.vigentes : [],
       papel: comando.papelDeQuemAge,
-      podeGravarRegras: cliente?.ok === true,
+      podeGravarRegras: cliente?.ok === true && liberada && reprovadas?.ok === true,
+      sugestoesReprovadas: reprovadas?.ok ? reprovadas.value : new Set(lido.value.lacunas.itens.map((lacuna) => lacuna.id)),
+      regraAGravar: (lacuna, valor) => {
+        if (definicoes === null) return null;
+        const montada = entradaDeRegistroDaLacuna(lacuna, valor, plano.id, definicoes);
+        if (!montada.ok) return null;
+        const { categoria, chave, escopo } = montada.value;
+        return { categoria, chave: chave ?? null, escopo: escopo ?? null, natureza: montada.value.natureza };
+      },
     });
   }
 
@@ -867,7 +928,7 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
       const detalhes = Object.fromEntries(conteudo.error.problemas.slice(0, 10).map((p) => [p.caminho || 'plano', p.mensagem]));
       return err(failure('validation', conteudo.error.mensagem, detalhes));
     }
-    const privacidade = planoSemDadoPessoal(conteudo.value);
+    const privacidade = planoSemDadoPessoal(conteudo.value, catalogos);
     if (!privacidade.ok) {
       const detalhes = Object.fromEntries(privacidade.error.slice(0, 10).map((a) => [a.caminho, `Dado pessoal (${a.padroes.join(', ')}) na seção ${a.secao}.`]));
       const secoes = [...new Set(privacidade.error.map((a) => a.secao))].join(', ');
@@ -1089,7 +1150,8 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
     }
 
     const desatualizado = estado.vigente ? await impactoDoBrain(comando, estado.plano, estado.vigente, catalogoDado) : null;
-    const lacunas = await lacunasDoPainel(comando, estado.plano, versaoExibida?.conteudo ?? null);
+    const liberada = versaoExibida !== null && statusLiberaSugestoes(versaoExibida.status, ultimoGate?.payload.resultado, execucaoAtiva !== null);
+    const lacunas = await lacunasDoPainel(comando, estado.plano, versaoExibida?.conteudo ?? null, liberada);
     const reprovouNoGate = versaoExibida?.status === 'rascunho' && ultimoGate?.payload.resultado === 'reprovado';
     const falhaVisivel = reprovouNoGate
       ? falhaDoGate({

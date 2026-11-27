@@ -655,7 +655,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     const lido = lerPlano(montarPlanoDeSecoes(intencaoConfiavel, secoes));
     if (!lido.ok) throw falhaDeIA('saida_invalida', 'plano_fora_do_esquema');
     const plano = lido.value;
-    if (!planoSemDadoPessoal(plano).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano');
+    if (!planoSemDadoPessoal(plano, catalogos).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano');
     const referencias = referenciasConferidas(plano, execucao, await pacoteComAsCitadas(execucao, contexto, plano, pacote));
     const estado = await estadoDoPlano(execucao);
     const chave = `${execucao.id}:redigir:${execucao.rodada}`;
@@ -954,7 +954,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     const lido = lerPlano(ajustado.corrente);
     if (!lido.ok) throw falhaDeIA('saida_invalida', 'plano_ajustado_fora_do_esquema');
     const planoAjustado = lido.value;
-    if (!planoSemDadoPessoal(planoAjustado).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano_ajustado');
+    if (!planoSemDadoPessoal(planoAjustado, catalogos).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano_ajustado');
     const referencias = referenciasConferidas(planoAjustado, execucao, await pacoteComAsCitadas(execucao, contexto, planoAjustado, pacote));
     const estado = await estadoDoPlano(execucao);
 
@@ -1024,7 +1024,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     const lido = lerPlano(ajustado.corrente);
     if (!lido.ok) throw falhaDeIA('saida_invalida', 'plano_corrigido_fora_do_esquema');
     const planoCorrigido = lido.value;
-    if (!planoSemDadoPessoal(planoCorrigido).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano_corrigido');
+    if (!planoSemDadoPessoal(planoCorrigido, catalogos).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano_corrigido');
     const referencias = referenciasConferidas(planoCorrigido, execucao, await pacoteComAsCitadas(execucao, contexto, planoCorrigido, pacote));
     const estado = await estadoDoPlano(execucao);
     const criada = await repositorio.criarVersaoRascunho(execucao.organizationId, {

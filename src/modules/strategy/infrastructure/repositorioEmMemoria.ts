@@ -49,6 +49,7 @@ const TRANSICOES_DO_WORKER = [
 
 export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
   const planos: Plano[] = [];
+  const chavesDePlano = new Map<string, Plano>();
   const versoes: VersaoInterna[] = [];
   const eventos: EventoInterno[] = [];
   const execucoes: ExecucaoInterna[] = [];
@@ -201,6 +202,11 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
     async criarPlanoComExecucao(escopo, novo, execucao) {
       const falha = entrada('criarPlanoComExecucao');
       if (falha) return err(falha);
+      const existente = novo.chaveDeIdempotencia === undefined ? undefined : chavesDePlano.get(`${escopo.organizationId}|${escopo.clientId}|${novo.chaveDeIdempotencia}`);
+      if (existente !== undefined) {
+        const primeira = execucoes.find((e) => e.planoId === existente.id);
+        if (primeira) return ok({ plano: existente, execucao: primeira, reaproveitado: true });
+      }
       const plano: Plano = {
         id: id(),
         organizationId: escopo.organizationId,
@@ -217,6 +223,7 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
         planos.splice(planos.indexOf(plano), 1);
         return err(criada.error);
       }
+      if (novo.chaveDeIdempotencia !== undefined) chavesDePlano.set(`${escopo.organizationId}|${escopo.clientId}|${novo.chaveDeIdempotencia}`, plano);
       return ok({ plano, execucao: criada.value });
     },
     async listarPlanosDoCliente(escopo) {

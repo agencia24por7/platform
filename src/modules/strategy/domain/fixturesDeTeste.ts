@@ -107,6 +107,9 @@ export const CATALOGOS_DE_TESTE: readonly CatalogoDeCampos[] = [
       { chave: 'objetivo_da_campanha', secao: 'objetivo', obrigatorio: true, tipoDoValor: 'escolha', opcoes: ['leads', 'vendas'] },
       { chave: 'orcamento_diario', secao: 'orcamento_e_lances', obrigatorio: true, tipoDoValor: 'numero' },
       { chave: 'palavras_negativas', secao: 'publico', obrigatorio: false, tipoDoValor: 'lista' },
+      { chave: 'url_de_destino', secao: 'destino', obrigatorio: false, papel: 'url_destino', tipoDoValor: 'texto' },
+      { chave: 'parametros_de_url', secao: 'destino', obrigatorio: false, papel: 'utm', tipoDoValor: 'texto' },
+      { chave: 'numero_do_whatsapp', secao: 'destino', obrigatorio: false, papel: 'whatsapp', tipoDoValor: 'texto' },
     ],
   },
   {
@@ -117,6 +120,9 @@ export const CATALOGOS_DE_TESTE: readonly CatalogoDeCampos[] = [
     campos: [
       { chave: 'objetivo_da_campanha', secao: 'objetivo', obrigatorio: true, tipoDoValor: 'texto' },
       { chave: 'posicionamento_automatico', secao: 'posicionamentos', obrigatorio: true, tipoDoValor: 'booleano' },
+      { chave: 'url_de_destino', secao: 'destino', obrigatorio: false, papel: 'url_destino', tipoDoValor: 'texto' },
+      { chave: 'parametros_de_url', secao: 'destino', obrigatorio: false, papel: 'utm', tipoDoValor: 'texto' },
+      { chave: 'numero_do_whatsapp', secao: 'destino', obrigatorio: false, papel: 'whatsapp', tipoDoValor: 'texto' },
     ],
   },
 ];

@@ -406,7 +406,7 @@ describe('visão do plano: avisos de conferência e lacunas', () => {
   });
 
   it('lacunas do painel viram bloco com botão de aprovar e link para Regras; sem lacunas o bloco some', () => {
-    const lacuna = { id: 'sem_teto', descricao: 'Falta o teto', valorSugerido: null, valorLegivel: null, origem: 'sem_sugestao' as const, evidencias: [], justificativa: null, editavel: false, podeAprovar: false };
+    const lacuna = { id: 'sem_teto', descricao: 'Falta o teto', valorSugerido: null, valorLegivel: null, origem: 'sem_sugestao' as const, evidencias: [], justificativa: null, editavel: false, podeAprovar: false, regraAGravar: null };
     const comLacuna = ver('operator', painel({ lacunas: [lacuna, { ...lacuna, id: 'outra', podeAprovar: true }] }));
     assert.equal(comLacuna.lacunas?.itens.length, 2);
     assert.equal(comLacuna.lacunas?.itens[0]?.origemRotulo, 'Sem sugestão do plano');

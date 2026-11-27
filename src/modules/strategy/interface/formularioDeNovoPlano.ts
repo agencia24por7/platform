@@ -14,6 +14,7 @@ export type FormularioDeNovoPlano = {
   readonly whatsapp: { readonly texto: string; readonly ausente: boolean; readonly link: { readonly rotulo: string; readonly href: string } | null };
   readonly semLandingPage: { readonly texto: string; readonly link: { readonly rotulo: string; readonly href: string } } | null;
   readonly podeCriar: boolean;
+  readonly chaveDeIdempotencia: string;
   readonly valores: { readonly objetivo: string; readonly inicio: string; readonly fim: string; readonly retorno: string; readonly verba: string };
 };
 
@@ -49,6 +50,7 @@ export function formularioDeNovoPlano(modelo: ModeloDeCriacao, valores: CamposBr
       : { texto: modelo.whatsapp ?? '', ausente: false, link: null },
     semLandingPage: modelo.landingPages.length === 0 ? { texto: 'O cliente ainda não tem landing page cadastrada.', link: { rotulo: 'Cadastrar landing page', href: destino } } : null,
     podeCriar: modelo.podeCriar,
+    chaveDeIdempotencia: valores['chaveDeIdempotencia'] ?? modelo.chaveDeIdempotencia,
     valores: {
       objetivo: valores['objetivo'] ?? '',
       inicio: valores['inicio'] ?? '',

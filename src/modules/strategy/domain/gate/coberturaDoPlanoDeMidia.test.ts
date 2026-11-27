@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { contextoDeTeste } from '../fixturesDeTeste.ts';
+import { catalogoMeta } from '../catalogo/meta.ts';
+import type { CatalogoDeCampos } from '../catalogo/tipos.ts';
+import type { CampoDeMidia, IntencaoDoPlano } from '../plano.ts';
 import { checarCoberturaDoPlanoDeMidia } from './coberturaDoPlanoDeMidia.ts';
 
 describe('gate: cobertura_do_plano_de_midia', () => {
@@ -66,37 +69,84 @@ describe('gate: cobertura_do_plano_de_midia', () => {
     assert.ok(texto.includes('posicionamento_automatico (na seção objetivo; o catálogo pede posicionamentos)'));
   });
 
-  it('url_de_destino, numero_do_whatsapp e parametros_de_url precisam ser os da intenção', () => {
-    const catalogo = {
-      plataforma: 'meta' as const,
-      versaoDaApi: 'v99',
-      objetivos: ['leads'],
-      campoDoObjetivo: 'objetivo_da_campanha',
-      campos: [
-        { chave: 'objetivo_da_campanha', secao: 'objetivo', obrigatorio: true, tipoDoValor: 'texto' as const },
-        { chave: 'url_de_destino', secao: 'conversao', obrigatorio: true, tipoDoValor: 'texto' as const },
-        { chave: 'parametros_de_url', secao: 'conversao', obrigatorio: true, tipoDoValor: 'texto' as const },
-        { chave: 'numero_do_whatsapp', secao: 'conversao', obrigatorio: true, tipoDoValor: 'texto' as const },
-      ],
+  describe('destino, UTM e WhatsApp no catálogo real da Meta', () => {
+    const campo = (nome: string, valor: CampoDeMidia['valor']) => ({ campo: nome, valor, justificativa: 'copiado da intenção', evidencias: [] });
+    const cenario = (valores: { link: string; cta?: string; tags?: string; zap?: string }, catalogo: CatalogoDeCampos = catalogoMeta) => {
+      const base = contextoDeTeste();
+      const intencao = { ...base.plano.intencao, plataformas: ['meta' as const] };
+      const nomes = new Set(catalogo.campos.map((c) => c.chave));
+      const colocados = [
+        campo('creative_link', valores.link),
+        campo('adset_daily_budget', 1000),
+        ...(valores.cta === undefined ? [] : [campo('creative_cta_link', valores.cta)]),
+        ...(valores.tags === undefined ? [] : [campo('creative_url_tags', valores.tags)]),
+        ...(valores.zap === undefined ? [] : [campo('adset_po_whatsapp_phone', valores.zap)]),
+      ].filter((c) => nomes.has(c.campo));
+      const doCatalogo = catalogo.campos.filter((c) => c.obrigatorio && c.aplicavelA === undefined && !colocados.some((p) => p.campo === c.chave));
+      const obrigatorios = doCatalogo.map((c) => campo(c.chave, c.tipoDoValor === 'lista' ? [] : c.tipoDoValor === 'booleano' ? true : c.tipoDoValor === 'numero' ? 1 : c.tipoDoValor === 'escolha' ? c.opcoes![0]! : c.evidenciaDaApi === 'nao_verificado_pela_api' ? 'a_confirmar' : 'x'));
+      const porSecao = new Map<string, CampoDeMidia[]>();
+      for (const c of [...obrigatorios, ...colocados]) {
+        const secao = catalogo.campos.find((k) => k.chave === c.campo)!.secao;
+        porSecao.set(secao, [...(porSecao.get(secao) ?? []), c]);
+      }
+      const secoes = [...porSecao].map(([secao, campos]) => ({ secao, campos }));
+      return { intencao, contexto: { ...base, catalogosDeCampos: [catalogo], plano: { ...base.plano, intencao, plano_de_midia: { plataformas: [{ plataforma: 'meta' as const, secoes }] } } } };
     };
-    const base = contextoDeTeste();
-    const intencao = { ...base.plano.intencao, plataformas: ['meta' as const] };
-    const utm = intencao.utm!.meta!;
-    const campo = (nome: string, valor: string) => ({ campo: nome, valor, justificativa: 'copiado da intenção', evidencias: [] });
-    const comValores = (url: string, parametros: string, zap: string) => ({
-      ...base,
-      catalogosDeCampos: [catalogo],
-      plano: {
-        ...base.plano,
-        intencao,
-        plano_de_midia: { plataformas: [{ plataforma: 'meta' as const, secoes: [{ secao: 'objetivo', campos: [campo('objetivo_da_campanha', 'leads')] }, { secao: 'conversao', campos: [campo('url_de_destino', url), campo('parametros_de_url', parametros), campo('numero_do_whatsapp', zap)] }] }] },
-      },
+    const utmCerto = (intencao: IntencaoDoPlano) => {
+      const utm = intencao.utm!.meta!;
+      return `utm_source=${utm.utm_source}&utm_medium=${utm.utm_medium}&utm_campaign=${utm.utm_campaign}`;
+    };
+    const veredito = (c: ReturnType<typeof cenario>['contexto']) => checarCoberturaDoPlanoDeMidia(c);
+
+    it('valor exato da intenção aprova', () => {
+      const { intencao, contexto } = cenario({ link: 'https://exemplo.com.br/oferta', cta: 'https://exemplo.com.br/oferta', zap: '+5511912345678' });
+      const exato = cenario({ link: intencao.destino!.url, cta: intencao.destino!.url, tags: utmCerto(intencao), zap: intencao.whatsapp! });
+      assert.equal(veredito(exato.contexto).resultado, 'aprovado');
+      assert.ok(veredito(exato.contexto).onde.every((o) => o.includes('a confirmar')));
+      assert.ok(contexto);
     });
-    const certos = `utm_source=${utm.utm_source}&utm_medium=${utm.utm_medium}&utm_campaign=${utm.utm_campaign}`;
-    assert.equal(checarCoberturaDoPlanoDeMidia(comValores(intencao.destino!.url, certos, intencao.whatsapp!)).resultado, 'aprovado');
-    assert.equal(checarCoberturaDoPlanoDeMidia(comValores('https://outro.com', certos, intencao.whatsapp!)).resultado, 'reprovado');
-    assert.equal(checarCoberturaDoPlanoDeMidia(comValores(intencao.destino!.url, 'utm_source=inventada', intencao.whatsapp!)).resultado, 'reprovado');
-    assert.equal(checarCoberturaDoPlanoDeMidia(comValores(intencao.destino!.url, certos, '+5511900000000')).resultado, 'reprovado');
+
+    it('domínio de terceiro reprova, no link e no CTA', () => {
+      const { intencao } = cenario({ link: 'x' });
+      const r = veredito(cenario({ link: 'https://terceiro.com', cta: 'https://terceiro.com' }).contexto);
+      assert.equal(r.resultado, 'reprovado');
+      assert.ok(r.onde.some((o) => o.includes('creative_link (difere da landing page')));
+      assert.ok(r.onde.some((o) => o.includes('creative_cta_link (difere da landing page')));
+      assert.equal(veredito(cenario({ link: intencao.destino!.url, cta: 'https://terceiro.com' }).contexto).resultado, 'reprovado');
+    });
+
+    it('número de terceiro reprova', () => {
+      const { intencao } = cenario({ link: 'x' });
+      const r = veredito(cenario({ link: intencao.destino!.url, zap: '+5511900000000' }).contexto);
+      assert.equal(r.resultado, 'reprovado');
+      assert.ok(r.onde.some((o) => o.includes('adset_po_whatsapp_phone (difere do WhatsApp')));
+    });
+
+    it('UTM adulterada, incompleta ou duplicada reprova', () => {
+      const { intencao } = cenario({ link: 'x' });
+      const url = intencao.destino!.url;
+      for (const tags of ['utm_source=inventada', utmCerto(intencao).replace('utm_medium=', 'utm_medium=x'), `${utmCerto(intencao)}&utm_source=outra`]) {
+        const r = veredito(cenario({ link: url, tags }).contexto);
+        assert.equal(r.resultado, 'reprovado', tags);
+        assert.ok(r.onde.some((o) => o.includes('creative_url_tags (UTM difere')));
+      }
+    });
+
+    it('a_confirmar nunca vale em campo de papel de destino', () => {
+      const { intencao } = cenario({ link: 'x' });
+      const r = veredito(cenario({ link: 'a_confirmar', zap: 'a_confirmar', tags: 'a_confirmar' }).contexto);
+      assert.equal(r.resultado, 'reprovado');
+      assert.equal(r.onde.filter((o) => o.includes('a_confirmar só vale')).length, 3);
+      assert.ok(intencao);
+    });
+
+    it('falha fechada: catálogo sem campo do papel reprova quando a intenção tem o valor', () => {
+      const semPapel: CatalogoDeCampos = { ...catalogoMeta, campos: catalogoMeta.campos.map(({ papel: _papel, ...resto }) => resto) };
+      const { intencao } = cenario({ link: 'x' });
+      const r = veredito(cenario({ link: intencao.destino!.url }, semPapel).contexto);
+      assert.equal(r.resultado, 'reprovado');
+      for (const papel of ['url_destino', 'whatsapp', 'utm']) assert.ok(r.onde.some((o) => o.includes(`papel ${papel}`)), papel);
+    });
   });
 
   describe('obrigatoriedade condicional, a confirmar e dependências', () => {
@@ -129,7 +179,8 @@ describe('gate: cobertura_do_plano_de_midia', () => {
     });
     const rodar = (campos: Record<string, string | number | boolean | string[]>, objetivo = 'OUTCOME_LEADS', catalogo: object | null = catalogoMeta()) => {
       const base = contextoDeTeste();
-      const intencao = { ...base.plano.intencao, plataformas: ['meta' as const] };
+      const { destino: _destino, whatsapp: _whatsapp, utm: _utm, ...semDestino } = base.plano.intencao;
+      const intencao = { ...semDestino, plataformas: ['meta' as const] };
       const todos: Record<string, string | number | boolean | string[]> = { campaign_objective: objetivo, ad_name: 'a_confirmar', adset_daily_budget: 1000, ...campos };
       const secoes = new Map<string, { campo: string; valor: string | number | boolean | string[]; justificativa: string; evidencias: [] }[]>();
       for (const [chave, valor] of Object.entries(todos)) {

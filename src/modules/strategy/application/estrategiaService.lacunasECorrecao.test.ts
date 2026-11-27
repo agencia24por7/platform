@@ -103,14 +103,14 @@ function criarRegrasFalsa(opcoes: { semDefinicoes?: boolean } = {}) {
   };
 }
 
-async function montar(opcoes: { regras?: ReturnType<typeof criarRegrasFalsa> | null } = {}) {
+async function montar(opcoes: { regras?: ReturnType<typeof criarRegrasFalsa> | null; gate?: 'aprovado' | 'reprovado' | 'nenhum'; pacote?: ReturnType<typeof pacoteDeTeste> } = {}) {
   const repositorio = criarRepositorioEmMemoria();
   const auditorias: AuditEvent[] = [];
   const regras = opcoes.regras === null ? undefined : (opcoes.regras ?? criarRegrasFalsa());
   const servico = createEstrategiaService({
     repositorio,
     audit: { async record(e) { auditorias.push(e); }, async list() { return []; }, async search() { return []; } },
-    leitorDoBrain: { async lerPacote() { return ok(pacoteDeTeste()); } },
+    leitorDoBrain: { async lerPacote() { return ok(opcoes.pacote ?? pacoteDeTeste()); } },
     destino: { async listarLandingPages() { return ok([]); }, async lerWhatsapp() { return ok(null); } } as never,
     catalogos: CATALOGOS_DE_TESTE,
     ...(regras ? { regras: regras as never } : {}),
@@ -127,7 +127,42 @@ async function montar(opcoes: { regras?: ReturnType<typeof criarRegrasFalsa> | n
     requestId: 'r',
   });
   assert.ok(versao.ok);
-  return { repositorio, servico, auditorias, regras, planoId: plano.value.id, versaoId: versao.value.id };
+  const montado = { repositorio, servico, auditorias, regras, planoId: plano.value.id, versaoId: versao.value.id };
+  const gate = opcoes.gate ?? 'aprovado';
+  if (gate !== 'nenhum') await registrarGate(montado, gate, 'run-gate');
+  return montado;
+}
+
+async function registrarGate(
+  m: { repositorio: ReturnType<typeof criarRepositorioEmMemoria>; planoId: string; versaoId: string },
+  resultado: 'reprovado' | 'aprovado',
+  agentRunId: string,
+  terminar = true,
+) {
+  const execucao = await m.repositorio.criarExecucao(ORGANIZACAO_ID, CLIENTE_ID, {
+    planoId: m.planoId,
+    pedido: { tipo: 'ajustar', instrucao: 'x' },
+    versaoBaseId: m.versaoId,
+    agentRunId,
+    solicitadoPor: 'p',
+    requestId: 'r',
+  });
+  assert.ok(execucao.ok);
+  const reservada = await m.repositorio.reservarExecucao(ORGANIZACAO_ID, execucao.value.id, { leaseMs: 60_000, agora: new Date() });
+  assert.ok(reservada);
+  const gate = await m.repositorio.registrarEvento(ORGANIZACAO_ID, {
+    versaoId: m.versaoId,
+    tipo: 'gate',
+    payload: { resultado, checagens: [], modelo: null },
+    autoria: { tipo: 'agente', agentId: 'gates', agentRunId, chaveDeIdempotencia: `g-${agentRunId}`, ficha: reservada.tentativas },
+    requestId: 'r',
+  });
+  assert.ok(gate.ok);
+  if (terminar) {
+    const fim = await m.repositorio.atualizarExecucao(ORGANIZACAO_ID, execucao.value.id, { status: 'falhou', erroCodigo: resultado === 'aprovado' ? 'interno' : 'gate_reprovado', leaseAte: null }, reservada.tentativas);
+    assert.ok(fim.ok);
+  }
+  return execucao.value;
 }
 
 const codigoDe = (r: { ok: boolean; error?: { code: string; details?: Record<string, unknown> } }) => (r.ok ? 'ok' : (r.error?.details?.codigo ?? r.error?.code));
@@ -156,7 +191,7 @@ describe('aprovar sugestões de lacunas', () => {
     assert.equal(registro.entrada.evidencia, URN_BENCHMARK_B);
     assert.match(String(registro.entrada.contexto), /lacuna "lim_cpl"/);
     assert.match(String(registro.entrada.contexto), /Origem: evidência do Brain/);
-    assert.match(String(registro.entrada.contexto), /Benchmark do setor/);
+    assert.doesNotMatch(String(registro.entrada.contexto), /Benchmark do setor/);
 
     const depois = await m.servico.painelDoPlano(como('admin'), { clienteId: CLIENTE_ID });
     assert.ok(depois.ok);
@@ -316,9 +351,56 @@ describe('aprovar sugestões de lacunas', () => {
   });
 });
 
+describe('aprovar sugestões: elegibilidade da versão e revalidação no servidor', () => {
+  const pedido = (m: { planoId: string }) => ({ clienteId: CLIENTE_ID, planoId: m.planoId, itens: [{ lacunaId: 'lim_cpl' }] });
+
+  it('rascunho cujo último Gate reprovou, ou sem Gate, não aceita aprovar', async () => {
+    for (const gate of ['reprovado', 'nenhum'] as const) {
+      const m = await montar({ gate });
+      const r = await m.servico.aprovarSugestoesDeLacunas(como('admin'), pedido(m), ator);
+      assert.equal(codigoDe(r), 'versao_nao_liberada', gate);
+      assert.equal(m.regras!.registros.length, 0);
+      const painel = await m.servico.painelDoPlano(como('admin'), { clienteId: CLIENTE_ID });
+      assert.ok(painel.ok);
+      assert.ok(painel.value.planos[0]!.lacunas!.every((l) => !l.podeAprovar), gate);
+    }
+  });
+
+  it('rascunho com execução ativa não aceita aprovar', async () => {
+    const m = await montar({ gate: 'aprovado' });
+    await m.repositorio.criarExecucao(ORGANIZACAO_ID, CLIENTE_ID, { planoId: m.planoId, pedido: { tipo: 'ajustar', instrucao: 'y' }, versaoBaseId: m.versaoId, agentRunId: 'run-ativa', solicitadoPor: 'p', requestId: 'r' });
+    const r = await m.servico.aprovarSugestoesDeLacunas(como('admin'), pedido(m), ator);
+    assert.equal(codigoDe(r), 'versao_nao_liberada');
+    assert.equal(m.regras!.registros.length, 0);
+  });
+
+  it('sugestão cuja evidência não existe no pacote atual é recusada no servidor e não aparece como aprovável', async () => {
+    const pacoteSemEvidencia = { ...pacoteDeTeste(), entradas: [] } as ReturnType<typeof pacoteDeTeste>;
+    const m = await montar({ pacote: pacoteSemEvidencia });
+    const r = await m.servico.aprovarSugestoesDeLacunas(como('admin'), pedido(m), ator);
+    assert.ok(r.ok);
+    assert.equal(r.value.itens[0]!.erro?.codigo, 'sugestao_sem_origem_confiavel');
+    assert.equal(m.regras!.registros.length, 0);
+    const painel = await m.servico.painelDoPlano(como('admin'), { clienteId: CLIENTE_ID });
+    assert.ok(painel.ok);
+    const lacuna = painel.value.planos[0]!.lacunas!.find((l) => l.id === 'lim_cpl')!;
+    assert.equal(lacuna.podeAprovar, false);
+    assert.equal(lacuna.valorLegivel, null);
+  });
+
+  it('a tela traz a regra exata que será gravada (categoria, chave, escopo)', async () => {
+    const m = await montar();
+    const painel = await m.servico.painelDoPlano(como('admin'), { clienteId: CLIENTE_ID });
+    assert.ok(painel.ok);
+    const lacuna = painel.value.planos[0]!.lacunas!.find((l) => l.id === 'lim_cpl')!;
+    assert.deepEqual(lacuna.regraAGravar, { categoria: 'eficiencia', chave: 'eficiencia.custo_por_lead', escopo: 'cliente', natureza: 'limite' });
+    assert.deepEqual(lacuna.evidencias, [URN_BENCHMARK_B]);
+  });
+});
+
 describe('corrigir a falha do Gate', () => {
   async function comGate(resultado: 'reprovado' | 'aprovado') {
-    const m = await montar();
+    const m = await montar({ gate: 'nenhum' });
     const anterior = await m.repositorio.criarExecucao(ORGANIZACAO_ID, CLIENTE_ID, {
       planoId: m.planoId,
       pedido: { tipo: 'ajustar', instrucao: 'x' },

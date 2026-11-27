@@ -7,6 +7,9 @@ export type TipoDoValor = (typeof TIPOS_DE_VALOR_DO_CAMPO)[number];
 export const EVIDENCIAS_DA_API = ['comprovado', 'nao_verificado_pela_api'] as const;
 export type EvidenciaDaApi = (typeof EVIDENCIAS_DA_API)[number];
 
+export const PAPEIS_DO_CAMPO = ['url_destino', 'utm', 'whatsapp'] as const;
+export type PapelDoCampo = (typeof PAPEIS_DO_CAMPO)[number];
+
 export const VALOR_A_CONFIRMAR = 'a_confirmar';
 
 export const esquemaCampoDoCatalogo = z
@@ -16,11 +19,15 @@ export const esquemaCampoDoCatalogo = z
     obrigatorio: z.boolean(),
     aplicavelA: z.array(esquemaId).min(1).max(60).optional(),
     evidenciaDaApi: z.enum(EVIDENCIAS_DA_API).optional(),
+    papel: z.enum(PAPEIS_DO_CAMPO).optional(),
     tipoDoValor: z.enum(TIPOS_DE_VALOR_DO_CAMPO),
     opcoes: z.array(z.string().min(1).max(120)).max(200).optional(),
   })
   .refine((campo) => (campo.tipoDoValor === 'escolha') === (campo.opcoes !== undefined && campo.opcoes.length > 0), {
     message: 'Só o campo do tipo escolha tem opções, e ele precisa de pelo menos uma.',
+  })
+  .refine((campo) => campo.papel === undefined || (campo.evidenciaDaApi !== 'nao_verificado_pela_api' && campo.tipoDoValor === 'texto'), {
+    message: 'Campo com papel de destino é texto e nunca aceita a_confirmar.',
   });
 
 export const esquemaCatalogoDeCampos = z

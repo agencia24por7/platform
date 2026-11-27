@@ -15,7 +15,7 @@ const corpoDoPedido = {
 };
 
 export const PedirPlanoSchema = z
-  .strictObject({ ...corpoDoPedido, intencao: esquemaIntencaoBase })
+  .strictObject({ ...corpoDoPedido, intencao: esquemaIntencaoBase, chaveDeIdempotencia: z.string().uuid().optional() })
   .refine(
     (entrada) => new TextEncoder().encode(JSON.stringify(entrada.intencao)).length <= TAMANHO_MAXIMO_DO_PEDIDO_BYTES,
     { path: ['intencao'], message: 'Intenção grande demais.' },

@@ -1,5 +1,6 @@
 import type { MemberRole } from '../../identity/domain/user.ts';
 import { falhasDoGate, podeCorrigirMais, MAXIMO_DE_CORRECOES_POR_VERSAO_RAIZ } from '../domain/correcaoDoGate.ts';
+import { textoSeguro } from '../../brain/domain/privacidade.ts';
 import { podeExecutar } from '../domain/papeis.ts';
 import type { SecaoDoPlano } from '../domain/plano.ts';
 import type { StatusDaVersao } from '../domain/status.ts';
@@ -43,12 +44,20 @@ function tituloDaSecao(secao: string): string {
   return TITULO_DA_SECAO[secao as SecaoDoPlano] ?? nomeDoCampo(secao);
 }
 
+const MAXIMO_DO_TEXTO_VISIVEL = 120;
+const SEM_ITEM_ESPECIFICO = 'Revise o plano como um todo.';
+
+function limitado(texto: string): string {
+  const seguro = textoSeguro(texto);
+  return seguro.length <= MAXIMO_DO_TEXTO_VISIVEL ? seguro : `${seguro.slice(0, MAXIMO_DO_TEXTO_VISIVEL - 1)}…`;
+}
+
 export function itemLegivel(local: string): string {
   const [caminho = local, ...resto] = local.split(' (');
   const detalhe = resto.length > 0 ? resto.join(' (').replace(/\)$/, '') : null;
   const [secao = '', ...ids] = caminho.trim().split('/');
-  const nome = [tituloDaSecao(secao), ...ids.map(nomeDoCampo)].join(' · ');
-  return detalhe === null ? nome : `${nome}: ${detalhe}`;
+  const nome = limitado([tituloDaSecao(secao), ...ids.map(nomeDoCampo)].join(' · '));
+  return detalhe === null ? nome : `${nome}: ${limitado(detalhe)}`;
 }
 
 function listaLegivel(rotulos: readonly string[]): string {
@@ -64,11 +73,11 @@ export function falhaDoGate(estado: EstadoParaFalhaDoGate): FalhaDoGate | null {
   const falhas: FalhaDoGateVisivel[] = [
     ...capturadas.checagens.map((checagem) => ({
       gate: rotuloDoGate(checagem.chave),
-      itens: checagem.onde.length > 0 ? checagem.onde.map(itemLegivel) : [checagem.motivo],
+      itens: checagem.onde.length > 0 ? checagem.onde.map(itemLegivel) : [SEM_ITEM_ESPECIFICO],
     })),
     ...(capturadas.modelo.length === 0
       ? []
-      : [{ gate: ROTULO_DA_CONFERENCIA_DE_QUALIDADE, itens: capturadas.modelo.map((p) => `${itemLegivel(p.trecho)}: ${p.problema}`) }]),
+      : [{ gate: ROTULO_DA_CONFERENCIA_DE_QUALIDADE, itens: capturadas.modelo.map((p) => (p.trecho === '' ? SEM_ITEM_ESPECIFICO : itemLegivel(p.trecho))) }]),
   ];
   if (falhas.length === 0) return null;
 
