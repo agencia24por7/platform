@@ -16,7 +16,7 @@ Object.assign(process.env, {
 const { criarIaDaCamada, orcamentoDaCamada, codigoDeIaDaFalha, MARGEM_DA_CAMADA_MS } = await import('./iaDaCamada.ts');
 const { ORCAMENTO_DA_IA } = await import('../../application/motorDoPlano.ts');
 const { MENSAGEM_DO_BLOQUEIO } = await import('../../../ia/domain/modelos.ts');
-const { COMITE_DA_ESTRATEGIA, GATE_DA_ESTRATEGIA, PLANO_DE_ESTRATEGIA } = await import('../../../ia/domain/tarefasInternas.ts');
+const { COMITE_DA_ESTRATEGIA, GATE_DA_ESTRATEGIA, JUIZ_DA_ESTRATEGIA, PLANO_DE_ESTRATEGIA } = await import('../../../ia/domain/tarefasInternas.ts');
 const { SEM_MODELO_CONFIGURADO } = await import('../../../ia/application/execucao.ts');
 const { TETO_DO_ORCAMENTO } = await import('../../../ia/domain/tarefa.ts');
 const { TAREFAS_INTERNAS } = await import('../../../ia/domain/tarefasInternas.ts');
@@ -83,9 +83,24 @@ describe('iaDaCamada', () => {
     assert.equal(vistos[2]!.agente, undefined);
   });
 
-  it('as três tarefas estão registradas para a tela /config/ia', () => {
+  it('o juiz vai pela tarefa própria, sem ferramenta nem escopo de agente, e a falta de modelo vira nao_configurada', async () => {
+    const { executor, vistos } = falso(ok({ saida: { a: 'x' }, uso: { tokensDeEntrada: 1, tokensDeSaida: 1, passos: 1 } }));
+    await criarIaDaCamada(executor).executar(pedido({ tarefa: 'juiz', orcamento: { tokensMaximos: 4500, tempoMaximoMs: 60_000 } }));
+    assert.equal(vistos[0]!.tarefa.chave, 'juiz');
+    assert.equal(vistos[0]!.tarefa.raciocinio, 'low');
+    assert.equal(vistos[0]!.agente, undefined);
+    const semModelo = falso(err(SEM_MODELO_CONFIGURADO));
+    const r = await criarIaDaCamada(semModelo.executor).executar(pedido({ tarefa: 'juiz' }));
+    assert.ok(!r.ok);
+    if (!r.ok) assert.equal(r.error.codigo, 'nao_configurada');
+  });
+
+  it('as quatro tarefas estão registradas para a tela /config/ia, o juiz com raciocínio low e orçamento de uma chamada', () => {
     const chaves = TAREFAS_INTERNAS.map((t) => t.chave);
-    for (const chave of ['strategy_plan', 'comite', 'gate']) assert.ok(chaves.includes(chave as never), chave);
+    for (const chave of ['strategy_plan', 'comite', 'juiz', 'gate']) assert.ok(chaves.includes(chave as never), chave);
+    assert.equal(JUIZ_DA_ESTRATEGIA.raciocinio, 'low');
+    assert.equal(JUIZ_DA_ESTRATEGIA.orcamento.passos, 1);
+    assert.equal(JUIZ_DA_ESTRATEGIA.ferramentas.length, 0);
   });
 
   it('orçamento sempre dentro do teto da camada', () => {

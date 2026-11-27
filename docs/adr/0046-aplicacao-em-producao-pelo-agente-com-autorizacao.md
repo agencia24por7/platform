@@ -1,5 +1,6 @@
 ---
-status: accepted
+status: superseded
+superseded_by: ADR-0069
 date: 2026-11-22
 ---
 # ADR-0046: O agente só aplica em produção com autorização explícita do humano, por operação

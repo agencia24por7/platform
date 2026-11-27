@@ -36,7 +36,7 @@ export function FormularioDeMudanca({ clienteId, planoId, versaoId }: { readonly
           aria-describedby={`${base}-dica${erro ? ` ${base}-erro` : ''}`}
         />
         <span className="field__hint" id={`${base}-dica`}>
-          <span aria-live="polite">{texto.length}/{MAXIMO}</span> · Não escreva dados pessoais. A mudança volta ao Comitê e aos Gates. Verba, horizonte e objetivo só mudam editando a seção Intenção.
+          <span aria-live="polite">{texto.length}/{MAXIMO}</span> · Não escreva dados pessoais. O plano passa por revisão de novo. Verba, horizonte, plataformas e destino não mudam por aqui: peça um plano novo.
         </span>
         {erro ? (
           <span className="field__erro" id={`${base}-erro`} role="alert">

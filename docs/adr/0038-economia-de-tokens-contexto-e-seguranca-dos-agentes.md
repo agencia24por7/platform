@@ -4,6 +4,8 @@ date: 2026-11-21
 ---
 # ADR-0038: Economia de tokens, gestão de contexto, escolha de modelo e segurança dos agentes
 
+> Parcialmente superado pelo ADR 0069: a orientação por prompt, o aviso de contexto, a varredura no Stop e a guarda de produção por modo de permissão saíram. A escolha de modelo e esforço do `start.sh` continua.
+
 Complementa o ADR 0037. Vale só para este repositório.
 
 ## Contexto

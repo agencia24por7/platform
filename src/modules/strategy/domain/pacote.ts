@@ -81,20 +81,24 @@ export function entradasDeRegraLegalObrigatoria(pacote: PacoteDeLeitura): Entrad
 
 export const MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA = {
   redigir: 120_000,
-  comite: 60_000,
-  gate: 60_000,
+  regras: 40_000,
+  citadas: 30_000,
+  comite: 40_000,
+  gate: 40_000,
 } as const;
 
 export const MAXIMO_DE_BYTES_DO_CATALOGO = 40_000;
 
 export type OpcoesDoPacoteParaEntrada = {
   readonly primeiras?: ReadonlySet<string>;
+  readonly somenteUrns?: ReadonlySet<string>;
   readonly comCatalogo?: boolean;
 };
 
 export function pacoteParaEntrada(pacote: PacoteDeLeitura, maximoDeBytes: number, opcoes: OpcoesDoPacoteParaEntrada = {}): PacoteDeLeitura {
   const primeiras = opcoes.primeiras ?? new Set<string>();
-  const ordenadas = [...pacote.entradas.filter((e) => primeiras.has(e.urn)), ...pacote.entradas.filter((e) => !primeiras.has(e.urn))];
+  const permitidas = opcoes.somenteUrns === undefined ? pacote.entradas : pacote.entradas.filter((e) => opcoes.somenteUrns!.has(e.urn));
+  const ordenadas = [...permitidas.filter((e) => primeiras.has(e.urn)), ...permitidas.filter((e) => !primeiras.has(e.urn))];
   const mantidas: EntradaDoPacote[] = [];
   let bytes = 0;
   for (const entrada of ordenadas) {

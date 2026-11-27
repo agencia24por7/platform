@@ -17,7 +17,7 @@ Decisão e porquês: ADR 0037 (`docs/adr/0037-ambiente-de-agentes-claude-e-orca.
 | Memória do projeto | `CLAUDE.md` (≤120 linhas) | regras permanentes, comandos, mapa |
 | Regras por área | `.claude/rules/*.md` (`paths:`) | entram no contexto só ao tocar a área |
 | Agentes | `.claude/agents/` | `arquiteto` (Sonnet), `explorer` (Haiku), `security-reviewer` (Opus) |
-| Hooks | `.claude/settings.json` + `.claude/hooks/` | início injeta índice; prompt orienta modelo e contexto; pré-uso barra segredo e produção; parada valida tipos, testes e varre segredo |
+| Hooks | `.claude/settings.json` + `.claude/hooks/` | início injeta índice; pré-uso é guarda de melhor esforço (nega segredo, backup, push em `main` e `--admin`; pede confirmação no irreversível) |
 | Skills e comando | `.claude/skills/`, `.claude/commands/` | `handoff`, `revisar-ambiente`, `economia-de-sessao`, `/start` |
 | Worktrees | `orca.yaml` | setup e archive de cada worktree |
 | Verificação | `scripts/ambiente-verificar.mjs` | falha se a estrutura sair do combinado |
@@ -26,22 +26,18 @@ Decisão e porquês: ADR 0037 (`docs/adr/0037-ambiente-de-agentes-claude-e-orca.
 | Item | Onde | O que faz |
 |---|---|---|
 | Escolha de modelo e esforço | `.claude/hooks/lib/politicas.mjs`, `scripts/start.sh` | classifica a tarefa; modelo fixo na sessão (cache por modelo) |
-| Orientação por prompt | `ao-enviar-prompt.mjs` | uma linha só quando foge de Sonnet/medium; avisa contexto grande (700 KB e 1,2 MB) |
-| Guarda pré-uso | `guarda-pre-uso.mjs` | `deny` para ler segredo, apagar backup, push em main, `--no-verify`, `core.hooksPath`, e `terraform apply` local; `ask` (o humano autoriza cada operação, ADR 0046 e 0047; vira `deny` sem modo de confirmação) para DDL em produção, mudar segredo, deploy, merge (inclusive em `main`), desativar versão de chave KMS, `gh alias set|import|delete` e `gh config set`; escrever na configuração do gh (config.yml, hosts.yml) é `deny`, e escrever em `.claude/hooks/`, `.githooks/` e `.claude/settings*.json` (ferramenta de escrita ou destino de `>`, `tee`, `cp`, `mv`, `ln`, `install`, `dd of=`, `sed -i`, `perl -i`, `rm`) é `ask` (vira `deny` em `auto`): agente em modo `auto` não edita a própria guarda, e mudar a guarda exige sessão interativa do humano; leitura de arquivo enorme, migração versionada. Exceção estreita (ADR 0048): `AUTORIZO_MERGE_EM_DEV=<n> gh pr merge <n> --repo github.com/agencia24por7/platform --merge\|--squash\|--rebase --match-head-commit <sha40>` (forma exata) é `allow` só em `auto`/`bypassPermissions` (nos demais modos é `ask`), e só se o PR é de `dev`, aberto, não rascunho, sem fork, com todo arquivo em `src/`, `app/`, `db/migrations/`, `docs/` (menos `docs/release/`), `tests/` ou `public/` e sem renomeação ou cópia (PR de ambiente, infra, CI, scripts ou configuração é sempre do humano), com head igual ao sha, e com `qualidade` e `integracao` do workflow `ci` verdes da mesma execução (consulta `gh` por caminho absoluto, `--repo` fixo, config temporária vazia, ambiente mínimo, timeout de 5 s; exige `GH_TOKEN` exportado no ambiente que inicia o Claude Code, senão nega; o CLI bloqueia com código 2 se a guarda não carrega, se o evento é vazio ou inválido ou se estoura o watchdog de 8 s; o humano deve trocar o comando do hook em `.claude/settings.json` por `node "$CLAUDE_PROJECT_DIR/.claude/hooks/guarda-pre-uso.mjs" || exit 2`; para destravar: `git checkout -- .claude/hooks` no terminal ou desligar o hook em `/hooks`; "fecha por padrão" vale para falha de consulta e exceção, e o timeout do gh é menor que o do hook justamente para o hook não morrer sem decidir; exceção inesperada em Bash sai com código 2); o corpo do guarda está em `.claude/hooks/lib/guarda.mjs`; `gh pr edit --base` é `ask`; o marcador é declarado pelo agente, então o hook garante o escopo, não a autorização |
-| Varredura de segredo | `varrer-segredos.mjs` (Stop) | bloqueia o encerramento se o diff tiver segredo; nunca exibe o valor |
+| Guarda pré-uso | `.claude/hooks/guarda-pre-uso.mjs`, `.claude/hooks/lib/guarda.mjs`, `.claude/hooks/lib/politicas.mjs` | `deny` para ler segredo, apagar backup ou instância do Postgres (na prática o Postgres de produção é contêiner com volume: `docker compose down -v` e `docker volume rm` pedem confirmação), e push direto em `main`; `ask` para KMS destrutivo, migração versionada editada e comando que descarta trabalho. O resto é livre (ADR 0069). Editar `.claude/hooks/` e `.claude/settings*.json` é `ask`, pela ferramenta de escrita e por shell (`>`, `tee`, `sed -i`, `cp`, `mv`, `rm`; um script que grave por dentro não é detectado); `gcloud secrets versions access` direto é `deny`. `permissions.allow` no settings lista só terraform plan e apply, SSH, merge, workflow, release, scripts da VM e Chrome (um teste garante que não há `gcloud:*`, `gh:*` e semelhantes). A guarda nega `gh pr merge --admin` e pede confirmação em `terraform destroy` e `apply -destroy`, `autorizar_corte=true`, `DROP`/`TRUNCATE`/`DELETE` e `bq rm` no BigQuery e nega comando acima de 30 mil caracteres (conteúdo grande vai pela ferramenta de escrita). A avaliação roda num worker com limite de 6 s; estourar o tempo bloqueia (falha fechada). Push sem destino a partir do ramo main é negado. Pedem confirmação também: apagar segredo, banco, disco, instância, projeto ou cluster; `gh api` que muda `main`, rulesets ou proteção de branch ou faz merge; `bq mk --force`, `bq load --replace` e `CREATE OR REPLACE`; `terraform -replace` e `state rm`; `docker inspect` sem filtro e `docker compose config` (imprimem segredos); `disableAllHooks` e a configuração do Claude do usuário. Nega `grep -r` na raiz e `rg` sem `.gitignore`. Falsos positivos aceitos: `node -p` ou `console.log` de variável com nome de segredo, mesmo dentro de `Boolean(...)`, e texto de mensagem de commit ou de PR que cite `.env` ou push em `main` (use `-F` e `--body-file`). Limite aceito: copiar `process.env` e imprimir a cópia em instruções separadas (`const e = { ...process.env }; console.log(e)`) não é detectado, porque negar o spread inteiro bloquearia o uso comum de repassar o ambiente a um processo filho. Outros limites aceitos: `rm` de backup dentro de `ssh` ou `sudo` com opções não é detectado (o backup canônico fica no GCS, e `gcloud storage rm` e `gsutil` seguem negados); o envio sem destino lê o `cd` por texto, então `cd` citado em mensagem de commit ou em subshell pode dar `ask` ou `deny` indevido, e o envio de `--tags` a partir do ramo principal é negado. A guarda é melhor esforço: não garante contra comando montado de propósito |
 | Limites de saída | `settings.env` | `BASH_MAX_OUTPUT_LENGTH`, `MAX_MCP_OUTPUT_TOKENS`, `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` |
 | Esforço | `effortLevel` e `effort` dos agentes | medium padrão; explorer low; security-reviewer high |
 
 Rotina de contexto: `/clear` entre tarefas (grátis), `/handoff` antes, `/rewind` se as últimas voltas erraram, `/compact` só focado em decisões, arquivos alterados e pendências, `/context` uma vez numa sessão nova. Ao pausar mais de uma hora, o cache expirou: prefira `/clear` com HANDOFF a retomar uma sessão enorme.
 
-## Hooks do git (ADR 0039)
-| Hook | Roda | Barra |
-|---|---|---|
-| `.githooks/pre-commit` | `seguranca-verificar.mjs --staged` | segredo, arquivo sensível, padrão inseguro, workflow, Terraform, dependência, migração imutável ou destrutiva fora do portão |
-| `.githooks/pre-push` | `seguranca-verificar.mjs --push` | o mesmo sobre os commits enviados, push em `main`, histórico reescrito, mais typecheck, testes de unidade e `npm audit` |
-| CI (`ci.yml`) | `npm run seguranca:verificar` e `seguranca-verificar.mjs --range <base>..HEAD` (base do PR ou `before` do push; ADR 0058) | a árvore inteira (arquivo grande varrido por blocos, binário pulado) e as regras de migração e de linha nova sobre o intervalo, também para quem pulou os hooks |
+## Conduta do agente (ADR 0069)
+O acesso amplo é compensado por conduta, não por bloqueio: tarefa só do humano na sessão, plano antes de agir em produção, revisão do diff antes de commitar, merge só com CI verde, confirmação nomeada para o que é irreversível e relato depois. O texto vive no `CLAUDE.md` e em `.claude/agents/arquiteto.md`. A `main` deve ter ruleset no GitHub exigindo PR e os checks `qualidade` e `integracao`.
 
-Instalação: `npm run ambiente:hooks` (o `start.sh` e o `orca.yaml` já fazem). O agente é impedido de usar `--no-verify` e de trocar `core.hooksPath` pelo hook de ferramentas. Exceções: `.githooks/seguranca-allowlist.txt`, uma linha `caminho::id::assinatura::contagem` por PR com justificativa (a assinatura é o hash da linha; gere com `node scripts/seguranca-verificar.mjs --arvore --sugerir`; ADR 0058). Achado de arquivo inteiro (`arquivo-sensivel`, `migracao-*`, `byte-nulo-em-arquivo-de-texto`, este para binário sem extensão conhecida) usa a assinatura `-` e contagem 1.
+## Verificação
+Os hooks do git e a varredura de segurança foram removidos (ADR 0069). O CI (`ci.yml`) roda typecheck, testes de unidade, build e integração; a integração é dividida em 6 fatias paralelas (`testes`) e um job `smoke`, e `integracao` agrega as duas.
+
 
 ## Regras de manutenção
 1. Mudou `.claude/`, `CLAUDE.md`, `orca.yaml` ou `scripts/start.sh`: rode `npm run ambiente:verificar` e atualize este documento no mesmo PR.
@@ -55,8 +51,7 @@ Instalação: `npm run ambiente:hooks` (o `start.sh` e o `orca.yaml` já fazem).
 9. Comentário novo em código é negado por hook; o porquê vai para ADR e este documento descreve o ambiente.
 10. Política de segurança ou de modelo nova entra em `.claude/hooks/lib/politicas.mjs` com teste em `tests/ambiente-economia-seguranca.test.mjs`; regra sem teste não vale. Nunca coloque valor real de segredo em fixture: monte em tempo de execução.
 11. O classificador de tarefas é heurístico: se errou, ajuste a palavra-chave e acrescente o caso ao teste, em vez de contornar no prompt.
-13. Regra nova de segurança no `seguranca-verificar.mjs` precisa de caso em `tests/ambiente-git-hooks.test.mjs` e de passar na árvore (`npm run seguranca:verificar`) sem inflar a allowlist; allowlist só com o motivo registrado nela.
-12. Número de limiar (700 KB, 1,2 MB, 70% de auto-compact, 100 KB de leitura) é hipótese. Reavalie com `/context` e `/usage` depois de algumas semanas e registre aqui.
+12. Número de limiar (70% de auto-compact, 100 KB de leitura) é hipótese. Reavalie com `/context` e `/usage` depois de algumas semanas e registre aqui.
 
 ## Gatilhos de revisão
 Rode a skill `revisar-ambiente` quando:
@@ -75,14 +70,13 @@ Rode a skill `revisar-ambiente` quando:
 - [ ] worktrees órfãos listados; remoção só com pedido do humano
 - [ ] limiares de contexto ainda fazem sentido (`/context`, `/usage`)
 - [ ] classificador acertou nas últimas tarefas; casos errados viraram teste
-- [ ] nenhum `deny`/`ask` novo ficou sem teste
-- [ ] allowlist de segurança revisada: cada linha ainda se justifica e o arquivo existe
 - [ ] histórico abaixo atualizado
 
 ## Histórico de revisões
 - 2026-11-21: criação do ambiente (ADR 0037). CLAUDE.md reescrito (a versão anterior era o texto de orientação, não instruções do projeto); a regra "primeira resposta sem código" passou a valer só para proposta nova de arquitetura.
 - 2026-11-21: camada de economia de tokens, escolha de potência (modelo e esforço), gestão de contexto e segurança (ADR 0038), com base em pesquisa nas documentações da Anthropic.
 - 2026-11-21: hooks do git (pre-commit e pre-push) com varredura e verificação de segurança, espelhados no CI (ADR 0039).
+- 2026-11-26: ADR 0069 supera 0039, 0046, 0047 e 0048. Saem hooks do git, varredura de segredo, Stop e prompt; o agente opera produção sem confirmação por operação (24K-129).
 
 ## Identidade visual
 `CLAUDE.md` aponta para `docs/marca/LEIA-ME.md` (cor, tipografia, azulejo, link do Figma e referência visual da azulejaria). Material visual novo parte dali.

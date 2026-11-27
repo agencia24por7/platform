@@ -7,13 +7,16 @@ import { psqlDonoPrimeiraLinha as query } from './apoio/psql.mjs';
 const sufixo = () => randomUUID().slice(0, 8);
 const chaveDeTeste = () => `orla-teste:${randomUUID()}${randomUUID()}`;
 const PAGINA = '/config/ia';
-const TAREFAS = ['strategy_plan', 'comite', 'gate'];
+const TAREFAS = ['strategy_plan', 'comite', 'juiz', 'gate'];
 const INTENCAO = JSON.stringify({
   objetivo: 'Gerar leads qualificados',
   horizonte: { inicio: '2026-12-01', fim: '2027-02-28' },
   ousadia: 'moderado',
   retorno_esperado: { descricao: 'Custo por lead abaixo da meta' },
   verba: { centavos: '1000000', moeda: 'BRL' },
+  plataformas: ['meta'],
+  destino: { landingPageId: 'lp_principal', url: 'https://exemplo.com.br/oferta' },
+  utm: { meta: { utm_source: 'meta', utm_medium: 'paid_social', utm_campaign: 'aquisicao-leads-do-trimestre-202612' } },
 });
 
 const ligado = await appIsUp();
@@ -71,7 +74,7 @@ describe('Estratégia sobre a camada de IA (worker, chave e modelo por tarefa, u
   it('com chave e modelo: a chamada chega ao executor pelo worker e registra uso; saída fora do esquema falha com o código certo e nada inválido é gravado', async () => {
     const o = organizacao('a');
     await configurarIa(o);
-    assert.equal(query(`select count(*) from core.ai_task_models where organization_id = '${o.org}'`), '3');
+    assert.equal(query(`select count(*) from core.ai_task_models where organization_id = '${o.org}'`), String(TAREFAS.length));
     assert.equal(await ate(o), 'falhou');
     assert.equal(execucao(o), 'falhou|ia_saida_invalida');
     assert.equal(versoes(o), 0);
@@ -127,7 +130,7 @@ describe('Estratégia sobre a camada de IA (worker, chave e modelo por tarefa, u
     for (const chave of Object.keys(corpo).filter((k) => k !== 'codigos')) assert.ok(Number.isInteger(corpo[chave]) && corpo[chave] >= 0, chave);
     assert.equal(typeof corpo.codigos, 'object');
     assert.ok(corpo.codigos !== null && !Array.isArray(corpo.codigos));
-    const permitidos = ['ia_nao_configurada', 'ia_limite', 'ia_saida_invalida', 'ia_falha', 'ia_tempo', 'brain_indisponivel', 'gate_reprovado', 'interno'];
+    const permitidos = ['ia_nao_configurada', 'ia_limite', 'ia_saida_invalida', 'ia_falha', 'ia_tempo', 'brain_indisponivel', 'gate_reprovado', 'correcao_nao_convergiu', 'interno'];
     for (const [codigo, quantidade] of Object.entries(corpo.codigos)) {
       assert.ok(permitidos.includes(codigo), codigo);
       assert.ok(Number.isInteger(quantidade) && quantidade > 0, codigo);

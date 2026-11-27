@@ -1,4 +1,4 @@
-import type { Intencao, Plano } from './plano.ts';
+import type { Intencao, IntencaoDoPlano, Plano } from './plano.ts';
 
 function canonico(valor: unknown): unknown {
   if (Array.isArray(valor)) return valor.map(canonico);
@@ -13,7 +13,7 @@ function canonico(valor: unknown): unknown {
   return valor;
 }
 
-export function intencoesIguais(a: Intencao, b: Intencao): boolean {
+export function intencoesIguais(a: IntencaoDoPlano, b: IntencaoDoPlano): boolean {
   return JSON.stringify(canonico(a)) === JSON.stringify(canonico(b));
 }
 

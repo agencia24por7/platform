@@ -45,12 +45,9 @@ const CHECAGENS_APROVADAS = [
   { chave: 'comite_completo', resultado: 'aprovado', motivo: 'Comitê completo.', onde: [] },
 ];
 
-const secoesDoPlano = [
-  'resumo_executivo', 'intencao', 'diagnostico', 'publico_alvo', 'comunidades_alvo', 'posicionamento_e_mensagem', 'estrategia',
-  'canais_e_plataformas', 'campanhas', 'criativos', 'orcamento', 'metas_e_metricas', 'medicao', 'calendario', 'riscos_e_regras', 'lacunas',
-];
+const TERMOS_INTERNOS = /Comitê|Gates?\b|Histórico|Parecer|Parecer do/;
 
-describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concurrency: false, skip: pular }, () => {
+describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)', { concurrency: false, skip: pular }, () => {
   const ids = {};
   const clientes = {};
   const criadas = { orgs: [], usuarios: [], clientes: [] };
@@ -169,12 +166,13 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
       redirect: 'manual',
     });
     const texto = (await resposta.text()).replaceAll('<!-- -->', '');
-    const destino = decodeURIComponent(resposta.headers.get('location') ?? texto.match(/"(\/[a-z0-9/?=%.&;-]*)"/i)?.[1] ?? '');
+    const destino = decodeURIComponent(resposta.headers.get('location') ?? texto.match(/"(\/clientes\/[a-z0-9/?=%.&;-]*)"/i)?.[1] ?? '');
     return { status: resposta.status, texto, destino };
   }
 
   const postarFormulario = async (caminho, quem, campo, campos) => postar(caminho, quem, await ocultosDoFormulario(caminho, quem, campo), campos);
   const rota = (cli, resto = '') => `/clientes/${cli}/estrategia${resto}`;
+  const rotaPlano = (cli, plano, busca = '') => `/clientes/${cli}/estrategia/${plano}${busca}`;
   const destinoDe = (resposta) => decodeURIComponent(resposta.location ?? resposta.redirectedTo ?? '');
 
   before(() => {
@@ -191,6 +189,8 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
     semear = criarSemeadorDeEstrategia({ org: ids.org, operador: ids.operador });
 
     clientes.semPlano = cliente(ids.org, 'Padaria Estrela do Sul');
+    dono(`UPDATE core.clients SET whatsapp = '+5511999998888' WHERE id = '${clientes.semPlano}'`);
+    ids.landing = dono(`INSERT INTO core.client_landing_pages (organization_id, client_id, url, rotulo) VALUES ('${ids.org}', '${clientes.semPlano}', 'https://padaria.example.com.br/oferta', 'Oferta de inauguração') RETURNING id`);
     clientes.andamento = cliente(ids.org, 'Oficina Roda Viva');
     clientes.pronto = cliente(ids.org, 'Cafeteria Grão Dourado');
     clientes.acao = cliente(ids.org, 'Livraria Folha Solta');
@@ -215,6 +215,7 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
     semear.eventoDaPessoa(clientes.vigente, ids.vigente.versao, 'efetivada', ids.admin);
 
     const planoFalhou = semear.planoNovo(clientes.falhou);
+    ids.falhou = { plano: planoFalhou };
     const falhou = semear.iniciarExecucao({ cli: clientes.falhou, plano: planoFalhou });
     semear.falharExecucao(falhou.id, 'ia_nao_configurada');
 
@@ -246,64 +247,82 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
     for (const id of criadas.orgs) tentar(`DELETE FROM core.organizations WHERE id = '${id}'`);
   });
 
-  it('(a) sem plano: estado vazio e o botão Novo plano', async () => {
+  it('(a) sem plano: estado vazio, botão Novo plano e nenhuma aba interna', async () => {
     signIn(ids.operador);
     const { status, texto } = await pagina(rota(clientes.semPlano));
     assert.equal(status, 200);
     assert.match(texto, /Este cliente ainda não tem plano/);
-    assert.match(texto, new RegExp(`<a [^>]*href="${rota(clientes.semPlano, '\\?secao=plano&amp;novo=1')}[^"]*"[^>]*>Novo plano</a>`));
-    assert.match(texto, /aria-label="Seções de Estratégia"/);
+    assert.match(texto, new RegExp(`<a [^>]*href="${rota(clientes.semPlano, '\\?novo=1')}"[^>]*>Novo plano</a>`));
+    assert.ok(!texto.includes('aria-label="Seções de Estratégia"'), 'sem abas dentro da Estratégia');
     assert.ok(texto.includes('>Estratégia<'), 'aba Estratégia na barra');
+    assert.ok(!TERMOS_INTERNOS.test(semScripts(texto)), 'sem Comitê, Gates ou Histórico');
     for (const ruim of ['undefined', '[object Object]', 'NaN']) assert.ok(!semScripts(texto).includes(ruim), ruim);
   });
 
-  it('(a) o formulário da intenção abre e traz rótulos em todo campo', async () => {
+  it('(a) o formulário de novo plano traz rótulo em todo campo, o tipo dentro dele, o WhatsApp do cliente e a landing page escolhida', async () => {
     signIn(ids.operador);
-    const { status, texto } = await pagina(rota(clientes.semPlano, '?secao=plano&novo=1'));
+    const { status, texto } = await pagina(rota(clientes.semPlano, '?novo=1'));
     assert.equal(status, 200);
-    for (const rotulo of ['Tipo de plano', 'Ousadia', 'Objetivo', 'Início do horizonte', 'Fim do horizonte', 'Retorno esperado', 'Verba disponível']) {
+    for (const rotulo of ['Tipo de plano', 'Plataformas', 'Landing page', 'Ousadia', 'Objetivo', 'Início do horizonte', 'Fim do horizonte', 'Retorno esperado', 'Verba do horizonte', 'Links com UTM']) {
       assert.ok(texto.includes(rotulo), rotulo);
     }
-    const campos = [...semScripts(texto).matchAll(/<(input|select|textarea)\b[^>]*\bname="(tipoDePlano|ousadia|objetivo|inicio|fim|retorno|verba)"[^>]*>/g)];
-    assert.equal(campos.length, 7);
+    for (const tipo of ['Aquisição', 'Marca', 'Comunidade', 'Retenção']) assert.ok(texto.includes(`>${tipo}</option>`), tipo);
+    assert.ok(texto.includes('+5511999998888'), 'WhatsApp do cadastro do cliente');
+    assert.ok(texto.includes('Oferta de inauguração'), 'landing page do cliente');
+    const campos = [...semScripts(texto).matchAll(/<(input|select|textarea)\b[^>]*\bname="(tipoDePlano|landingPageId|ousadia|objetivo|inicio|fim|retorno|verba)"[^>]*>/g)];
+    assert.equal(campos.length, 8);
     for (const [tag] of campos) {
       const id = tag.match(/\bid="([^"]+)"/)?.[1];
       assert.ok(id && texto.includes(`for="${id}"`), `campo sem rótulo: ${tag.slice(0, 80)}`);
     }
   });
 
-  it('(b) rascunho com execução ativa na etapa Comitê: indicador de etapas e nenhum Aplicar habilitado', async () => {
+  it('(a) cliente sem WhatsApp nem landing page: mensagem com link para o cadastro e Pedir o plano desabilitado', async () => {
     signIn(ids.operador);
-    const { status, texto } = await pagina(rota(clientes.andamento));
+    const resposta = await pagina(rota(clientes.outro, '?novo=1'));
+    assert.equal(resposta.status, 200);
+    assert.match(resposta.texto, /ainda não tem landing page cadastrada/);
+    assert.match(resposta.texto, /ainda não tem WhatsApp cadastrado/);
+    assert.ok(resposta.texto.includes(`/clientes/${clientes.outro}/contexto?secao=destino`));
+    assert.ok(desabilitado(resposta.texto, 'Pedir o plano'));
+  });
+
+  it('(b) execução ativa: linha do tempo com etapas simples, sem termos internos e nenhum Aplicar habilitado', async () => {
+    signIn(ids.operador);
+    const { status, texto } = await pagina(rotaPlano(clientes.andamento, ids.andamento.plano));
     assert.equal(status, 200);
-    assert.match(texto, /Andamento da execução/);
-    assert.match(texto, /etapas__item--atual"[^>]*aria-current="step"[\s\S]{0,900}?Comitê/);
-    for (const etapa of ['Lendo o Brain', 'Redigindo', 'Ajustando']) assert.ok(texto.includes(etapa), etapa);
-    assert.match(texto, /role="status"/);
+    assert.match(texto, /Andamento do plano/);
+    assert.match(texto, /etapas__item--atual"[^>]*aria-current="step"[\s\S]{0,900}?Revisando o plano/);
+    for (const etapa of ['Lendo o contexto do cliente', 'Redigindo o plano', 'Ajustando o plano', 'Conferindo o plano']) assert.ok(texto.includes(etapa), etapa);
+    assert.ok(!TERMOS_INTERNOS.test(semScripts(texto)), 'sem Comitê, Gates ou Histórico');
     assert.ok(!habilitado(texto, 'Aplicar o plano'));
     assert.ok(desabilitado(texto, 'Aplicar o plano'));
     assert.match(texto, /Há uma execução em andamento/);
     assert.ok(habilitado(texto, 'Cancelar execução'));
+    const lista = await pagina(rota(clientes.andamento));
+    assert.match(lista.texto, /Gerando|Em geração/);
+    assert.match(lista.texto, /<progress /);
   });
 
-  it('(c) rascunho pronto: 16 seções com texto do plano, marcas de evidência e Aplicar habilitado para operator', async () => {
+  it('(c) rascunho pronto: Resumo executivo e Plano de mídia, marcas de evidência, links com UTM e Aplicar habilitado para operator', async () => {
     signIn(ids.operador);
-    const { status, texto } = await pagina(rota(clientes.pronto));
+    const { status, texto } = await pagina(rotaPlano(clientes.pronto, ids.pronto.plano));
     assert.equal(status, 200);
-    for (const chave of secoesDoPlano) assert.ok(texto.includes(`id="plano-${chave}"`), `seção ${chave}`);
+    assert.ok(texto.includes('id="titulo-resumo_executivo"') && texto.includes('id="titulo-plano_de_midia"'), 'os dois blocos');
+    assert.equal((semScripts(texto).match(/class="card estrategia-bloco"/g) ?? []).length, 2, 'só dois blocos');
     const plano = planoDoCliente(ids.org, clientes.pronto);
-    assert.ok(texto.includes(plano.campanhas.campanhas[0].nome), 'nome da primeira campanha');
     assert.ok(texto.includes(plano.resumo_executivo.aposta_central.texto.slice(0, 40).replace(/&/g, '&amp;')), 'aposta central');
+    assert.ok(!texto.includes(plano.campanhas.campanhas[0].nome), 'campanhas não aparecem na página');
     assert.match(texto, /Em rascunho/);
-    assert.match(texto, /O plano declara que o limite custo por lead não se aplica/);
-    assert.match(texto, /item-do-plano--destaque/);
-    assert.match(texto, /Sem histórico de leads no Brain/);
-    assert.match(texto, /Verba, horizonte e objetivo só mudam editando a seção Intenção/);
-    assert.match(texto, /Versão 2/);
+    assert.match(texto, /Confira antes de autorizar: o plano declara limites que não se aplicam/);
+    assert.match(texto, /Custo por lead: Sem histórico de leads no Brain/);
+    assert.match(texto, /Verba e período/);
+    assert.match(texto, /Link com UTM:/);
+    assert.match(texto, /<details class="midia-plataforma"/);
+    assert.match(texto, /Por quê:/);
+    assert.match(texto, /Atualizado em \d{2}\/\d{2}\/\d{4}/);
     assert.match(texto, /R\$ [\d.]+,\d{2}/);
-    assert.match(texto, /\d{2}\/\d{2}\/\d{4}/);
     const marcas = [...texto.matchAll(/<a class="marca" title="([^"]+)" href="([^"]+)"/g)];
-    assert.ok(marcas.length > 0, 'marcas de evidência');
     for (const [, urn, href] of marcas) {
       assert.equal(href, `/clientes/${clientes.pronto}/contexto?secao=brain`);
       assert.ok(urn.startsWith(`orla:${ids.org}:${clientes.pronto}:`), urn);
@@ -314,13 +333,18 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
     assert.match(texto, /Editar seção/);
     assert.match(texto, /Edição avançada/);
     assert.match(texto, /[0-9]+\/2000/);
+    assert.ok(!TERMOS_INTERNOS.test(semAreaDeTexto(texto)), 'sem Comitê, Gates ou Histórico');
+    for (const interno of TEXTOS_INTERNOS_SEMEADOS) assert.ok(!texto.includes(interno), interno);
     for (const ruim of ['undefined', '[object Object]', 'NaN']) assert.ok(!semScripts(texto).includes(ruim), ruim);
     assert.ok(!semAreaDeTexto(texto).includes('&quot;centavos&quot;'), 'JSON cru fora do editor avançado');
+    const lista = await pagina(rota(clientes.pronto));
+    assert.match(lista.texto, new RegExp(`href="${rotaPlano(clientes.pronto, ids.pronto.plano)}"`));
+    assert.match(lista.texto, /Em rascunho/);
   });
 
   it('(d) em autorização: operator vê Autorizar desabilitado com motivo; admin vê habilitado', async () => {
     signIn(ids.operador);
-    const comoOperador = await pagina(rota(clientes.emAutorizacao));
+    const comoOperador = await pagina(rotaPlano(clientes.emAutorizacao, ids.emAutorizacao.plano));
     assert.equal(comoOperador.status, 200);
     assert.match(comoOperador.texto, /Em autorização/);
     assert.ok(desabilitado(comoOperador.texto, 'Autorizar'));
@@ -328,27 +352,27 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
     assert.ok(!habilitado(comoOperador.texto, 'Autorizar'));
 
     signIn(ids.admin);
-    const comoAdmin = await pagina(rota(clientes.emAutorizacao));
+    const comoAdmin = await pagina(rotaPlano(clientes.emAutorizacao, ids.emAutorizacao.plano));
     assert.ok(habilitado(comoAdmin.texto, 'Autorizar'));
     assert.ok(botao(comoAdmin.texto, 'Rejeitar').some((b) => !b.desabilitado));
   });
 
   it('(e) autorizado: status Autorizado, Revogar só para quem administra e revisão pedida quando o Brain mudou', async () => {
     signIn(ids.admin);
-    const comoAdmin = await pagina(rota(clientes.vigente));
+    const comoAdmin = await pagina(rotaPlano(clientes.vigente, ids.vigente.plano));
     assert.equal(comoAdmin.status, 200);
     assert.match(comoAdmin.texto, /Autorizado/);
     assert.ok(habilitado(comoAdmin.texto, 'Revogar'));
-    assert.match(comoAdmin.texto, /O plano está desatualizado: o Brain mudou/);
+    assert.match(comoAdmin.texto, /O plano está desatualizado: o contexto do cliente mudou/);
     assert.ok(habilitado(comoAdmin.texto, 'Pedir revisão'));
     signIn(ids.operador);
-    const comoOperador = await pagina(rota(clientes.vigente));
+    const comoOperador = await pagina(rotaPlano(clientes.vigente, ids.vigente.plano));
     assert.ok(desabilitado(comoOperador.texto, 'Revogar'));
   });
 
   it('(f) execução que falhou por IA não configurada: aviso com link para /config', async () => {
     signIn(ids.operador);
-    const { status, texto } = await pagina(rota(clientes.falhou));
+    const { status, texto } = await pagina(rotaPlano(clientes.falhou, ids.falhou.plano));
     assert.equal(status, 200);
     assert.match(texto, /A inteligência artificial ainda não está configurada/);
     assert.match(texto, /<a [^>]*href="\/config"[^>]*>Abrir configurações<\/a>/);
@@ -364,12 +388,14 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
     'Comitê completo e todos os pontos respondidos',
   ];
 
-  async function semAcessoAEstrategia(quem, cli, extras = []) {
+  async function semAcessoAEstrategia(quem, cli, extras = [], planoId = null) {
     signIn(quem);
     const plano = planoDoCliente(ids.org, cli);
     const proibidos = [...TEXTOS_INTERNOS_SEMEADOS, ...extras, plano.campanhas.campanhas[0].nome, plano.resumo_executivo.aposta_central.texto.slice(0, 40).replace(/&/g, '&amp;')];
-    for (const secao of ['', '?secao=plano', '?secao=comite', '?secao=gates', '?secao=historico', '?secao=plano&novo=1']) {
-      const resposta = await pagina(rota(cli, secao));
+    const caminhos = [rota(cli), rota(cli, '?novo=1'), ...(planoId ? [rotaPlano(cli, planoId)] : [])];
+    for (const caminho of caminhos) {
+      const secao = caminho;
+      const resposta = await pagina(caminho);
       assert.ok([302, 303, 307, 308].includes(resposta.status), `${secao || 'sem secao'}: status ${resposta.status}`);
       assert.equal(destinoDe(resposta), `/clientes/${cli}/conexoes`, secao);
       const limpo = semScripts(resposta.texto);
@@ -377,13 +403,13 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
         assert.ok(!limpo.includes(texto), `${texto} em ${secao}`);
         assert.ok(!resposta.texto.includes(texto), `${texto} no HTML cru e no payload em ${secao}`);
       }
-      assert.ok(!limpo.includes('id="plano-'), `seção do plano em ${secao}`);
+      assert.ok(!limpo.includes('id="titulo-resumo_executivo"'), `bloco do plano em ${secao}`);
     }
   }
 
   it('(g) viewer é o papel do cliente e não acessa a Estratégia: sem aba, rota redireciona e nenhum texto interno vaza', async () => {
     for (const cli of [clientes.pronto, clientes.emAutorizacao, clientes.vigente, clientes.andamento, clientes.semPlano, clientes.preso]) {
-      await semAcessoAEstrategia(ids.leitor, cli);
+      await semAcessoAEstrategia(ids.leitor, cli, [], ({ [clientes.pronto]: ids.pronto, [clientes.emAutorizacao]: ids.emAutorizacao, [clientes.vigente]: ids.vigente, [clientes.andamento]: ids.andamento, [clientes.preso]: ids.preso })[cli]?.plano ?? null);
     }
     signIn(ids.leitor);
     const barra = await pagina(`/clientes/${clientes.pronto}/conexoes`);
@@ -403,53 +429,40 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
     assert.match(semScripts(comoOperador.texto), new RegExp(`href="/clientes/${clientes.pronto}/estrategia"[^>]*>(?:(?!</a>)[\\s\\S])*Estratégia`));
   });
 
-  it('(h) cada subseção responde 200 com o conteúdo esperado', async () => {
+  it('(h) a Estratégia é uma página só: rotas antigas de seção e tipo caem na lista e nada interno aparece', async () => {
     signIn(ids.dono);
-    const comite = await pagina(rota(clientes.pronto, '?secao=comite'));
-    assert.equal(comite.status, 200);
-    for (const esperado of ['Redator', 'Risco e legal', 'Aprova com ajuste', 'Promessa genérica.', 'A promessa está vaga', 'Dar um número à promessa', 'Acatado', 'Promessa com número']) {
-      assert.ok(comite.texto.includes(esperado), esperado);
+    for (const antiga of ['?secao=comite', '?secao=gates', '?secao=historico', '?secao=plano&tipo=marca']) {
+      const resposta = await pagina(rota(clientes.pronto, antiga));
+      assert.equal(resposta.status, 200, antiga);
+      assert.ok(!TERMOS_INTERNOS.test(semScripts(resposta.texto)), antiga);
+      assert.ok(!semScripts(resposta.texto).includes('aria-label="Seções de Estratégia"'), antiga);
+      assert.ok(!semScripts(resposta.texto).includes('aria-label="Tipo de plano"'), antiga);
     }
-    const gates = await pagina(rota(clientes.pronto, '?secao=gates'));
-    assert.equal(gates.status, 200);
-    for (const esperado of ['Gates aprovados', 'A verba fecha com a soma das campanhas', 'Comitê completo e todos os pontos respondidos', 'Aprovada']) {
-      assert.ok(gates.texto.includes(esperado), esperado);
-    }
-    const historico = await pagina(rota(clientes.pronto, '?secao=historico'));
-    assert.equal(historico.status, 200);
-    for (const esperado of ['Versões', 'Eventos', 'Cancelado', 'Em rascunho', 'Parecer do Comitê', 'Ajuste do plano aos pareceres', 'Gates executados']) {
-      assert.ok(historico.texto.includes(esperado), esperado);
-    }
-    for (const secao of ['comite', 'gates', 'historico']) {
-      const vazio = await pagina(rota(clientes.semPlano, `?secao=${secao}`));
-      assert.equal(vazio.status, 200, secao);
-      assert.ok(!semScripts(vazio.texto).includes('undefined'));
-    }
-    assert.match(comite.texto, /aria-current="page"[^>]*>Comitê/);
+    const plano = await pagina(rotaPlano(clientes.pronto, ids.pronto.plano));
+    assert.ok(!TERMOS_INTERNOS.test(semAreaDeTexto(plano.texto)));
+    assert.ok(!semScripts(plano.texto).includes('Parecer'), 'sem pareceres');
   });
 
-  it('segundo tipo de plano: o seletor oferece criar os tipos que o cliente ainda não tem', async () => {
+  it('a lista tem um card por plano, em qualquer status, com status em português e atualização', async () => {
     signIn(ids.operador);
-    const { status, texto } = await pagina(rota(clientes.pronto));
-    assert.equal(status, 200);
-    assert.match(texto, /aria-label="Tipo de plano"/);
-    assert.match(texto, new RegExp(`href="${rota(clientes.pronto, '\\?secao=plano&amp;novo=1&amp;tipo=marca')}"[^>]*>Novo plano de marca</a>`));
-    const novoTipo = await pagina(rota(clientes.pronto, '?secao=plano&novo=1&tipo=marca'));
-    assert.equal(novoTipo.status, 200);
-    assert.match(novoTipo.texto, /Você informa só a intenção/);
-    assert.match(novoTipo.texto, /<option value="marca" selected="">Marca<\/option>/);
-    assert.ok(!novoTipo.texto.includes('<option value="aquisicao"'), 'o tipo que já existe não é oferecido');
-    const semFormulario = await pagina(rota(clientes.pronto, '?secao=plano&tipo=marca'));
-    assert.match(semFormulario.texto, /Este cliente ainda não tem plano/);
-    assert.match(semFormulario.texto, />Novo plano</);
+    const planos = [[clientes.pronto, ids.pronto.plano, 'Em rascunho'], [clientes.emAutorizacao, ids.emAutorizacao.plano, 'Em autorização'], [clientes.falhou, ids.falhou.plano, 'Falhou']];
+    for (const [cli, plano, rotulo] of planos) {
+      const { status, texto } = await pagina(rota(cli));
+      assert.equal(status, 200);
+      assert.match(texto, new RegExp(`href="${rotaPlano(cli, plano)}"`));
+      assert.ok(texto.includes(rotulo), rotulo);
+      assert.match(texto, /Atualizado em \d{2}\/\d{2}\/\d{4}/);
+    }
   });
 
   it('(i) outra organização e usuário restrito a outro cliente não veem o plano', async () => {
     signIn(ids.donoOutra);
     assert.equal((await pagina(rota(clientes.pronto))).status, 404);
-    assert.equal((await pagina(rota(clientes.pronto, '?secao=comite'))).status, 404);
+    assert.equal((await pagina(rotaPlano(clientes.pronto, ids.pronto.plano))).status, 404);
     signIn(ids.recortado);
     assert.equal((await pagina(rota(clientes.pronto))).status, 404);
+    assert.equal((await pagina(rotaPlano(clientes.outro, ids.pronto.plano))).status, 404, 'plano de outro cliente da organização');
+    assert.equal((await pagina(rotaPlano(clientes.outro, 'nao-e-uuid'))).status, 404);
     const proprio = await pagina(rota(clientes.outro));
     assert.equal(proprio.status, 200);
     assert.match(proprio.texto, /Este cliente ainda não tem plano/);
@@ -457,11 +470,11 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
 
   it('(i) toda server action recusa id de outro cliente da organização e de outra organização, sem gravar nada', async () => {
     signIn(ids.operador);
-    const paginaDoPronto = (await pagina(rota(clientes.pronto))).texto;
+    const paginaDoPronto = (await pagina(rotaPlano(clientes.pronto, ids.pronto.plano))).texto;
     signIn(ids.admin);
-    const paginaDaAutorizacao = (await pagina(rota(clientes.emAutorizacao))).texto;
-    const paginaDoVigente = (await pagina(rota(clientes.vigente))).texto;
-    const paginaDoAndamento = (await pagina(rota(clientes.andamento))).texto;
+    const paginaDaAutorizacao = (await pagina(rotaPlano(clientes.emAutorizacao, ids.emAutorizacao.plano))).texto;
+    const paginaDoVigente = (await pagina(rotaPlano(clientes.vigente, ids.vigente.plano))).texto;
+    const paginaDoAndamento = (await pagina(rotaPlano(clientes.andamento, ids.andamento.plano))).texto;
 
     const simples = [
       { nome: 'aplicar', acao: acaoDoBotao(paginaDoPronto, 'Aplicar o plano'), campo: 'versaoId', alvo: ids.pronto.versao, mensagem: /erro=Versão do plano não encontrada/ },
@@ -481,7 +494,7 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
     for (const atacante of atacantes) {
       signIn(atacante.quem);
       for (const caso of simples) {
-        const resposta = await submitAction(rota(atacante.cliente), caso.acao, { clienteId: atacante.cliente, [caso.campo]: caso.alvo });
+        const resposta = await submitAction(rotaPlano(atacante.cliente, ids.pronto.plano), caso.acao, { clienteId: atacante.cliente, [caso.campo]: caso.alvo });
         assert.match(destinoDe(resposta), caso.mensagem, `${caso.nome} por ${atacante.rotulo}`);
       }
     }
@@ -492,9 +505,9 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
       { nome: 'editar seção', campo: 'json', extra: { secao: 'lacunas', json: '{"itens":[]}' } },
     ];
     for (const comando of comandos) {
-      const ocultos = await ocultosDoFormulario(rota(clientes.pronto), ids.operador, comando.campo);
+      const ocultos = await ocultosDoFormulario(rotaPlano(clientes.pronto, ids.pronto.plano), ids.operador, comando.campo);
       for (const atacante of atacantes) {
-        const resposta = await postar(rota(atacante.cliente), atacante.quem, ocultos, { clienteId: atacante.cliente, planoId: ids.pronto.plano, versaoId: ids.pronto.versao, ...comando.extra });
+        const resposta = await postar(rotaPlano(atacante.cliente, ids.pronto.plano), atacante.quem, ocultos, { clienteId: atacante.cliente, planoId: ids.pronto.plano, versaoId: ids.pronto.versao, ...comando.extra });
         assert.ok(resposta.status < 500, `${comando.nome}: ${resposta.status}`);
         assert.match(resposta.texto, /Plano não encontrado/, `${comando.nome} por ${atacante.rotulo}`);
       }
@@ -504,83 +517,84 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
 
   it('a edição e o pedido de mudança recusam quando a versão vista já não é a atual', async () => {
     const antes = semear.fotografia();
-    const ocultosDaMudanca = await ocultosDoFormulario(rota(clientes.pronto), ids.operador, 'instrucao');
-    const mudanca = await postar(rota(clientes.pronto), ids.operador, ocultosDaMudanca, { clienteId: clientes.pronto, planoId: ids.pronto.plano, versaoId: ids.pronto.primeira, instrucao: 'Reduzir a verba de social' });
+    const ocultosDaMudanca = await ocultosDoFormulario(rotaPlano(clientes.pronto, ids.pronto.plano), ids.operador, 'instrucao');
+    const mudanca = await postar(rotaPlano(clientes.pronto, ids.pronto.plano), ids.operador, ocultosDaMudanca, { clienteId: clientes.pronto, planoId: ids.pronto.plano, versaoId: ids.pronto.primeira, instrucao: 'Reduzir a verba de social' });
     assert.match(mudanca.texto, /O plano mudou enquanto você editava\. Recarregue a página\./);
-    const ocultosDaEdicao = await ocultosDoFormulario(rota(clientes.pronto), ids.operador, 'json');
-    const edicao = await postar(rota(clientes.pronto), ids.operador, ocultosDaEdicao, { clienteId: clientes.pronto, planoId: ids.pronto.plano, versaoId: ids.pronto.primeira, secao: 'lacunas', json: '{"itens":[]}' });
+    const ocultosDaEdicao = await ocultosDoFormulario(rotaPlano(clientes.pronto, ids.pronto.plano), ids.operador, 'json');
+    const edicao = await postar(rotaPlano(clientes.pronto, ids.pronto.plano), ids.operador, ocultosDaEdicao, { clienteId: clientes.pronto, planoId: ids.pronto.plano, versaoId: ids.pronto.primeira, secao: 'lacunas', json: '{"itens":[]}' });
     assert.match(edicao.texto, /O plano mudou enquanto você editava\. Recarregue a página\./);
     assert.equal(semear.fotografia(), antes);
-    const pagina2 = await pagina(rota(clientes.pronto));
+    const pagina2 = await pagina(rotaPlano(clientes.pronto, ids.pronto.plano));
     assert.ok(pagina2.texto.includes(`name="versaoId" value="${ids.pronto.versao}"`), 'o formulário carrega a versão exibida');
   });
 
-  it('(1) sem plano e com execução pendente: Cancelar execução funciona e Novo plano volta', async () => {
+  it('(1) sem versão e com execução pendente: Cancelar execução pede confirmação, funciona e o plano passa a Cancelado', async () => {
     signIn(ids.operador);
-    const antes = await pagina(rota(clientes.preso));
+    const antes = await pagina(rotaPlano(clientes.preso, ids.preso.plano));
     assert.equal(antes.status, 200);
-    assert.match(antes.texto, /Andamento da execução|Etapa atual/);
+    assert.match(antes.texto, /Andamento do plano/);
     assert.ok(habilitado(antes.texto, 'Cancelar execução'));
-    assert.ok(!antes.texto.includes('>Novo plano</a>'), 'sem link de novo plano enquanto a execução está ativa');
     const acao = acaoDoBotao(antes.texto, 'Cancelar execução');
-    const resposta = await submitAction(rota(clientes.preso), acao, { clienteId: clientes.preso, execucaoId: ids.preso.execucao.id });
+    const resposta = await submitAction(rotaPlano(clientes.preso, ids.preso.plano), acao, { clienteId: clientes.preso, planoId: ids.preso.plano, execucaoId: ids.preso.execucao.id });
     assert.match(destinoDe(resposta), /feito=Execução cancelada/);
+    assert.match(destinoDe(resposta), new RegExp(`/estrategia/${ids.preso.plano}`));
     assert.equal(dono(`SELECT status FROM core.strategy_plan_runs WHERE id = '${ids.preso.execucao.id}'`), 'cancelada');
-    const depois = await pagina(rota(clientes.preso));
-    assert.match(depois.texto, new RegExp(`<a [^>]*href="${rota(clientes.preso, '\\?secao=plano&amp;novo=1')}[^"]*"[^>]*>Novo plano</a>`));
+    const depois = await pagina(rotaPlano(clientes.preso, ids.preso.plano));
     assert.ok(!habilitado(depois.texto, 'Cancelar execução'));
+    const lista = await pagina(rota(clientes.preso));
+    assert.match(lista.texto, />Novo plano</);
   });
 
   it('(2) execução presa: aviso claro e Cancelar execução, que funciona', async () => {
     signIn(ids.operador);
-    const { status, texto } = await pagina(rota(clientes.parado));
+    const { status, texto } = await pagina(rotaPlano(clientes.parado, ids.parado.plano));
     assert.equal(status, 200);
     assert.match(texto, /A execução não está avançando/);
     assert.ok(habilitado(texto, 'Cancelar execução'));
-    const cancelada = await submitAction(rota(clientes.parado), acaoDoBotao(texto, 'Cancelar execução'), { clienteId: clientes.parado, execucaoId: ids.parado.execucao.id });
+    const cancelada = await submitAction(rotaPlano(clientes.parado, ids.parado.plano), acaoDoBotao(texto, 'Cancelar execução'), { clienteId: clientes.parado, planoId: ids.parado.plano, execucaoId: ids.parado.execucao.id });
     assert.match(destinoDe(cancelada), /feito=Execução cancelada/);
     assert.equal(dono(`SELECT status FROM core.strategy_plan_runs WHERE id = '${ids.parado.execucao.id}'`), 'cancelada');
   });
 
   it('(i) a server action de aplicar recusa viewer e age para operator', async () => {
     signIn(ids.operador);
-    const acaoDeAplicar = acaoDoBotao((await pagina(rota(clientes.acao))).texto, 'Aplicar o plano');
-    const caminho = rota(clientes.acao);
+    const acaoDeAplicar = acaoDoBotao((await pagina(rotaPlano(clientes.acao, ids.acao.plano))).texto, 'Aplicar o plano');
+    const caminho = rotaPlano(clientes.acao, ids.acao.plano);
     const proposta = (versao) => Number(dono(`SELECT count(*) FROM core.strategy_plan_events WHERE version_id = '${versao}' AND kind = 'proposta'`));
     const alvo = ids.acao.versao;
 
     signIn(ids.leitor);
-    const leitor = await submitAction(caminho, acaoDeAplicar, { clienteId: clientes.acao, versaoId: alvo });
+    const leitor = await submitAction(caminho, acaoDeAplicar, { clienteId: clientes.acao, planoId: ids.acao.plano, versaoId: alvo });
     assert.match(destinoDe(leitor), /erro=/);
     assert.equal(proposta(alvo), 0);
 
     signIn(ids.operador);
-    const feito = await submitAction(caminho, acaoDeAplicar, { clienteId: clientes.acao, versaoId: alvo });
+    const feito = await submitAction(caminho, acaoDeAplicar, { clienteId: clientes.acao, planoId: ids.acao.plano, versaoId: alvo });
     assert.match(destinoDe(feito), /feito=Plano aplicado/);
     assert.equal(proposta(alvo), 1);
     assert.equal(dono(`SELECT status FROM core.strategy_plan_versions WHERE id = '${alvo}'`), 'proposto');
-    const depois = await pagina(rota(clientes.acao));
+    const depois = await pagina(rotaPlano(clientes.acao, ids.acao.plano));
     assert.match(depois.texto, /Em autorização/);
   });
 
   it('a server action de autorizar recusa operator e aceita admin', async () => {
     signIn(ids.admin);
-    const acaoDeAutorizar = acaoDoBotao((await pagina(rota(clientes.emAutorizacao))).texto, 'Autorizar');
-    const caminho = rota(clientes.emAutorizacao);
+    const acaoDeAutorizar = acaoDoBotao((await pagina(rotaPlano(clientes.emAutorizacao, ids.emAutorizacao.plano))).texto, 'Autorizar');
+    const caminho = rotaPlano(clientes.emAutorizacao, ids.emAutorizacao.plano);
     const versao = ids.emAutorizacao.versao;
     signIn(ids.operador);
-    const negada = await submitAction(caminho, acaoDeAutorizar, { clienteId: clientes.emAutorizacao, versaoId: versao });
+    const negada = await submitAction(caminho, acaoDeAutorizar, { clienteId: clientes.emAutorizacao, planoId: ids.emAutorizacao.plano, versaoId: versao });
     assert.match(destinoDe(negada), /erro=/);
     assert.equal(dono(`SELECT status FROM core.strategy_plan_versions WHERE id = '${versao}'`), 'proposto');
     signIn(ids.admin);
-    const aceita = await submitAction(caminho, acaoDeAutorizar, { clienteId: clientes.emAutorizacao, versaoId: versao });
+    const aceita = await submitAction(caminho, acaoDeAutorizar, { clienteId: clientes.emAutorizacao, planoId: ids.emAutorizacao.plano, versaoId: versao });
     assert.match(destinoDe(aceita), /feito=Plano autorizado/);
     assert.equal(dono(`SELECT status FROM core.strategy_plan_versions WHERE id = '${versao}'`), 'vigente');
   });
 
-  it('o formulário de nova intenção valida no servidor e cria a execução', async () => {
-    const caminho = rota(clientes.semPlano, '?secao=plano&novo=1');
-    const campos = { clienteId: clientes.semPlano, tipoDePlano: 'aquisicao', objetivo: 'Gerar leads qualificados', inicio: '2026-12-01', fim: '2027-02-28', ousadia: 'moderado', retorno: '300 leads por mês', verba: '15.000,00' };
+  it('o formulário de novo plano valida no servidor, mostra a prévia de UTM e cria a execução', async () => {
+    const caminho = rota(clientes.semPlano, '?novo=1');
+    const campos = { clienteId: clientes.semPlano, acao: 'criar', tipoDePlano: 'aquisicao', plataformas: 'meta', landingPageId: ids.landing, objetivo: 'Gerar leads qualificados', inicio: '2026-12-01', fim: '2027-02-28', ousadia: 'moderado', retorno: '300 leads por mês', verba: '15.000,00' };
     const invalido = await postarFormulario(caminho, ids.operador, 'objetivo', { ...campos, objetivo: 'a', fim: '2026-11-01', verba: 'abc' });
     assert.ok(invalido.status < 500, `status ${invalido.status}`);
     assert.match(invalido.texto, /Corrija os campos indicados/);
@@ -588,15 +602,38 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
     assert.match(invalido.texto, /Informe a verba em reais/);
     assert.equal(Number(dono(`SELECT count(*) FROM core.strategy_plan_runs WHERE client_id = '${clientes.semPlano}'`)), 0);
 
+    const semObjetivo = await postarFormulario(caminho, ids.operador, 'objetivo', { ...campos, acao: 'previa', objetivo: '' });
+    assert.match(semObjetivo.texto, /Descreva o objetivo para ver os links/);
+    const previa = await postarFormulario(caminho, ids.operador, 'objetivo', { ...campos, acao: 'previa' });
+    assert.ok(previa.status < 500, `status ${previa.status}`);
+    assert.match(previa.texto, /https:\/\/padaria\.example\.com\.br\/oferta\?utm_source=meta/);
+    assert.equal(Number(dono(`SELECT count(*) FROM core.strategy_plan_runs WHERE client_id = '${clientes.semPlano}'`)), 0);
+
     const valido = await postarFormulario(caminho, ids.operador, 'objetivo', campos);
-    assert.match(valido.destino, /feito=Plano pedido/);
-    assert.equal(dono(`SELECT pedido->'verba'->>'centavos' FROM core.strategy_plan_runs WHERE client_id = '${clientes.semPlano}'`), '1500000');
+    assert.match(valido.destino, new RegExp(`/clientes/${clientes.semPlano}/estrategia/[0-9a-f-]{36}.*feito=Plano pedido`));
+    assert.equal(Number(dono(`SELECT count(*) FROM core.strategy_plan_runs WHERE client_id = '${clientes.semPlano}'`)), 1);
     const depois = await pagina(rota(clientes.semPlano));
-    assert.match(depois.texto, /Andamento da execução|Etapa atual/);
+    assert.match(depois.texto, /Gerando|Em geração/);
+  });
+
+  it('o cadastro de destino aparece em Contexto: operador gerencia, viewer só lê', async () => {
+    signIn(ids.operador);
+    const comoOperador = await pagina(`/clientes/${clientes.semPlano}/contexto?secao=destino`);
+    assert.equal(comoOperador.status, 200);
+    assert.ok(comoOperador.texto.includes('+5511999998888'));
+    assert.ok(comoOperador.texto.includes('Oferta de inauguração'));
+    assert.ok(habilitado(comoOperador.texto, 'Salvar WhatsApp'));
+    assert.ok(botao(comoOperador.texto, 'Arquivar').length > 0);
+    signIn(ids.leitor);
+    const comoLeitor = await pagina(`/clientes/${clientes.semPlano}/contexto?secao=destino`);
+    assert.equal(comoLeitor.status, 200);
+    assert.ok(comoLeitor.texto.includes('Oferta de inauguração'));
+    assert.equal(botao(comoLeitor.texto, 'Salvar WhatsApp').length, 0);
+    assert.equal(botao(comoLeitor.texto, 'Cadastrar landing page').length, 0);
   });
 
   it('a edição avançada de seção explica o erro de JSON e de esquema em linguagem clara', async () => {
-    const caminho = rota(clientes.pronto);
+    const caminho = rotaPlano(clientes.pronto, ids.pronto.plano);
     const base = { clienteId: clientes.pronto, planoId: ids.pronto.plano, versaoId: ids.pronto.versao, secao: 'lacunas' };
     const semJson = await postarFormulario(caminho, ids.operador, 'json', { ...base, json: '{segredo: 1' });
     assert.ok(semJson.status < 500);
@@ -610,7 +647,7 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
   });
 
   it('o pedido de mudança recusa texto curto e cria a execução do próprio plano', async () => {
-    const caminho = rota(clientes.vigente);
+    const caminho = rotaPlano(clientes.vigente, ids.vigente.plano);
     const base = { clienteId: clientes.vigente, planoId: ids.vigente.plano, versaoId: ids.vigente.versao };
     const curto = await postarFormulario(caminho, ids.operador, 'instrucao', { ...base, instrucao: 'x' });
     assert.match(curto.texto, /mínimo 3 caracteres/);
@@ -652,6 +689,8 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
           { urn: urnDe(cli, ...dividir(URN_REGRA)), papel: 'premissa' },
         ],
       };
+      plano.resumo_executivo.aposta_central = { ...plano.resumo_executivo.aposta_central, evidencias: plano.posicionamento_e_mensagem.promessa.evidencias };
+      plano.resumo_executivo.resultado_esperado = { ...plano.resumo_executivo.resultado_esperado, evidencias: [...plano.resumo_executivo.resultado_esperado.evidencias, { urn: urnDe(cli, ...dividir(URN_LIMITE)), papel: 'premissa' }] };
       return plano;
     }
 
@@ -669,8 +708,8 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
     async function clienteComBrain(nome) {
       const cli = cliente(ids.org, nome);
       semear.semearBrain(cli, ids.admin);
-      const plano = semear.planoNovo(cli);
       const conteudo = planoComUrnsReais(cli);
+      const plano = semear.planoNovo(cli, 'aquisicao', conteudo.intencao.whatsapp);
       const execucao = semear.iniciarExecucao({ cli, plano });
       const versao = semear.versaoRascunho(cli, plano, conteudo, { referencias: await referenciasReais(cli, conteudo) });
       semear.eventoDoWorker(cli, versao, 'parecer', parecer('redator', 'aprova', 'Mensagem clara.'), execucao);
@@ -696,7 +735,7 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
 
     it('as marcas mostram o título da entrada do Brain, a nota e a hipótese, e levam ao Brain do cliente certo', async () => {
       signIn(ids.operador);
-      const { status, texto } = await pagina(rota(brain.edicao.cli));
+      const { status, texto } = await pagina(rotaPlano(brain.edicao.cli, brain.edicao.plano));
       assert.equal(status, 200);
       const b = marca(texto, 'Binet e Field: divisão entre marca e ativação');
       assert.ok(b, 'marca da entrada de benchmark');
@@ -725,14 +764,14 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
         'LGPD: todo uso de dado pessoal em anúncios precisa de base legal',
         'Regra: Não prometer resultado garantido',
         'Limite: Teto mensal de investimento',
-      ]);
+      ], brain.edicao.plano);
     });
 
     it('edição com dado pessoal é recusada apontando a seção, sem repetir o dado e sem gravar', async () => {
       const base = { clienteId: brain.edicao.cli, planoId: brain.edicao.plano, versaoId: brain.edicao.versao, secao: 'posicionamento_e_mensagem' };
       const secao = { ...brain.edicao.conteudo.posicionamento_e_mensagem, tom: 'Escreva para contato@doceria.example ou (81) 98888-7777' };
       const antes = semear.fotografia();
-      const resposta = await postarFormulario(rota(brain.edicao.cli), ids.operador, 'json', { ...base, json: JSON.stringify(secao) });
+      const resposta = await postarFormulario(rotaPlano(brain.edicao.cli, brain.edicao.plano), ids.operador, 'json', { ...base, json: JSON.stringify(secao) });
       assert.ok(resposta.status < 500, `status ${resposta.status}`);
       assert.match(resposta.texto, /O plano não pode conter dado pessoal/);
       assert.match(resposta.texto, /Posicionamento e mensagem › tom/);
@@ -745,7 +784,7 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
     it('JSON inválido aponta o problema e o texto digitado volta ao editor em vez de se perder', async () => {
       const base = { clienteId: brain.edicao.cli, planoId: brain.edicao.plano, versaoId: brain.edicao.versao, secao: 'posicionamento_e_mensagem' };
       const digitado = '{ "promessa": { "texto": "abc" ';
-      const resposta = await postarFormulario(rota(brain.edicao.cli), ids.operador, 'json', { ...base, json: digitado });
+      const resposta = await postarFormulario(rotaPlano(brain.edicao.cli, brain.edicao.plano), ids.operador, 'json', { ...base, json: digitado });
       assert.match(resposta.texto, /O texto não é um JSON válido/);
       assert.ok(resposta.texto.includes('"valores"'), 'o estado devolve o que foi digitado');
       assert.ok(resposta.texto.includes('{ \\"promessa\\": { \\"texto\\": \\"abc\\" '), 'o texto digitado volta no estado');
@@ -756,7 +795,7 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
       const base = { clienteId: brain.edicao.cli, planoId: brain.edicao.plano, versaoId: brain.edicao.versao, secao: 'posicionamento_e_mensagem' };
       const promessa = { ...brain.edicao.conteudo.posicionamento_e_mensagem.promessa, texto: 'Qualidade com entrega em até 48 horas.' };
       const secao = { ...brain.edicao.conteudo.posicionamento_e_mensagem, promessa };
-      const feita = await postarFormulario(rota(brain.edicao.cli), ids.operador, 'json', { ...base, json: JSON.stringify(secao) });
+      const feita = await postarFormulario(rotaPlano(brain.edicao.cli, brain.edicao.plano), ids.operador, 'json', { ...base, json: JSON.stringify(secao) });
       assert.match(feita.destino, /feito=Seção editada/);
       assert.equal(versoes(brain.edicao.plano), 'cancelado,rascunho');
       const nova = dono(`SELECT id FROM core.strategy_plan_versions WHERE plan_id = '${brain.edicao.plano}' AND status = 'rascunho'`);
@@ -771,19 +810,17 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
         dono(`SELECT kind || ':' || status || ':' || (pedido->>'motivo') || ':' || (base_version_id = '${nova}') FROM core.strategy_plan_runs WHERE plan_id = '${brain.edicao.plano}' AND kind = 'revisar'`),
         'revisar:pendente:edicao_manual:true',
       );
-      const depois = await pagina(rota(brain.edicao.cli));
+      const depois = await pagina(rotaPlano(brain.edicao.cli, brain.edicao.plano));
       assert.ok(desabilitado(depois.texto, 'Aplicar o plano'));
-      assert.match(depois.texto, /Falta parecer do Comitê/);
-      assert.match(depois.texto, /Falta rodar os Gates/);
       assert.match(depois.texto, /Há uma execução em andamento/);
       assert.match(depois.texto, /Revisando o plano/);
-      assert.ok(depois.texto.includes('Qualidade com entrega em até 48 horas.'), 'a tela mostra a versão nova');
+      assert.ok(!TERMOS_INTERNOS.test(semAreaDeTexto(depois.texto)), 'sem Comitê, Gates ou Histórico');
     });
 
     it('editar a seção Intenção com outra verba é aceito e é a única forma de mudar a intenção', async () => {
       const base = { clienteId: brain.intencao.cli, planoId: brain.intencao.plano, versaoId: brain.intencao.versao, secao: 'intencao' };
       const secao = { ...brain.intencao.conteudo.intencao, verba: { centavos: '1500000', moeda: 'BRL' } };
-      const feita = await postarFormulario(rota(brain.intencao.cli), ids.operador, 'json', { ...base, json: JSON.stringify(secao) });
+      const feita = await postarFormulario(rotaPlano(brain.intencao.cli, brain.intencao.plano), ids.operador, 'json', { ...base, json: JSON.stringify(secao) });
       assert.match(feita.destino, /feito=Seção editada/);
       assert.equal(dono(`SELECT content->'intencao'->'verba'->>'centavos' FROM core.strategy_plan_versions WHERE plan_id = '${brain.intencao.plano}' AND status = 'rascunho'`), '1500000');
     });
@@ -791,7 +828,7 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
     it('Brain mudado: o plano vigente aparece desatualizado, só quem opera vê Pedir revisão e pedir cria a execução sem tocar na vigente', async () => {
       const { cli, plano, versao } = brain.vigente;
       signIn(ids.operador);
-      const atual = await pagina(rota(cli));
+      const atual = await pagina(rotaPlano(cli, plano));
       assert.ok(!atual.texto.includes('O plano está desatualizado'), 'com o Brain igual ao lido, nada desatualizado');
 
       const decisoes = () => Number(dono(`SELECT count(*) FROM core.client_decisions WHERE client_id = '${cli}'`));
@@ -800,18 +837,18 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
         VALUES ('${ids.org}', '${cli}', 'etica_marca', 'regra', 'agencia', 'vigente', 'etica_marca.sem_comparacao', 'cliente', 'Sem comparação com concorrente nomeado', 'Política da agência', 'Nenhum anúncio compara a doceria com um concorrente pelo nome.', '${ids.admin}') RETURNING id`);
       dono(`INSERT INTO core.client_context_entries (organization_id, client_id, section, field_key, value) VALUES ('${ids.org}', '${cli}', 'objetivos', 'objetivo_90_dias', '"Chegar a 600 encomendas por trimestre"'::jsonb)`);
 
-      const desatualizado = await pagina(rota(cli));
-      assert.match(desatualizado.texto, /O plano está desatualizado: o Brain mudou/);
+      const desatualizado = await pagina(rotaPlano(cli, plano));
+      assert.match(desatualizado.texto, /O plano está desatualizado: o contexto do cliente mudou/);
       assert.match(desatualizado.texto, /Limite ou regra nova: Regra: Sem comparação com concorrente nomeado/);
       assert.match(desatualizado.texto, /Conteúdo da entrada mudou: Contexto: Objetivos e metas/);
       assert.ok(habilitado(desatualizado.texto, 'Pedir revisão'));
 
-      await semAcessoAEstrategia(ids.leitor, cli, ['O plano está desatualizado', 'Limite ou regra nova', 'Sem comparação com concorrente nomeado']);
+      await semAcessoAEstrategia(ids.leitor, cli, ['O plano está desatualizado', 'Limite ou regra nova', 'Sem comparação com concorrente nomeado'], plano);
 
       signIn(ids.operador);
       const antes = versoes(plano);
       const acao = acaoDoBotao(desatualizado.texto, 'Pedir revisão');
-      const feita = await submitAction(rota(cli), acao, { clienteId: cli, planoId: plano });
+      const feita = await submitAction(rotaPlano(cli, plano), acao, { clienteId: cli, planoId: plano });
       assert.match(destinoDe(feita), /feito=Revisão pedida/);
       assert.equal(
         dono(`SELECT kind || ':' || status || ':' || (pedido->>'motivo') || ':' || (base_version_id = '${versao}') || ':' || requested_kind FROM core.strategy_plan_runs WHERE plan_id = '${plano}' AND kind = 'revisar'`),
@@ -820,19 +857,19 @@ describe('aba Estratégia da página do cliente (ADR 0055 e 0065 §10)', { concu
       assert.equal(versoes(plano), antes);
       assert.equal(dono(`SELECT status FROM core.strategy_plan_versions WHERE id = '${versao}'`), 'vigente');
     });
-    it('plano só com versões encerradas: a tela avisa onde ver e o Histórico lista as versões', async () => {
+    it('plano só com versões encerradas: a página mostra o último status e a lista o card, sem histórico', async () => {
       const cli = cliente(ids.org, 'Doceria Maré Quieta');
       const plano = semear.planoNovo(cli);
       const versao = semear.versaoRascunho(cli, plano, planoDoCliente(ids.org, cli));
       semear.eventoDaPessoa(cli, versao, 'cancelada', ids.operador);
       signIn(ids.operador);
-      const planoTela = await pagina(rota(cli));
-      assert.match(planoTela.texto, /Não há plano em rascunho nem autorizado/);
-      assert.match(planoTela.texto, /Status da última versão: cancelado/);
-      assert.match(planoTela.texto, /Este cliente não tem plano em vigor/);
-      const historico = await pagina(rota(cli, '?secao=historico'));
-      assert.ok(!historico.texto.includes('Sem histórico ainda'));
-      assert.match(historico.texto, /Cancelado/);
+      const planoTela = await pagina(rotaPlano(cli, plano));
+      assert.equal(planoTela.status, 200);
+      assert.match(planoTela.texto, /Cancelado/);
+      assert.ok(!TERMOS_INTERNOS.test(semAreaDeTexto(planoTela.texto)));
+      const lista = await pagina(rota(cli));
+      assert.match(lista.texto, new RegExp(`href="${rotaPlano(cli, plano)}"`));
+      assert.match(lista.texto, /Cancelado/);
     });
   });
 });

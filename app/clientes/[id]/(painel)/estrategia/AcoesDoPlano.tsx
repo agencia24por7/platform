@@ -46,6 +46,7 @@ export function AcoesDoPlano({ clienteId, visao }: Props) {
   const campos = (
     <>
       <input type="hidden" name="clienteId" value={clienteId} />
+      <input type="hidden" name="planoId" value={planoId} />
       <input type="hidden" name="versaoId" value={versaoId} />
     </>
   );
@@ -81,21 +82,11 @@ export function AcoesDoPlano({ clienteId, visao }: Props) {
         </form>
       );
     }
-    if (acao.chave === 'cancelar_execucao') {
-      return (
-        <form className="estrategia-acao" key={acao.chave} action={cancelarExecucaoAcao}>
-          <input type="hidden" name="clienteId" value={clienteId} />
-          <input type="hidden" name="execucaoId" value={visao.execucao?.id ?? ''} />
-          <BotaoDeEnvio className="btn" pendente="Cancelando…">
-            {acao.rotulo}
-          </BotaoDeEnvio>
-        </form>
-      );
-    }
     const confirmacoes: Partial<Record<ChaveDeAcao, { readonly titulo: string; readonly descricao: string; readonly pendente: string; readonly action: (dados: FormData) => Promise<void> }>> = {
-      rejeitar: { titulo: 'Rejeitar o plano?', descricao: 'O plano em autorização é recusado e não volta a valer. A correção nasce como versão nova.', pendente: 'Rejeitando…', action: rejeitarAcao },
-      revogar: { titulo: 'Revogar o plano autorizado?', descricao: 'O plano deixa de valer. Revogar não apaga: o histórico continua.', pendente: 'Revogando…', action: revogarAcao },
-      cancelar_rascunho: { titulo: 'Cancelar o rascunho?', descricao: 'A versão em rascunho é descartada. O histórico continua.', pendente: 'Cancelando…', action: cancelarRascunhoAcao },
+      rejeitar: { titulo: 'Rejeitar o plano?', descricao: 'O plano em autorização é recusado e não volta a valer. Um ajuste nasce como plano novo.', pendente: 'Rejeitando…', action: rejeitarAcao },
+      revogar: { titulo: 'Revogar o plano autorizado?', descricao: 'O plano deixa de valer. Revogar não apaga o plano.', pendente: 'Revogando…', action: revogarAcao },
+      cancelar_execucao: { titulo: 'Cancelar a execução?', descricao: 'O agente para de trabalhar neste plano. Você pode pedir de novo depois.', pendente: 'Cancelando…', action: cancelarExecucaoAcao },
+      cancelar_rascunho: { titulo: 'Cancelar o rascunho?', descricao: 'O rascunho é descartado.', pendente: 'Cancelando…', action: cancelarRascunhoAcao },
     };
     const confirmacao = confirmacoes[acao.chave];
     if (!confirmacao) return null;
@@ -111,6 +102,7 @@ export function AcoesDoPlano({ clienteId, visao }: Props) {
           gatilhoClasse="btn btn--perigo"
         >
           {campos}
+          {acao.chave === 'cancelar_execucao' ? <input type="hidden" name="execucaoId" value={visao.execucao?.id ?? ''} /> : null}
         </ConfirmarAcao>
       </div>
     );

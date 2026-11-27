@@ -51,8 +51,6 @@ done
 [ "$simulado" -eq 1 ] || command -v claude > /dev/null || { echo "claude não encontrado no PATH" >&2; exit 1; }
 [ -f .claude/agents/arquiteto.md ] || { echo "falta .claude/agents/arquiteto.md" >&2; exit 1; }
 
-git config core.hooksPath .githooks
-
 if [ ! -d node_modules ]; then
   echo "aviso: node_modules ausente; rode 'npm ci' antes de testar ou compilar" >&2
 fi

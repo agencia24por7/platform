@@ -5,5 +5,6 @@ export { passouPeloComite, podeAplicar, type EventoDaCadeia, type StatusDaVersao
 export function pedidoParaOBancoEmMemoria(pedido: PedidoDaExecucao): Record<string, unknown> {
   if (pedido.tipo === 'criar') return { ...pedido.intencao };
   if (pedido.tipo === 'ajustar') return { instrucao: pedido.instrucao };
+  if (pedido.tipo === 'corrigir_gate') return {};
   return { motivo: pedido.motivo };
 }

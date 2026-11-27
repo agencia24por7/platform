@@ -15,8 +15,8 @@ export const comoApp = (organizacao, quem, sql) => ultimaLinha(psqlComoRole('orl
 export const comoWorker = (organizacao, sql) => ultimaLinha(psqlComoRole('orla_worker', contexto(organizacao, '') + sql));
 
 export function criarSemeadorDeEstrategia({ org, operador }) {
-  const planoNovo = (cli, tipo = 'aquisicao') =>
-    dono(`INSERT INTO core.strategy_plans (organization_id, client_id, plan_type_key) VALUES ('${org}', '${cli}', '${tipo}') RETURNING id`);
+  const planoNovo = (cli, tipo = 'aquisicao', whatsapp = null) =>
+    dono(`INSERT INTO core.strategy_plans (organization_id, client_id, plan_type_key, plataformas, whatsapp) VALUES ('${org}', '${cli}', '${tipo}', ARRAY['meta'], ${whatsapp === null ? 'NULL' : `'${whatsapp}'`}) RETURNING id`);
 
   const versaoRascunho = (cli, plano, conteudo, { quem = operador, referencias = [] } = {}) => {
     const id = randomUUID();

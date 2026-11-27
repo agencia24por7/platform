@@ -6,7 +6,7 @@ import { fixarIntencao, intencoesIguais } from './fixarIntencao.ts';
 describe('fixarIntencao', () => {
   it('intenção igual (qualquer ordem de chaves) não é alterada', () => {
     const original = planoCompleto().intencao;
-    const embaralhada = JSON.parse(JSON.stringify({ verba: original.verba, objetivo: original.objetivo, horizonte: original.horizonte, retorno_esperado: original.retorno_esperado, ousadia: original.ousadia }));
+    const embaralhada = JSON.parse(JSON.stringify({ verba: original.verba, objetivo: original.objetivo, horizonte: original.horizonte, retorno_esperado: original.retorno_esperado, ousadia: original.ousadia, utm: original.utm, destino: original.destino, whatsapp: original.whatsapp, plataformas: original.plataformas }));
     assert.equal(intencoesIguais(original, embaralhada), true);
     const plano = planoCompleto();
     const r = fixarIntencao(plano, embaralhada);
@@ -21,6 +21,10 @@ describe('fixarIntencao', () => {
       (p: ReturnType<typeof planoCompleto>) => { p.intencao.horizonte = { inicio: '2026-12-01', fim: '2031-01-01' }; },
       (p: ReturnType<typeof planoCompleto>) => { p.intencao.ousadia = 'ousado'; },
       (p: ReturnType<typeof planoCompleto>) => { p.intencao.objetivo = 'Outro objetivo'; },
+      (p: ReturnType<typeof planoCompleto>) => { p.intencao.plataformas = ['tiktok']; },
+      (p: ReturnType<typeof planoCompleto>) => { p.intencao.whatsapp = '+5511000000000'; },
+      (p: ReturnType<typeof planoCompleto>) => { p.intencao.destino = { landingPageId: 'lp_outra', url: 'https://outro.com' }; },
+      (p: ReturnType<typeof planoCompleto>) => { p.intencao.utm = {}; },
       (p: ReturnType<typeof planoCompleto>) => { p.intencao.retorno_esperado = { descricao: 'x', valor: { unidade: 'contagem', quantidade: 1 } }; },
     ];
     for (const mexer of mexidas) {

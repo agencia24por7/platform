@@ -1,5 +1,5 @@
 import { err, ok, type Result } from '@/shared/result/result';
-import { MAXIMO_DE_RESERVAS } from '@/modules/strategy/application/portas';
+import { CHAVE_DE_IDEMPOTENCIA_COM_OUTRO_PEDIDO, MAXIMO_DE_RESERVAS, mesmoPedidoDePlano } from '@/modules/strategy/application/portas';
 import type {
   Autoria,
   ErroDeEstrategia,
@@ -14,6 +14,7 @@ import type {
   Versao,
   VersaoResumo,
 } from '@/modules/strategy/application/portas';
+import { vereditosDoEvento } from '@/modules/strategy/domain/index';
 import {
   passouPeloComite,
   podeAplicar,
@@ -33,6 +34,7 @@ export type RepositorioEmMemoria = RepositorioDeEstrategia & {
     readonly eventos: EventoInterno[];
     readonly execucoes: ExecucaoInterna[];
   };
+  criarPlano(escopo: { readonly organizationId: string; readonly clientId: string }, tipo: string, destino?: Partial<Pick<Plano, 'plataformas' | 'whatsapp' | 'landingPageId'>>): Promise<Result<Plano, ErroDeEstrategia>>;
   falharProxima(metodo: keyof RepositorioDeEstrategia, erro: ErroDeEstrategia): void;
   contagemDeChamadas(metodo: keyof RepositorioDeEstrategia): number;
 };
@@ -47,6 +49,7 @@ const TRANSICOES_DO_WORKER = [
 
 export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
   const planos: Plano[] = [];
+  const chavesDePlano = new Map<string, Plano>();
   const versoes: VersaoInterna[] = [];
   const eventos: EventoInterno[] = [];
   const execucoes: ExecucaoInterna[] = [];
@@ -102,10 +105,10 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
       if (eventos.some((e) => e.versaoId === versao.id && e.agentId === agente.agentId && e.chave === agente.chaveDeIdempotencia)) {
         return err(erro('ja_feito', 'idempotência'));
       }
-    } else if (['parecer', 'ajuste', 'gate'].includes(novo.tipo)) {
+    } else if (['parecer', 'ajuste', 'gate', 'veredito_juiz'].includes(novo.tipo)) {
       return err(erro('sem_permissao', 'pessoa'));
     }
-    if (['parecer', 'ajuste', 'gate'].includes(novo.tipo) && versao.status !== 'rascunho') {
+    if (['parecer', 'ajuste', 'gate', 'veredito_juiz'].includes(novo.tipo) && versao.status !== 'rascunho') {
       return err(erro('transicao_invalida', 'só valem em versão rascunho'));
     }
     if (novo.tipo === 'parecer') {
@@ -125,6 +128,10 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
       if (!substituida || !passouPeloComite(respondida, mapa, agente?.agentRunId ?? null)) return err(erro('invalido', 'ajuste.responde_a'));
     }
     if (novo.tipo === 'gate' && !['aprovado', 'reprovado'].includes(String(novo.payload.resultado))) return err(erro('invalido', 'gate'));
+    if (novo.tipo === 'veredito_juiz') {
+      if (!vereditosDoEvento(novo.payload)) return err(erro('invalido', 'veredito do juiz'));
+      if (eventos.some((e) => e.versaoId === versao.id && e.tipo === 'veredito_juiz')) return err(erro('ja_feito', 'um veredito por versão'));
+    }
 
     const evento: EventoInterno = {
       id: id(),
@@ -161,12 +168,29 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
     return ok(publico);
   }
 
+  const estadoDe = (plano: Plano): PlanoDoCliente => {
+    const doPlano = versoes.filter((v) => v.planoId === plano.id);
+    const recente = doPlano.at(-1);
+    const vigente = doPlano.find((v) => v.status === 'vigente');
+    const aberta = doPlano.find((v) => v.status === 'rascunho' || v.status === 'proposto');
+    const ultima = execucoes.filter((e) => e.planoId === plano.id).at(-1);
+    const primeiraDeCriar = execucoes.find((e) => e.planoId === plano.id && e.tipo === 'criar');
+    const objetivo = typeof primeiraDeCriar?.pedido.objetivo === 'string' ? primeiraDeCriar.pedido.objetivo : null;
+    const datas = [plano.criadoEm, recente?.criadaEm, ultima?.atualizadaEm].filter((data): data is Date => data instanceof Date);
+    return {
+      plano,
+      maisRecente: recente ? resumo(recente) : null,
+      vigente: vigente ? resumo(vigente) : null,
+      aberta: aberta ? resumo(aberta) : null,
+      objetivo,
+      ultimaExecucao: ultima ? { ...ultima } : null,
+      atualizadoEm: new Date(Math.max(...datas.map((data) => data.getTime()))),
+    };
+  };
+
   const repositorio: RepositorioDeEstrategia = {
     async clienteVisivel() {
       return true;
-    },
-    async buscarPlano(escopo, tipo) {
-      return planos.find((p) => p.clientId === escopo.clientId && p.tipo === tipo) ?? null;
     },
     async buscarPlanoPorId(_org, planoId) {
       return planos.find((p) => p.id === planoId) ?? null;
@@ -175,24 +199,45 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
       const lista = tipo === 'plano' ? planos : tipo === 'versao' ? versoes : execucoes;
       return lista.find((item) => item.id === recursoId)?.clientId ?? null;
     },
-    async criarPlano(escopo, tipo) {
-      const falha = entrada('criarPlano');
+    async criarPlanoComExecucao(escopo, novo, execucao) {
+      const falha = entrada('criarPlanoComExecucao');
       if (falha) return err(falha);
-      const plano: Plano = { id: id(), organizationId: escopo.organizationId, clientId: escopo.clientId, tipo, criadoEm: agora() };
+      const existente = novo.chaveDeIdempotencia === undefined ? undefined : chavesDePlano.get(`${escopo.organizationId}|${escopo.clientId}|${novo.chaveDeIdempotencia}`);
+      if (existente !== undefined) {
+        if (!mesmoPedidoDePlano(existente, novo)) return err(CHAVE_DE_IDEMPOTENCIA_COM_OUTRO_PEDIDO);
+        const primeira = execucoes.find((e) => e.planoId === existente.id);
+        if (primeira) return ok({ plano: existente, execucao: primeira, reaproveitado: true });
+      }
+      const plano: Plano = {
+        id: id(),
+        organizationId: escopo.organizationId,
+        clientId: escopo.clientId,
+        tipo: novo.tipo,
+        plataformas: novo.plataformas,
+        whatsapp: novo.whatsapp,
+        landingPageId: novo.landingPageId,
+        criadoEm: agora(),
+      };
       planos.push(plano);
-      return ok(plano);
+      const criada = await repositorio.criarExecucao(escopo.organizationId, escopo.clientId, { ...execucao, planoId: plano.id });
+      if (!criada.ok) {
+        planos.splice(planos.indexOf(plano), 1);
+        return err(criada.error);
+      }
+      if (novo.chaveDeIdempotencia !== undefined) chavesDePlano.set(`${escopo.organizationId}|${escopo.clientId}|${novo.chaveDeIdempotencia}`, plano);
+      return ok({ plano, execucao: criada.value });
     },
     async listarPlanosDoCliente(escopo) {
       contar('listarPlanosDoCliente');
       return planos
         .filter((p) => p.clientId === escopo.clientId)
-        .map((plano): PlanoDoCliente => {
-          const doPlano = versoes.filter((v) => v.planoId === plano.id);
-          const recente = doPlano.at(-1);
-          const vigente = doPlano.find((v) => v.status === 'vigente');
-          const aberta = doPlano.find((v) => v.status === 'rascunho' || v.status === 'proposto');
-          return { plano, maisRecente: recente ? resumo(recente) : null, vigente: vigente ? resumo(vigente) : null, aberta: aberta ? resumo(aberta) : null };
-        });
+        .map(estadoDe)
+        .reverse();
+    },
+    async estadoDoPlano(_org, planoId) {
+      contar('estadoDoPlano');
+      const plano = planos.find((p) => p.id === planoId);
+      return plano ? estadoDe(plano) : null;
     },
     async criarVersaoRascunho(org, nova: NovaVersao) {
       const falha = entrada('criarVersaoRascunho');
@@ -306,6 +351,9 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
       const execucao = execucoes.find((e) => e.planoId === planoId && (e.status === 'pendente' || e.status === 'rodando'));
       return execucao ? { ...execucao } : null;
     },
+    async execucoesDoPlano(_org, planoId, limite) {
+      return execucoes.filter((e) => e.planoId === planoId).map((e) => ({ ...e })).reverse().slice(0, limite);
+    },
     async ultimaExecucao(_org, planoId) {
       const execucao = execucoes.filter((e) => e.planoId === planoId).at(-1);
       return execucao ? { ...execucao } : null;
@@ -382,6 +430,20 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
   return {
     ...repositorio,
     estado: { planos, versoes, eventos, execucoes },
+    async criarPlano(escopo, tipo, destino = {}) {
+      const plano: Plano = {
+        id: id(),
+        organizationId: escopo.organizationId,
+        clientId: escopo.clientId,
+        tipo,
+        plataformas: destino.plataformas ?? ['meta'],
+        whatsapp: destino.whatsapp ?? '+5511912345678',
+        landingPageId: destino.landingPageId ?? '00000000-0000-4000-8000-0000000000aa',
+        criadoEm: agora(),
+      };
+      planos.push(plano);
+      return ok(plano);
+    },
     falharProxima(metodo, erroInjetado) {
       falhas.set(metodo, [...(falhas.get(metodo) ?? []), erroInjetado]);
     },

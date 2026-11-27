@@ -89,7 +89,7 @@ describe('rota de worker POST /api/v0/strategy/execucoes/avancar (ADR 0065 §9)'
     for (const [chave, valor] of Object.entries(corpo)) {
       if (chave === 'codigos') {
         for (const [codigo, quantidade] of Object.entries(valor)) {
-          assert.match(codigo, /^(ia_[a-z_]+|brain_indisponivel|gate_reprovado|interno)$/);
+          assert.match(codigo, /^(ia_[a-z_]+|brain_indisponivel|gate_reprovado|correcao_nao_convergiu|interno)$/);
           assert.equal(Number.isInteger(quantidade), true);
         }
       } else {

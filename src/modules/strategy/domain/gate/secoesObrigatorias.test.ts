@@ -20,8 +20,9 @@ describe('gate: secoes_obrigatorias', () => {
     contexto.plano.campanhas.campanhas = [];
     contexto.plano.calendario.fases = [];
     contexto.plano.metas_e_metricas.metas = contexto.plano.metas_e_metricas.metas.filter((m) => m.nivel === 'canal');
+    contexto.plano.plano_de_midia = { plataformas: [] };
     const r = checarSecoesObrigatorias(contexto);
     assert.equal(r.resultado, 'reprovado');
-    assert.deepEqual(r.onde, ['calendario', 'campanhas', 'metas_e_metricas']);
+    assert.deepEqual(r.onde, ['calendario', 'campanhas', 'metas_e_metricas', 'plano_de_midia']);
   });
 });

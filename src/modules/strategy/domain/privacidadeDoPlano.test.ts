@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { catalogoMeta } from './catalogo/meta.ts';
 import { planoCompleto } from './fixturesDeTeste.ts';
 import { parecer as fabricarParecer, ponto } from './comite/fixturesDeParecer.ts';
 import {
@@ -30,16 +31,18 @@ describe('textosDoPlano', () => {
   });
 });
 
+const WHATSAPP = planoCompleto().intencao.whatsapp!;
+
 describe('planoSemDadoPessoal', () => {
   it('aprova o plano de fixture', () => {
-    assert.deepEqual(planoSemDadoPessoal(planoCompleto()), { ok: true, value: true });
+    assert.deepEqual(planoSemDadoPessoal(planoCompleto(), undefined, WHATSAPP), { ok: true, value: true });
   });
 
   it('acusa e-mail, telefone e CPF apontando a seção e o caminho, sem repetir o dado', () => {
     for (const dado of ['maria@exemplo.com', '(11) 98888-7777', '123.456.789-09']) {
       const plano = planoCompleto();
       plano.diagnostico.situacao.texto = `Falar com ${dado} sobre a conta.`;
-      const resultado = planoSemDadoPessoal(plano);
+      const resultado = planoSemDadoPessoal(plano, undefined, WHATSAPP);
       assert.equal(resultado.ok, false);
       if (resultado.ok) continue;
       assert.equal(resultado.error[0]!.secao, 'diagnostico');
@@ -51,8 +54,46 @@ describe('planoSemDadoPessoal', () => {
   it('acha o dado em item de lista e em seção diferente', () => {
     const plano = planoCompleto();
     plano.lacunas.itens[0]!.descricao = 'Contato: joao@exemplo.com';
-    const resultado = planoSemDadoPessoal(plano);
+    const resultado = planoSemDadoPessoal(plano, undefined, WHATSAPP);
     assert.equal(!resultado.ok && resultado.error[0]!.secao, 'lacunas');
+  });
+});
+
+describe('planoSemDadoPessoal: WhatsApp do papel whatsapp', () => {
+  const comWhatsapp = (valor: string) => {
+    const plano = planoCompleto();
+    plano.plano_de_midia.plataformas = [
+      { plataforma: 'meta', secoes: [{ secao: 'adset', campos: [{ campo: 'adset_po_whatsapp_phone', valor, justificativa: 'copiado da intenção', evidencias: [] }] }] },
+    ];
+    return plano;
+  };
+
+  it('isenta só o valor exato da intenção no campo de papel whatsapp', () => {
+    const plano = comWhatsapp(planoCompleto().intencao.whatsapp!);
+    assert.deepEqual(planoSemDadoPessoal(plano, [catalogoMeta], WHATSAPP), { ok: true, value: true });
+    assert.equal(planoSemDadoPessoal(plano).ok, false);
+  });
+
+  it('sem fonte confiável nada é isento, mesmo que intenção e campo coincidam', () => {
+    const plano = comWhatsapp('+5511900000000');
+    plano.intencao.whatsapp = '+5511900000000';
+    assert.equal(planoSemDadoPessoal(plano, [catalogoMeta]).ok, false);
+    assert.equal(planoSemDadoPessoal(plano, [catalogoMeta], null).ok, false);
+    assert.equal(planoSemDadoPessoal(plano, [catalogoMeta], WHATSAPP).ok, false);
+  });
+
+  it('número de terceiro no campo real continua acusado', () => {
+    assert.equal(planoSemDadoPessoal(comWhatsapp('+5511900000000'), [catalogoMeta], WHATSAPP).ok, false);
+  });
+
+  it('o número na justificativa ou em campo de outro papel continua acusado', () => {
+    const numero = planoCompleto().intencao.whatsapp!;
+    const plano = comWhatsapp(numero);
+    plano.plano_de_midia.plataformas[0]!.secoes[0]!.campos[0]!.justificativa = `Falar em ${numero}`;
+    assert.equal(planoSemDadoPessoal(plano, [catalogoMeta], WHATSAPP).ok, false);
+    const outro = comWhatsapp(numero);
+    outro.plano_de_midia.plataformas[0]!.secoes[0]!.campos[0]!.campo = 'creative_message';
+    assert.equal(planoSemDadoPessoal(outro, [catalogoMeta], WHATSAPP).ok, false);
   });
 });
 

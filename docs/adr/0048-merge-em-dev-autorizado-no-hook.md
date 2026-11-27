@@ -1,5 +1,6 @@
 ---
-status: accepted
+status: superseded
+superseded_by: ADR-0069
 date: 2026-11-22
 issue: 24K-112
 ---

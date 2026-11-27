@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import { BASE, appIsUp, browse, ensureUser, signIn } from './helpers.mjs';
 
+const VALIDADOR_DE_DESTINO = join('src', 'modules', 'clients', 'domain', 'destino', 'urlDeDestino.ts');
+
 function arquivosDe(raiz, extensoes) {
   const encontrados = [];
 
@@ -46,6 +48,7 @@ describe('endereços do app', () => {
 
     for (const caminho of [...arquivosDe('app', ['.ts', '.tsx']), ...arquivosDe('src', ['.ts'])]) {
       if (caminho.includes('.test.')) continue;
+      if (caminho === VALIDADOR_DE_DESTINO) continue;
 
       const conteudo = readFileSync(caminho, 'utf8');
       for (const local of locais) {

@@ -4,6 +4,8 @@ date: 2026-11-24
 ---
 # ADR-0058: Varredura no CI por intervalo, allowlist amarrada ao conteúdo e cadeia de suprimentos
 
+> Parcialmente superado pelo ADR 0069: a varredura no CI por intervalo saiu. A cadeia de suprimentos (imagem por digest, `npm ci --ignore-scripts`) continua em vigor.
+
 Complementa o ADR 0039 (hooks do git e varredura) e o ADR 0028 §3 (imagens por digest). Linear 24K-126 e 24K-128.
 
 ## Contexto

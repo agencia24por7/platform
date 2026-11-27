@@ -9,15 +9,20 @@ const CLIENTE = '22222222-2222-4222-8222-222222222222';
 
 describe('entradas do módulo de estratégia', () => {
   it('PedirPlano aceita a intenção do domínio e tipo de lista fechada', () => {
-    const entrada = { clienteId: CLIENTE, tipoDePlano: 'aquisicao', intencao: planoCompleto().intencao };
+    const { plataformas: _p, whatsapp: _w, destino: _d, utm: _u, ...intencaoBase } = planoCompleto().intencao;
+    const entrada = { clienteId: CLIENTE, tipoDePlano: 'aquisicao', plataformas: ['meta'], landingPageId: CLIENTE, intencao: intencaoBase };
     assert.ok(PedirPlanoSchema.safeParse(entrada).success);
     assert.equal(PedirPlanoSchema.safeParse({ ...entrada, tipoDePlano: 'outro' }).success, false);
     assert.equal(PedirPlanoSchema.safeParse({ ...entrada, extra: 1 }).success, false);
     assert.equal(PedirPlanoSchema.safeParse({ ...entrada, clienteId: 'x' }).success, false);
+    assert.equal(PedirPlanoSchema.safeParse({ ...entrada, plataformas: [] }).success, false);
+    assert.equal(PedirPlanoSchema.safeParse({ ...entrada, plataformas: ['meta', 'meta'] }).success, false);
+    assert.equal(PedirPlanoSchema.safeParse({ ...entrada, landingPageId: 'x' }).success, false);
+    assert.equal(PedirPlanoSchema.safeParse({ ...entrada, intencao: planoCompleto().intencao }).success, false);
   });
 
   it('PedirPlano recusa intenção fora do esquema', () => {
-    const entrada = { clienteId: CLIENTE, tipoDePlano: 'marca', intencao: { objetivo: 'x' } };
+    const entrada = { clienteId: CLIENTE, tipoDePlano: 'marca', plataformas: ['meta'], landingPageId: CLIENTE, intencao: { objetivo: 'x' } };
     assert.equal(PedirPlanoSchema.safeParse(entrada).success, false);
   });
 

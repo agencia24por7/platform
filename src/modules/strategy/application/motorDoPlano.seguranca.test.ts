@@ -4,7 +4,7 @@ import '../../../shared/testing/registrarAlias.mjs';
 import type { AuditEvent } from '@/modules/audit/domain/auditEvent';
 import type { AvaliadorDeLimites, Execucao, LeitorDoBrain, PedidoDeIA } from '@/modules/strategy/application/portas';
 import { parecer, ponto } from '../domain/comite/fixturesDeParecer.ts';
-import { CLIENTE_ID, ORGANIZACAO_ID, URN_BENCHMARK_B, pacoteDeTeste, planoCompleto, secoesDoGrupoDaChave } from '../domain/fixturesDeTeste.ts';
+import { CLIENTE_ID, ORGANIZACAO_ID, URN_BENCHMARK_B, CATALOGOS_DE_TESTE, pacoteDeTeste, planoCompleto, secoesDoGrupoDaChave } from '../domain/fixturesDeTeste.ts';
 import type { Plano } from '../domain/plano.ts';
 
 Object.assign(process.env, {
@@ -18,7 +18,7 @@ Object.assign(process.env, {
 const { createMotorDoPlano } = await import('./motorDoPlano.ts');
 const { MAXIMO_DE_RESERVAS } = await import('./portas.ts');
 const { criarRepositorioEmMemoria } = await import('../infrastructure/repositorioEmMemoria.ts');
-const { criarIaFalsa } = await import('../infrastructure/ia/iaFalsa.ts');
+const { criarIaFalsa, aceitaTodos } = await import('../infrastructure/ia/iaFalsa.ts');
 const { ok } = await import('../../../shared/result/result.ts');
 
 type Roteiro = (pedido: PedidoDeIA<unknown>) => unknown;
@@ -53,6 +53,7 @@ function roteiroPadrao(sobrescrita: Sobrescrita = {}): Roteiro {
       const chave = (pedido.dados as { persona: { chave: string } }).persona.chave;
       return sobrescrita.comite ? sobrescrita.comite(chave) : parecer(chave, 'aprova');
     }
+    if (pedido.tarefa === 'juiz') return aceitaTodos(pedido.dados);
     chamadasDoGate += 1;
     return sobrescrita.gate ? sobrescrita.gate(chamadasDoGate) : { resultado: 'aprovado', problemas: [] };
   };
@@ -77,14 +78,14 @@ async function montar(opcoes: Opcoes = {}) {
         return ok(Object.assign(() => 'ok' as const, { medidasComLimite: [] as const }));
       },
     };
-  const motor = createMotorDoPlano({
+  const motor = createMotorDoPlano({ catalogos: CATALOGOS_DE_TESTE,
     repositorio,
     executorDeIA: ia,
     leitorDoBrain: brainOk,
     avaliadorDeLimites: avaliador,
     audit: { async record(e) { auditorias.push(e); }, async list() { return []; }, async search() { return []; } },
   });
-  const plano = await repositorio.criarPlano(ESCOPO, 'aquisicao', 'req');
+  const plano = await repositorio.criarPlano(ESCOPO, 'aquisicao');
   assert.ok(plano.ok);
   let versaoBaseId: string | null = null;
   if (opcoes.tipo === 'ajustar') {
@@ -328,7 +329,7 @@ describe('motor: limites vigentes de toda medida e "não faremos"', () => {
     assert.ok(aprovado.onde.some((o) => o.includes('declarado como não aplicável')));
     const doGate = com.ia.pedidos.find((p) => p.tarefa === 'gate')!.dados as { limitesDeclaradosComoNaoAplicaveis: unknown[] };
     assert.equal(doGate.limitesDeclaradosComoNaoAplicaveis.length, 1);
-    assert.match(com.ia.pedidos.find((p) => p.tarefa === 'gate')!.instrucoes, /justificativa tem de proceder/);
+    assert.match(com.ia.pedidos.find((p) => p.tarefa === 'gate')!.instrucoes, /justificativa que procede/);
   });
 
   it('o Gate por modelo recebe os não faremos só de texto e as regras e decisões do cliente, com a instrução de reprovar a violação', async () => {
@@ -338,7 +339,7 @@ describe('motor: limites vigentes de toda medida e "não faremos"', () => {
     const dados = pedido.dados as { naoFaremosSoDeTexto: { id: string }[]; regrasEDecisoesDoCliente: { tipo: string }[] };
     assert.deepEqual(dados.naoFaremosSoDeTexto.map((i) => i.id), ['nf_tom']);
     assert.ok(dados.regrasEDecisoesDoCliente.every((e) => e.tipo === 'regra' || e.tipo === 'decisao'));
-    assert.match(pedido.instrucoes, /REPROVE se alguma campanha, canal, público ou mensagem violar/);
+    assert.match(pedido.instrucoes, /REPROVE se campanha, canal, público, mensagem ou plano de mídia violar/);
   });
 
   it('um "não faremos" que some no ajuste reprova no Gate (nao_faremos_preservado)', async () => {

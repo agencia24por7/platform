@@ -5,7 +5,7 @@ export const CHAVE_NAO_FAREMOS_PRESERVADO = 'nao_faremos_preservado';
 
 const normalizarEspacos = (texto: string): string => texto.replace(/\s+/g, ' ').trim();
 
-function problemaDoItem(base: NaoFaremos, atual: NaoFaremos | undefined): string | null {
+export function problemaDoItem(base: NaoFaremos, atual: NaoFaremos | undefined): string | null {
   if (atual === undefined) return `estrategia/${base.id} (removido em relação à versão base)`;
   if (base.teste === undefined) {
     return normalizarEspacos(base.texto) === normalizarEspacos(atual.texto)

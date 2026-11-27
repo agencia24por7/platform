@@ -1,9 +1,7 @@
 import { existsSync, realpathSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { isAbsolute, join, relative } from 'node:path'
-import { avaliarBusca, avaliarComando, avaliarEscrita, avaliarLeitura, consultarPRNoGitHub } from './politicas.mjs'
-
-const MARCADOR = 'AUTORIZO_MERGE_EM_DEV='
+import { avaliarBusca, avaliarComando, avaliarEscrita, avaliarLeitura } from './politicas.mjs'
 
 export function lerEvento(stdin) {
   let bruto = ''
@@ -37,7 +35,7 @@ function absoluto(caminho, raiz) {
 function versionado(caminhoAbsoluto, raiz) {
   if (!existsSync(caminhoAbsoluto)) return false
   try {
-    execFileSync('git', ['ls-files', '--error-unmatch', relative(raiz, caminhoAbsoluto)], { cwd: raiz, stdio: 'ignore' })
+    execFileSync('git', ['ls-files', '--error-unmatch', relative(raiz, caminhoAbsoluto)], { cwd: raiz, stdio: 'ignore', timeout: 1500 })
     return true
   } catch {
     return false
@@ -71,10 +69,61 @@ function primeiraDecisao(caminhos, avaliar) {
   return null
 }
 
-function decidir(evento, raiz, consultarPR) {
+function ramoDoDiretorio(diretorio) {
+  try {
+    return execFileSync('git', ['-C', diretorio, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 1500 }).trim()
+  } catch {
+    return null
+  }
+}
+
+const FLAGS_DO_PUSH_COM_VALOR = new Set(['-o', '--push-option', '--repo', '--receive-pack', '--exec'])
+const SEM_ASPAS = /^["']|["']$/g
+const LIMITE_DE_PUSHES = 3
+const PADRAO_DE_PUSH = /\bgit\b((?:\s+(?:-[cC]\s+(?:[^\s"']|"[^"]*"|'[^']*'|"(?![^"]*")|'(?![^']*'))+|--[\w-]+(?:=\S+)?))*)\s+push\b([^;&|\n]*)/g
+
+function diretorioDoCd(antes, base) {
+  const trocas = [...antes.matchAll(/\bcd\s+("[^"]*"|'[^']*'|[^\s;&|]+)/g)]
+  if (trocas.length === 0) return base
+  const destino = trocas[trocas.length - 1][1].replace(SEM_ASPAS, '')
+  if (/[$`~]/.test(destino)) return null
+  return absoluto(destino, base)
+}
+
+function avaliarPushSemDestino(comando, diretorioBase) {
+  const texto = String(comando ?? '')
+  const pushes = [...texto.matchAll(PADRAO_DE_PUSH)]
+  if (pushes.length > LIMITE_DE_PUSHES) return { decisao: 'deny', motivo: 'Muitos git push no mesmo comando para a guarda avaliar com segurança: divida o comando.' }
+  for (const push of pushes) {
+    const diretorioDoC = /-C\s+("[^"]*"|'[^']*'|\S+)/.exec(push[1])?.[1]
+    const baseDoCd = diretorioDoCd(texto.slice(0, push.index), diretorioBase)
+    const diretorio = diretorioDoC ? (baseDoCd === null ? null : absoluto(diretorioDoC.replace(SEM_ASPAS, ''), baseDoCd)) : baseDoCd
+    const argumentosDoPush = push[2].split(/\s\d+(?=[<>])|[<>`)]/)[0]
+    const tokens = argumentosDoPush.trim().split(/\s+/).filter(Boolean)
+    const posicionais = []
+    for (let indice = 0; indice < tokens.length; indice += 1) {
+      if (FLAGS_DO_PUSH_COM_VALOR.has(tokens[indice])) indice += 1
+      else if (!tokens[indice].startsWith('-')) posicionais.push(tokens[indice].replace(SEM_ASPAS, ''))
+    }
+    const destinoDinamico = /[$`]/.test(push[2])
+    const semDestinoExplicito = posicionais.length <= 1 || destinoDinamico || posicionais.slice(1).every((argumento) => ['HEAD', '@'].includes(argumento.replace(/^\+/, '')))
+    if (!semDestinoExplicito) continue
+    const ramo = diretorio === null ? null : ramoDoDiretorio(diretorio)
+    if (ramo === null) return { decisao: 'ask', motivo: 'Não foi possível descobrir o ramo atual para um push sem destino explícito: confirme.' }
+    if (ramo === 'main') return { decisao: 'deny', motivo: 'Push a partir da main sem destino explícito é push direto em main: use PR e gh pr merge.' }
+  }
+  return null
+}
+
+function decidir(evento, raiz) {
   const ferramenta = evento.tool_name
   const entrada = evento.tool_input ?? {}
-  if (ferramenta === 'Bash') return avaliarComando(entrada.command, evento.permission_mode, consultarPR)
+  if (ferramenta === 'Bash') {
+    const regra = avaliarComando(entrada.command)
+    if (regra?.decisao === 'deny') return regra
+    const push = avaliarPushSemDestino(entrada.command, evento.cwd ?? raiz)
+    return push?.decisao === 'deny' ? push : (regra ?? push)
+  }
   if (ferramenta === 'Grep' || ferramenta === 'Glob') {
     const glob = entrada.glob ?? (ferramenta === 'Glob' ? entrada.pattern : undefined)
     const caminhos = caminhosParaAvaliar(entrada.path ?? '', raiz)
@@ -90,25 +139,16 @@ function decidir(evento, raiz, consultarPR) {
   }
   const conteudo = conteudoDaEscrita(ferramenta, entrada)
   const completo = absoluto(caminho, raiz)
-  return primeiraDecisao(caminhos, (candidato) => avaliarEscrita({ caminho: candidato, conteudo, existeVersionado: versionado(completo, raiz), modoDePermissao: evento.permission_mode }))
+  return primeiraDecisao(caminhos, (candidato) => avaliarEscrita({ caminho: candidato, conteudo, existeVersionado: versionado(completo, raiz) }))
 }
 
-function comandoComMarcador(evento) {
-  const comando = evento.tool_input?.command
-  return evento.tool_name === 'Bash' && typeof comando === 'string' && comando.startsWith(MARCADOR)
-}
-
-export function executarGuarda({ evento, saida, erro, ambiente = process.env, consultarPR = consultarPRNoGitHub }) {
+export function executarGuarda({ evento, saida, erro, ambiente = process.env }) {
   try {
     const raiz = ambiente.CLAUDE_PROJECT_DIR ?? evento.cwd ?? process.cwd()
-    const resultado = decidir(evento, raiz, consultarPR)
+    const resultado = decidir(evento, raiz)
     if (resultado) responder(saida, resultado)
     return 0
   } catch (excecao) {
-    if (comandoComMarcador(evento)) {
-      responder(saida, { decisao: 'deny', motivo: 'Erro inesperado ao verificar o merge autorizado em dev (ADR 0048): negado por padrão.' })
-      return 0
-    }
     if (evento.tool_name === 'Bash') {
       erro(`[guarda do projeto] erro inesperado ao avaliar o comando: ${excecao instanceof Error ? excecao.message : 'desconhecido'}\n`)
       return 2
