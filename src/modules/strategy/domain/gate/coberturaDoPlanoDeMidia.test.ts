@@ -106,6 +106,26 @@ describe('gate: cobertura_do_plano_de_midia', () => {
       assert.ok(contexto);
     });
 
+    it('Meta: campo de app fora de app_promotion não reprova por objetivo', () => {
+      const { intencao, contexto } = cenario({ link: 'x' });
+      const exato = cenario({ link: intencao.destino!.url, tags: utmCerto(intencao) });
+      const secoes = exato.contexto.plano.plano_de_midia.plataformas[0]!.secoes;
+      const todos = secoes.flatMap((secao) => secao.campos);
+      todos.find((c) => c.campo === 'campaign_objective')!.valor = 'OUTCOME_TRAFFIC';
+      const conjunto = secoes.find((secao) => secao.secao === 'adset')!;
+      const antes = veredito(exato.contexto).onde.filter((o) => !o.includes('a confirmar'));
+      const destino = todos.find((c) => c.campo === 'adset_destination_type');
+      if (destino === undefined) conjunto.campos.push(campo('adset_destination_type', 'APP'));
+      else destino.valor = 'APP';
+      conjunto.campos.push(campo('adset_po_application_id', '123'), campo('adset_po_store_url', 'https://exemplo.com/app'));
+      const r = veredito(exato.contexto);
+      assert.equal(r.resultado, 'aprovado');
+      assert.ok(!r.onde.some((o) => o.includes('não se aplica ao objetivo')));
+      assert.ok(!r.onde.some((o) => o.includes('adset_po_application_id') || o.includes('adset_po_store_url')));
+      assert.deepEqual(r.onde.filter((o) => !o.includes('a confirmar')), antes);
+      assert.ok(contexto);
+    });
+
     it('domínio de terceiro reprova, no link e no CTA', () => {
       const { intencao } = cenario({ link: 'x' });
       const r = veredito(cenario({ link: 'https://terceiro.com', cta: 'https://terceiro.com' }).contexto);
@@ -140,12 +160,13 @@ describe('gate: cobertura_do_plano_de_midia', () => {
       assert.ok(intencao);
     });
 
-    it('falha fechada: catálogo sem campo do papel reprova quando a intenção tem o valor', () => {
+    it('falha fechada: catálogo sem campo do papel reprova url_destino e utm; whatsapp só é exigido se o catálogo o declara', () => {
       const semPapel: CatalogoDeCampos = { ...catalogoMeta, campos: catalogoMeta.campos.map(({ papel: _papel, ...resto }) => resto) };
       const { intencao } = cenario({ link: 'x' });
       const r = veredito(cenario({ link: intencao.destino!.url }, semPapel).contexto);
       assert.equal(r.resultado, 'reprovado');
-      for (const papel of ['url_destino', 'whatsapp', 'utm']) assert.ok(r.onde.some((o) => o.includes(`papel ${papel}`)), papel);
+      for (const papel of ['url_destino', 'utm']) assert.ok(r.onde.some((o) => o.includes(`papel ${papel}`)), papel);
+      assert.ok(!r.onde.some((o) => o.includes('papel whatsapp')));
     });
   });
 
