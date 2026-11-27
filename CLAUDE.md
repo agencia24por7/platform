@@ -55,7 +55,7 @@ Monólito modular Next.js 16 + TypeScript, Postgres 16 com RLS, BigQuery (`tria_
 - Arquitetura, segurança, revisão adversarial, produção e causa-raiz: Opus (`security-reviewer` em high; `max` só para auditoria de segurança ou causa-raiz depois de duas falhas).
 - O modelo se escolhe no início da sessão (`scripts/start.sh` decide pela tarefa) e não muda no meio: o cache é por modelo e trocar reenvia a conversa inteira. Planejar em Opus, `/handoff`, nova sessão em Sonnet para implementar.
 - Escale quando precisar: Sonnet falhou duas vezes no mesmo problema, chame um subagente Opus para diagnosticar. Economia nunca justifica baixar o modelo de tarefa crítica.
-- O hook de pré-uso (`.claude/hooks/`) barra só segredo, backup e push direto em `main`, e pede confirmação em `terraform destroy`, corte e SQL destrutivo (ADR 0069); o resto é conduta.
+- O hook de pré-uso (`.claude/hooks/`) é uma guarda de melhor esforço: nega ler segredo, apagar backup, push direto em `main`, `--admin`, `curl | sh` e `rm -rf` de raiz, e pede confirmação em ação irreversível (ADR 0069); o resto é conduta. Mensagem longa de commit ou de PR vai por arquivo (`-F`, `--body-file`), porque a guarda também lê o texto do comando.
 
 ## Identidade visual
 - Marca, cor, tipografia e azulejo: `docs/marca/LEIA-ME.md`. Fonte: Figma https://www.figma.com/design/lJ4hDLCunsBTli4MIcZXn2/Orla-%C2%B7-Identidade-visual; referência visual da azulejaria: `docs/marca/referencia-azulejaria.png`. Todo material visual novo (app, site, apresentação) parte dali.

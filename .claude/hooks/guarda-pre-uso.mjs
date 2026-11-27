@@ -1,15 +1,17 @@
 #!/usr/bin/env node
+import { writeSync } from 'node:fs'
 import { Worker } from 'node:worker_threads'
 
 const LIMITE_DE_TEMPO_MS = 6000
 const COMO_DESTRAVAR = 'Para destravar, no terminal: git checkout -- .claude/hooks (restaura a guarda); ou desligue o hook em /hooks dentro do Claude Code.'
 
-function bloquear(motivo) {
-  process.stderr.write(`[guarda do projeto] a guarda falhou e a ferramenta foi bloqueada por padrão: ${motivo}\n${COMO_DESTRAVAR}\n`)
+function bloquear(motivo, { matar = false } = {}) {
+  writeSync(2, `[guarda do projeto] a guarda falhou e a ferramenta foi bloqueada por padrão: ${motivo}\n${COMO_DESTRAVAR}\n`)
+  if (matar) process.kill(process.pid, 'SIGKILL')
   process.exit(2)
 }
 
-setTimeout(() => bloquear('tempo esgotado antes de decidir (a avaliação roda num worker com limite de tempo)'), LIMITE_DE_TEMPO_MS).unref()
+setTimeout(() => bloquear('tempo esgotado antes de decidir (a avaliação roda num worker com limite de tempo)', { matar: true }), LIMITE_DE_TEMPO_MS).unref()
 process.stdin.on('error', (erro) => bloquear(`erro ao ler o evento: ${erro.message}`))
 
 function eventoValido(evento) {

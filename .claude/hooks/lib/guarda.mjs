@@ -35,7 +35,7 @@ function absoluto(caminho, raiz) {
 function versionado(caminhoAbsoluto, raiz) {
   if (!existsSync(caminhoAbsoluto)) return false
   try {
-    execFileSync('git', ['ls-files', '--error-unmatch', relative(raiz, caminhoAbsoluto)], { cwd: raiz, stdio: 'ignore' })
+    execFileSync('git', ['ls-files', '--error-unmatch', relative(raiz, caminhoAbsoluto)], { cwd: raiz, stdio: 'ignore', timeout: 2000 })
     return true
   } catch {
     return false
@@ -69,28 +69,42 @@ function primeiraDecisao(caminhos, avaliar) {
   return null
 }
 
-function ramoAtual(raiz) {
+function ramoDoDiretorio(diretorio) {
   try {
-    return execFileSync('git', ['-C', raiz, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000 }).trim()
+    return execFileSync('git', ['-C', diretorio, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000 }).trim()
   } catch {
-    return ''
+    return null
   }
 }
 
-function pushSemDestinoNoRamoPrincipal(comando, raiz) {
-  const push = /\bgit\b(?:\s+-[cC]\s+\S+)*\s+push\b([^;&|\n]*)/.exec(String(comando ?? ''))
-  if (!push) return false
-  const argumentos = push[1].trim().split(/\s+/).filter((argumento) => argumento && !argumento.startsWith('-'))
-  const semDestinoExplicito = argumentos.length <= 1 || argumentos.slice(1).every((argumento) => argumento === 'HEAD')
-  return semDestinoExplicito && ramoAtual(raiz) === 'main'
+const FLAGS_DO_PUSH_COM_VALOR = new Set(['-o', '--push-option', '--repo', '--receive-pack', '--exec'])
+const SEM_ASPAS = /^["']|["']$/g
+
+function avaliarPushSemDestino(comando, diretorioBase) {
+  const pushes = String(comando ?? '').matchAll(/\bgit\b((?:\s+(?:-[cC]\s+(?:"[^"]*"|'[^']*'|\S+)|--[\w-]+(?:=\S+)?))*)\s+push\b([^;&|\n]*)/g)
+  for (const push of pushes) {
+    const diretorioDoC = /-C\s+("[^"]*"|'[^']*'|\S+)/.exec(push[1])?.[1]
+    const diretorio = diretorioDoC ? absoluto(diretorioDoC.replace(SEM_ASPAS, ''), diretorioBase) : diretorioBase
+    const tokens = push[2].trim().split(/\s+/).filter(Boolean)
+    const posicionais = []
+    for (let indice = 0; indice < tokens.length; indice += 1) {
+      if (FLAGS_DO_PUSH_COM_VALOR.has(tokens[indice])) indice += 1
+      else if (!tokens[indice].startsWith('-')) posicionais.push(tokens[indice].replace(SEM_ASPAS, ''))
+    }
+    const semDestinoExplicito = posicionais.length <= 1 || posicionais.slice(1).every((argumento) => argumento === 'HEAD' || argumento === '@')
+    if (!semDestinoExplicito) continue
+    const ramo = ramoDoDiretorio(diretorio)
+    if (ramo === null) return { decisao: 'ask', motivo: 'Não foi possível descobrir o ramo atual para um push sem destino explícito: confirme.' }
+    if (ramo === 'main') return { decisao: 'deny', motivo: 'Push a partir da main sem destino explícito é push direto em main: use PR e gh pr merge.' }
+  }
+  return null
 }
 
 function decidir(evento, raiz) {
   const ferramenta = evento.tool_name
   const entrada = evento.tool_input ?? {}
   if (ferramenta === 'Bash') {
-    if (pushSemDestinoNoRamoPrincipal(entrada.command, raiz)) return { decisao: 'deny', motivo: 'Push a partir da main sem destino explícito é push direto em main: use PR e gh pr merge.' }
-    return avaliarComando(entrada.command)
+    return avaliarPushSemDestino(entrada.command, evento.cwd ?? raiz) ?? avaliarComando(entrada.command)
   }
   if (ferramenta === 'Grep' || ferramenta === 'Glob') {
     const glob = entrada.glob ?? (ferramenta === 'Glob' ? entrada.pattern : undefined)
