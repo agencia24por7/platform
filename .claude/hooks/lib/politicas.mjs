@@ -180,7 +180,7 @@ const REGRAS_DE_COMANDO = [
   { padrao: /\becho\b[^|;&]*\$\{?\w*(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY)\w*/i, decisao: 'deny', motivo: 'Não imprima variável de segredo.' },
   { padrao: /(\brm\b|\bgcloud\s+storage\s+rm\b|\bgsutil\s+(-m\s+)?rm\b|\bgcloud\s+sql\s+backups\s+delete\b|\bDROP\b)[^;&|]*backup/i, decisao: 'deny', motivo: 'Backups do Postgres nunca são apagados.' },
   { padrao: /\brm\s+(?:-[a-z]*r[a-z]*|--recursive)(?:\s+-[a-z]+)*\s+(?:[/]\*?|~|\$HOME|\.git|\*)\s*(?:$|[;&|])/, decisao: 'deny', motivo: 'Remoção recursiva em raiz, HOME, .git ou curinga solto.' },
-  { padrao: /\bgcloud\s+secrets\s+versions\s+access\b/, decisao: 'deny', motivo: 'Ler o valor de um segredo direto no comando imprime o segredo no contexto. Use um script do projeto que o leia sem eco.' },
+  { padrao: /\bgcloud\b[^;&|\n]*\bsecrets\s+versions\s+access\b/, decisao: 'deny', motivo: 'Ler o valor de um segredo direto no comando imprime o segredo no contexto. Use um script do projeto que o leia sem eco.' },
   { padrao: /\bgit\s+push\b[^;&|]*(\bmain\b|HEAD:main)/, decisao: 'deny', motivo: 'Push direto em main não passa pelo CI: use PR e gh pr merge.' },
   { padrao: /\bgcloud\s+kms\s+keys\s+(versions\s+(destroy|disable)|update)\b/, decisao: 'ask', motivo: 'Desativar ou destruir versão de chave KMS não tem volta: confirme a chave e a recifragem com avaliadas = 0 e falhas = 0 (ADR 0042).' },
   { padrao: /\bgcloud\s+sql\s+(backups\s+delete|instances\s+delete)\b/, decisao: 'deny', motivo: 'Apagar backup ou instância do Postgres é proibido.' },
