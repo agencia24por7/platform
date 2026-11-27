@@ -25,7 +25,7 @@ export const TAREFA_PARA_ATUALIZAR_AO_BRAIN = `Tarefa: atualizar as seções ped
 Entrada em "dados": { planoVigente, secoesJaRedigidas, pacote }.`;
 
 export const TAREFA_PARA_AJUSTAR_AO_COMITE = `Tarefa: revisar as seções pedidas para responder aos pontos do Comitê e às pendências do Gate que tocam este grupo.
-Para CADA ponto recebido devolva uma resposta com persona, pontoId, decisão (acatado ou nao_acatado) e motivo curto. Reprovação de risco e legal não pode ser recusada. Pontos que citam a mesma fonte são um argumento só.
+Para CADA ponto recebido devolva uma resposta com persona, pontoId, decisão (acatado ou nao_acatado) e motivo de no máximo 160 caracteres, em uma frase. Reprovação de risco e legal não pode ser recusada. Pontos que citam a mesma fonte são um argumento só.
 Mantenha os ids existentes que outras seções referenciam.
 Entrada em "dados": { planoAtual, pontos, pendenciasObrigatorias, pendenciasDoGate, pacote }.`;
 
