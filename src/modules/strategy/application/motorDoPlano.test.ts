@@ -17,6 +17,7 @@ Object.assign(process.env, {
   LOG_LEVEL: 'error',
 });
 
+const { codigosDoPacote } = await import('../domain/codigosCurtos.ts');
 const { createMotorDoPlano, MAXIMO_DE_RODADAS, MAXIMO_DE_TENTATIVAS } = await import('./motorDoPlano.ts');
 const { criarRepositorioEmMemoria } = await import('../infrastructure/repositorioEmMemoria.ts');
 const { criarIaFalsa } = await import('../infrastructure/ia/iaFalsa.ts');
@@ -437,6 +438,54 @@ describe('motor do plano: erros de IA e do Brain', () => {
     assert.ok(falhas.length > 0);
     assert.ok(falhas.every((a) => /^urn_fora_do_pacote:\d+$/.test(String(a.metadata?.motivo))));
     assert.ok(!JSON.stringify(falhas).includes('inventada-motivo'));
+  });
+
+  describe('o modelo cita ref curto em vez da URN', () => {
+    const urnsDoPacote = () => pacoteDeTeste().entradas.map((e) => e.urn);
+    const comRefs = (plano: unknown) => {
+      const { codigoDaUrn } = codigosDoPacote(pacoteDeTeste());
+      let texto = JSON.stringify(plano);
+      for (const urn of urnsDoPacote()) texto = texto.replaceAll(`"${urn}"`, `"${codigoDaUrn.get(urn)}"`);
+      return JSON.parse(texto);
+    };
+
+    it('traduz o ref para a URN antes de validar e grava a referência com a URN e o hash', async () => {
+      const pedidos: PedidoDeIA<unknown>[] = [];
+      const base = roteiroPadrao({ plano: () => comRefs(planoCompleto()) });
+      const m = await montar({ roteiro: (pedido) => { pedidos.push(pedido); return base(pedido); } });
+      const final = await ate(m);
+      assert.equal(final.status, 'concluida');
+      const referencias = m.repositorio.estado.versoes[0]!.referencias;
+      assert.ok(referencias.some((r) => r.urn === URN_BENCHMARK_B));
+      assert.ok(referencias.every((r) => r.urn.startsWith('orla:') && /^[0-9a-f]{64}$/.test(r.hash)));
+      assert.ok(!JSON.stringify(m.repositorio.estado.versoes[0]!.conteudo).includes('"e2"'));
+    });
+
+    it('manda o ref no pacote da chamada e abrevia as URNs das seções já redigidas', async () => {
+      const pedidos: PedidoDeIA<unknown>[] = [];
+      const base = roteiroPadrao({ plano: () => comRefs(planoCompleto()) });
+      const m = await montar({ roteiro: (pedido) => { pedidos.push(pedido); return base(pedido); } });
+      await ate(m);
+      const redacao = pedidos.filter((p) => p.tarefa === 'strategy_plan' && p.chaveDeIdempotencia.includes(':redigir:'));
+      const dados = redacao[1]!.dados as { pacote: { entradas: { ref?: string }[] }; secoesJaRedigidas: unknown };
+      assert.ok(dados.pacote.entradas.every((e) => /^e[1-9][0-9]*$/.test(String(e.ref))));
+      assert.ok(!JSON.stringify(dados.secoesJaRedigidas).includes('orla:'));
+    });
+
+    it('ref que não existe no pacote vira saída inválida e nada é gravado', async () => {
+      const m = await montar({
+        roteiro: roteiroPadrao({
+          plano: () => {
+            const plano = comRefs(planoCompleto());
+            plano.metas_e_metricas.metas[0].evidencias = [{ urn: 'e9999', papel: 'favor' }];
+            return plano;
+          },
+        }),
+      });
+      const final = await ate(m);
+      assert.equal(final.erroCodigo, 'ia_saida_invalida');
+      assert.equal(m.repositorio.estado.versoes.length, 0);
+    });
   });
 
   it('Brain indisponível: tenta de novo e falha com brain_indisponivel', async () => {

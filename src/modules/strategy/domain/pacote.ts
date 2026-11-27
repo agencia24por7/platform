@@ -1,3 +1,4 @@
+import { codigosDoPacote } from './codigosCurtos.ts';
 import { z } from 'zod';
 import { PADRAO_DO_TIPO, lerUrn } from '../../brain/domain/urn.ts';
 import { esquemaData } from './datas.ts';
@@ -23,6 +24,7 @@ export const esquemaEvidenciaDaEntrada = z.strictObject({
 export type EvidenciaDaEntrada = z.infer<typeof esquemaEvidenciaDaEntrada>;
 
 export const esquemaEntradaDoPacote = z.strictObject({
+  ref: z.string().regex(/^e[1-9][0-9]{0,4}$/).optional(),
   urn: z.string().max(320).refine((valor) => lerUrn(valor) !== null, 'URN inválida.'),
   hash: z.string().regex(/^[0-9a-f]{64}$/),
   tipo: z.string().regex(PADRAO_DO_TIPO),
@@ -36,6 +38,7 @@ export type EntradaDoPacote = z.infer<typeof esquemaEntradaDoPacote>;
 export const MAXIMO_DE_ITENS_DO_CATALOGO = 2_000;
 
 export const esquemaItemDoCatalogo = z.strictObject({
+  ref: z.string().regex(/^e[1-9][0-9]{0,4}$/).optional(),
   urn: z.string().max(320),
   tipo: z.string().regex(PADRAO_DO_TIPO),
   titulo: z.string().min(1).max(80),
@@ -101,20 +104,25 @@ export function pacoteParaEntrada(pacote: PacoteDeLeitura, maximoDeBytes: number
     bytes += tamanho;
   }
   const urnsMantidas = new Set(mantidas.map((entrada) => entrada.urn));
+  const { codigoDaUrn } = codigosDoPacote(pacote);
   const { catalogo, ...semCatalogo } = pacote;
   return {
     ...semCatalogo,
-    entradas: mantidas,
-    ...(catalogo === undefined || opcoes.comCatalogo === false ? {} : { catalogo: catalogoDentroDoLimite(catalogo, urnsMantidas) }),
+    entradas: mantidas.map((entrada) => {
+      const ref = codigoDaUrn.get(entrada.urn);
+      return ref === undefined ? entrada : { ref, ...entrada };
+    }),
+    ...(catalogo === undefined || opcoes.comCatalogo === false ? {} : { catalogo: catalogoDentroDoLimite(catalogo, urnsMantidas, codigoDaUrn) }),
     omitidasPorTamanho: (pacote.omitidasPorTamanho ?? 0) + (pacote.entradas.length - mantidas.length),
   };
 }
 
-function catalogoDentroDoLimite(catalogo: readonly ItemDoCatalogo[], urnsMantidas: ReadonlySet<string>): ItemDoCatalogo[] {
+function catalogoDentroDoLimite(catalogo: readonly ItemDoCatalogo[], urnsMantidas: ReadonlySet<string>, codigoDaUrn: ReadonlyMap<string, string>): ItemDoCatalogo[] {
   const itens: ItemDoCatalogo[] = [];
   let bytes = 0;
   for (const item of catalogo) {
-    const marcado = { ...item, incluida: urnsMantidas.has(item.urn) };
+    const ref = codigoDaUrn.get(item.urn);
+    const marcado = { ...(ref === undefined ? {} : { ref }), ...item, incluida: urnsMantidas.has(item.urn) };
     const tamanho = new TextEncoder().encode(JSON.stringify(marcado)).length;
     if (bytes + tamanho > MAXIMO_DE_BYTES_DO_CATALOGO) break;
     itens.push(marcado);

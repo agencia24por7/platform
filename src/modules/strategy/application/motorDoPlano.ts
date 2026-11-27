@@ -32,6 +32,10 @@ import {
   GRUPOS_DE_REDACAO,
   INDICE_DO_ULTIMO_GRUPO,
   MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA,
+  abreviarUrnsParaCodigos,
+  codigosDoPacote,
+  esquemaQueAceitaCodigos,
+  type CodigosDoPacote,
   MAXIMO_DE_ENTRADAS_NO_PACOTE,
   type Ajuste,
   type Argumento,
@@ -297,7 +301,9 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     dados: unknown,
     esquema: z.ZodType<T>,
     chave: string,
+    codigos?: CodigosDoPacote,
   ): Promise<T> {
+    const esquemaDaChamada = codigos === undefined ? esquema : esquemaQueAceitaCodigos(esquema, codigos);
     await renovarLease(execucao, contexto);
     let resposta;
     try {
@@ -305,7 +311,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
         tarefa,
         instrucoes,
         dados,
-        esquema,
+        esquema: esquemaDaChamada,
         orcamento: ORCAMENTO_DA_IA[tarefa],
         organizacaoId: execucao.organizationId,
         clienteId: execucao.clientId,
@@ -318,7 +324,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     }
     await renovarLease(execucao, contexto);
     if (!resposta.ok) throw falhaDeIA(resposta.error.codigo, motivoDaFalhaDeIA(resposta.error));
-    const lida = esquema.safeParse(resposta.value.saida);
+    const lida = esquemaDaChamada.safeParse(resposta.value.saida);
     if (!lida.success) throw falhaDeIA('saida_invalida', motivoDoEsquema(lida.error));
     return lida.data;
   }
@@ -414,6 +420,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     const base = execucao.versaoBaseId ? await repositorio.lerVersao(execucao.organizationId, execucao.versaoBaseId) : null;
     const { tarefa, entrada, intencaoConfiavel } = criarEntradaDaRedacao(execucao, base);
     const pacoteDaChamada = pacoteParaEntrada(pacote, MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA.redigir);
+    const codigos = codigosDoPacote(pacote);
     const secoes: SecoesRedigidas = {};
     for (const [indice, grupo] of GRUPOS_DE_REDACAO.entries()) {
       const chaveDoGrupo = `${execucao.id}:redigir:${execucao.rodada}:g${indice}`;
@@ -422,9 +429,10 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
         contexto,
         'strategy_plan',
         instrucaoDoGrupo(tarefa, grupo, indice + 1, GRUPOS_DE_REDACAO.length),
-        { ...entrada, secoesJaRedigidas: { ...secoes }, pacote: pacoteDaChamada },
+        { ...(abreviarUrnsParaCodigos({ ...entrada, secoesJaRedigidas: { ...secoes } }, codigos) as Record<string, unknown>), pacote: pacoteDaChamada },
         esquemaDoGrupo(indice),
         chaveDoGrupo,
+        codigos,
       );
       Object.assign(secoes, doGrupo);
       if (problemasDoRascunho(secoes).length > 0) throw falhaDeIA('saida_invalida', 'rascunho_fora_da_integridade');
@@ -451,8 +459,9 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
 
   async function executarPersona(execucao: Execucao, contexto: Contexto, versao: Versao, plano: Plano, pacote: PacoteDeLeitura, persona: Persona) {
     const chave = `${execucao.id}:parecer:${persona.chave}`;
-    const dados = { plano, pacote: pacoteParaEntrada(pacote, MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA.comite, { comCatalogo: false }), persona: { chave: persona.chave, nome: persona.nome, foco: persona.foco } };
-    const bruto = await executarIA(execucao, contexto, 'comite', instrucaoDaPersona(persona), dados, esquemaParecer, chave);
+    const codigos = codigosDoPacote(pacote);
+    const dados = { plano: abreviarUrnsParaCodigos(plano, codigos), pacote: pacoteParaEntrada(pacote, MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA.comite, { comCatalogo: false }), persona: { chave: persona.chave, nome: persona.nome, foco: persona.foco } };
+    const bruto = await executarIA(execucao, contexto, 'comite', instrucaoDaPersona(persona), dados, esquemaParecer, chave, codigos);
     const urns = new Set(pacote.entradas.map((e) => e.urn));
     let descartadas = 0;
     const parecer: Parecer = {
@@ -537,6 +546,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
 
     const pacote = await lerPacote(execucao, contexto, false);
     const pacoteDaChamada = pacoteParaEntrada(pacote, MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA.redigir);
+    const codigos = codigosDoPacote(pacote);
     const plano = planoDe(versao.conteudo);
     const consolidacao = consolidarPareceres(pareceres, personas);
     const pontosPorGrupo = distribuirPontos(consolidacao.argumentos, consolidacao.pendenciasObrigatorias, reprovouNoGate ? pendenciasDoGate(eventos) : []);
@@ -550,9 +560,10 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
         contexto,
         'strategy_plan',
         instrucaoDoGrupo(TAREFA_PARA_AJUSTAR_AO_COMITE, GRUPOS_DE_REDACAO[indice] ?? [], indice + 1, GRUPOS_DE_REDACAO.length, true),
-        { planoAtual: corrente, pontos: pontos.argumentos, pendenciasObrigatorias: pontos.obrigatorias, pendenciasDoGate: pontos.doGate, pacote: pacoteDaChamada },
+        { ...(abreviarUrnsParaCodigos({ planoAtual: corrente, pontos: pontos.argumentos, pendenciasObrigatorias: pontos.obrigatorias, pendenciasDoGate: pontos.doGate }, codigos) as Record<string, unknown>), pacote: pacoteDaChamada },
         esquemaDoAjusteDoGrupo(indice),
         `${execucao.id}:ajustar:${execucao.rodada}:g${indice}`,
+        codigos,
       );
       const dadas = doGrupo.respostas.map((r) => `${r.persona}/${r.pontoId}`);
       if (new Set(dadas).size !== dadas.length || dadas.length !== esperadas.size || dadas.some((d) => !esperadas.has(d))) {
