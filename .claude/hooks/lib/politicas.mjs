@@ -173,7 +173,9 @@ export function avaliarEscrita({ caminho, conteudo, existeVersionado }) {
   return null
 }
 
-const COMPRIMENTO_MAXIMO_DO_COMANDO = 30_000
+const LIMITE_DO_COMANDO_AVALIADO_INTEIRO = 30_000
+const LIMITE_DE_LINHA_NO_COMANDO_LONGO = 10_000
+const LIMITE_TOTAL_DO_COMANDO = 200_000
 
 const REGRAS_DE_COMANDO = [
   { padrao: /\bcurl\b[^|;&]*\|\s*(sudo\s+)?(ba|z)?sh\b|\bwget\b[^|;&]*\|\s*(sudo\s+)?(ba|z)?sh\b/, decisao: 'deny', motivo: 'Baixar e executar script direto no shell é proibido. Baixe, leia e só então execute.' },
@@ -214,20 +216,33 @@ function normalizarComando(texto) {
     .replace(/\/{2,}/g, '/')
 }
 
-export function avaliarComando(comando) {
-  const original = String(comando ?? '')
-  if (original.length > COMPRIMENTO_MAXIMO_DO_COMANDO) {
-    return { decisao: 'ask', motivo: `Comando com mais de ${COMPRIMENTO_MAXIMO_DO_COMANDO} caracteres não é avaliado pelas regras da guarda. Grave o conteúdo com a ferramenta de escrita e rode um comando curto.` }
-  }
+function avaliarTrecho(texto) {
   let pergunta = null
-  for (const texto of [original, normalizarComando(original)]) {
+  for (const variante of [texto, normalizarComando(texto)]) {
     for (const regra of REGRAS_DE_COMANDO) {
-      if (!regra.padrao.test(texto)) continue
+      if (!regra.padrao.test(variante)) continue
       if (regra.decisao === 'deny') return { decisao: 'deny', motivo: regra.motivo }
       pergunta ??= regra
     }
   }
   return pergunta ? { decisao: pergunta.decisao, motivo: pergunta.motivo } : null
+}
+
+export function avaliarComando(comando) {
+  const original = String(comando ?? '')
+  if (original.length <= LIMITE_DO_COMANDO_AVALIADO_INTEIRO) return avaliarTrecho(original)
+  const linhas = original.split('\n')
+  if (original.length > LIMITE_TOTAL_DO_COMANDO || linhas.some((linha) => linha.length > LIMITE_DE_LINHA_NO_COMANDO_LONGO)) {
+    return { decisao: 'deny', motivo: 'Comando grande demais para a guarda avaliar com segurança. Grave o conteúdo com a ferramenta de escrita e rode um comando curto.' }
+  }
+  let pergunta = null
+  for (const linha of linhas) {
+    const resultado = avaliarTrecho(linha)
+    if (!resultado) continue
+    if (resultado.decisao === 'deny') return resultado
+    pergunta ??= resultado
+  }
+  return pergunta
 }
 
 export function linhasComSegredo(texto) {

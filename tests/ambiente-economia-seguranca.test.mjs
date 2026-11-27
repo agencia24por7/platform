@@ -170,8 +170,17 @@ test('regras de comando não degradam com comando longo e o excesso pede confirm
   const inicio = Date.now()
   assert.equal(avaliarComando(longoComAcesso)?.decisao, 'deny')
   assert.ok(Date.now() - inicio < 1000, `levou ${Date.now() - inicio} ms`)
-  const gigante = `echo ${'a'.repeat(40_000)}`
-  assert.equal(avaliarComando(gigante)?.decisao, 'ask')
+  const linhaGigante = `echo ${'a'.repeat(40_000)}`
+  assert.equal(avaliarComando(linhaGigante)?.decisao, 'deny')
+  const linhaGiganteComSegredo = `${'a'.repeat(40_000)}; cat .env`
+  assert.equal(avaliarComando(linhaGiganteComSegredo)?.decisao, 'deny')
+  const muitasLinhasCurtas = Array.from({ length: 5000 }, () => 'echo ok').join('\n')
+  assert.equal(avaliarComando(muitasLinhasCurtas), null)
+  assert.equal(avaliarComando(`${muitasLinhasCurtas}\ncat .env`)?.decisao, 'deny')
+  assert.equal(avaliarComando(`${muitasLinhasCurtas}\nterraform destroy`)?.decisao, 'ask')
+  const inicioDoTeste = Date.now()
+  avaliarComando(Array.from({ length: 30 }, () => 'gcloud secrets versions '.repeat(400)).join('\n'))
+  assert.ok(Date.now() - inicioDoTeste < 3000, `levou ${Date.now() - inicioDoTeste} ms`)
 })
 
 test('permissions.allow do settings não libera comando genérico de produção', () => {
