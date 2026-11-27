@@ -127,6 +127,8 @@ test('comandos perigosos são negados, os de risco pedem confirmação e os comu
     'git push origin main && echo ok',
     'git push origin main>/dev/null',
     'sudo -E env',
+    'git -c a.b=\" push origin main',
+    'git -c a.b=\' push origin main',
     'rtk proxy printenv',
     'rtk proxy env | sort',
     'grep -rn TOKEN',

@@ -178,7 +178,7 @@ export function avaliarEscrita({ caminho, conteudo, existeVersionado }) {
 
 const COMPRIMENTO_MAXIMO_DO_COMANDO = 30_000
 
-const GIT_COM_OPCOES = String.raw`\bgit\b(?:\s+(?:-[cC]\s+(?:[^\s"']|"[^"]*"|'[^']*')+|--[\w-]+(?:=\S+)?))*`
+const GIT_COM_OPCOES = String.raw`\bgit\b(?:\s+(?:-[cC]\s+(?:[^\s"']|"[^"]*"|'[^']*'|"(?![^"]*")|'(?![^']*'))+|--[\w-]+(?:=\S+)?))*`
 
 const REGRAS_DE_COMANDO = [
   { padrao: /\bcurl\b[^|;&]*\|\s*(?:sudo(?:\s+-\S+)*\s+)?(?:(?:ba|z)?sh\b|python3?\s+-(?=\s|$))|\bwget\b[^|;&]*\|\s*(?:sudo(?:\s+-\S+)*\s+)?(?:ba|z)?sh\b|\b(?:ba|z)?sh\s+<\(\s*(?:curl|wget)|\b(?:ba|z)?sh\s+-c\s+["']?\$\(\s*(?:curl|wget)/, decisao: 'deny', motivo: 'Baixar e executar script direto no shell é proibido. Baixe, leia e só então execute.' },
@@ -211,7 +211,7 @@ const REGRAS_DE_COMANDO = [
   { padrao: /\bgit\s+(?:-[cC]\s+\S+\s+)*(?:checkout|switch)\s+(?:-\S+\s+)*main\b(?!\s+--\s+\S)(?:(?!\b(?:checkout|switch)\b)[\s\S])*\bgit\b(?:\s+-[cC]\s+\S+)*\s+push\b/, decisao: 'deny', motivo: 'Trocar para main e dar push no mesmo comando é push direto em main: use PR e gh pr merge.' },
   { padrao: /\bgcloud\s+sql\s+(backups\s+delete|instances\s+delete)\b/, decisao: 'deny', motivo: 'Apagar backup ou instância do Postgres é proibido.' },
   { padrao: /(?:(?<![-=])>>?(?!&)|\btee\b|\bsed\s+(?:-[a-zA-Z]*i|--in-place)|\bperl\s+-[a-zA-Z]*i|\b(?:cp|mv|rm|ln|install|chmod|truncate|dd)\b)[^;&|\n]*\.claude[/\\](?:hooks|settings[^/\s]*\.json)/i, decisao: 'ask', motivo: 'Alterar a guarda ou os settings do Claude Code por shell muda o que protege a sessão: confirme a edição.' },
-  { padrao: /\bgit\b(?=(?:\s+(?:-[cC]\s+\S+|--[\w-]+(?:=\S+)?))*\s+(?:checkout|restore|apply|reset|stash\s+(?:pop|apply)|rm|mv)\b)(?=[^;&|\n]*\.claude[/\\](?:hooks|settings))/i, decisao: 'ask', motivo: 'Restaurar ou reescrever a guarda ou os settings do Claude Code pelo git muda o que protege a sessão: confirme.' },
+  { padrao: /\bgit\b(?=(?:\s+(?:-[cC]\s+\S+|-\S+))*\s+(?:checkout|restore|apply|reset|stash|rm|mv)\b)(?=[^;&|\n]*\.claude[/\\](?:hooks|settings))/i, decisao: 'ask', motivo: 'Restaurar ou reescrever a guarda ou os settings do Claude Code pelo git muda o que protege a sessão: confirme.' },
   { padrao: /\b(?:rm|mv)\b[^;&|\n]*[\s"'/]\.claude[/\\]?["']?(?:\s|$)/i, decisao: 'ask', motivo: 'Apagar ou mover a pasta .claude remove a guarda: confirme.' },
   { padrao: /\.claude(?:[/\\][^\s;&|]*)?["']?\s*(?:&&|;)\s*(?:rm|mv|cp|sed|tee|find|echo|printf|dd)\b/i, decisao: 'ask', motivo: 'Entrar em .claude e alterar arquivos muda a guarda: confirme.' },
   { padrao: /\bfind\b[^;&|\n]*\.claude[^;&|\n]*(?:-delete|-exec)/i, decisao: 'ask', motivo: 'Apagar ou executar sobre arquivos de .claude muda a guarda: confirme.' },

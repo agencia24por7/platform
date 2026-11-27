@@ -80,7 +80,7 @@ function ramoDoDiretorio(diretorio) {
 const FLAGS_DO_PUSH_COM_VALOR = new Set(['-o', '--push-option', '--repo', '--receive-pack', '--exec'])
 const SEM_ASPAS = /^["']|["']$/g
 const LIMITE_DE_PUSHES = 3
-const PADRAO_DE_PUSH = /\bgit\b((?:\s+(?:-[cC]\s+(?:[^\s"']|"[^"]*"|'[^']*')+|--[\w-]+(?:=\S+)?))*)\s+push\b([^;&|\n]*)/g
+const PADRAO_DE_PUSH = /\bgit\b((?:\s+(?:-[cC]\s+(?:[^\s"']|"[^"]*"|'[^']*'|"(?![^"]*")|'(?![^']*'))+|--[\w-]+(?:=\S+)?))*)\s+push\b([^;&|\n]*)/g
 
 function diretorioDoCd(antes, base) {
   const trocas = [...antes.matchAll(/\bcd\s+("[^"]*"|'[^']*'|[^\s;&|]+)/g)]
