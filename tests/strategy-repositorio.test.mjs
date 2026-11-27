@@ -180,13 +180,13 @@ describe('Strategy Plan, execuções (migração 0147, ADR 0065 §9)', { concurr
     assert.equal(status(segunda), 'pendente/ler_brain/0/0');
   });
 
-  it('o pedido é validado por tipo e limitado a 8 KB; agent_run_id é único e de lista fechada', () => {
+  it('o pedido é validado por tipo e limitado a 16 KB; agent_run_id é único e de lista fechada', () => {
     const plano = novoPlano();
     assert.match(recusa(() => pedir(plano, ids.operador, { tipo: 'ajustar', pedido: '{"instrucao":""}' })) ?? '', /23514/);
     assert.match(recusa(() => pedir(plano, ids.operador, { tipo: 'ajustar', pedido: JSON.stringify({ instrucao: 'a'.repeat(2001) }) })) ?? '', /23514/);
     assert.match(recusa(() => pedir(plano, ids.operador, { tipo: 'ajustar', pedido: '{"instrucao":"ok ok","extra":1}' })) ?? '', /23514/);
     assert.match(recusa(() => pedir(plano, ids.operador, { tipo: 'revisar', pedido: '{"motivo":"outro"}' })) ?? '', /23514/);
-    assert.match(recusa(() => pedir(plano, ids.operador, { tipo: 'criar', pedido: JSON.stringify({ texto: 'x'.repeat(9000) }) })) ?? '', /23514/);
+    assert.match(recusa(() => pedir(plano, ids.operador, { tipo: 'criar', pedido: JSON.stringify({ texto: 'x'.repeat(17000) }) })) ?? '', /23514/);
     assert.match(recusa(() => pedir(plano, ids.operador, { run: 'com espaço' })) ?? '', /23514/);
     const ok = pedir(plano, ids.operador, { tipo: 'revisar', pedido: '{"motivo":"edicao_manual"}', run: `run-dup-${sufixo}` });
     comoApp(ids.orgA, '*', ids.operador, `UPDATE core.strategy_plan_runs SET status = 'cancelada' WHERE id = '${ok}'`);

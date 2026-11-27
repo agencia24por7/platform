@@ -26,7 +26,7 @@ export function BlocoDoPlano({ clienteId, planoId, versaoId, bloco, edicao, chil
             versaoId={versaoId}
             secao={bloco.chave}
             titulo={bloco.titulo}
-            json={bloco.json}
+            grupos={bloco.grupos}
             habilitada={edicao.habilitada}
             motivo={edicao.motivos[0] ?? null}
           />

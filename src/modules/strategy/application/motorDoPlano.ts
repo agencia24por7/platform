@@ -63,6 +63,8 @@ import {
   codigosDoPacote,
   esquemaQueAceitaCodigos,
   type CodigosDoPacote,
+  type FocoDoPlano,
+  urnsDoFoco,
   MAXIMO_DE_ENTRADAS_NO_PACOTE,
   type Ajuste,
   type ChecagemReprovada,
@@ -259,7 +261,7 @@ class FalhaDaEtapa extends Error {
   }
 }
 
-type Contexto = { pacote?: PacoteDeLeitura; readonly ficha: number };
+type Contexto = { pacote?: PacoteDeLeitura; foco?: FocoDoPlano | null; readonly ficha: number };
 
 type Efeito = {
   readonly proximo: Partial<MudancaDaExecucao>;
@@ -399,12 +401,38 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     return `motor:${execucao.id}:${etapa}`.slice(0, 120);
   }
 
+  async function focoDaExecucao(execucao: Execucao, contexto: Contexto): Promise<FocoDoPlano | null> {
+    if (contexto.foco !== undefined) return contexto.foco;
+    let foco: FocoDoPlano | null = null;
+    if (execucao.tipo === 'criar') {
+      foco = esquemaIntencao.safeParse(execucao.pedido).data?.foco ?? null;
+    } else if (execucao.versaoBaseId) {
+      const base = await repositorio.lerVersao(execucao.organizationId, execucao.versaoBaseId);
+      const lido = base ? lerPlano(base.conteudo) : null;
+      foco = lido?.ok ? (lido.value.intencao.foco ?? null) : null;
+    }
+    contexto.foco = foco;
+    return foco;
+  }
+
+  async function pacoteComOFoco(execucao: Execucao, contexto: Contexto, pacote: PacoteDeLeitura): Promise<PacoteDeLeitura> {
+    const foco = await focoDaExecucao(execucao, contexto);
+    const urns = new Set(urnsDoFoco(foco ?? undefined));
+    if (urns.size === 0) return pacote;
+    if (leitorDoBrain.produtosDoContexto === undefined) throw new FalhaDaEtapa('brain_indisponivel', true);
+    const lidos = await leitorDoBrain.produtosDoContexto(execucao.organizationId, execucao.clientId);
+    if (!lidos.ok) throw new FalhaDaEtapa('brain_indisponivel', true);
+    const doFoco = lidos.value.filter((produto) => urns.has(produto.urn)).map((produto) => ({ ...produto.entrada, foco: true as const }));
+    return { ...pacote, entradas: [...doFoco, ...pacote.entradas.filter((entrada) => !urns.has(entrada.urn))] };
+  }
+
   async function lerPacote(execucao: Execucao, contexto: Contexto, forcar: boolean): Promise<PacoteDeLeitura> {
     if (contexto.pacote && !forcar) return contexto.pacote;
     const lido = await leitorDoBrain.lerPacote(execucao.organizationId, execucao.clientId);
     if (!lido.ok) throw new FalhaDaEtapa('brain_indisponivel', true);
-    contexto.pacote = lido.value;
-    return lido.value;
+    const pacote = await pacoteComOFoco(execucao, contexto, lido.value);
+    contexto.pacote = pacote;
+    return pacote;
   }
 
   async function tiposDeLimiteDoGrupo(execucao: Execucao, indice: number): Promise<Record<string, unknown>> {

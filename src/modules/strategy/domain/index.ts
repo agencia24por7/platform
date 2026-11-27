@@ -25,6 +25,7 @@ export * from './gate/naoFaremosPreservado.ts';
 export * from './gate/regraLegalPresente.ts';
 export * from './gate/secoesObrigatorias.ts';
 export * from './gate/orcamentoFecha.ts';
+export * from './gate/focoDoPlano.ts';
 export * from './gate/objetivoComMetrica.ts';
 export * from './gate/comiteCompleto.ts';
 export * from './gate/sugestoesDeLacunas.ts';

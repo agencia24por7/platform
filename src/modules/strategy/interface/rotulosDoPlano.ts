@@ -61,6 +61,8 @@ export const ROTULO_DA_CHECAGEM: Readonly<Record<string, string>> = {
   regra_legal_presente: 'Regra legal aplicável presente',
   secoes_obrigatorias: 'Seções obrigatórias preenchidas',
   orcamento_fecha: 'A verba fecha com a soma das campanhas',
+  foco_verba_por_produto: 'A verba por produto fecha com o total',
+  foco_alinhamento: 'As campanhas seguem o foco do plano',
   objetivo_com_metrica: 'Todo objetivo tem métrica e forma de medir',
   comite_completo: 'Revisão do plano completa e todos os pontos respondidos',
   nao_faremos_preservado: 'O que "não faremos" da versão base foi mantido',

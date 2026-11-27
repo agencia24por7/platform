@@ -1,17 +1,21 @@
 import { aplicarPoliticaDeUso } from '@/modules/brain/domain/politica';
-import { textoSeguro } from '@/modules/brain/domain/privacidade';
+import { textoSeguro, TEXTO_OMITIDO } from '@/modules/brain/domain/privacidade';
+import type { CarregadorDeContexto, ItemDoContexto } from '@/modules/brain/domain/contexto';
+import { hashEstavel } from '@/modules/brain/domain/jsonEstavel';
+import { criarUrn, idSeguro } from '@/modules/brain/domain/urn';
 import type { EntradaDoCatalogo } from '@/modules/brain/domain/entrada';
 import type { BrainService } from '@/modules/brain/application/brainService';
 import type { MemberRole } from '@/modules/identity/domain/user';
 import { err, ok, type Result } from '@/shared/result/result';
 import { catalogoAtualDoPacote } from '@/modules/strategy/application/catalogoAtual';
-import type { ErroDoBrain, LeitorDoBrain, Relogio } from '@/modules/strategy/application/portas';
+import type { ErroDoBrain, LeitorDoBrain, ProdutoDoContexto, Relogio } from '@/modules/strategy/application/portas';
 import {
   MAXIMO_DE_BYTES_DO_PACOTE_LIDO,
   MAXIMO_DE_ENTRADAS_LIDAS_DO_BRAIN,
   esquemaEntradaDoPacote,
   esquemaPacoteDeLeitura,
   MAXIMO_DE_ITENS_DO_CATALOGO,
+  TIPO_DA_ENTRADA_DE_PRODUTO,
   type EntradaDoPacote,
   type ItemDoCatalogo,
   type PacoteDeLeitura,
@@ -19,6 +23,7 @@ import {
 
 export type DependenciasDoLeitorDoBrain = {
   readonly brain: Pick<BrainService, 'montarNaOrganizacao'>;
+  readonly carregadorDeContexto?: CarregadorDeContexto;
   readonly relogio?: Relogio;
   readonly maximoDeEntradas?: number;
   readonly maximoDeBytes?: number;
@@ -112,6 +117,69 @@ export function montarPacote(
   };
 }
 
+const CHAVE_DA_LISTA_DE_PRODUTOS = 'produtos';
+const TAMANHO_DO_ROTULO_DO_PRODUTO = 120;
+const CAMPOS_DE_TEXTO_DO_PRODUTO: readonly (readonly [string, string])[] = [
+  ['categoria', 'Categoria'],
+  ['descricao', 'Descrição'],
+  ['para_quem', 'Para quem é'],
+  ['problema_que_resolve', 'Problema que resolve'],
+  ['objecoes', 'Objeções'],
+  ['recorrencia', 'Recorrência'],
+  ['papel', 'Papel no negócio'],
+];
+const CAMPOS_DE_DINHEIRO_DO_PRODUTO: readonly (readonly [string, string])[] = [
+  ['preco', 'Preço'],
+  ['ticket_medio', 'Ticket médio'],
+];
+
+function textoDoValor(valor: unknown): string | null {
+  if (typeof valor === 'string') return valor.trim() === '' ? null : valor;
+  if (Array.isArray(valor)) {
+    const itens = valor.filter((item): item is string => typeof item === 'string' && item.trim() !== '');
+    return itens.length > 0 ? itens.join(', ') : null;
+  }
+  if (valor !== null && typeof valor === 'object') {
+    const registro = valor as { valor?: unknown; valores?: unknown };
+    return textoDoValor(registro.valor ?? registro.valores);
+  }
+  return null;
+}
+
+function dinheiroDoValor(valor: unknown): string | null {
+  const bruto = typeof valor === 'object' && valor !== null ? (valor as { centavos?: unknown }).centavos : valor;
+  const centavos = typeof bruto === 'string' ? Number(bruto) : bruto;
+  return typeof centavos === 'number' && Number.isFinite(centavos) ? `R$ ${(centavos / 100).toFixed(2)}` : null;
+}
+
+export function produtoDoItem(organizacaoId: string, clienteId: string, item: ItemDoContexto): ProdutoDoContexto | null {
+  const nome = typeof item.dados['nome'] === 'string' ? textoSeguro(item.dados['nome']).slice(0, TAMANHO_DO_ROTULO_DO_PRODUTO) : '';
+  if (nome === '' || nome === TEXTO_OMITIDO) return null;
+  let urn: string;
+  try {
+    urn = criarUrn(organizacaoId, clienteId, TIPO_DA_ENTRADA_DE_PRODUTO, idSeguro(item.id));
+  } catch {
+    return null;
+  }
+  const partes = [
+    ...CAMPOS_DE_TEXTO_DO_PRODUTO.map(([chave, rotulo]) => [rotulo, textoDoValor(item.dados[chave])] as const),
+    ...CAMPOS_DE_DINHEIRO_DO_PRODUTO.map(([chave, rotulo]) => [rotulo, dinheiroDoValor(item.dados[chave])] as const),
+  ]
+    .filter((parte): parte is readonly [string, string] => parte[1] !== null)
+    .map(([rotulo, valor]) => `${rotulo}: ${valor}`);
+  const hash = hashEstavel({ id: item.id, dados: item.dados });
+  const entrada = esquemaEntradaDoPacote.safeParse({
+    foco: true,
+    urn,
+    hash,
+    tipo: TIPO_DA_ENTRADA_DE_PRODUTO,
+    titulo: nome,
+    resumo: textoSeguro(partes.join('; ')).slice(0, TAMANHO_DO_RESUMO),
+    somenteMetadados: false,
+  });
+  return entrada.success ? { urn, rotulo: nome, hash, entrada: entrada.data } : null;
+}
+
 const SEM_LIMITE_DE_LEITURA = { maximoDeEntradas: Number.MAX_SAFE_INTEGER, maximoDeBytes: Number.MAX_SAFE_INTEGER };
 const PAPEL_DE_LEITURA_DO_MOTOR: MemberRole = 'admin';
 
@@ -141,6 +209,23 @@ export function criarLeitorDoBrain(dependencias: DependenciasDoLeitorDoBrain): L
   }
 
   return {
+    async produtosDoContexto(organizacaoId, clienteId): Promise<Result<readonly ProdutoDoContexto[], ErroDoBrain>> {
+      const carregador = dependencias.carregadorDeContexto;
+      if (carregador === undefined || !carregador.disponivel) return err({ codigo: 'brain_indisponivel', mensagem: 'O Contexto do cliente não está disponível.' });
+      try {
+        const contexto = await carregador.carregar({ organizationId: organizacaoId, clientId: clienteId }, 'equipe');
+        if (contexto === null) return err({ codigo: 'brain_indisponivel', mensagem: 'O Contexto do cliente não respondeu.' });
+        const itens = contexto.listas[CHAVE_DA_LISTA_DE_PRODUTOS] ?? [];
+        const produtos = itens
+          .filter((item) => item.revisao === 'confirmado' && item.secao === CHAVE_DA_LISTA_DE_PRODUTOS)
+          .map((item) => produtoDoItem(organizacaoId, clienteId, item))
+          .filter((produto): produto is ProdutoDoContexto => produto !== null)
+          .sort((a, b) => a.rotulo.localeCompare(b.rotulo, 'pt-BR') || a.urn.localeCompare(b.urn));
+        return ok(produtos);
+      } catch {
+        return err({ codigo: 'brain_indisponivel', mensagem: 'O Contexto do cliente não respondeu.' });
+      }
+    },
     catalogoDoSnapshot(organizacaoId, clienteId, snapshot) {
       if (snapshot.organizationId !== organizacaoId || snapshot.clienteId !== clienteId) return null;
       return catalogoAtualDoPacote(montarPacote(organizacaoId, clienteId, relogio.agora(), snapshot.entradas, SEM_LIMITE_DE_LEITURA));

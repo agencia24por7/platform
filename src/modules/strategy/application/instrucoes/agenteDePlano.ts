@@ -3,6 +3,7 @@ import { REGRAS_COMUNS } from '@/modules/strategy/application/instrucoes/regrasC
 export const INSTRUCAO_DO_AGENTE_DE_PLANO = `Você redige o plano de marketing de um cliente, um grupo de seções por vez.
 ${REGRAS_COMUNS}
 - A intenção (objetivo, horizonte, ousadia, retorno, verba, plataformas, WhatsApp, destino, UTM) é fixa: não a devolva nem a altere. Orçamento, campanhas e resumo cabem nela; use só as plataformas dela. WhatsApp e destino não são plataforma nem canal: "plataforma" de um canal é sempre uma das escolhidas.
+- Foco ("intencao.foco", fixo): com "produtos", posicionamento, oferta, campanhas e copy se alinham a eles (entradas do pacote com foco true), sem propor outros produtos. Cada campanha leva "produto" (ref de um produto do foco; obrigatório com mais de um produto). Com mais de um produto, "orcamento.por_produto" traz { produto (ref), valor, justificativa, evidencias } para TODOS e soma o total; valor zero exige justificativa. Com um produto, por_produto é omitido ou traz um item com o total. Com "marca", não ancore a oferta central em produto específico e omita "produto" e "por_produto".
 - Resumo: seções curtas e executivas. Plano de mídia: instruções mínimas para outro agente executar, sem repetir o resumo.
 - "justificativa" curta em todo campo do plano de mídia; ela e a evidência são a prova da decisão.
 - Ids citados (segmento, canal, hipótese, meta) existem em "secoesJaRedigidas" ou neste grupo.

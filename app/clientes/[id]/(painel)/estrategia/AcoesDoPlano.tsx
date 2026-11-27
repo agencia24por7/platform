@@ -2,6 +2,7 @@ import { BotaoDeEnvio } from '@/../app/_components/BotaoDeEnvio';
 import { ConfirmarAcao } from '@/../app/clientes/[id]/_componentes/ConfirmarAcao';
 import {
   aplicarAcao,
+  apagarPlanoAcao,
   autorizarAcao,
   cancelarExecucaoAcao,
   cancelarRascunhoAcao,
@@ -99,6 +100,7 @@ export function AcoesDoPlano({ clienteId, visao }: Props) {
       revogar: { titulo: 'Revogar o plano autorizado?', descricao: 'O plano deixa de valer. Revogar não apaga o plano.', pendente: 'Revogando…', action: revogarAcao },
       cancelar_execucao: { titulo: 'Cancelar a execução?', descricao: 'O agente para de trabalhar neste plano. Você pode pedir de novo depois.', pendente: 'Cancelando…', action: cancelarExecucaoAcao },
       cancelar_rascunho: { titulo: 'Cancelar o rascunho?', descricao: 'O rascunho é descartado.', pendente: 'Cancelando…', action: cancelarRascunhoAcao },
+      apagar_plano: { titulo: 'Apagar o plano?', descricao: 'O plano sai da lista e não pode ser recuperado por aqui. O histórico fica guardado para auditoria.', pendente: 'Apagando…', action: apagarPlanoAcao },
     };
     const confirmacao = confirmacoes[acao.chave];
     if (!confirmacao) return null;

@@ -75,6 +75,7 @@ export default async function PaginaDoPlano({ params, searchParams }: { readonly
             {visao.rotuloDoStatus}
           </span>
           <span>{visao.tipoRotulo}</span>
+          {visao.foco ? <span>Foco: {visao.foco}</span> : null}
           {visao.plataformas.length > 0 ? <span>{visao.plataformas.join(', ')}</span> : null}
           {visao.versao ? <time dateTime={visao.versao.em.toISOString()}>Atualizado em {visao.versao.emTexto}</time> : null}
         </p>

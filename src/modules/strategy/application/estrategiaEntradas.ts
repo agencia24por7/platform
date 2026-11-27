@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ValorSchema } from '@/modules/clients/domain/regras/valor';
-import { TIPOS_DE_PLANO, dataIsoValida, esquemaId, esquemaIntencaoBase, esquemaPlataformasDoPedido } from '@/modules/strategy/domain/index';
+import { MAXIMO_DE_PRODUTOS_NO_FOCO, TIPOS_DE_PLANO, dataIsoValida, esquemaId, esquemaIntencaoBase, esquemaPlataformasDoPedido, esquemaUrn } from '@/modules/strategy/domain/index';
 
 export const TAMANHO_MAXIMO_DA_INSTRUCAO = 2000;
 export const TAMANHO_MAXIMO_DO_PEDIDO_BYTES = 7000;
@@ -14,8 +14,21 @@ const corpoDoPedido = {
   landingPageId: identificador,
 };
 
+export const esquemaFocoDoPedido = z.discriminatedUnion('tipo', [
+  z.strictObject({ tipo: z.literal('marca') }),
+  z.strictObject({
+    tipo: z.literal('produtos'),
+    produtos: z
+      .array(esquemaUrn)
+      .min(1, 'Escolha ao menos um produto.')
+      .max(MAXIMO_DE_PRODUTOS_NO_FOCO)
+      .refine((itens) => new Set(itens).size === itens.length, 'Produto repetido.'),
+  }),
+]);
+export type FocoDoPedido = z.infer<typeof esquemaFocoDoPedido>;
+
 export const PedirPlanoSchema = z
-  .strictObject({ ...corpoDoPedido, intencao: esquemaIntencaoBase, chaveDeIdempotencia: z.string().uuid().optional() })
+  .strictObject({ ...corpoDoPedido, foco: esquemaFocoDoPedido, intencao: esquemaIntencaoBase, chaveDeIdempotencia: z.string().uuid().optional() })
   .refine(
     (entrada) => new TextEncoder().encode(JSON.stringify(entrada.intencao)).length <= TAMANHO_MAXIMO_DO_PEDIDO_BYTES,
     { path: ['intencao'], message: 'Intenção grande demais.' },
@@ -40,6 +53,9 @@ export type EntradaDePedirMudanca = z.input<typeof PedirMudancaSchema>;
 
 export const CorrigirFalhaDoGateSchema = z.strictObject({ clienteId: identificador, planoId: identificador });
 export type EntradaDeCorrigirFalhaDoGate = z.input<typeof CorrigirFalhaDoGateSchema>;
+
+export const RemoverPlanoSchema = z.strictObject({ clienteId: identificador, planoId: identificador });
+export type EntradaDeRemoverPlano = z.input<typeof RemoverPlanoSchema>;
 
 export const TentarDeNovoSchema = z.strictObject({ clienteId: identificador, planoId: identificador });
 export type EntradaDeTentarDeNovo = z.input<typeof TentarDeNovoSchema>;

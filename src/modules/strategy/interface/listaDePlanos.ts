@@ -18,7 +18,7 @@ export function visaoDaLista(entrada: {
   readonly pediuFormulario: boolean;
 }): VisaoDaLista {
   const habilitado = podeExecutar('criar', { tipo: 'pessoa', papel: entrada.papel });
-  const cards = cardsNaTela(entrada.cards, entrada.clienteId);
+  const cards = cardsNaTela(entrada.cards, entrada.clienteId, entrada.papel);
   return {
     cards,
     emAndamento: cards.some((card) => card.progresso !== null),

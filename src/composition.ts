@@ -49,6 +49,7 @@ import { createEstrategiaService } from '@/modules/strategy/application/estrateg
 import { createMotorDoPlano } from '@/modules/strategy/application/motorDoPlano';
 import { createProcessadorDeExecucoes } from '@/modules/strategy/application/processadorDeExecucoes';
 import { criarAvaliadorDeLimites } from '@/modules/strategy/infrastructure/avaliadorDeLimites';
+import { carregadorDoServicoDeContexto } from '@/modules/brain/infrastructure/carregadorDeContexto';
 import { criarLeitorDoBrain } from '@/modules/strategy/infrastructure/leitorDoBrain';
 import { createEstrategiaRepository } from '@/modules/strategy/infrastructure/estrategiaRepository';
 import { comValidacao } from '@/modules/strategy/infrastructure/ia/comValidacao';
@@ -99,7 +100,7 @@ function build() {
   const estrategiaRepository = createEstrategiaRepository();
   const brain = criarBrain(audit, contexto, regras);
   const ia = criarIa(audit, ferramentasDoBrain(brain));
-  const leitorDoBrainDaEstrategia = criarLeitorDoBrain({ brain });
+  const leitorDoBrainDaEstrategia = criarLeitorDoBrain({ brain, carregadorDeContexto: carregadorDoServicoDeContexto(contexto) });
   const executorDeIA = comValidacao(criarIaDaCamada(ia.executor));
   const avaliadorDeLimites = criarAvaliadorDeLimites({ regras });
   const motorDoPlano = createMotorDoPlano({
