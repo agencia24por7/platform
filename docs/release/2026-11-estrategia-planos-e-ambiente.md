@@ -43,3 +43,11 @@ Migrações aditivas: a imagem anterior roda no esquema novo, ignorando as tabel
 - Google Ads: só Search; Display, Performance Max, Demand Gen, Shopping e app seguem fora até haver anúncio e asset comprovados.
 - Meta: anúncio exige mídia (imagem ou vídeo), que o plano não produz; a mídia entra na execução da campanha.
 - Rotação do token e do app secret da Meta, que apareceram numa transcrição de sessão.
+
+## Adendo: canais do Google Ads (PR 194)
+
+Release seguinte, só de código de domínio: Display, Performance Max, Demand Gen e app entram no catálogo do Google Ads (131 campos, API v26, levantados com `validate_only`). Sem migração, sem mudança de infra, de BigQuery, de segredo ou de variável de ambiente; o deploy não tem migração pendente a aplicar.
+
+- Depois do deploy: smoke verde e, num cliente de teste, o Google aparece com os canais novos no plano de mídia.
+- Reversão: voltar a imagem basta; não há esquema novo.
+- Fora: Shopping (sem Merchant Center vinculado), carousel e product ad do Demand Gen, audiência e listing group do Performance Max, app da Apple.
