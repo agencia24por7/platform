@@ -28,10 +28,13 @@ function registro(valor: unknown): Registro {
   return valor !== null && typeof valor === 'object' ? (valor as Registro) : {};
 }
 
-function caminhosDoWhatsappDoCatalogo(plano: unknown, catalogos: readonly CatalogoDeCampos[] | undefined): Set<string> {
+function caminhosDoWhatsappDoCatalogo(
+  plano: unknown,
+  catalogos: readonly CatalogoDeCampos[] | undefined,
+  whatsapp: string | null | undefined,
+): Set<string> {
   const caminhos = new Set<string>();
-  const whatsapp = registro(registro(plano).intencao).whatsapp;
-  if (typeof whatsapp !== 'string' || catalogos === undefined) return caminhos;
+  if (typeof whatsapp !== 'string' || whatsapp === '' || catalogos === undefined) return caminhos;
   lista(registro(registro(plano).plano_de_midia).plataformas).forEach((entrada, i) => {
     const catalogo = catalogos.find((candidato) => candidato.plataforma === registro(entrada).plataforma);
     const chaves = new Set(catalogo?.campos.filter((campo) => campo.papel === 'whatsapp').map((campo) => campo.chave));
@@ -61,11 +64,16 @@ export function secaoDoCaminho(caminho: string): string {
   return caminho.split(/[.[]/)[0] ?? caminho;
 }
 
-export function planoSemDadoPessoal(plano: unknown, catalogos?: readonly CatalogoDeCampos[]): Result<true, DadoPessoalNoPlano[]> {
+export function planoSemDadoPessoal(
+  plano: unknown,
+  catalogos?: readonly CatalogoDeCampos[],
+  whatsappConfiavel?: string | null,
+): Result<true, DadoPessoalNoPlano[]> {
   const achados: DadoPessoalNoPlano[] = [];
-  const isentos = caminhosDoWhatsappDoCatalogo(plano, catalogos);
+  const isentos = caminhosDoWhatsappDoCatalogo(plano, catalogos, whatsappConfiavel);
   for (const { caminho, texto } of textosDoPlano(plano)) {
-    if (caminho === CAMINHO_DO_WHATSAPP_COMERCIAL || isentos.has(caminho)) continue;
+    if (caminho === CAMINHO_DO_WHATSAPP_COMERCIAL && texto === whatsappConfiavel) continue;
+    if (isentos.has(caminho)) continue;
     const padroes = [...new Set(procurarPii(texto).map((achado) => achado.padrao))];
     if (padroes.length > 0) achados.push({ secao: secaoDoCaminho(caminho), caminho, padroes });
   }

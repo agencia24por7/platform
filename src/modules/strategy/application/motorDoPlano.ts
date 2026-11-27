@@ -25,6 +25,7 @@ import {
   type CatalogoDeCampos,
   type Plataforma,
   esquemaParecer,
+  PADRAO_DO_TRECHO,
   esquemaRespostaDoAjuste,
   gruposDaPendenciaDoGate,
   grupoDoTrecho,
@@ -655,7 +656,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     const lido = lerPlano(montarPlanoDeSecoes(intencaoConfiavel, secoes));
     if (!lido.ok) throw falhaDeIA('saida_invalida', 'plano_fora_do_esquema');
     const plano = lido.value;
-    if (!planoSemDadoPessoal(plano, catalogos).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano');
+    if (!planoSemDadoPessoal(plano, catalogos, intencaoConfiavel.whatsapp).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano');
     const referencias = referenciasConferidas(plano, execucao, await pacoteComAsCitadas(execucao, contexto, plano, pacote));
     const estado = await estadoDoPlano(execucao);
     const chave = `${execucao.id}:redigir:${execucao.rodada}`;
@@ -954,7 +955,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     const lido = lerPlano(ajustado.corrente);
     if (!lido.ok) throw falhaDeIA('saida_invalida', 'plano_ajustado_fora_do_esquema');
     const planoAjustado = lido.value;
-    if (!planoSemDadoPessoal(planoAjustado, catalogos).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano_ajustado');
+    if (!planoSemDadoPessoal(planoAjustado, catalogos, plano.intencao.whatsapp).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano_ajustado');
     const referencias = referenciasConferidas(planoAjustado, execucao, await pacoteComAsCitadas(execucao, contexto, planoAjustado, pacote));
     const estado = await estadoDoPlano(execucao);
 
@@ -1024,7 +1025,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     const lido = lerPlano(ajustado.corrente);
     if (!lido.ok) throw falhaDeIA('saida_invalida', 'plano_corrigido_fora_do_esquema');
     const planoCorrigido = lido.value;
-    if (!planoSemDadoPessoal(planoCorrigido, catalogos).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano_corrigido');
+    if (!planoSemDadoPessoal(planoCorrigido, catalogos, planoBase.intencao.whatsapp).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano_corrigido');
     const referencias = referenciasConferidas(planoCorrigido, execucao, await pacoteComAsCitadas(execucao, contexto, planoCorrigido, pacote));
     const estado = await estadoDoPlano(execucao);
     const criada = await repositorio.criarVersaoRascunho(execucao.organizationId, {
@@ -1146,7 +1147,8 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
           .filter((e) => e.tipo === 'regra' || e.tipo === 'decisao')
           .map((e) => ({ urn: e.urn, tipo: e.tipo, titulo: e.titulo, resumo: e.resumo.slice(0, 600) })),
       };
-      modelo = await executarIA(execucao, contexto, 'gate', INSTRUCAO_DO_GATE_POR_MODELO, dadosDoGate, esquemaDoGateDoModelo, chave);
+      const doModelo = await executarIA(execucao, contexto, 'gate', INSTRUCAO_DO_GATE_POR_MODELO, dadosDoGate, esquemaDoGateDoModelo, chave);
+      modelo = { ...doModelo, problemas: doModelo.problemas.map((p) => ({ ...p, trecho: PADRAO_DO_TRECHO.test(p.trecho) ? p.trecho : '' })) };
       if (!problemasDoGateSemDadoPessoal(modelo.problemas).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_gate');
     }
     const resultado: 'aprovado' | 'reprovado' = veredito.resultado === 'aprovado' && modelo?.resultado === 'aprovado' ? 'aprovado' : 'reprovado';

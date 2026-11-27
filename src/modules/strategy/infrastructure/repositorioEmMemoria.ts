@@ -1,5 +1,5 @@
 import { err, ok, type Result } from '@/shared/result/result';
-import { MAXIMO_DE_RESERVAS } from '@/modules/strategy/application/portas';
+import { CHAVE_DE_IDEMPOTENCIA_COM_OUTRO_PEDIDO, MAXIMO_DE_RESERVAS, mesmoPedidoDePlano } from '@/modules/strategy/application/portas';
 import type {
   Autoria,
   ErroDeEstrategia,
@@ -204,6 +204,7 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
       if (falha) return err(falha);
       const existente = novo.chaveDeIdempotencia === undefined ? undefined : chavesDePlano.get(`${escopo.organizationId}|${escopo.clientId}|${novo.chaveDeIdempotencia}`);
       if (existente !== undefined) {
+        if (!mesmoPedidoDePlano(existente, novo)) return err(CHAVE_DE_IDEMPOTENCIA_COM_OUTRO_PEDIDO);
         const primeira = execucoes.find((e) => e.planoId === existente.id);
         if (primeira) return ok({ plano: existente, execucao: primeira, reaproveitado: true });
       }

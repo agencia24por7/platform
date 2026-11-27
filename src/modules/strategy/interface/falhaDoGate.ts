@@ -2,6 +2,7 @@ import type { MemberRole } from '../../identity/domain/user.ts';
 import { falhasDoGate, podeCorrigirMais, MAXIMO_DE_CORRECOES_POR_VERSAO_RAIZ } from '../domain/correcaoDoGate.ts';
 import { textoSeguro } from '../../brain/domain/privacidade.ts';
 import { podeExecutar } from '../domain/papeis.ts';
+import { PADRAO_DO_TRECHO } from '../domain/comite/parecer.ts';
 import type { SecaoDoPlano } from '../domain/plano.ts';
 import type { StatusDaVersao } from '../domain/status.ts';
 import { ROTULO_DA_CHECAGEM, TITULO_DA_SECAO, nomeDoCampo } from './rotulosDoPlano.ts';
@@ -52,6 +53,12 @@ function limitado(texto: string): string {
   return seguro.length <= MAXIMO_DO_TEXTO_VISIVEL ? seguro : `${seguro.slice(0, MAXIMO_DO_TEXTO_VISIVEL - 1)}…`;
 }
 
+function itemDoModelo(trecho: string): string {
+  if (!PADRAO_DO_TRECHO.test(trecho)) return SEM_ITEM_ESPECIFICO;
+  const secao = trecho.split('/')[0] ?? '';
+  return secao in TITULO_DA_SECAO ? tituloDaSecao(secao) : SEM_ITEM_ESPECIFICO;
+}
+
 export function itemLegivel(local: string): string {
   const [caminho = local, ...resto] = local.split(' (');
   const detalhe = resto.length > 0 ? resto.join(' (').replace(/\)$/, '') : null;
@@ -77,7 +84,7 @@ export function falhaDoGate(estado: EstadoParaFalhaDoGate): FalhaDoGate | null {
     })),
     ...(capturadas.modelo.length === 0
       ? []
-      : [{ gate: ROTULO_DA_CONFERENCIA_DE_QUALIDADE, itens: capturadas.modelo.map((p) => (p.trecho === '' ? SEM_ITEM_ESPECIFICO : itemLegivel(p.trecho))) }]),
+      : [{ gate: ROTULO_DA_CONFERENCIA_DE_QUALIDADE, itens: capturadas.modelo.map((p) => itemDoModelo(p.trecho)) }]),
   ];
   if (falhas.length === 0) return null;
 

@@ -17,6 +17,7 @@ import type {
   Versao,
   VersaoResumo,
 } from '@/modules/strategy/application/portas';
+import { CHAVE_DE_IDEMPOTENCIA_COM_OUTRO_PEDIDO, mesmoPedidoDePlano } from '@/modules/strategy/application/portas';
 import type { Plataforma } from '@/modules/strategy/domain/index';
 import { PAPEL_NO_BANCO } from '@/modules/strategy/domain/referencias';
 import { traduzirErroDoBanco } from '@/modules/strategy/infrastructure/errosDoBanco';
@@ -193,6 +194,8 @@ async function comTraducao<T>(trabalho: () => Promise<T>): Promise<Result<T, Err
     return err(traduzido);
   }
 }
+
+const PLANO_DA_CHAVE_NAO_ENCONTRADO: ErroDeEstrategia = { codigo: 'nao_encontrado', mensagem: 'O plano desta chave de idempotência não está acessível.' };
 
 class NaoEncontrado extends Error {
   constructor() {
@@ -414,7 +417,7 @@ export function createEstrategiaRepository(): RepositorioDeEstrategia {
     },
 
     async criarPlanoComExecucao(escopo, novo, execucao) {
-      return comTraducao(() =>
+      const resultado = await comTraducao<Result<{ plano: Plano; execucao: Execucao; reaproveitado?: boolean }, ErroDeEstrategia>>(() =>
         withTenant(escopo.organizationId, async (tx) => {
           await definirRequestId(tx, execucao.requestId);
           const chave = novo.chaveDeIdempotencia ?? null;
@@ -429,18 +432,27 @@ export function createEstrategiaRepository(): RepositorioDeEstrategia {
               SELECT ${colunasDoPlano(tx)} FROM core.strategy_plans
                WHERE organization_id = ${escopo.organizationId} AND client_id = ${escopo.clientId} AND idempotency_key = ${chave}
             `) as unknown as PlanoRow[];
+            const existente = existentes[0];
+            if (!existente) return err(PLANO_DA_CHAVE_NAO_ENCONTRADO);
+            const planoExistente = paraPlano(existente);
+            if (!mesmoPedidoDePlano(planoExistente, novo)) return err(CHAVE_DE_IDEMPOTENCIA_COM_OUTRO_PEDIDO);
             const execucoes = (await tx`
               SELECT ${colunasDaExecucao(tx)} FROM core.strategy_plan_runs
-               WHERE organization_id = ${escopo.organizationId} AND plan_id = ${existentes[0]!.id}
+               WHERE organization_id = ${escopo.organizationId} AND plan_id = ${existente.id}
                ORDER BY created_at ASC, id ASC LIMIT 1
             `) as unknown as ExecucaoRow[];
-            return { plano: paraPlano(existentes[0]!), execucao: paraExecucao(execucoes[0]!), reaproveitado: true };
+            const primeira = execucoes[0];
+            if (!primeira) return err(PLANO_DA_CHAVE_NAO_ENCONTRADO);
+            return ok({ plano: planoExistente, execucao: paraExecucao(primeira), reaproveitado: true });
           }
-          const plano = paraPlano(rows[0]!);
+          const primeiroRegistro = rows[0];
+          if (!primeiroRegistro) return err(PLANO_DA_CHAVE_NAO_ENCONTRADO);
+          const plano = paraPlano(primeiroRegistro);
           const criada = await inserirExecucao(tx, escopo.organizationId, escopo.clientId, { ...execucao, planoId: plano.id });
-          return { plano, execucao: criada };
+          return ok({ plano, execucao: criada });
         }),
       );
+      return resultado.ok ? resultado.value : resultado;
     },
 
     async listarPlanosDoCliente(escopo) {

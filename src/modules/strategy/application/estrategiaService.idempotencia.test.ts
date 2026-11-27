@@ -61,6 +61,14 @@ describe('pedir plano: idempotência do formulário', () => {
     assert.equal(m.auditorias.filter((a) => a === 'strategy.plan.requested').length, 1);
   });
 
+  it('o mesmo nonce com conteúdo diferente é conflito, sem criar nada', async () => {
+    const m = await montar();
+    await m.servico.pedirPlano(como('operator'), pedido({ chaveDeIdempotencia: CHAVE }), ator);
+    const outra = await m.servico.pedirPlano(como('operator'), pedido({ chaveDeIdempotencia: CHAVE, plataformas: ['google'] }), ator);
+    assert.equal(!outra.ok && outra.error.code, 'conflict');
+    assert.equal(m.repositorio.estado.execucoes.length, 1);
+  });
+
   it('nonce diferente ou ausente cria planos independentes; nonce inválido é recusado', async () => {
     const m = await montar();
     await m.servico.pedirPlano(como('operator'), pedido({ chaveDeIdempotencia: CHAVE }), ator);

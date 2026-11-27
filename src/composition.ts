@@ -169,7 +169,7 @@ function build() {
       service: createEstrategiaService({ repositorio: estrategiaRepository, audit, leitorDoBrain: leitorDoBrainDaEstrategia, destino, regras }),
     },
     strategyDoWorker: {
-      processador: createProcessadorDeExecucoes({ repositorio: estrategiaRepository, motor: motorDoPlano }),
+      processador: createProcessadorDeExecucoes({ repositorio: estrategiaRepository, motor: motorDoPlano, audit }),
     },
     tokens,
     expurgoDeFontes,

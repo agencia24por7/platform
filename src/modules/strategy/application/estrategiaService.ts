@@ -928,7 +928,13 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
       const detalhes = Object.fromEntries(conteudo.error.problemas.slice(0, 10).map((p) => [p.caminho || 'plano', p.mensagem]));
       return err(failure('validation', conteudo.error.mensagem, detalhes));
     }
-    const privacidade = planoSemDadoPessoal(conteudo.value, catalogos);
+    const estado = await estadoDoPlano(plano);
+    const base = estado?.aberta ?? estado?.vigente ?? estado?.maisRecente ?? null;
+    const baseCompleta = base ? await repositorio.lerVersao(comando.organizationId, base.id) : null;
+    const baseLida = baseCompleta ? lerPlano(baseCompleta.conteudo) : null;
+    const planoDaBase = baseLida?.ok ? baseLida.value : null;
+    const conteudoFinal = comDestinoDaBase(conteudo.value, planoDaBase);
+    const privacidade = planoSemDadoPessoal(conteudoFinal, catalogos, plano.whatsapp);
     if (!privacidade.ok) {
       const detalhes = Object.fromEntries(privacidade.error.slice(0, 10).map((a) => [a.caminho, `Dado pessoal (${a.padroes.join(', ')}) na seção ${a.secao}.`]));
       const secoes = [...new Set(privacidade.error.map((a) => a.secao))].join(', ');
@@ -942,14 +948,9 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
 
     if (await repositorio.execucaoAtiva(comando.organizationId, plano.id)) return err(EXECUCAO_EM_ANDAMENTO);
 
-    const estado = await estadoDoPlano(plano);
-    const base = estado?.aberta ?? estado?.vigente ?? estado?.maisRecente ?? null;
     const hashes = await hashesDasReferencias(plano, [...new Set(referencias.value.map((r) => r.urn))], base, comando);
     if (!hashes.ok) return hashes;
     const citadas: ReferenciaDaVersao[] = referencias.value.map((ref) => ({ urn: ref.urn, papel: ref.papel, hash: hashes.value.get(ref.urn)! }));
-    const baseCompleta = base ? await repositorio.lerVersao(comando.organizationId, base.id) : null;
-    const baseLida = baseCompleta ? lerPlano(baseCompleta.conteudo) : null;
-    const planoDaBase = baseLida?.ok ? baseLida.value : null;
     const herdadas = (baseCompleta?.referencias ?? []).filter((ref) => {
       const tipo = lerUrn(ref.urn)?.tipo;
       return tipo !== undefined && TIPOS_DE_REGRA_NO_PACOTE.includes(tipo);
@@ -961,7 +962,7 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
       plano.clientId,
       {
         planoId: plano.id,
-        conteudo: comDestinoDaBase(conteudo.value, planoDaBase),
+        conteudo: conteudoFinal,
         schemaVersion: SCHEMA_VERSION,
         supersedesId: estado?.vigente?.id ?? null,
         autoria: { tipo: 'pessoa', userId: ator.userId },

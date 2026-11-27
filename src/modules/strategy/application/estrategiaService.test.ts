@@ -481,6 +481,20 @@ describe('editarManual', () => {
     assert.ok(!JSON.stringify(auditorias).includes('conteudo'));
   });
 
+  it('recusa número de pessoa na intenção e no campo de papel whatsapp enviados pelo usuário', async () => {
+    const { service, estado } = montar();
+    semearVersao(estado, 'rascunho');
+    const outro = '+5511900000000';
+    const conteudo = planoCompleto();
+    conteudo.intencao.whatsapp = outro;
+    conteudo.plano_de_midia.plataformas = [
+      { plataforma: 'meta', secoes: [{ secao: 'destino', campos: [{ campo: 'numero_do_whatsapp', valor: outro, justificativa: 'número trocado', evidencias: [] }] }] },
+    ];
+    const resultado = await service.editarManual(como('operator'), { planoId: PLANO_ID, conteudo }, ator);
+    assert.equal(!resultado.ok && resultado.error.code, 'validation');
+    assert.equal(estado.versoes.length, 1);
+  });
+
   it('usa o hash da versão anterior para URN conhecida e o do Brain para a nova', async () => {
     const { service, estado } = montar();
     semearVersao(estado, 'rascunho');

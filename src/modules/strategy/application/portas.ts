@@ -18,6 +18,16 @@ import type { Valor } from '@/modules/clients/domain/regras/valor';
 
 export const MAXIMO_DE_RESERVAS = 20;
 
+export const CHAVE_DE_IDEMPOTENCIA_COM_OUTRO_PEDIDO: ErroDeEstrategia = {
+  codigo: 'conflito',
+  mensagem: 'Esta chave de idempotência já foi usada para um pedido diferente. Gere uma nova chave para criar outro plano.',
+};
+
+export function mesmoPedidoDePlano(existente: Pick<Plano, 'tipo' | 'plataformas' | 'landingPageId'>, novo: Pick<NovoPlano, 'tipo' | 'plataformas' | 'landingPageId'>): boolean {
+  const ordenadas = (lista: readonly string[] | null) => (lista === null ? '' : [...lista].sort().join(','));
+  return existente.tipo === novo.tipo && existente.landingPageId === novo.landingPageId && ordenadas(existente.plataformas) === ordenadas(novo.plataformas);
+}
+
 export type EscopoDoPlano = { readonly organizationId: string; readonly clientId: string };
 
 export type TipoDeExecucao = 'criar' | 'ajustar' | 'revisar' | 'corrigir_gate';

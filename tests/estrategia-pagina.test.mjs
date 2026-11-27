@@ -708,8 +708,8 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
     async function clienteComBrain(nome) {
       const cli = cliente(ids.org, nome);
       semear.semearBrain(cli, ids.admin);
-      const plano = semear.planoNovo(cli);
       const conteudo = planoComUrnsReais(cli);
+      const plano = semear.planoNovo(cli, 'aquisicao', conteudo.intencao.whatsapp);
       const execucao = semear.iniciarExecucao({ cli, plano });
       const versao = semear.versaoRascunho(cli, plano, conteudo, { referencias: await referenciasReais(cli, conteudo) });
       semear.eventoDoWorker(cli, versao, 'parecer', parecer('redator', 'aprova', 'Mensagem clara.'), execucao);

@@ -131,19 +131,40 @@ describe('processadorDeExecucoes', () => {
     assert.ok(processador);
   });
 
-  it('exceção depois da reserva e não transitória marca a execução como falhou/interno; transitória a deixa para a próxima rodada', async () => {
-    for (const [codigo, esperado] of [[undefined, 'falhou'], ['ECONNRESET', 'rodando']] as const) {
+  it('só erro determinístico marca falhou/interno; o resto deixa o lease vencer, olhando também a causa', async () => {
+    const casos: readonly (readonly [unknown, string])[] = [
+      [undefined, 'rodando'],
+      [{ code: '57014' }, 'rodando'],
+      [{ code: '57P03' }, 'rodando'],
+      [{ code: '08006' }, 'rodando'],
+      [{ code: 'CONNECTION_CLOSED' }, 'rodando'],
+      [{ code: 'ENOTFOUND' }, 'rodando'],
+      [{ cause: { code: '57P01' } }, 'rodando'],
+      [{ code: '23505' }, 'falhou'],
+      [{ code: '42P01' }, 'falhou'],
+      [{ code: '22P02' }, 'falhou'],
+      [{ cause: { code: '23503' } }, 'falhou'],
+    ];
+    for (const [extra, esperado] of casos) {
       const { repositorio } = await montar('falsa', 1);
+      const registros: { action: string; metadata?: Record<string, unknown> }[] = [];
       const processador = createProcessadorDeExecucoes({
         repositorio,
-        motor: { async avancarExecucao() { throw Object.assign(new Error('segredo-do-payload'), codigo ? { code: codigo } : {}); } } as never,
+        audit: { async record(e) { registros.push(e as never); }, async list() { return []; }, async search() { return []; } },
+        motor: { async avancarExecucao() { throw Object.assign(new Error('segredo-do-payload'), extra ?? {}); } } as never,
       });
       const r = await processador.avancar({ limite: 5 });
       assert.ok(r.ok);
       assert.equal(r.value.codigos['excecao'], 1);
       const execucao = repositorio.estado.execucoes[0]!;
-      assert.equal(execucao.status, esperado);
-      if (esperado === 'falhou') assert.equal(execucao.erroCodigo, 'interno');
+      assert.equal(execucao.status, esperado, JSON.stringify(extra));
+      if (esperado === 'falhou') {
+        assert.equal(execucao.erroCodigo, 'interno');
+        assert.equal(registros.length, 1);
+        assert.equal(registros[0]!.metadata?.['status'], 'falhou');
+      } else {
+        assert.equal(registros.length, 0);
+      }
     }
   });
 });

@@ -265,6 +265,7 @@ await cancelarPedido(p4);
 como(c.operator);
 const manual4 = await servico.editarManual(comando('operator'), { planoId: p4.plano.id, conteudo: { ...planoBase, lacunas: { itens: lacunas } } }, ator(c.operator));
 assert.ok(manual4.ok, JSON.stringify(manual4));
+await processar();
 const painel4 = await servico.painelDoPlano(comando('admin'), { clienteId: c.cliA, planoId: p4.plano.id });
 assert.ok(painel4.ok);
 assert.deepEqual(painel4.value.planos[0].lacunas.map((l) => [l.id, l.origem, l.podeAprovar]), [
@@ -309,7 +310,8 @@ assert.equal(regra.decididoPor, c.admin);
 assert.deepEqual(regra.valor, { unidade: 'brl_centavos', centavos: '5000', moeda: 'BRL' });
 assert.equal(regra.evidencia, urnB);
 assert.match(regra.contexto, /lacuna "lim_cpl"/);
-assert.match(regra.contexto, /Benchmark do setor/);
+assert.match(regra.contexto, /evidência do Brain/);
+assert.doesNotMatch(regra.contexto, /Benchmark do setor/, 'o texto livre do modelo não entra no contexto da regra');
 assert.equal(regra.semConfirmacaoDoAnunciante, false);
 assert.equal((await regrasDoClienteB()).length, 0, 'a regra não vaza para outra organização');
 

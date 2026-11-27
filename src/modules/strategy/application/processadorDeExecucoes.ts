@@ -1,21 +1,29 @@
 import { failure, type Failure } from '@/shared/result/failure';
 import { ok, type Result } from '@/shared/result/result';
+import { registrarSemFalhar } from '@/modules/audit/application/registrarSemFalhar';
+import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import { logger } from '@/shared/logging/logger';
-import type { Relogio, RepositorioDeEstrategia } from '@/modules/strategy/application/portas';
+import type { Execucao, Relogio, RepositorioDeEstrategia } from '@/modules/strategy/application/portas';
 import type { MotorDoPlano } from '@/modules/strategy/application/motorDoPlano';
-import { LEASE_DA_EXECUCAO_MS } from '@/modules/strategy/application/motorDoPlano';
+import { AGENTE_DE_PLANO, LEASE_DA_EXECUCAO_MS } from '@/modules/strategy/application/motorDoPlano';
 
 export const ORCAMENTO_TOTAL_DA_ROTA_MS = 240_000;
 
-const CODIGOS_TRANSITORIOS = new Set(['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'EPIPE', '57P01', '08000', '08003', '08006', '40001', '40P01', '53300']);
+const CLASSES_DETERMINISTICAS = ['22', '23', '42'];
+const PROFUNDIDADE_MAXIMA_DA_CAUSA = 4;
 
 function classeDoErro(erro: unknown): string {
   return erro instanceof Error ? erro.constructor.name : typeof erro;
 }
 
-function erroTransitorio(erro: unknown): boolean {
-  const codigo = typeof erro === 'object' && erro !== null && 'code' in erro ? (erro as { code: unknown }).code : undefined;
-  return typeof codigo === 'string' && CODIGOS_TRANSITORIOS.has(codigo);
+function codigosDoErro(erro: unknown, profundidade = 0): string[] {
+  if (typeof erro !== 'object' || erro === null || profundidade > PROFUNDIDADE_MAXIMA_DA_CAUSA) return [];
+  const { code, cause } = erro as { code?: unknown; cause?: unknown };
+  return [...(typeof code === 'string' ? [code] : []), ...codigosDoErro(cause, profundidade + 1)];
+}
+
+function erroDeterministico(erro: unknown): boolean {
+  return codigosDoErro(erro).some((codigo) => /^[0-9A-Z]{5}$/.test(codigo) && CLASSES_DETERMINISTICAS.includes(codigo.slice(0, 2)));
 }
 
 export type ResumoDoProcessamento = {
@@ -35,6 +43,7 @@ export type DependenciasDoProcessador = {
   readonly relogio?: Relogio;
   readonly orcamentoTotalMs?: number;
   readonly leaseMs?: number;
+  readonly audit?: AuditRecorder;
 };
 
 export type ProcessadorDeExecucoes = {
@@ -46,9 +55,35 @@ export function createProcessadorDeExecucoes(deps: DependenciasDoProcessador): P
   const orcamentoTotalMs = deps.orcamentoTotalMs ?? ORCAMENTO_TOTAL_DA_ROTA_MS;
   const leaseMs = deps.leaseMs ?? LEASE_DA_EXECUCAO_MS;
 
+  async function auditarFalha(audit: AuditRecorder, execucao: Execucao): Promise<void> {
+    await registrarSemFalhar(audit, {
+      organizationId: execucao.organizationId,
+      actorType: 'agent',
+      actorId: AGENTE_DE_PLANO,
+      action: 'strategy.run.step',
+      targetType: 'strategy_plan_run',
+      targetId: execucao.id,
+      requestId: `motor:${execucao.id}:passo:${execucao.etapa}`.slice(0, 120),
+      sourceIp: null,
+      metadata: {
+        clientId: execucao.clientId,
+        planoId: execucao.planoId,
+        kind: execucao.tipo,
+        etapa: execucao.etapa,
+        status: 'falhou',
+        rodada: execucao.rodada,
+        tentativas: execucao.tentativas,
+        falhas: execucao.falhas,
+        codigo: 'interno',
+        transitoria: false,
+      },
+    });
+  }
+
   async function marcarComoInterno(organizationId: string, execucaoId: string, ficha: number): Promise<void> {
     try {
-      await deps.repositorio.atualizarExecucao(organizationId, execucaoId, { status: 'falhou', erroCodigo: 'interno', leaseAte: null }, ficha);
+      const atualizada = await deps.repositorio.atualizarExecucao(organizationId, execucaoId, { status: 'falhou', erroCodigo: 'interno', leaseAte: null }, ficha);
+      if (atualizada.ok && deps.audit) await auditarFalha(deps.audit, atualizada.value);
     } catch (erro) {
       logger.error('strategy.execucao.falha_ao_marcar', { erro: classeDoErro(erro), organizationId, execucaoId });
     }
@@ -93,7 +128,7 @@ export function createProcessadorDeExecucoes(deps: DependenciasDoProcessador): P
         } catch (erro) {
           falhas += 1;
           codigos['excecao'] = (codigos['excecao'] ?? 0) + 1;
-          const transitorio = erroTransitorio(erro);
+          const transitorio = !erroDeterministico(erro);
           logger.error('strategy.execucao.excecao', {
             erro: classeDoErro(erro),
             organizationId: pendente.organizationId,

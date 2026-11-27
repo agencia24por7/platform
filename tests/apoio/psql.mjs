@@ -49,7 +49,13 @@ export const primeiraLinha = (texto) => texto.split('\n')[0].trim();
 
 export const sufixoUnico = () => randomUUID().slice(0, 8);
 
-export const sufixoNumerico = () => String(Date.now()) + String(Math.floor(Math.random() * 1000)).padStart(3, '0');
+let ultimoSufixoNumerico = 0;
+
+export const sufixoNumerico = () => {
+  const candidato = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+  ultimoSufixoNumerico = Math.max(candidato, ultimoSufixoNumerico + 1);
+  return String(ultimoSufixoNumerico);
+};
 
 export const psqlComoApp = (sql) => psqlComoRole('orla_app', sql);
 
