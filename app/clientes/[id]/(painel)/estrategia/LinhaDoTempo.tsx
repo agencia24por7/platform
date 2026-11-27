@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Icone } from '@/../app/clientes/[id]/_componentes/Icones';
+import { TilPensando } from '@/../app/_components/Til';
 import { AtualizacaoPeriodica } from '@/../app/clientes/[id]/(painel)/estrategia/AtualizacaoPeriodica';
 import type { ExecucaoNaTela } from '@/modules/strategy/interface/visaoDoPlano';
 
@@ -11,11 +12,23 @@ export function LinhaDoTempo({ execucao, atualizarEm }: { readonly execucao: Exe
     <section className="card" aria-label="Andamento do plano">
       <AtualizacaoPeriodica ativa={!execucao.parada} />
       <div className="card__body">
-        <p className="card__title">{execucao.titulo}</p>
+        {execucao.parada ? (
+          <p className="card__title">{execucao.titulo}</p>
+        ) : (
+          <div className="andamento">
+            <TilPensando className="til--grande" decorativo />
+            <div className="andamento__textos">
+              <p className="card__title">{execucao.titulo}</p>
+              <p className="andamento__etapa" role="status" aria-live="polite" aria-atomic="true">
+                {execucao.etapaAtual}
+              </p>
+            </div>
+          </div>
+        )}
         <ol className="etapas">
           {execucao.etapas.map((etapa) => (
             <li key={etapa.chave} className={`etapas__item etapas__item--${etapa.estado}`} aria-current={etapa.estado === 'atual' ? 'step' : undefined}>
-              <Icone nome={ICONE_DA_ETAPA[etapa.estado]} tamanho={14} />
+              {etapa.estado === 'atual' && !execucao.parada ? <TilPensando className="til--etapa" decorativo /> : <Icone nome={ICONE_DA_ETAPA[etapa.estado]} tamanho={14} />}
               <span>{etapa.rotulo}</span>
               <span className="sr-only">{TEXTO_DA_ETAPA[etapa.estado]}</span>
             </li>

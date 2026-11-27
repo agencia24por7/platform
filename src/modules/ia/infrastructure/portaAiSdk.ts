@@ -24,8 +24,39 @@ export const modeloDoFornecedor: FabricaDeModelo = (modelo) => FABRICAS[modelo.f
 
 const TENTATIVAS_EXTRAS = 1;
 
+const MENSAGEM_DE_SAIDA_INVALIDA = 'O modelo devolveu uma resposta fora do formato esperado.';
+const PROFUNDIDADE_DA_CAUSA = 5;
+const MAXIMO_DE_PROBLEMAS_NO_DETALHE = 3;
+
+type ProblemaDoEsquema = { readonly path?: readonly PropertyKey[]; readonly code?: unknown };
+
+function problemasNaCausa(erro: unknown, profundidade = 0): readonly ProblemaDoEsquema[] {
+  if (typeof erro !== 'object' || erro === null || profundidade > PROFUNDIDADE_DA_CAUSA) return [];
+  const { issues, cause } = erro as { issues?: unknown; cause?: unknown };
+  if (Array.isArray(issues) && issues.length > 0) return issues as ProblemaDoEsquema[];
+  return problemasNaCausa(cause, profundidade + 1);
+}
+
+function detalheDoEsquema(problemas: readonly ProblemaDoEsquema[]): string {
+  if (problemas.length === 0) return '';
+  const itens = [
+    ...new Set(
+      problemas.slice(0, MAXIMO_DE_PROBLEMAS_NO_DETALHE).map((problema) => {
+        const caminho = (problema.path ?? []).map(String).join('.').replace(/[^a-z0-9_.]/gi, '').slice(0, 60) || 'raiz';
+        const tipo = typeof problema.code === 'string' ? problema.code.replace(/[^a-z_]/gi, '').slice(0, 30) : 'invalido';
+        return `${caminho}:${tipo}`;
+      }),
+    ),
+  ];
+  return ` [esquema:${itens.join(',')}]`;
+}
+
+function saidaInvalida(problemas: readonly ProblemaDoEsquema[]): Failure {
+  return failure('validation', `${MENSAGEM_DE_SAIDA_INVALIDA}${detalheDoEsquema(problemas)}`);
+}
+
 function falhaDe(erro: unknown): Failure {
-  if (NoObjectGeneratedError.isInstance(erro)) return failure('validation', 'O modelo devolveu uma resposta fora do formato esperado.');
+  if (NoObjectGeneratedError.isInstance(erro)) return saidaInvalida(problemasNaCausa(erro));
   if (APICallError.isInstance(erro)) {
     if (erro.statusCode === 401 || erro.statusCode === 403) return failure('unauthorized', 'O fornecedor recusou a chave ou o acesso a este modelo.');
     if (erro.statusCode === 404) return failure('not_found', 'O fornecedor não reconhece este modelo.');
@@ -100,10 +131,10 @@ async function gerarEmJsonLivre<S>(pedido: PedidoAoModelo<S>, fabricar: FabricaD
   try {
     bruto = jsonDaResposta(resposta.text);
   } catch {
-    return err(failure('validation', 'O modelo devolveu uma resposta fora do formato esperado.'));
+    return err(failure('validation', `${MENSAGEM_DE_SAIDA_INVALIDA} [esquema:json_invalido]`));
   }
   const validada = pedido.saida.safeParse(bruto);
-  if (!validada.success) return err(failure('validation', 'O modelo devolveu uma resposta fora do formato esperado.'));
+  if (!validada.success) return err(saidaInvalida(validada.error.issues));
   return ok({
     saida: validada.data,
     uso: { tokensDeEntrada: resposta.usage.inputTokens ?? 0, tokensDeSaida: resposta.usage.outputTokens ?? 0, passos: resposta.steps.length },

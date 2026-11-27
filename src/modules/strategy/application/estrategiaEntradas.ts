@@ -41,6 +41,9 @@ export type EntradaDePedirMudanca = z.input<typeof PedirMudancaSchema>;
 export const CorrigirFalhaDoGateSchema = z.strictObject({ clienteId: identificador, planoId: identificador });
 export type EntradaDeCorrigirFalhaDoGate = z.input<typeof CorrigirFalhaDoGateSchema>;
 
+export const TentarDeNovoSchema = z.strictObject({ clienteId: identificador, planoId: identificador });
+export type EntradaDeTentarDeNovo = z.input<typeof TentarDeNovoSchema>;
+
 export const MAXIMO_DE_ITENS_DAS_SUGESTOES = 30;
 
 export const AprovarSugestoesSchema = z.strictObject({

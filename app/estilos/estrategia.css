@@ -10,6 +10,16 @@
 .etapas__item--feita { color: var(--c-ok); }
 .etapas__item--atual { color: var(--fg); font-weight: 650; }
 
+.andamento { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+.andamento__textos { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.andamento__textos .card__title { margin: 0; }
+.andamento__etapa { margin: 0; font-size: var(--fs-sm); color: var(--fg-muted); overflow-wrap: anywhere; }
+.til--grande { width: 56px; height: 36px; }
+.til--etapa { width: 16px; height: 10px; }
+@media (prefers-reduced-motion: reduce) {
+  .til--grande .til__traco, .til--etapa .til__traco { animation: none; stroke-dasharray: none; }
+}
+
 .estrategia-acoes { display: flex; flex-direction: column; gap: 12px; }
 .estrategia-acoes__linha { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: flex-start; }
 .estrategia-acao { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; max-width: 420px; }

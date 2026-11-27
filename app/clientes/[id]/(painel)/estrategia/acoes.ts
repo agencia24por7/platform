@@ -248,6 +248,17 @@ export async function corrigirFalhaDoGateAcao(formData: FormData): Promise<void>
   concluir(escopo.cliente.id, planoId, 'Correção pedida. O agente está ajustando o plano.');
 }
 
+export async function tentarDeNovoAcao(formData: FormData): Promise<void> {
+  const campos = camposDo(formData);
+  const escopo = await escopoDoClienteNaOrganizacao(campos['clienteId']);
+  if (!escopo) redirect('/clientes');
+  const planoId = await planoDaTela(escopo.comando, escopo.cliente.id, campos);
+  if (planoId === null) falhar(escopo.cliente.id, null, 'Plano não encontrado.');
+  const resultado = await modules().strategy.service.tentarDeNovo(escopo.comando, { clienteId: escopo.cliente.id, planoId }, await atorAtual());
+  if (!resultado.ok) falhar(escopo.cliente.id, planoId, textoDaFalha(resultado.error));
+  concluir(escopo.cliente.id, planoId, 'Pedido repetido. O agente está trabalhando de novo.');
+}
+
 export type EstadoDasSugestoes = { readonly erro?: string; readonly porLacuna?: Readonly<Record<string, string>> };
 
 function textoDasSugestoes(aprovadas: number, falhas: number): string {

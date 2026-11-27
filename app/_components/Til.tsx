@@ -13,9 +13,10 @@ export function TilIcone({ className }: { readonly className?: string }) {
   );
 }
 
-export function TilPensando({ className }: { readonly className?: string }) {
+export function TilPensando({ className, decorativo = false }: { readonly className?: string; readonly decorativo?: boolean }) {
+  const acessibilidade = decorativo ? { 'aria-hidden': true as const } : { role: 'img', 'aria-label': 'Agente pensando' };
   return (
-    <span className={`til til--pensando ${className ?? ''}`} role="img" aria-label="Agente pensando">
+    <span className={`til til--pensando ${className ?? ''}`} {...acessibilidade}>
       <svg viewBox={VIEWBOX} focusable="false">
         <path d={ONDA} opacity="0.3" />
         <path className="til__traco" d={ONDA} />

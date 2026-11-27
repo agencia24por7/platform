@@ -37,6 +37,8 @@ import {
   podeCorrigirMais,
   valoresDeSugestaoIguais,
   MAXIMO_DE_CORRECOES_POR_VERSAO_RAIZ,
+  erroRepetivel,
+  criarPodeRepetir,
   type Lacuna,
   type RegraVigenteParaLacuna,
   type ValorDaSugestao,
@@ -63,6 +65,7 @@ import {
   PedirMudancaSchema,
   PedirPlanoSchema,
   PedirRevisaoSchema,
+  TentarDeNovoSchema,
   VersaoAlvoSchema,
   detalhesDoZod,
   type EntradaDaPreviaDeUtm,
@@ -74,6 +77,7 @@ import {
   type EntradaDePedirMudanca,
   type EntradaDePedirPlano,
   type EntradaDePedirRevisao,
+  type EntradaDeTentarDeNovo,
   type EntradaDeVersaoAlvo,
   type EntradaDoPainel,
 } from '@/modules/strategy/application/estrategiaEntradas';
@@ -83,6 +87,7 @@ import type {
   Execucao,
   GeradorDeId,
   LeitorDoBrain,
+  PedidoDaExecucao,
   SnapshotDoBrainLido,
   Plano,
   ReferenciaDaVersao,
@@ -219,6 +224,7 @@ export type EstrategiaService = {
   pedirRevisao(comando: ComandoDeEstrategia, entrada: EntradaDePedirRevisao, ator: Ator): Promise<Result<Execucao, Failure>>;
   pedirMudanca(comando: ComandoDeEstrategia, entrada: EntradaDePedirMudanca, ator: Ator): Promise<Result<Execucao, Failure>>;
   corrigirFalhaDoGate(comando: ComandoDeEstrategia, entrada: EntradaDeCorrigirFalhaDoGate, ator: Ator): Promise<Result<{ readonly execucao: Execucao }, Failure>>;
+  tentarDeNovo(comando: ComandoDeEstrategia, entrada: EntradaDeTentarDeNovo, ator: Ator): Promise<Result<{ readonly execucao: Execucao }, Failure>>;
   aprovarSugestoesDeLacunas(comando: ComandoDeEstrategia, entrada: EntradaDeAprovarSugestoes, ator: Ator): Promise<Result<ResultadoDasSugestoes, Failure>>;
   editarManual(comando: ComandoDeEstrategia, entrada: EntradaDeEditarManual, ator: Ator): Promise<Result<EdicaoManual, Failure>>;
   aplicar(comando: ComandoDeEstrategia, entrada: EntradaDeVersaoAlvo, ator: Ator): Promise<Result<EventoDaVersao, Failure>>;
@@ -251,6 +257,21 @@ const PLANO_SEM_DESTINO = failure(
 const EXECUCAO_EM_ANDAMENTO = failure('conflict', 'Já há uma execução em andamento para este plano. Cancele-a ou aguarde.', {
   codigo: 'execucao_ativa',
 });
+
+const SEM_FALHA_PARA_REPETIR = failure('conflict', 'A última execução deste plano não falhou: não há o que repetir.', { codigo: 'sem_falha_para_repetir' });
+const TIPO_NAO_REPETIVEL = failure('conflict', 'Esta execução não pode ser repetida por aqui. Peça uma mudança ao agente.', { codigo: 'tipo_nao_repetivel' });
+const BASE_MUDOU = failure('conflict', 'O plano mudou desde o pedido que falhou. Recarregue a página e peça de novo.', { codigo: 'base_mudou' });
+
+function pedidoRepetivel(execucao: Execucao): PedidoDaExecucao | null {
+  const { pedido } = execucao;
+  if (execucao.tipo === 'criar') {
+    const intencao = esquemaIntencao.safeParse(pedido);
+    return intencao.success ? { tipo: 'criar', intencao: intencao.data } : null;
+  }
+  if (execucao.tipo === 'ajustar') return typeof pedido['instrucao'] === 'string' ? { tipo: 'ajustar', instrucao: pedido['instrucao'] } : null;
+  if (execucao.tipo === 'revisar' && pedido['motivo'] === 'brain_mudou') return { tipo: 'revisar', motivo: 'brain_mudou' };
+  return null;
+}
 
 const PADROES_DE_AUDITORIA: Readonly<Record<'aplicar' | 'autorizar' | 'rejeitar' | 'revogar' | 'cancelarVersao', {
   readonly acao: AcaoDoPlano;
@@ -602,6 +623,53 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
       kind: 'corrigir_gate',
       baseVersionId: aberta.id,
       correcoesFeitas: feitas,
+    });
+    return ok({ execucao: execucao.value });
+  }
+
+  async function tentarDeNovo(comando: ComandoDeEstrategia, entrada: EntradaDeTentarDeNovo, ator: Ator) {
+    const lida = TentarDeNovoSchema.safeParse(entrada);
+    if (!lida.success) return err(failure('validation', 'Dados inválidos.', detalhesDoZod(lida.error)));
+    if (!ator.userId) return err(SEM_USUARIO);
+    const plano = await planoDoCliente(comando, lida.data.planoId);
+    if (!plano || plano.clientId !== lida.data.clienteId || plano.organizationId !== comando.organizationId) return err(PLANO_NAO_ENCONTRADO);
+    if (await repositorio.execucaoAtiva(comando.organizationId, plano.id)) return err(EXECUCAO_EM_ANDAMENTO);
+    const anterior = await repositorio.ultimaExecucao(comando.organizationId, plano.id);
+    if (anterior?.status !== 'falhou') return err(SEM_FALHA_PARA_REPETIR);
+    if (anterior.tipo === 'corrigir_gate' || !erroRepetivel(anterior.erroCodigo)) return err(TIPO_NAO_REPETIVEL);
+    const acaoDoPapel: AcaoDoPlano = anterior.tipo === 'criar' ? 'criar' : 'editar';
+    if (!pode(acaoDoPapel, comando.papelDeQuemAge)) return err(SEM_PERMISSAO);
+
+    const pedido = pedidoRepetivel(anterior);
+    if (!pedido) return err(TIPO_NAO_REPETIVEL);
+    let versaoBaseId: string | null = null;
+    if (pedido.tipo === 'criar') {
+      const versoes = await repositorio.listarVersoes(comando.organizationId, plano.id, 100);
+      if (!criarPodeRepetir(versoes, anterior.criadaEm)) return err(BASE_MUDOU);
+    } else {
+      const estado = await estadoDoPlano(plano);
+      const base = pedido.tipo === 'revisar' ? (estado?.vigente ?? null) : (estado?.aberta ?? estado?.vigente ?? null);
+      if (!base || base.id !== anterior.versaoBaseId) return err(BASE_MUDOU);
+      versaoBaseId = base.id;
+    }
+
+    const execucao = await repositorio.criarExecucao(comando.organizationId, plano.clientId, {
+      planoId: plano.id,
+      pedido,
+      versaoBaseId,
+      agentRunId: novoIdDeExecucao(),
+      solicitadoPor: ator.userId,
+      requestId: ator.requestId,
+    });
+    if (!execucao.ok) return err(falhaDeEstrategia(execucao.error));
+
+    await auditar(comando, ator, 'strategy.run.retry', 'strategy_plan', plano.id, {
+      clientId: plano.clientId,
+      tipoDePlano: plano.tipo,
+      execucaoId: execucao.value.id,
+      execucaoAnteriorId: anterior.id,
+      kind: pedido.tipo,
+      ...(versaoBaseId ? { baseVersionId: versaoBaseId } : {}),
     });
     return ok({ execucao: execucao.value });
   }
@@ -1191,6 +1259,7 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
     pedirRevisao,
     pedirMudanca,
     corrigirFalhaDoGate,
+    tentarDeNovo,
     aprovarSugestoesDeLacunas,
     editarManual,
     aplicar: (comando, entrada, ator) => agirNaVersao('aplicar', comando, entrada, ator),
