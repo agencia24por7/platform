@@ -1,3 +1,5 @@
+import type { EntradaDeConhecimento } from '../domain/conhecimento.ts';
+import type { JanelaDeDesempenho, ResultadoDaMedicaoDeDesempenho } from '../domain/desempenho.ts';
 import type { InventarioDoCliente } from '../domain/inventario.ts';
 
 export type ClienteResolvido = { readonly organizationId: string; readonly clienteId: string };
@@ -23,6 +25,7 @@ export type ClienteParaMedir = ClienteResolvido & { readonly plataformas: readon
 
 export type BrainRepository = {
   resolverCliente(clienteId: string): Promise<ClienteResolvido | null>;
+  clienteVivo(cliente: ClienteResolvido): Promise<boolean>;
   carregarInventario(cliente: ClienteResolvido): Promise<InventarioDoCliente | null>;
   estado(cliente: ClienteResolvido): Promise<EstadoDaPublicacao | null>;
   registrarPublicacao(cliente: ClienteResolvido, publicacao: { readonly hash: string; readonly entradas: number }): Promise<void>;
@@ -33,6 +36,8 @@ export type BrainRepository = {
   marcarDespublicado(clienteId: string): Promise<void>;
   clientesParaMedir(limite: number): Promise<readonly ClienteParaMedir[]>;
   gravarCobertura(cliente: ClienteResolvido, medidas: readonly MedidaNova[]): Promise<void>;
+  carregarConhecimento(cliente: ClienteResolvido): Promise<readonly EntradaDeConhecimento[]>;
+  gravarDesempenho(cliente: ClienteResolvido, medicao: Pick<ResultadoDaMedicaoDeDesempenho, 'linhas' | 'medidos'>): Promise<void>;
 };
 
 export type ObjetoDeMedicao = {
@@ -47,4 +52,18 @@ export type MedidorDeCobertura = {
   medir(cliente: ClienteResolvido, objetos: readonly ObjetoDeMedicao[], desde: string, ate: string): Promise<readonly MedidaNova[]>;
 };
 
+export type MedidorDeDesempenho = {
+  readonly disponivel: boolean;
+  medir(cliente: ClienteResolvido, plataformas: readonly string[], janela: JanelaDeDesempenho): Promise<ResultadoDaMedicaoDeDesempenho>;
+};
+
 export type IdentidadeDoWorker = { readonly requestId: string; readonly callerFingerprint: string; readonly sourceIp: string | null };
+
+export type AgenteLeitor = {
+  readonly credencialId: string;
+  readonly organizationId: string;
+  readonly clienteIds: readonly string[] | null;
+  readonly requestId: string;
+  readonly sourceIp: string | null;
+  readonly visao?: 'cliente' | 'equipe';
+};

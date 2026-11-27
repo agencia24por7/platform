@@ -95,7 +95,7 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
     modules().clients.list(ctx.organization.id),
     carregarConexoes(ctx.organization.id),
   ]);
-  const prontidao = await carregarProntidao(ctx.organization.id, cliente.id);
+  const prontidao = await carregarProntidao(ctx.organization.id, cliente.id, ctx.role);
   const principal = prontidao ? acaoPrincipal(prontidao.acoes, cliente.id, { podeEditar, organizacaoInteira, tipo: ctx.organization.type }) : null;
   const cabecalhoTemConexao = principal?.ehConexao === true;
   const agora = new Date();

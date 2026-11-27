@@ -64,6 +64,7 @@ umask 077
   echo "WHATSAPP_WEBHOOK_VERIFY_TOKEN=$(read_optional_secret whatsapp-webhook-verify-token)"
   echo "ALERT_WEBHOOK_URL=$(read_optional_secret alert-webhook-url)"
   echo "PLATAFORMA_OPERADORES=$(read_optional_secret plataforma-operadores)"
+  echo "TRIA_PROXY_SECRET=$(read_optional_secret proxy-secret)"
 } > .env
 if [ -n "$IMAGEM_ATUAL" ]; then echo "$IMAGEM_ATUAL" >> .env; fi
 chmod 600 .env
@@ -214,6 +215,10 @@ logging:
       type: files
       include_paths:
         - /var/lib/docker/containers/*/*-json.log
+    metadados_bloqueio:
+      type: files
+      include_paths:
+        - /var/log/orla/metadados-bloqueio.log
   processors:
     docker_envelope:
       type: parse_json
@@ -240,6 +245,15 @@ logging:
             info: INFO
             warn: WARNING
             error: ERROR
+    bloqueio_json:
+      type: parse_json
+    bloqueio_severidade:
+      type: modify_fields
+      fields:
+        severity:
+          move_from: jsonPayload.severity
+          map_values:
+            error: ERROR
   service:
     pipelines:
       default_pipeline:
@@ -247,6 +261,9 @@ logging:
       containers:
         receivers: [containers_docker]
         processors: [docker_envelope, docker_para_mensagem, app_json, so_linha_da_app, app_severidade]
+      metadados_bloqueio:
+        receivers: [metadados_bloqueio]
+        processors: [bloqueio_json, bloqueio_severidade]
 metrics:
   service:
     pipelines:
@@ -280,6 +297,9 @@ instalar_ops_agent || echo "Ops Agent nao instalado; a pilha segue sem logs na n
 %{ endif ~}
 if [ -f /var/lib/tria-provisioned ]; then
   echo "Ja provisionado. Ambiente regravado a partir dos segredos. Subindo a pilha."
+  if [ -f "$STACK/metadados-bloquear.sh" ]; then
+    sh "$STACK/metadados-bloquear.sh" instalar || echo "Bloqueio de metadados nao reinstalado no boot; o timer orla-metadados-vigiar (se instalado), o drop-in do docker.service e o proximo deploy reaplicam."
+  fi
   cd "$STACK" && docker compose -f docker-compose.prod.yml up -d
   exit 0
 fi

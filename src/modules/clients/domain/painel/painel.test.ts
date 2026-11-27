@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { comAviso, destinoSeguro, enderecoDoFormulario, idValido, rotaDoCliente } from './enderecos.ts';
+import { ABAS_DO_CLIENTE, ROTULO_DA_ABA, ROTULO_DA_SECAO_DE_ESTRATEGIA, SECOES_DE_ESTRATEGIA, comAviso, destinoSeguro, enderecoDoFormulario, idValido, rotaDoCliente, secaoDeEstrategia } from './enderecos.ts';
 import { formatarCentavos, mascararDinheiro, normalizarArrobaDigitado, numeroDeTexto, tamanhoLegivel } from './formato.ts';
 import { mensagemProntaDoLink, minutosEstimados, secoesDoPreset } from './mensagem.ts';
 import { barrasDaSecao, resumirCompletude, saudeDosDados, tempoRelativo } from './resumo.ts';
@@ -14,6 +14,20 @@ describe('endereços do painel do cliente', () => {
     assert.equal(rotaDoCliente(ID, 'contexto', { secao: 'publico', vazio: '' }), `/clientes/${ID}/contexto?secao=publico`);
     assert.equal(comAviso(`/clientes/${ID}/conexoes`, 'feito', 'Conta movida.'), `/clientes/${ID}/conexoes?feito=Conta%20movida.`);
     assert.equal(comAviso(`/x?a=1`, 'erro', 'e'), '/x?a=1&erro=e');
+  });
+
+  it('enumera as quatro abas na ordem e monta a rota da Estratégia', () => {
+    assert.deepEqual([...ABAS_DO_CLIENTE], ['conexoes', 'contexto', 'regras', 'estrategia']);
+    assert.deepEqual(ABAS_DO_CLIENTE.map((aba) => ROTULO_DA_ABA[aba]), ['Conexões', 'Contexto', 'Regras', 'Estratégia']);
+    assert.equal(rotaDoCliente(ID, 'estrategia', { secao: 'gates' }), `/clientes/${ID}/estrategia?secao=gates`);
+  });
+
+  it('seções da Estratégia: Plano é o padrão e o resto cai nele', () => {
+    assert.deepEqual([...SECOES_DE_ESTRATEGIA], ['plano', 'comite', 'gates', 'historico']);
+    assert.deepEqual(SECOES_DE_ESTRATEGIA.map((s) => ROTULO_DA_SECAO_DE_ESTRATEGIA[s]), ['Plano', 'Comitê', 'Gates', 'Histórico']);
+    assert.equal(secaoDeEstrategia('gates'), 'gates');
+    assert.equal(secaoDeEstrategia('xyz'), 'plano');
+    assert.equal(secaoDeEstrategia(undefined), 'plano');
   });
 
   it('só aceita destino dentro do próprio cliente', () => {

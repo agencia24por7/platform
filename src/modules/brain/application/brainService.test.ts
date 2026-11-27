@@ -19,16 +19,21 @@ type Estado = { publicadoEm: Date | null; ultimoHash: string | null; pendente: b
 
 const WORKER = { requestId: 'r', callerFingerprint: 'f', sourceIp: null };
 
-function repositorio(opcoes: { excluidos?: string[]; estado?: Estado | null } = {}) {
+function repositorio(opcoes: { excluidos?: string[]; estado?: Estado | null; coberturaFalha?: boolean; conhecimentoFalha?: boolean } = {}) {
   const chamadas: Chamadas = {};
   const conta = (nome: string) => { chamadas[nome] = (chamadas[nome] ?? 0) + 1; };
   let estado = opcoes.estado ?? null;
   const falhas: string[] = [];
   const cobertura: unknown[] = [];
+  const desempenhoGravado: unknown[] = [];
   const repo = {
     async resolverCliente(id: string) {
       conta('resolverCliente');
       return id === fx.CLIENTE ? { organizationId: fx.ORG, clienteId: fx.CLIENTE } : null;
+    },
+    async clienteVivo(c: { organizationId: string; clienteId: string }) {
+      conta('clienteVivo');
+      return c.organizationId === fx.ORG && c.clienteId === fx.CLIENTE && !(opcoes.excluidos ?? []).includes(c.clienteId);
     },
     async carregarInventario() { conta('carregarInventario'); return fx.inventario(); },
     async estado() { conta('estado'); return estado; },
@@ -42,9 +47,15 @@ function repositorio(opcoes: { excluidos?: string[]; estado?: Estado | null } = 
     async clientesExcluidosPublicados() { conta('clientesExcluidosPublicados'); return (opcoes.excluidos ?? []).map((clienteId) => ({ organizationId: fx.ORG, clienteId })); },
     async marcarDespublicado() { conta('marcarDespublicado'); },
     async clientesParaMedir() { conta('clientesParaMedir'); return [{ organizationId: fx.ORG, clienteId: fx.CLIENTE, plataformas: ['meta', 'ga4'] }]; },
-    async gravarCobertura(_c: unknown, medidas: readonly unknown[]) { conta('gravarCobertura'); cobertura.push(...medidas); },
+    async gravarCobertura(_c: unknown, medidas: readonly unknown[]) { conta('gravarCobertura'); if (opcoes.coberturaFalha) throw new Error('cobertura fora'); cobertura.push(...medidas); },
+    async carregarConhecimento() {
+      conta('carregarConhecimento');
+      if (opcoes.conhecimentoFalha) throw new Error('banco fora');
+      return fx.conhecimento();
+    },
+    async gravarDesempenho(_c: unknown, medicao: { linhas: readonly unknown[]; medidos: readonly unknown[] }) { conta('gravarDesempenho'); desempenhoGravado.push(medicao); },
   };
-  return { repo, chamadas, falhas, cobertura, estadoAtual: () => estado };
+  return { repo, chamadas, falhas, cobertura, desempenhoGravado, estadoAtual: () => estado };
 }
 
 function armazenamentoEmMemoria() {
@@ -75,15 +86,17 @@ function auditoria() {
   return { eventos, audit: { record: async (e: { action: string; metadata?: Record<string, unknown> }) => { eventos.push(e); }, list: async () => [], search: async () => [] } };
 }
 
-function servico(opcoes: { repo?: ReturnType<typeof repositorio>; armazenamento?: ReturnType<typeof armazenamentoEmMemoria>['armazenamento'] | ReturnType<typeof criarArmazenamentoNulo>; medidorDisponivel?: boolean; contexto?: boolean; regras?: boolean } = {}) {
+function servico(opcoes: { repo?: ReturnType<typeof repositorio>; armazenamento?: ReturnType<typeof armazenamentoEmMemoria>['armazenamento'] | ReturnType<typeof criarArmazenamentoNulo>; medidorDisponivel?: boolean; contexto?: boolean; regras?: boolean; desempenho?: 'ok' | 'falha' | 'parcial' | 'tudo_falha'; avisos?: Record<string, unknown>[] } = {}) {
   const repo = opcoes.repo ?? repositorio();
   const { audit, eventos } = auditoria();
   const medidas: string[] = [];
+  const visoes: string[] = [];
+  const medidasDeDesempenho: string[] = [];
   const s = createBrainService({
     repositorio: repo.repo,
     contexto: opcoes.contexto === false
       ? CARREGADOR_DE_CONTEXTO_INDISPONIVEL
-      : carregadorDoServicoDeContexto({ carregar: async () => ({ ok: true as const, value: fx.contexto() }) }),
+      : carregadorDoServicoDeContexto({ carregarNaVisao: async (_escopo: unknown, visao: string) => { visoes.push(visao); return { ok: true as const, value: fx.contexto() }; } }),
     regras: opcoes.regras === false
       ? CARREGADOR_DE_REGRAS_INDISPONIVEL
       : { disponivel: true, carregar: async () => fx.regras() },
@@ -95,6 +108,21 @@ function servico(opcoes: { repo?: ReturnType<typeof repositorio>; armazenamento?
         return objetos.map((o) => ({ tabela: o.tabela, desde: '2026-01-01', ate: '2026-11-19', linhas: 10, diasComDado: o.dimensao ? null : 5 }));
       },
     },
+    ...(opcoes.desempenho
+      ? {
+          medidorDeDesempenho: {
+            disponivel: true,
+            async medir(_c: unknown, plataformas: readonly string[]) {
+              medidasDeDesempenho.push(plataformas.join(','));
+              if (opcoes.desempenho === 'falha') throw new Error('bigquery fora');
+              const total = { platform: 'meta', periodo: '2026-10-01', recorte: 'total' as const, chave: '', rotulo: 'Total', investimentoCentavos: 1, impressoes: 1, cliques: 1, conversoes: 1, receitaCentavos: null, moeda: 'BRL' };
+              if (opcoes.desempenho === 'tudo_falha') return { linhas: [], medidos: [], falhas: ['total', 'campanha'] };
+              if (opcoes.desempenho === 'parcial') return { linhas: [total], medidos: [{ platform: 'meta', recorte: 'total' as const }], falhas: ['meta:regiao'] };
+              return { linhas: [total], medidos: [{ platform: 'meta', recorte: 'total' as const }], falhas: [] };
+            },
+          },
+        }
+      : {}),
     audit,
     provedores: PROVEDORES,
     capacidades: DEFINICOES_DE_CAPACIDADES,
@@ -103,8 +131,9 @@ function servico(opcoes: { repo?: ReturnType<typeof repositorio>; armazenamento?
     objetosDeMedicao,
     configuracao: { conjuntoDeDados: 'tria_dw', bytesMaximosPorConsulta: 10_000_000_000, diasDeMedicao: 400 },
     relogio: () => fx.AGORA,
+    registrarAviso: (_evento: string, dados: Record<string, unknown>) => { opcoes.avisos?.push(dados); },
   });
-  return { s, repo, eventos, medidas };
+  return { s, repo, eventos, medidas, visoes, medidasDeDesempenho };
 }
 
 describe('API de leitura do brain (serviço)', () => {
@@ -160,7 +189,16 @@ describe('API de leitura do brain (serviço)', () => {
     const repo = repositorio();
     const { s } = servico({ repo });
     await s.catalogo(fx.CLIENTE, { limite: 200, cursor: null }, WORKER);
-    assert.deepEqual(repo.chamadas, { resolverCliente: 1, carregarInventario: 1 });
+    assert.deepEqual(repo.chamadas, { resolverCliente: 1, carregarInventario: 1, carregarConhecimento: 1 });
+  });
+
+  it('conhecimento que falha ao carregar deixa o provedor indisponível sem derrubar o catálogo', async () => {
+    const { s } = servico({ repo: repositorio({ conhecimentoFalha: true }) });
+    const r = await s.montar(fx.CLIENTE);
+    assert.ok(r.ok);
+    assert.equal(r.value.provedores.find((p) => p.id === 'conhecimento')?.status, 'indisponivel');
+    assert.ok(!r.value.entradas.some((e) => e.tipo.startsWith('conhecimento_')));
+    assert.ok(r.value.entradas.some((e) => e.tipo === 'desempenho_mensal'));
   });
 
   it('contexto que falha ao carregar não derruba o catálogo', async () => {
@@ -181,6 +219,132 @@ describe('API de leitura do brain (serviço)', () => {
     });
     const r = await s.montar(fx.CLIENTE);
     assert.ok(r.ok && r.value.provedores.find((p) => p.id === 'contexto')?.status === 'indisponivel');
+  });
+
+  it('o Brain da tela pede ao contexto a visão do cliente para quem só lê; worker e publicação pedem a da equipe', async () => {
+    const repo = repositorio();
+    const { audit } = auditoria();
+    const visoes: string[] = [];
+    const s = createBrainService({
+      ...{ repositorio: repo.repo, audit },
+      contexto: carregadorDoServicoDeContexto({
+        carregarNaVisao: async (_escopo, visao) => {
+          visoes.push(visao);
+          return { ok: true as const, value: fx.contexto() };
+        },
+      }),
+      armazenamento: criarArmazenamentoNulo(),
+      medidor: { disponivel: false, medir: async () => [] },
+      provedores: PROVEDORES,
+      capacidades: DEFINICOES_DE_CAPACIDADES,
+      conectores: CONECTORES_POSSIVEIS,
+      plataformasDaTabela,
+      objetosDeMedicao,
+      configuracao: { conjuntoDeDados: 'tria_dw', bytesMaximosPorConsulta: 1, diasDeMedicao: 400 },
+      relogio: () => fx.AGORA,
+    });
+    await s.montarNaOrganizacao(fx.ORG, fx.CLIENTE, 'viewer');
+    await s.montarNaOrganizacao(fx.ORG, fx.CLIENTE, 'operator');
+    await s.montar(fx.CLIENTE);
+    assert.deepEqual(visoes, ['cliente', 'equipe', 'equipe']);
+  });
+});
+
+describe('leitura do catálogo por agente (ADR 0063)', () => {
+  const OUTRA_ORG = '44444444-4444-4444-8444-444444444444';
+  const agente = (extra: Partial<{ organizationId: string; clienteIds: readonly string[] | null; visao: 'cliente' | 'equipe' }> = {}) => ({
+    credencialId: 'cred-1',
+    organizationId: fx.ORG,
+    clienteIds: null,
+    requestId: 'r-agente',
+    sourceIp: null,
+    ...extra,
+  });
+  const consulta = { limite: 5, cursor: null };
+
+  it('devolve a mesma página do worker e audita o agente como ator', async () => {
+    const { s, eventos } = servico();
+    const doWorker = await s.catalogo(fx.CLIENTE, consulta, WORKER);
+    const doAgente = await s.catalogoDoAgente(agente(), fx.CLIENTE, consulta);
+    assert.ok(doWorker.ok && doAgente.ok);
+    if (!doWorker.ok || !doAgente.ok) return;
+    assert.deepEqual(doAgente.value.corpo, doWorker.value.corpo);
+    const evento = eventos.at(-1) as unknown as { action: string; actorType: string; actorId: string; requestId: string };
+    assert.deepEqual(
+      { action: evento.action, actorType: evento.actorType, actorId: evento.actorId, requestId: evento.requestId },
+      { action: 'brain.consulta', actorType: 'agent', actorId: 'cred-1', requestId: 'r-agente' },
+    );
+  });
+
+  it('lê o contexto na visão do cliente, nunca na da equipe (ADR 0062)', async () => {
+    const { s, visoes } = servico();
+    await s.catalogoDoAgente(agente(), fx.CLIENTE, consulta);
+    assert.deepEqual(visoes, ['cliente']);
+    await s.catalogo(fx.CLIENTE, consulta, WORKER);
+    assert.deepEqual(visoes, ['cliente', 'equipe']);
+  });
+
+  it('visão da equipe só vale quando o escopo interno a pede; sem ela a leitura é do cliente', async () => {
+    const { s, visoes } = servico();
+    await s.catalogoDoAgente(agente({ visao: 'equipe' }), fx.CLIENTE, consulta);
+    await s.catalogoDoAgente(agente({ visao: 'cliente' }), fx.CLIENTE, consulta);
+    await s.catalogoDoAgente(agente(), fx.CLIENTE, consulta);
+    assert.deepEqual(visoes, ['equipe', 'cliente', 'cliente']);
+  });
+
+  it('entradaDoAgente devolve a entrada pela URN, audita o agente e recusa URN de outro cliente', async () => {
+    const { s, eventos } = servico();
+    const propria = criarUrn(fx.ORG, fx.CLIENTE, 'tabela_de_dados', 'fato_ads_diario');
+    const r = await s.entradaDoAgente(agente(), fx.CLIENTE, propria);
+    assert.ok(r.ok && r.value.corpo.urn === propria);
+    const evento = eventos.at(-1) as unknown as { actorType: string; actorId: string };
+    assert.deepEqual({ actorType: evento.actorType, actorId: evento.actorId }, { actorType: 'agent', actorId: 'cred-1' });
+    const alheia = criarUrn(fx.ORG, fx.OUTRO_CLIENTE, 'tabela_de_dados', 'fato_ads_diario');
+    const x = await s.entradaDoAgente(agente(), fx.CLIENTE, alheia);
+    assert.ok(!x.ok && x.error.code === 'not_found');
+    const inexistente = criarUrn(fx.ORG, fx.CLIENTE, 'tabela_de_dados', 'nao_existe');
+    const y = await s.entradaDoAgente(agente(), fx.CLIENTE, inexistente);
+    assert.ok(!y.ok && y.error.code === 'not_found');
+  });
+
+  it('entradaDoAgente respeita a lista de clientes e a organização da credencial', async () => {
+    const propria = criarUrn(fx.ORG, fx.CLIENTE, 'tabela_de_dados', 'fato_ads_diario');
+    const fora = await servico().s.entradaDoAgente(agente({ clienteIds: [fx.OUTRO_CLIENTE] }), fx.CLIENTE, propria);
+    assert.ok(!fora.ok && fora.error.code === 'not_found');
+    const outraOrg = await servico().s.entradaDoAgente(agente({ organizationId: OUTRA_ORG }), fx.CLIENTE, propria);
+    assert.ok(!outraOrg.ok && outraOrg.error.code === 'not_found');
+  });
+
+  it('nunca resolve o cliente pela travessia do worker', async () => {
+    const repo = repositorio();
+    const { s } = servico({ repo });
+    await s.catalogoDoAgente(agente(), fx.CLIENTE, consulta);
+    assert.equal(repo.chamadas.resolverCliente, undefined);
+    assert.equal(repo.chamadas.clienteVivo, 1);
+  });
+
+  it('cliente fora da lista da credencial responde não encontrado sem tocar o banco', async () => {
+    const repo = repositorio();
+    const { s, eventos } = servico({ repo });
+    const r = await s.catalogoDoAgente(agente({ clienteIds: [fx.OUTRO_CLIENTE] }), fx.CLIENTE, consulta);
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.error.code, 'not_found');
+    assert.deepEqual(repo.chamadas, {});
+    assert.equal(eventos.length, 0);
+  });
+
+  it('credencial de outra organização, cliente excluído e id inválido respondem não encontrado', async () => {
+    const casos = [
+      { s: servico().s, quem: agente({ organizationId: OUTRA_ORG }), cliente: fx.CLIENTE },
+      { s: servico({ repo: repositorio({ excluidos: [fx.CLIENTE] }) }).s, quem: agente(), cliente: fx.CLIENTE },
+      { s: servico().s, quem: agente(), cliente: 'nao-e-uuid' },
+      { s: servico().s, quem: agente({ organizationId: 'nao-e-uuid' }), cliente: fx.CLIENTE },
+    ];
+    for (const caso of casos) {
+      const r = await caso.s.catalogoDoAgente(caso.quem, caso.cliente, consulta);
+      assert.equal(r.ok, false);
+      if (!r.ok) assert.equal(r.error.code, 'not_found');
+    }
   });
 });
 
@@ -252,6 +416,55 @@ describe('medição de cobertura', () => {
     assert.ok(!medidas.some((t) => t.startsWith('fato_google_')));
     assert.ok(!medidas.includes('gov_snapshot_fontes'));
     assert.equal(repo.chamadas.marcarPendente, 1);
+  });
+
+  it('mede o desempenho no mesmo acionamento, só das plataformas de anúncio, e marca pendente', async () => {
+    const repo = repositorio();
+    const { s, medidasDeDesempenho } = servico({ repo, desempenho: 'ok' });
+    const r = await s.medirCobertura(WORKER, 10);
+    assert.ok(r.ok && r.value.desempenhoLinhas === 1 && r.value.desempenhoFalhas === 0 && r.value.falhas === 0);
+    assert.deepEqual(medidasDeDesempenho, ['meta']);
+    assert.equal(repo.chamadas.gravarDesempenho, 1);
+    assert.equal(repo.chamadas.marcarPendente, 2);
+  });
+
+  it('consulta de recorte que falha é contada, as demais são gravadas e o recorte que falhou não entra nos medidos', async () => {
+    const repo = repositorio();
+    const avisos: Record<string, unknown>[] = [];
+    const { s } = servico({ repo, desempenho: 'parcial', avisos });
+    const r = await s.medirCobertura(WORKER, 10);
+    assert.ok(r.ok && r.value.desempenhoFalhas === 1 && r.value.desempenhoLinhas === 1 && r.value.falhas === 0);
+    assert.equal(repo.chamadas.gravarDesempenho, 1);
+    const gravado = repo.desempenhoGravado[0] as { medidos: { recorte: string }[] };
+    assert.deepEqual(gravado.medidos.map((m) => m.recorte), ['total']);
+    assert.deepEqual(avisos.filter((a) => a.consulta).map((a) => a.consulta), ['meta:regiao']);
+    assert.ok(!JSON.stringify(avisos).match(/SELECT|credential|token/i));
+  });
+
+  it('se todas as consultas falham nada é gravado nem apagado', async () => {
+    const repo = repositorio();
+    const { s } = servico({ repo, desempenho: 'tudo_falha' });
+    const r = await s.medirCobertura(WORKER, 10);
+    assert.ok(r.ok && r.value.desempenhoFalhas === 2 && r.value.desempenhoLinhas === 0);
+    assert.equal(repo.chamadas.gravarDesempenho, undefined);
+    assert.equal(repo.chamadas.marcarPendente, 1, 'só a cobertura marcou pendente');
+  });
+
+  it('falha no desempenho não derruba a cobertura', async () => {
+    const repo = repositorio();
+    const { s } = servico({ repo, desempenho: 'falha' });
+    const r = await s.medirCobertura(WORKER, 10);
+    assert.ok(r.ok && r.value.tabelas > 0 && r.value.falhas === 0 && r.value.desempenhoFalhas === 1);
+    assert.equal(repo.chamadas.gravarCobertura, 1);
+    assert.equal(repo.chamadas.gravarDesempenho, undefined);
+  });
+
+  it('falha na cobertura não derruba o desempenho', async () => {
+    const repo = repositorio({ coberturaFalha: true });
+    const { s } = servico({ repo, desempenho: 'ok' });
+    const r = await s.medirCobertura(WORKER, 10);
+    assert.ok(r.ok && r.value.falhas === 1 && r.value.desempenhoLinhas === 1 && r.value.desempenhoFalhas === 0);
+    assert.equal(repo.chamadas.gravarDesempenho, 1);
   });
 
   it('sem BigQuery responde indisponível', async () => {

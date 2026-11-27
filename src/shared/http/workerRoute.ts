@@ -8,6 +8,8 @@ import type { Result } from '@/shared/result/result';
 import { consume } from '@/shared/security/rateLimit';
 import { fingerprint, secureCompare } from '@/shared/security/tokens';
 import { problem, success } from '@/shared/http/problem';
+import { criarAvisoDoLimiteDoWorker } from '@/shared/http/avisoDoLimiteDoWorker';
+import { criarAvisoDeWorkerNaoAutorizado } from '@/shared/http/avisoDeWorkerNaoAutorizado';
 import { CABECALHO_DO_REQUEST_ID, resolverRequestId } from '@/shared/http/requestId';
 import { CorpoAcimaDoLimite, declaradoAcimaDoLimite, lerCorpoLimitado } from '@/shared/http/corpoLimitado';
 
@@ -16,6 +18,16 @@ const MAX_BODY_BYTES = 1_000_000;
 export type WorkerRouteOptions = { readonly maxBodyBytes?: number };
 const RATE_LIMIT = 120;
 const RATE_WINDOW_MS = 60_000;
+
+const avisarLimiteExcedido = criarAvisoDoLimiteDoWorker({
+  janelaMs: RATE_WINDOW_MS,
+  escrever: (evento, campos) => logger.warn(evento, campos),
+});
+
+const avisarNaoAutorizado = criarAvisoDeWorkerNaoAutorizado({
+  janelaMs: RATE_WINDOW_MS,
+  escrever: (evento, campos) => logger.warn(evento, campos),
+});
 
 export type WorkerContext = {
   readonly requestId: string;
@@ -67,13 +79,19 @@ function handle<I, O>(
 
     const token = readBearer(request);
     if (!token || !secureCompare(token, env().TRIA_WORKER_TOKEN)) {
-      logger.warn('worker.unauthorized', { requestId, path: request.nextUrl.pathname });
+      avisarNaoAutorizado({ requestId, path: request.nextUrl.pathname });
       return problem(failure('unauthorized', 'Credencial de worker ausente ou inválida.'), requestId);
     }
 
     const caller = fingerprint(token);
-    const verdict = consume(`worker:${caller}`, RATE_LIMIT, RATE_WINDOW_MS);
+    const verdict = consume('worker', `worker:${caller}`, RATE_LIMIT, RATE_WINDOW_MS);
     if (!verdict.allowed) {
+      avisarLimiteExcedido({
+        requestId,
+        path: request.nextUrl.pathname,
+        callerFingerprint: caller,
+        retryAfterSeconds: verdict.retryAfterSeconds,
+      });
       return NextResponse.json(
         { type: 'https://orla.app/problems/rate_limited', title: 'Limite de chamadas excedido.', status: 429, requestId },
         { status: 429, headers: { 'Retry-After': String(verdict.retryAfterSeconds), 'X-Request-Id': requestId } },

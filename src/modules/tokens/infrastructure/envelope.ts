@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { aadDe } from '@/modules/tokens/domain/token';
-import type { ChaveMestra, CifraDeTokens } from '@/modules/tokens/application/portas';
+import type { ChaveMestra, Cifrado, CifraDeTokens } from '@/modules/tokens/application/portas';
 
 const VERSAO_DO_FORMATO = 1;
 const TAMANHO_DO_IV = 12;
@@ -50,10 +50,14 @@ export function desmontarEnvelope(bytes: Buffer): { readonly embrulhada: Buffer;
   return { embrulhada: bytes.subarray(3, 3 + tamanho), selado: bytes.subarray(3 + tamanho) };
 }
 
-export function createCifraEnvelope(chaveMestra: ChaveMestra): CifraDeTokens {
+export type SeladorDeEnvelope = {
+  selar(texto: string, aad: Buffer): Promise<Cifrado>;
+  abrir(bytes: Buffer, aad: Buffer): Promise<string>;
+};
+
+export function createSeladorDeEnvelope(chaveMestra: ChaveMestra): SeladorDeEnvelope {
   return {
-    async cifrar(texto, contexto) {
-      const aad = aadDe(contexto);
+    async selar(texto, aad) {
       const chaveDeDados = randomBytes(TAMANHO_DA_CHAVE_DE_DADOS);
       try {
         const selado = selar(chaveDeDados, Buffer.from(texto, 'utf8'), aad);
@@ -64,8 +68,7 @@ export function createCifraEnvelope(chaveMestra: ChaveMestra): CifraDeTokens {
       }
     },
 
-    async decifrar(bytes, contexto) {
-      const aad = aadDe(contexto);
+    async abrir(bytes, aad) {
       const { embrulhada, selado } = desmontarEnvelope(bytes);
       const chaveDeDados = await chaveMestra.desembrulhar(embrulhada, aad);
       try {
@@ -75,5 +78,13 @@ export function createCifraEnvelope(chaveMestra: ChaveMestra): CifraDeTokens {
         chaveDeDados.fill(0);
       }
     },
+  };
+}
+
+export function createCifraEnvelope(chaveMestra: ChaveMestra): CifraDeTokens {
+  const selador = createSeladorDeEnvelope(chaveMestra);
+  return {
+    cifrar: (texto, contexto) => selador.selar(texto, aadDe(contexto)),
+    decifrar: (bytes, contexto) => selador.abrir(bytes, aadDe(contexto)),
   };
 }

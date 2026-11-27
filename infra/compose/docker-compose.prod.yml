@@ -66,6 +66,7 @@ services:
       CONTEXT_BUCKET: ${CONTEXT_BUCKET:-}
       TOKENS_KMS_KEY: ${TOKENS_KMS_KEY:-}
       TRIA_SESSION_SECRET: ${TRIA_SESSION_SECRET:?required}
+      TRIA_PROXY_SECRET: ${TRIA_PROXY_SECRET:-}
       LOG_LEVEL: info
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
@@ -85,7 +86,7 @@ services:
       N8N_PUBLIC_URL: ${N8N_PUBLIC_URL:-}
       N8N_OWNER_EMAIL: ${N8N_OWNER_EMAIL:-}
       N8N_OWNER_PASSWORD: ${N8N_OWNER_PASSWORD:-}
-    networks: [interna]
+    networks: [interna, saida_app]
     mem_limit: 320m
     read_only: true
     tmpfs:
@@ -127,7 +128,7 @@ services:
       TZ: America/Sao_Paulo
     volumes:
       - n8n-data:/home/node/.n8n
-    networks: [interna]
+    networks: [interna, saida]
     mem_limit: 768m
     cap_drop: [ALL]
 
@@ -142,6 +143,7 @@ services:
       N8N_HOST: ${N8N_HOST:-}
       ACME_EMAIL: ${ACME_EMAIL:?required}
       PROXY_BASIC_AUTH: ${PROXY_BASIC_AUTH:?required}
+      TRIA_PROXY_SECRET: ${TRIA_PROXY_SECRET:-}
     ports:
       - "80:80"
       - "443:443"
@@ -157,7 +159,7 @@ services:
       - ./n8n.caddy:/etc/caddy/n8n.caddy:ro
       - caddy-data:/data
       - caddy-config:/config
-    networks: [interna]
+    networks: [interna, saida]
     mem_limit: 64m
     cap_add: [NET_BIND_SERVICE]
     cap_drop: [ALL]
@@ -165,6 +167,18 @@ services:
 networks:
   interna:
     driver: bridge
+    internal: true
+    enable_ipv6: false
+  saida:
+    driver: bridge
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.name: orla-saida
+  saida_app:
+    driver: bridge
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.name: orla-app
 
 volumes:
   postgres-data:

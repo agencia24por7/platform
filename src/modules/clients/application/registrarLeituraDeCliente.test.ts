@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { JANELA_DA_LEITURA_MS, deveRegistrarLeitura, registrarLeituraDeCliente } from './registrarLeituraDeCliente.ts';
-import { consume } from '../../../shared/security/rateLimit.ts';
+import { TETO_POR_DOMINIO, consume } from '../../../shared/security/rateLimit.ts';
 import type { AuditEvent } from '../../audit/domain/auditEvent.ts';
 
 const leitura = { organizationId: 'org-1', userId: 'user-1', clientId: 'cli-1', requestId: 'req-12345678' };
@@ -29,7 +29,7 @@ describe('registrarLeituraDeCliente', () => {
 });
 
 function lotarLimitadorDeSeguranca(): void {
-  for (let i = 0; i < 10_100; i += 1) consume(`lotacao-teste:${i}`, 1, 600_000);
+  for (let i = 0; i < TETO_POR_DOMINIO.publico + 100; i += 1) consume('publico', `lotacao-teste:${i}`, 1, 600_000);
 }
 
 describe('deveRegistrarLeitura', () => {

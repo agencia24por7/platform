@@ -2,7 +2,7 @@
 
 import { headers } from 'next/headers';
 import { modules } from '@/composition';
-import { enderecoConfiavel } from '@/modules/audit/domain/actor';
+import { enderecoDoCliente } from '@/shared/http/enderecoDoCliente';
 import type {
   AcessoPublico,
   AlteracaoPeloLink,
@@ -36,7 +36,7 @@ async function acesso(credencial: CredencialPublica): Promise<AcessoPublico | nu
   if (!valida) return null;
   return {
     credencial: valida,
-    ip: enderecoConfiavel((await headers()).get('x-forwarded-for')),
+    ip: enderecoDoCliente(await headers()),
     requestId: await requestId(),
   };
 }

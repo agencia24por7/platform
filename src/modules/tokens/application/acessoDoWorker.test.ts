@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import '../../../shared/testing/registrarAlias.mjs';
 import type { AuditEvent } from '@/modules/audit/domain/auditEvent';
-import type { ContextoDaOrigem } from './acessoDoWorker.ts';
+import type { ContextoDaOrigem, RecifradorExtra } from './acessoDoWorker.ts';
 import type { CofreDeTokens } from './cofreDeTokens.ts';
 
 const { createAcessoDoWorker } = await import('./acessoDoWorker.ts');
@@ -20,7 +20,7 @@ const VALIDO: ContextoDaOrigem = {
   temToken: true,
 };
 
-function montar(contexto: ContextoDaOrigem | null, opcoes: { permitir?: boolean; cofre?: Partial<CofreDeTokens> } = {}) {
+function montar(contexto: ContextoDaOrigem | null, opcoes: { permitir?: boolean; cofre?: Partial<CofreDeTokens>; extras?: readonly RecifradorExtra[] } = {}) {
   const eventos: AuditEvent[] = [];
   let pedidosAoCofre = 0;
   const cofre: CofreDeTokens = {
@@ -41,9 +41,43 @@ function montar(contexto: ContextoDaOrigem | null, opcoes: { permitir?: boolean;
     cofre,
     audit: { record: async (evento) => void eventos.push(evento), list: async () => [], search: async () => [] },
     limitar: () => opcoes.permitir ?? true,
+    ...(opcoes.extras ? { recifradoresExtras: opcoes.extras } : {}),
   });
   return { servico, eventos, pedidos: () => pedidosAoCofre };
 }
+
+describe('recifragem de segredos fora do cofre de conexões (ADR 0064)', () => {
+  it('soma as contagens dos recifradores extras e passa a versão primária do cofre', async () => {
+    const recebidos: [string, number][] = [];
+    const t = montar(VALIDO, {
+      cofre: { recifrarProativamente: async () => ({ versaoPrimaria: 'v2', avaliadas: 3, recifradas: 2, falhas: 1 }) },
+      extras: [async (versao, limite) => { recebidos.push([versao, limite]); return { avaliadas: 4, recifradas: 4, falhas: 0 }; }],
+    });
+    const resultado = await t.servico.recifrarProativo({ limite: 10 }, WORKER);
+    assert.deepEqual(resultado.ok && resultado.value, { versaoPrimaria: 'v2', avaliadas: 7, recifradas: 6, falhas: 1 });
+    assert.deepEqual(recebidos, [['v2', 10]]);
+    assert.deepEqual(t.eventos[0]!.metadata, { versaoPrimaria: 'v2', avaliadas: 7, recifradas: 6, falhas: 1, limite: 10 });
+  });
+
+  it('recifrador extra que quebra conta como falha: avaliadas zero nunca esconde segredo pendente', async () => {
+    const t = montar(VALIDO, {
+      cofre: { recifrarProativamente: async () => ({ versaoPrimaria: 'v2', avaliadas: 0, recifradas: 0, falhas: 0 }) },
+      extras: [async () => { throw new Error('banco fora'); }],
+    });
+    const resultado = await t.servico.recifrarProativo({ limite: 10 }, WORKER);
+    assert.deepEqual(resultado.ok && resultado.value, { versaoPrimaria: 'v2', avaliadas: 0, recifradas: 0, falhas: 1 });
+  });
+
+  it('sem chave primária os extras não rodam', async () => {
+    let rodou = false;
+    const t = montar(VALIDO, {
+      cofre: { recifrarProativamente: async () => ({ versaoPrimaria: null, avaliadas: 0, recifradas: 0, falhas: 1 }) },
+      extras: [async () => { rodou = true; return { avaliadas: 0, recifradas: 0, falhas: 0 }; }],
+    });
+    await t.servico.recifrarProativo({ limite: 10 }, WORKER);
+    assert.equal(rodou, false);
+  });
+});
 
 describe('emissão de token para o worker', () => {
   it('emite para coleta em execução e audita sem o token', async () => {

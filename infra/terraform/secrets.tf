@@ -28,6 +28,7 @@ locals {
     "meta-exclusao-pepper",
     "alert-webhook-url",
     "plataforma-operadores",
+    "proxy-secret",
   ]
 
   all_secret_names = concat(local.app_secret_names, local.oauth_secret_names)

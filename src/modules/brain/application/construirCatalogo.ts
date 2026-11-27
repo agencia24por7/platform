@@ -1,4 +1,5 @@
 import { avaliarCapacidades, type AvaliacaoDeCapacidade, type DefinicaoDeCapacidade } from '../domain/capacidades.ts';
+import type { EntradaDeConhecimento } from '../domain/conhecimento.ts';
 import { restringirAoCatalogo, type ContextoParaCatalogo } from '../domain/contexto.ts';
 import { sanearRegras, type RegrasParaCatalogo } from '../domain/regras.ts';
 import { diagnosticarCliente, type ConectorDoDiagnostico, type Diagnostico } from '../domain/diagnostico.ts';
@@ -34,6 +35,7 @@ export type EntradaDaConstrucao = {
   readonly inventario: InventarioDoCliente;
   readonly contexto: ContextoParaCatalogo | null;
   readonly regras?: RegrasParaCatalogo | null;
+  readonly conhecimento?: readonly EntradaDeConhecimento[] | null;
 };
 
 export type DependenciasDaConstrucao = {
@@ -146,6 +148,7 @@ export async function construirCatalogo(dependencias: DependenciasDaConstrucao, 
     inventario: entrada.inventario,
     contexto,
     regras,
+    conhecimento: entrada.conhecimento ?? null,
   };
   const ctxPrimario = contextoDeDescoberta(base);
   const primarios = dependencias.provedores.filter((p) => p.fase === 'primaria');

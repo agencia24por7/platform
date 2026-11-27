@@ -8,6 +8,8 @@ import { createContextoService, criarAgendadorEmMemoria } from '@/modules/client
 import { adaptarArmazenamento } from '@/modules/clients/infrastructure/armazenamentoAdaptado';
 import { criarArmazenamentoDeContexto } from '@/shared/storage/criarArmazenamentoDeContexto';
 import { env } from '@/shared/config/env';
+import { criarAvisoLimitado } from '@/shared/logging/avisoLimitado';
+import { logger } from '@/shared/logging/logger';
 import { createRegrasService } from '@/modules/clients/application/regrasService';
 import { createRegrasRepository } from '@/modules/clients/infrastructure/regrasRepository';
 import { createContextoRepository } from '@/modules/clients/infrastructure/contextoRepository';
@@ -39,6 +41,16 @@ import { createDimensoesService } from '@/modules/coleta/application/dimensoesSe
 import { createDimensoesRepository } from '@/modules/coleta/infrastructure/dimensoesRepository';
 import { createDimensoesBigQuery } from '@/modules/coleta/infrastructure/dimensoesBigQuery';
 import { criarBrain } from '@/modules/brain/infrastructure/criarBrain';
+import { ferramentasDoBrain } from '@/modules/brain/interface/ferramentas';
+import { criarIa } from '@/modules/ia/infrastructure/criarIa';
+import { createEstrategiaService } from '@/modules/strategy/application/estrategiaService';
+import { createMotorDoPlano } from '@/modules/strategy/application/motorDoPlano';
+import { createProcessadorDeExecucoes } from '@/modules/strategy/application/processadorDeExecucoes';
+import { criarAvaliadorDeLimites } from '@/modules/strategy/infrastructure/avaliadorDeLimites';
+import { criarLeitorDoBrain } from '@/modules/strategy/infrastructure/leitorDoBrain';
+import { createEstrategiaRepository } from '@/modules/strategy/infrastructure/estrategiaRepository';
+import { comValidacao } from '@/modules/strategy/infrastructure/ia/comValidacao';
+import { criarIaDaCamada } from '@/modules/strategy/infrastructure/ia/iaDaCamada';
 import { criarModuloDeTokens } from '@/modules/tokens/infrastructure/criarModuloDeTokens';
 import { createPoliticaDeRevogacao } from '@/modules/privacidade/application/revogacaoNoProvedor';
 import { createExpurgoDeFontesService } from '@/modules/privacidade/application/expurgoDeFontes';
@@ -58,7 +70,7 @@ function build() {
   const organizations = createOrganizationService(createOrganizationRepository(), audit);
 
   const clientRepository = createClientRepository();
-  const tokens = criarModuloDeTokens(audit);
+  const tokens = criarModuloDeTokens(audit, [(versaoPrimaria, limite) => ia.modelos.recifrar(versaoPrimaria, limite)]);
   const credentialTester = createCredentialTester();
   const dimensoes = createDimensoesService(createDimensoesRepository(), createDimensoesBigQuery(), audit);
   const politicaDeRevogacao = createPoliticaDeRevogacao(createAcessosCompartilhados());
@@ -69,6 +81,7 @@ function build() {
     repositorio: createContextoRepository(),
     audit,
     armazenamento: armazenamentoDoContexto,
+    ...(config.NODE_ENV === 'production' ? { avisarSemEndereco: criarAvisoDeAcessoSemEndereco() } : {}),
   });
   const agendadorDoBrainDeRegras = criarAgendadorEmMemoria()((escopo) => contexto.publicarBrain(escopo));
   const regras = createRegrasService({
@@ -80,6 +93,19 @@ function build() {
   });
 
   const identity = createIdentityService(createUserRepository(), audit);
+  const estrategiaRepository = createEstrategiaRepository();
+  const brain = criarBrain(audit, contexto, regras);
+  const ia = criarIa(audit, ferramentasDoBrain(brain));
+  const leitorDoBrainDaEstrategia = criarLeitorDoBrain({ brain });
+  const executorDeIA = comValidacao(criarIaDaCamada(ia.executor));
+  const avaliadorDeLimites = criarAvaliadorDeLimites({ regras });
+  const motorDoPlano = createMotorDoPlano({
+    repositorio: estrategiaRepository,
+    executorDeIA,
+    leitorDoBrain: leitorDoBrainDaEstrategia,
+    avaliadorDeLimites,
+    audit,
+  });
 
   return {
     audit,
@@ -126,7 +152,14 @@ function build() {
     alertas: createAlertaService(createAlertaRepository(), audit, createNotificadorPorWebhook(), createLimiteDeAlertasNovos(), (userId) =>
       identity.operadorDaPlataforma(userId, env().PLATAFORMA_OPERADORES)),
     dimensoes,
-    brain: criarBrain(audit, contexto, regras),
+    brain,
+    ia,
+    strategy: {
+      service: createEstrategiaService({ repositorio: estrategiaRepository, audit, leitorDoBrain: leitorDoBrainDaEstrategia }),
+    },
+    strategyDoWorker: {
+      processador: createProcessadorDeExecucoes({ repositorio: estrategiaRepository, motor: motorDoPlano }),
+    },
     tokens,
     expurgoDeFontes,
     pedidosDeExclusao: createPedidosDeExclusaoService(createPedidosDeExclusaoRepository(), {
@@ -147,4 +180,11 @@ declare global {
 export function modules(): Modules {
   globalThis.__triaModules ??= build();
   return globalThis.__triaModules;
+}
+
+function criarAvisoDeAcessoSemEndereco(): () => void {
+  return criarAvisoLimitado({
+    janelaMs: 60_000,
+    emitir: (contexto) => logger.warn('contexto.publico.sem_endereco_confiavel', contexto),
+  });
 }

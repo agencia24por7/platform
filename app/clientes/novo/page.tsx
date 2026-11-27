@@ -29,6 +29,9 @@ async function createClient(formData: FormData): Promise<void> {
       name: text(formData, 'name'),
       segment: optionalText(formData, 'segment'),
       businessModel: model === 'ecommerce' ? 'ecommerce' : 'leads',
+      tipoDaOrganizacao: organization.type,
+      papelDeQuemAge: ctx.role,
+      clientIdsDeQuemAge: ctx.clientIds,
     },
     ator,
   );

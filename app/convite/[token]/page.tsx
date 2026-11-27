@@ -3,10 +3,11 @@ import Link from 'next/link';
 import { headers } from 'next/headers';
 import { EstadoDoLink, MolduraPublica } from '@/../app/contexto/_publico/PaginaPublica';
 import { modules } from '@/composition';
-import { enderecoConfiavel } from '@/modules/audit/domain/actor';
+import { enderecoDoCliente } from '@/shared/http/enderecoDoCliente';
 import { consume } from '@/shared/security/rateLimit';
 import { requestId } from '@/shared/http/actions';
 import { MARCA_DA_PLATAFORMA, ROTULO_DA_PLATAFORMA } from '@/modules/connections/domain/connection';
+import { tokenDeConviteBemFormado } from '@/modules/connections/domain/integrationInvite';
 import { Icone, type NomeDoIcone } from '@/../app/clientes/[id]/_componentes/Icones';
 import { FocoNaConta } from '@/../app/convite/[token]/FocoNaConta';
 import { avisoDoConvite, plataformasQueNaoUso, situacaoDoItem } from '@/modules/connections/domain/conviteVisao';
@@ -40,13 +41,13 @@ export default async function PaginaDoConvite({
   const [{ token }, busca] = await Promise.all([params, searchParams]);
   const unico = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
-  const sourceIp = enderecoConfiavel((await headers()).get('x-forwarded-for'));
-  const verdict = consume(`convite:view:${sourceIp ?? 'desconhecido'}`, LIMITE_POR_JANELA, JANELA_MS);
+  const sourceIp = enderecoDoCliente(await headers());
+  const verdict = consume('ip', `convite:view:${sourceIp ?? 'desconhecido'}`, LIMITE_POR_JANELA, JANELA_MS);
   if (!verdict.allowed) {
     return <EstadoDoLink titulo="Muitas tentativas" texto="Espere um pouco e tente de novo." />;
   }
 
-  const convite = await comoPublico(() => modules().connectionInvites.forDisplay(token));
+  const convite = tokenDeConviteBemFormado(token) ? await comoPublico(() => modules().connectionInvites.forDisplay(token)) : null;
   if (!convite) {
     return <EstadoDoLink titulo="Convite indisponível" texto="Este convite não está disponível. Peça um novo a quem enviou." />;
   }

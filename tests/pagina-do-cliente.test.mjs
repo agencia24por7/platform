@@ -195,4 +195,42 @@ describe('página do cliente: abas, papéis e formulário público', { concurren
     });
     assert.ok([403, 404].includes(upload.status), `upload por link revogado: ${upload.status}`);
   });
+
+  it('quem só vê recebe do Perfil só o que o cliente veria; quem opera recebe tudo', async () => {
+    const marca = (campo, secao, valor, colunas) =>
+      dono(
+        `INSERT INTO core.client_context_entries (organization_id, client_id, section, field_key, value, source, review, epistemic, shareable)
+         VALUES ('${org}', '${cliente}', '${secao}', '${campo}', to_jsonb('${valor}'::text), '${colunas.source ?? 'equipe'}',
+                 '${colunas.review ?? 'confirmado'}', '${colunas.epistemic ?? 'fato'}', ${colunas.shareable ?? false})
+         ON CONFLICT (client_id, field_key) DO UPDATE SET value = EXCLUDED.value, source = EXCLUDED.source, review = EXCLUDED.review,
+           epistemic = EXCLUDED.epistemic, shareable = EXCLUDED.shareable, version = core.client_context_entries.version + 1
+         RETURNING id`,
+      );
+    marca('cidade', 'empresa', `VISIVEL-${sufixo}`, { shareable: true });
+    marca('notas_internas_marca', 'marca', `NOTA-${sufixo}`, { shareable: true });
+    marca('site', 'empresa', `HIPOTESE-${sufixo}`, { shareable: true, epistemic: 'hipotese' });
+    marca('missao', 'empresa', `SUGESTAO-${sufixo}`, { shareable: true, source: 'ia', review: 'sugerido', epistemic: 'hipotese' });
+    marca('area_de_atuacao', 'empresa', `INTERNO-${sufixo}`, { shareable: false });
+    marca('cidade', 'empresa', `ANTIGO-INTERNO-${sufixo}`, { shareable: false });
+    marca('cidade', 'empresa', `VISIVEL-${sufixo}`, { shareable: true });
+
+    const internos = [`NOTA-${sufixo}`, `HIPOTESE-${sufixo}`, `SUGESTAO-${sufixo}`, `INTERNO-${sufixo}`, `ANTIGO-INTERNO-${sufixo}`];
+
+    signIn(pessoas.viewer);
+    for (const rota of ['/contexto', '/contexto?secao=brain', '/conexoes']) {
+      const { status, texto } = await html(`/clientes/${cliente}${rota}`);
+      assert.equal(status, 200, rota);
+      for (const interno of internos) assert.ok(!texto.includes(interno), `${interno} vazou para quem só vê em ${rota}`);
+      assert.ok(!texto.includes('notas_internas_marca'), `chave interna apareceu para quem só vê em ${rota}`);
+    }
+    const perfil = await html(`/clientes/${cliente}/contexto`);
+    assert.ok(perfil.texto.includes(`VISIVEL-${sufixo}`), 'o que o cliente vê continua visível ao leitor');
+    assert.ok(!perfil.texto.includes('Notas internas da equipe'));
+
+    signIn(pessoas.operator);
+    const equipe = await html(`/clientes/${cliente}/contexto`);
+    for (const valor of [`VISIVEL-${sufixo}`, `NOTA-${sufixo}`, `HIPOTESE-${sufixo}`, `SUGESTAO-${sufixo}`, `INTERNO-${sufixo}`]) {
+      assert.ok(equipe.texto.includes(valor), `quem opera precisa ver ${valor}`);
+    }
+  });
 });

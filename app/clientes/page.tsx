@@ -76,7 +76,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
   for (let i = 0; i < paraAvaliar.length; i += LOTE_DE_PRONTIDAO) {
     await Promise.all(
       paraAvaliar.slice(i, i + LOTE_DE_PRONTIDAO).map(async (client) => {
-        prontidoes.set(client.id, await carregarProntidao(organization.id, client.id));
+        prontidoes.set(client.id, await carregarProntidao(organization.id, client.id, contexto.role));
       }),
     );
   }

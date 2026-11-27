@@ -30,11 +30,19 @@ describe('inventário a partir das linhas do Postgres', () => {
         parciais_recentes: 2, pausada_ate: null, falhas: { limite_de_uso: 3, 'Chave Ruim': 1 }, avisos: null, faltantes: {},
       }],
       cobertura: [{ tabela: 'fato_ads_diario', desde: '2026-01-01', ate: '2026-01-02', linhas: '42', dias_com_dado: 2, medido_em: new Date() }],
+      desempenho: [
+        { platform: 'meta', periodo: '2026-10-01', recorte: 'total', chave: '', rotulo: 'Total', investimento_centavos: '123456', impressoes: '1000', cliques: 10, conversoes: '2.50', receita_centavos: null, moeda: 'BRL', medido_em: new Date() },
+        { platform: 'meta', periodo: '2026-10-01', recorte: 'invalido', chave: '', rotulo: 'x', investimento_centavos: 1, impressoes: 1, cliques: 1, conversoes: 1, receita_centavos: 1, moeda: 'BRL', medido_em: new Date() },
+      ],
     });
     assert.ok(inventario);
     assert.deepEqual(inventario.coletas[0]!.falhasRecentes, { limite_de_uso: 3 });
     assert.equal(inventario.cobertura[0]!.linhas, 42);
-    assert.equal(montarInventario({ clientes: [], conexoes: [], fontes: [], coletas: [], cobertura: [] }), null);
+    assert.equal(inventario.desempenho.length, 1, 'recorte desconhecido é descartado');
+    assert.equal(inventario.desempenho[0]!.investimentoCentavos, 123456);
+    assert.equal(inventario.desempenho[0]!.conversoes, 2.5);
+    assert.equal(inventario.desempenho[0]!.receitaCentavos, null);
+    assert.equal(montarInventario({ clientes: [], conexoes: [], fontes: [], coletas: [], cobertura: [], desempenho: [] }), null);
   });
 });
 

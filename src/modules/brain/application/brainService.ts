@@ -1,10 +1,14 @@
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
+import type { AuditEvent } from '@/modules/audit/domain/auditEvent';
 import type { ArmazenamentoDeContexto } from '@/shared/storage/tipos';
 import { failure, type Failure } from '@/shared/result/failure';
+import { canOperate, type MemberRole } from '../../identity/domain/user.ts';
 import { err, ok, type Result } from '@/shared/result/result';
 import type { DefinicaoDeCapacidade } from '../domain/capacidades.ts';
 import { filtrarCatalogo, paginar, type FiltrosDoCatalogo } from '../domain/consulta.ts';
-import type { CarregadorDeContexto, ContextoParaCatalogo } from '../domain/contexto.ts';
+import type { EntradaDeConhecimento } from '../domain/conhecimento.ts';
+import { janelaDeDesempenho, PLATAFORMAS_DE_DESEMPENHO } from '../domain/desempenho.ts';
+import type { CarregadorDeContexto, ContextoParaCatalogo, VisaoDoContexto } from '../domain/contexto.ts';
 import { CARREGADOR_DE_REGRAS_INDISPONIVEL, type CarregadorDeRegras, type RegrasParaCatalogo } from '../domain/regras.ts';
 import type { ConectorDoDiagnostico } from '../domain/diagnostico.ts';
 import { VERSAO_DO_ESQUEMA_DO_CATALOGO, type EntradaDoCatalogo } from '../domain/entrada.ts';
@@ -14,10 +18,12 @@ import { hojeEmSaoPaulo, somarDias } from '../domain/tempo.ts';
 import { urnDoCliente } from '../domain/urn.ts';
 import { construirCatalogo, type Snapshot } from './construirCatalogo.ts';
 import type {
+  AgenteLeitor,
   BrainRepository,
   ClienteResolvido,
   IdentidadeDoWorker,
   MedidorDeCobertura,
+  MedidorDeDesempenho,
   ObjetoDeMedicao,
 } from './portas.ts';
 import { artefatosDoCatalogo, manifestoDe, PASTA_DAS_ENTRADAS, prefixoDoCatalogo, type ManifestoDoCatalogo } from './publicacao.ts';
@@ -34,6 +40,7 @@ export type DependenciasDoBrain = {
   readonly regras?: CarregadorDeRegras;
   readonly armazenamento: ArmazenamentoDeContexto;
   readonly medidor: MedidorDeCobertura;
+  readonly medidorDeDesempenho?: MedidorDeDesempenho;
   readonly audit: AuditRecorder;
   readonly provedores: readonly ProvedorDeCatalogo[];
   readonly capacidades: readonly DefinicaoDeCapacidade[];
@@ -66,16 +73,28 @@ export type ResumoDaVarredura = {
   readonly despublicados: number;
 };
 
-export type ResumoDaMedicao = { readonly clientes: number; readonly tabelas: number; readonly falhas: number };
+export type ResumoDaMedicao = {
+  readonly clientes: number;
+  readonly tabelas: number;
+  readonly falhas: number;
+  readonly desempenhoLinhas: number;
+  readonly desempenhoFalhas: number;
+};
 
 export type BrainService = {
   montar(clienteId: string): Promise<Result<Snapshot, Failure>>;
-  montarNaOrganizacao(organizationId: string, clienteId: string): Promise<Result<Snapshot, Failure>>;
+  montarNaOrganizacao(organizationId: string, clienteId: string, papelDeQuemLe: MemberRole): Promise<Result<Snapshot, Failure>>;
   catalogo(
     clienteId: string,
     consulta: FiltrosDoCatalogo & { readonly limite: number; readonly cursor: string | null },
     worker: IdentidadeDoWorker,
   ): Promise<Result<Resposta<PaginaDeEntradas>, Failure>>;
+  catalogoDoAgente(
+    agente: AgenteLeitor,
+    clienteId: string,
+    consulta: FiltrosDoCatalogo & { readonly limite: number; readonly cursor: string | null },
+  ): Promise<Result<Resposta<PaginaDeEntradas>, Failure>>;
+  entradaDoAgente(agente: AgenteLeitor, clienteId: string, urn: string): Promise<Result<Resposta<EntradaDoCatalogo>, Failure>>;
   entrada(clienteId: string, urn: string, worker: IdentidadeDoWorker): Promise<Result<Resposta<EntradaDoCatalogo>, Failure>>;
   capacidades(clienteId: string, worker: IdentidadeDoWorker): Promise<Result<Resposta<Pick<Snapshot, 'schemaVersion' | 'capacidades' | 'catalogHash'>>, Failure>>;
   diagnostico(clienteId: string, worker: IdentidadeDoWorker): Promise<Result<Resposta<Snapshot['diagnostico'] & { readonly catalogHash: string }>, Failure>>;
@@ -85,6 +104,19 @@ export type BrainService = {
   medirCobertura(worker: IdentidadeDoWorker, limite: number): Promise<Result<ResumoDaMedicao, Failure>>;
   marcarPendente(cliente: ClienteResolvido, motivo: string): Promise<void>;
 };
+
+type Leitor = Pick<AuditEvent, 'actorType' | 'actorId'> & { readonly requestId: string; readonly sourceIp: string | null };
+
+function leitorDoWorker(worker: IdentidadeDoWorker): Leitor {
+  return { actorType: 'worker', actorId: worker.callerFingerprint, requestId: worker.requestId, sourceIp: worker.sourceIp };
+}
+
+function leitorDoAgente(agente: AgenteLeitor): Leitor {
+  return { actorType: 'agent', actorId: agente.credencialId, requestId: agente.requestId, sourceIp: agente.sourceIp };
+}
+
+const PAPEL_DO_AGENTE: MemberRole = 'viewer';
+const PAPEL_DO_AGENTE_NA_VISAO_DA_EQUIPE: MemberRole = 'admin';
 
 const NAO_ENCONTRADO = failure('not_found', 'Cliente não encontrado.');
 const ENTRADA_NAO_ENCONTRADA = failure('not_found', 'Entrada não encontrada no catálogo deste cliente.');
@@ -102,10 +134,10 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
   const agora = deps.relogio ?? (() => new Date());
   const aviso = deps.registrarAviso ?? (() => undefined);
 
-  async function carregarContexto(cliente: ClienteResolvido): Promise<ContextoParaCatalogo | null> {
+  async function carregarContexto(cliente: ClienteResolvido, visao: VisaoDoContexto): Promise<ContextoParaCatalogo | null> {
     if (!deps.contexto.disponivel) return null;
     try {
-      return await deps.contexto.carregar({ organizationId: cliente.organizationId, clientId: cliente.clienteId });
+      return await deps.contexto.carregar({ organizationId: cliente.organizationId, clientId: cliente.clienteId }, visao);
     } catch (erro) {
       aviso('brain.contexto_indisponivel', { clienteId: cliente.clienteId, erro: mensagem(erro) });
       return null;
@@ -123,11 +155,21 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
     }
   }
 
-  async function montarResolvido(cliente: ClienteResolvido): Promise<Snapshot | null> {
-    const [inventario, contexto, regras] = await Promise.all([
+  async function carregarConhecimento(cliente: ClienteResolvido): Promise<readonly EntradaDeConhecimento[] | null> {
+    try {
+      return await deps.repositorio.carregarConhecimento(cliente);
+    } catch (erro) {
+      aviso('brain.conhecimento_indisponivel', { clienteId: cliente.clienteId, erro: mensagem(erro) });
+      return null;
+    }
+  }
+
+  async function montarResolvido(cliente: ClienteResolvido, visao: VisaoDoContexto): Promise<Snapshot | null> {
+    const [inventario, contexto, regras, conhecimento] = await Promise.all([
       deps.repositorio.carregarInventario(cliente),
-      carregarContexto(cliente),
+      carregarContexto(cliente, visao),
       carregarRegras(cliente),
+      carregarConhecimento(cliente),
     ]);
     if (!inventario) return null;
     return construirCatalogo(
@@ -147,6 +189,7 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
         inventario,
         contexto,
         regras,
+        conhecimento,
       },
     );
   }
@@ -155,26 +198,26 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
     if (!UUID.test(clienteId)) return err(NAO_ENCONTRADO);
     const cliente = await deps.repositorio.resolverCliente(clienteId);
     if (!cliente) return err(NAO_ENCONTRADO);
-    const snapshot = await montarResolvido(cliente);
+    const snapshot = await montarResolvido(cliente, 'equipe');
     return snapshot ? ok(snapshot) : err(NAO_ENCONTRADO);
   }
 
-  async function montarNaOrganizacao(organizationId: string, clienteId: string): Promise<Result<Snapshot, Failure>> {
+  async function montarNaOrganizacao(organizationId: string, clienteId: string, papelDeQuemLe: MemberRole): Promise<Result<Snapshot, Failure>> {
     if (!UUID.test(clienteId) || !UUID.test(organizationId)) return err(NAO_ENCONTRADO);
-    const snapshot = await montarResolvido({ organizationId, clienteId });
+    const snapshot = await montarResolvido({ organizationId, clienteId }, canOperate(papelDeQuemLe) ? 'equipe' : 'cliente');
     return snapshot && snapshot.organizationId === organizationId ? ok(snapshot) : err(NAO_ENCONTRADO);
   }
 
-  async function auditar(worker: IdentidadeDoWorker, snapshot: Snapshot, rota: string, devolvidas: number): Promise<void> {
+  async function auditar(leitor: Leitor, snapshot: Snapshot, rota: string, devolvidas: number): Promise<void> {
     await deps.audit.record({
       organizationId: snapshot.organizationId,
-      actorType: 'worker',
-      actorId: worker.callerFingerprint,
+      actorType: leitor.actorType,
+      actorId: leitor.actorId,
       action: 'brain.consulta',
       targetType: 'client',
       targetId: snapshot.clienteId,
-      requestId: worker.requestId,
-      sourceIp: worker.sourceIp,
+      requestId: leitor.requestId,
+      sourceIp: leitor.sourceIp,
       metadata: {
         rota,
         devolvidas,
@@ -191,16 +234,50 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
     rota: string,
     projetar: (snapshot: Snapshot) => Result<{ corpo: T; devolvidas: number }, Failure>,
   ): Promise<Result<Resposta<T>, Failure>> {
-    const montado = await montar(clienteId);
+    return responder(await montar(clienteId), leitorDoWorker(worker), rota, projetar);
+  }
+
+  async function responder<T>(
+    montado: Result<Snapshot, Failure>,
+    leitor: Leitor,
+    rota: string,
+    projetar: (snapshot: Snapshot) => Result<{ corpo: T; devolvidas: number }, Failure>,
+  ): Promise<Result<Resposta<T>, Failure>> {
     if (!montado.ok) return montado;
     const projetado = projetar(montado.value);
     if (!projetado.ok) return projetado;
-    await auditar(worker, montado.value, rota, projetado.value.devolvidas);
+    await auditar(leitor, montado.value, rota, projetado.value.devolvidas);
     return ok({ corpo: projetado.value.corpo, etag: etag({ catalogHash: montado.value.catalogHash, rota, corpo: projetado.value.corpo }) });
   }
 
+  async function montarParaAgente(agente: AgenteLeitor, clienteId: string): Promise<Result<Snapshot, Failure>> {
+    if (!UUID.test(clienteId) || !UUID.test(agente.organizationId)) return err(NAO_ENCONTRADO);
+    if (agente.clienteIds !== null && !agente.clienteIds.includes(clienteId)) return err(NAO_ENCONTRADO);
+    const cliente = { organizationId: agente.organizationId, clienteId };
+    if (!(await deps.repositorio.clienteVivo(cliente))) return err(NAO_ENCONTRADO);
+    return montarNaOrganizacao(agente.organizationId, clienteId, agente.visao === 'equipe' ? PAPEL_DO_AGENTE_NA_VISAO_DA_EQUIPE : PAPEL_DO_AGENTE);
+  }
+
+  function paginaDoCatalogo(consulta: FiltrosDoCatalogo & { readonly limite: number; readonly cursor: string | null }) {
+    return (snapshot: Snapshot): Result<{ corpo: PaginaDeEntradas; devolvidas: number }, Failure> => {
+      const filtradas = filtrarCatalogo(snapshot.entradas, consulta);
+      const pagina = paginar(filtradas, consulta.limite, consulta.cursor);
+      return ok({
+        corpo: {
+          schemaVersion: VERSAO_DO_ESQUEMA_DO_CATALOGO,
+          clienteId: snapshot.clienteId,
+          catalogHash: snapshot.catalogHash,
+          total: pagina.total,
+          proximoCursor: pagina.proximoCursor,
+          entradas: pagina.entradas,
+        },
+        devolvidas: pagina.entradas.length,
+      });
+    };
+  }
+
   async function publicar(cliente: ClienteResolvido): Promise<SituacaoDaPublicacao> {
-    const snapshot = await montarResolvido(cliente);
+    const snapshot = await montarResolvido(cliente, 'equipe');
     if (!snapshot) return 'inalterado';
     const estado = await deps.repositorio.estado(cliente);
     if (estado && estado.ultimoHash === snapshot.catalogHash && estado.publicadoEm) {
@@ -256,20 +333,18 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
     montarNaOrganizacao,
 
     catalogo(clienteId, consulta, worker) {
-      return consultar(clienteId, worker, 'catalogo', (snapshot) => {
-        const filtradas = filtrarCatalogo(snapshot.entradas, consulta);
-        const pagina = paginar(filtradas, consulta.limite, consulta.cursor);
-        return ok({
-          corpo: {
-            schemaVersion: VERSAO_DO_ESQUEMA_DO_CATALOGO,
-            clienteId: snapshot.clienteId,
-            catalogHash: snapshot.catalogHash,
-            total: pagina.total,
-            proximoCursor: pagina.proximoCursor,
-            entradas: pagina.entradas,
-          },
-          devolvidas: pagina.entradas.length,
-        });
+      return consultar(clienteId, worker, 'catalogo', paginaDoCatalogo(consulta));
+    },
+
+    async catalogoDoAgente(agente, clienteId, consulta) {
+      return responder(await montarParaAgente(agente, clienteId), leitorDoAgente(agente), 'catalogo', paginaDoCatalogo(consulta));
+    },
+
+    async entradaDoAgente(agente, clienteId, urn) {
+      return responder(await montarParaAgente(agente, clienteId), leitorDoAgente(agente), 'entrada', (snapshot) => {
+        if (!urnDoCliente(urn, snapshot.organizationId, snapshot.clienteId)) return err(ENTRADA_NAO_ENCONTRADA);
+        const achada = snapshot.entradas.find((e) => e.urn === urn);
+        return achada ? ok({ corpo: achada, devolvidas: 1 }) : err(ENTRADA_NAO_ENCONTRADA);
       });
     },
 
@@ -336,22 +411,40 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
       const clientes = await deps.repositorio.clientesParaMedir(limite);
       const ate = somarDias(hojeEmSaoPaulo(agora()), -1);
       const desde = somarDias(ate, -(deps.configuracao.diasDeMedicao - 1));
-      let tabelas = 0;
-      let falhas = 0;
+      const janela = janelaDeDesempenho(agora());
+      const medidorDeDesempenho = deps.medidorDeDesempenho;
+      const contagem = { tabelas: 0, falhas: 0, desempenhoLinhas: 0, desempenhoFalhas: 0 };
       for (const cliente of clientes) {
         const objetos = deps.objetosDeMedicao(cliente.plataformas);
-        if (objetos.length === 0) continue;
+        if (objetos.length > 0) {
+          try {
+            const medidas = await deps.medidor.medir(cliente, objetos, desde, ate);
+            await deps.repositorio.gravarCobertura(cliente, medidas);
+            await deps.repositorio.marcarPendente(cliente, 'cobertura_medida');
+            contagem.tabelas += medidas.length;
+          } catch (erro) {
+            contagem.falhas += 1;
+            aviso('brain.cobertura_falhou', { clienteId: cliente.clienteId, erro: mensagem(erro) });
+          }
+        }
+        const plataformas = cliente.plataformas.filter((p) => (PLATAFORMAS_DE_DESEMPENHO as readonly string[]).includes(p));
+        if (!medidorDeDesempenho?.disponivel || plataformas.length === 0) continue;
         try {
-          const medidas = await deps.medidor.medir(cliente, objetos, desde, ate);
-          await deps.repositorio.gravarCobertura(cliente, medidas);
-          await deps.repositorio.marcarPendente(cliente, 'cobertura_medida');
-          tabelas += medidas.length;
+          const medicao = await medidorDeDesempenho.medir(cliente, plataformas, janela);
+          for (const consulta of medicao.falhas) {
+            contagem.desempenhoFalhas += 1;
+            aviso('brain.desempenho_consulta_falhou', { clienteId: cliente.clienteId, consulta });
+          }
+          if (medicao.medidos.length === 0) continue;
+          await deps.repositorio.gravarDesempenho(cliente, medicao);
+          await deps.repositorio.marcarPendente(cliente, 'desempenho_medido');
+          contagem.desempenhoLinhas += medicao.linhas.length;
         } catch (erro) {
-          falhas += 1;
-          aviso('brain.cobertura_falhou', { clienteId: cliente.clienteId, erro: mensagem(erro) });
+          contagem.desempenhoFalhas += 1;
+          aviso('brain.desempenho_falhou', { clienteId: cliente.clienteId, erro: mensagem(erro) });
         }
       }
-      const resumo = { clientes: clientes.length, tabelas, falhas };
+      const resumo = { clientes: clientes.length, ...contagem };
       await deps.audit.record({
         organizationId: null,
         actorType: 'worker',

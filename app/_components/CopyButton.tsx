@@ -6,10 +6,12 @@ export function CopyButton({
   texto,
   rotulo = 'Copiar link',
   className = 'btn btn--compacto',
+  autoFoco = false,
 }: {
   readonly texto: string;
   readonly rotulo?: string;
   readonly className?: string;
+  readonly autoFoco?: boolean;
 }) {
   const [copiado, setCopiado] = useState(false);
 
@@ -24,8 +26,13 @@ export function CopyButton({
   }
 
   return (
-    <button type="button" className={className} onClick={copiar} aria-live="polite">
-      {copiado ? 'Copiado ✓' : rotulo}
-    </button>
+    <>
+      <button type="button" className={className} onClick={copiar} autoFocus={autoFoco}>
+        {copiado ? 'Copiado ✓' : rotulo}
+      </button>
+      <span className="so-leitor" role="status">
+        {copiado ? 'Copiado para a área de transferência.' : ''}
+      </span>
+    </>
   );
 }

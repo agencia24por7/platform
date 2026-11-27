@@ -182,6 +182,85 @@ describe('contexto do cliente no banco', { concurrency: false }, () => {
     assert.equal(umaLinha(publico(`SELECT core.contexto_link_remover_item('${link.hash}', '${itemId}', 1)`)), 'ok');
   });
 
+  it('item da equipe alterado pelo link continua fora do alcance da remoção pelo link', () => {
+    const link = criarLink(orgA, clienteA, ['presenca_digital']);
+    const daEquipe = umaLinha(naOrg(orgA, `INSERT INTO core.client_context_items
+      (organization_id, client_id, section, list_key, position, data, shareable)
+      VALUES ('${orgA}', '${clienteA}', 'presenca_digital', 'redes_sociais', 7, '{"rede":"linkedin"}', true) RETURNING id`));
+    assert.equal(umaLinha(dono(`SELECT origem FROM core.client_context_items WHERE id = '${daEquipe}'`)), 'equipe');
+
+    assert.equal(umaLinha(publico(`SELECT resultado || ':' || versao FROM core.contexto_link_salvar_item(
+      '${link.hash}', 'presenca_digital', 'redes_sociais', '${daEquipe}', '{"rede":"linkedin","perfil":"@nova"}', 'fato', 1)`)), 'ok:2');
+    assert.equal(
+      umaLinha(dono(`SELECT source || '|' || origem FROM core.client_context_items WHERE id = '${daEquipe}'`)),
+      'cliente|equipe',
+    );
+
+    assert.equal(umaLinha(publico(`SELECT core.contexto_link_remover_item('${link.hash}', '${daEquipe}', 2)`)), 'nao_encontrado');
+    assert.equal(umaLinha(dono(`SELECT count(*) FROM core.client_context_items WHERE id = '${daEquipe}'`)), '1');
+  });
+
+  it('item criado pelo cliente continua removível pelo link, inclusive depois de editado', () => {
+    const link = criarLink(orgA, clienteA, ['presenca_digital']);
+    const [resultado, itemId] = umaLinha(publico(`SELECT resultado || '|' || item_id FROM core.contexto_link_salvar_item(
+      '${link.hash}', 'presenca_digital', 'redes_sociais', NULL, '{"rede":"pinterest"}', 'fato', 0)`)).split('|');
+    assert.equal(resultado, 'ok');
+    assert.equal(umaLinha(dono(`SELECT origem FROM core.client_context_items WHERE id = '${itemId}'`)), 'cliente');
+
+    assert.equal(umaLinha(publico(`SELECT resultado || ':' || versao FROM core.contexto_link_salvar_item(
+      '${link.hash}', 'presenca_digital', 'redes_sociais', '${itemId}', '{"rede":"pinterest","perfil":"@p"}', 'fato', 1)`)), 'ok:2');
+    assert.equal(umaLinha(publico(`SELECT core.contexto_link_remover_item('${link.hash}', '${itemId}', 2)`)), 'ok');
+    assert.equal(umaLinha(dono(`SELECT count(*) FROM core.client_context_items WHERE id = '${itemId}'`)), '0');
+  });
+
+  it('anexo pelo link só vale para item que nasceu pelo link, mesmo depois de o cliente editar um da equipe', () => {
+    const link = criarLink(orgA, clienteA, ['presenca_digital']);
+    const prefixo = `orgs/${orgA}/clientes/${clienteA}/arquivos/`;
+    const novoId = () => umaLinha(dono('SELECT gen_random_uuid()'));
+    const reservar = (id, item) => umaLinha(publico(
+      `SELECT core.contexto_link_reservar_arquivo('${link.hash}', '${id}', 'presenca_digital', ${item ? `'${item}'` : 'NULL'},
+         '${prefixo}${id}-anexo.png', 100, 524288000, 209715200, 60)`));
+    const confirmar = (id, item) => umaLinha(publico(
+      `SELECT core.contexto_link_confirmar_arquivo('${link.hash}', '${id}', 'presenca_digital', 'redes_sociais', '${item}',
+         'anexo.png', 'image/png', 100, '${'b'.repeat(64)}')`));
+
+    const daEquipe = umaLinha(naOrg(orgA, `INSERT INTO core.client_context_items
+      (organization_id, client_id, section, list_key, position, data, shareable)
+      VALUES ('${orgA}', '${clienteA}', 'presenca_digital', 'redes_sociais', 9, '{"rede":"kwai"}', true) RETURNING id`));
+    assert.equal(umaLinha(publico(`SELECT resultado FROM core.contexto_link_salvar_item(
+      '${link.hash}', 'presenca_digital', 'redes_sociais', '${daEquipe}', '{"rede":"kwai","perfil":"@k"}', 'fato', 1)`)), 'ok');
+    assert.equal(reservar(novoId(), daEquipe), 'fora_do_escopo');
+    const semItem = novoId();
+    assert.equal(reservar(semItem, null), 'ok');
+    assert.equal(confirmar(semItem, daEquipe), 'fora_do_escopo', 'a confirmação confere o item de novo');
+    assert.equal(umaLinha(dono(`SELECT count(*) FROM core.client_context_files WHERE item_id = '${daEquipe}'`)), '0');
+
+    const [, doCliente] = umaLinha(publico(`SELECT resultado || '|' || item_id FROM core.contexto_link_salvar_item(
+      '${link.hash}', 'presenca_digital', 'redes_sociais', NULL, '{"rede":"bluesky"}', 'fato', 0)`)).split('|');
+    assert.equal(umaLinha(publico(`SELECT resultado FROM core.contexto_link_salvar_item(
+      '${link.hash}', 'presenca_digital', 'redes_sociais', '${doCliente}', '{"rede":"bluesky","perfil":"@b"}', 'fato', 1)`)), 'ok');
+    const anexo = novoId();
+    assert.equal(reservar(anexo, doCliente), 'ok');
+    assert.equal(confirmar(anexo, doCliente), 'ok');
+    assert.equal(umaLinha(dono(`SELECT count(*) FROM core.client_context_files WHERE item_id = '${doCliente}'`)), '1');
+  });
+
+  it('a origem do item é imutável para o app e para o dono', () => {
+    const itemId = umaLinha(naOrg(orgA, `INSERT INTO core.client_context_items
+      (organization_id, client_id, section, list_key, position, data, shareable)
+      VALUES ('${orgA}', '${clienteA}', 'presenca_digital', 'redes_sociais', 8, '{"rede":"threads"}', true) RETURNING id`));
+
+    const peloApp = recusa(() => naOrg(orgA, `UPDATE core.client_context_items SET origem = 'cliente' WHERE id = '${itemId}'`));
+    assert.match(peloApp ?? '', /origem do item de contexto não muda/);
+    const peloDono = recusa(() => psqlComoRole('postgres',
+      `UPDATE core.client_context_items SET origem = 'cliente' WHERE id = '${itemId}'`, { pararNoErro: true }));
+    assert.match(peloDono ?? '', /origem do item de contexto não muda/);
+    assert.equal(umaLinha(dono(`SELECT origem FROM core.client_context_items WHERE id = '${itemId}'`)), 'equipe');
+
+    naOrg(orgA, `UPDATE core.client_context_items SET data = '{"rede":"threads","perfil":"@t"}' WHERE id = '${itemId}'`);
+    assert.equal(umaLinha(dono(`SELECT origem FROM core.client_context_items WHERE id = '${itemId}'`)), 'equipe');
+  });
+
   it('link vencido ou revogado é recusado', () => {
     const vencido = criarLink(orgA, clienteA, ['empresa']);
     dono(`UPDATE core.client_context_links SET created_at = now() - interval '2 days', expires_at = now() - interval '1 second'

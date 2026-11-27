@@ -5,11 +5,20 @@ import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import type { Client, ClientWithAccounts, NewClient } from '@/modules/clients/domain/client';
 import type { Situacao } from '@/modules/clients/domain/ciclo';
 import { MOTIVO_RECUSA_CICLO, mudancaPermitida } from '@/modules/clients/domain/ciclo';
+import { podeCadastrarCliente } from '@/modules/clients/domain/painel/permissoes';
 import type { MemberRole } from '@/modules/identity/domain/user';
+import type { OrganizationType } from '@/modules/organizations/domain/organization';
+import { vocabularioDe } from '@/modules/organizations/domain/vocabulario';
 import type { ClientRepository } from '@/modules/clients/infrastructure/clientRepository';
 
+export type NovoCliente = NewClient & {
+  readonly tipoDaOrganizacao: OrganizationType;
+  readonly papelDeQuemAge: MemberRole;
+  readonly clientIdsDeQuemAge: readonly string[] | null;
+};
+
 export type ClientService = {
-  create(input: NewClient, ator: Ator): Promise<Result<Client, Failure>>;
+  create(input: NovoCliente, ator: Ator): Promise<Result<Client, Failure>>;
   byId(organizationId: string, id: string): Promise<Result<Client, Failure>>;
   list(organizationId: string): Promise<readonly ClientWithAccounts[]>;
   mudarSituacao(input: {
@@ -23,19 +32,27 @@ export type ClientService = {
 export function createClientService(repository: ClientRepository, audit: AuditRecorder): ClientService {
   return {
     async create(input, ator) {
-      if (await repository.findByName(input.organizationId, input.name)) {
+      if (!podeCadastrarCliente(input.tipoDaOrganizacao, input.papelDeQuemAge)) {
+        return err(failure('forbidden', `Seu papel não permite cadastrar ${vocabularioDe(input.tipoDaOrganizacao).cliente}.`));
+      }
+      if (input.clientIdsDeQuemAge !== null) {
+        return err(failure('forbidden', `Cadastrar ${vocabularioDe(input.tipoDaOrganizacao).cliente} exige acesso à organização inteira.`));
+      }
+      const { tipoDaOrganizacao: _tipo, papelDeQuemAge: _papel, clientIdsDeQuemAge: _recorte, ...novo } = input;
+
+      if (await repository.findByName(novo.organizationId, novo.name)) {
         return err(failure('conflict', 'Já existe um cliente com esse nome nesta organização.'));
       }
 
-      if (input.parentClientId) {
-        const parent = await repository.findById(input.organizationId, input.parentClientId);
+      if (novo.parentClientId) {
+        const parent = await repository.findById(novo.organizationId, novo.parentClientId);
         if (!parent) return err(failure('validation', 'Cliente-pai não pertence a esta organização.'));
         if (parent.parentClientId) {
           return err(failure('validation', 'A hierarquia aceita um nível: rede e filial.'));
         }
       }
 
-      const client = await repository.insert(input);
+      const client = await repository.insert(novo);
 
       await audit.record({
         organizationId: client.organizationId,

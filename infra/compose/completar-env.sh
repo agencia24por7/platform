@@ -87,6 +87,13 @@ operadores_da_plataforma=$(valor PLATAFORMA_OPERADORES)
 [ -n "$operadores_da_plataforma" ] || operadores_da_plataforma=$(segredo_opcional plataforma-operadores)
 [ -n "$operadores_da_plataforma" ] || echo "PLATAFORMA_OPERADORES ausente: ninguém entra no n8n nem vê alertas de plataforma (ADR 0043)." >&2
 
+segredo_de_borda=$(segredo_opcional proxy-secret)
+if [ -z "$segredo_de_borda" ]; then
+  segredo_de_borda=$(valor TRIA_PROXY_SECRET)
+  [ -z "$segredo_de_borda" ] || ! vm_identificada || echo "TRIA_PROXY_SECRET: Secret Manager sem resposta, mantido o valor do .env (ADR 0060)." >&2
+fi
+[ -n "$segredo_de_borda" ] || echo "TRIA_PROXY_SECRET ausente: o IP do cliente fica desconhecido para o limitador (ADR 0060)." >&2
+
 bucket_do_contexto=$(valor CONTEXT_BUCKET)
 if [ -z "$bucket_do_contexto" ]; then
   projeto_do_bucket=$(metadado project/project-id)
@@ -102,13 +109,14 @@ fi
 
 temporario=$(mktemp "$ARQUIVO.XXXXXX")
 grep -v -e '^DATABASE_URL_WORKER=' -e '^TOKENS_KMS_KEY=' -e '^META_EXCLUSAO_PEPPER=' \
-  -e '^LEADADS_LOGIN_CONFIG_ID=' -e '^ALERT_WEBHOOK_URL=' -e '^PLATAFORMA_OPERADORES=' -e '^CONTEXT_BUCKET=' "$ARQUIVO" > "$temporario" || true
+  -e '^LEADADS_LOGIN_CONFIG_ID=' -e '^ALERT_WEBHOOK_URL=' -e '^PLATAFORMA_OPERADORES=' -e '^TRIA_PROXY_SECRET=' -e '^CONTEXT_BUCKET=' "$ARQUIVO" > "$temporario" || true
 printf 'DATABASE_URL_WORKER=%s\n' "$url_do_worker" >> "$temporario"
 printf 'TOKENS_KMS_KEY=%s\n' "$chave_do_kms" >> "$temporario"
 printf 'META_EXCLUSAO_PEPPER=%s\n' "$pimenta_da_meta" >> "$temporario"
 printf 'LEADADS_LOGIN_CONFIG_ID=%s\n' "$config_do_leadads" >> "$temporario"
 printf 'ALERT_WEBHOOK_URL=%s\n' "$webhook_de_alerta" >> "$temporario"
 printf 'PLATAFORMA_OPERADORES=%s\n' "$operadores_da_plataforma" >> "$temporario"
+printf 'TRIA_PROXY_SECRET=%s\n' "$segredo_de_borda" >> "$temporario"
 printf 'CONTEXT_BUCKET=%s\n' "$bucket_do_contexto" >> "$temporario"
 chmod 600 "$temporario"
 mv "$temporario" "$ARQUIVO"

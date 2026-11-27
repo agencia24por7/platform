@@ -3,11 +3,12 @@ import type { Ator } from '@/modules/audit/domain/actor';
 import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import type { AuditEvent } from '@/modules/audit/domain/auditEvent';
 import { canOperate, type MemberRole } from '@/modules/identity/domain/user';
+import { tokenDeConviteBemFormado } from '@/modules/connections/domain/integrationInvite';
 import { failure, type Failure } from '@/shared/result/failure';
 import { err, ok, type Result } from '@/shared/result/result';
-import { consumeAll, type RateLimitPedido, type RateLimitVerdict } from '@/shared/security/rateLimit';
+import { cobrarComRecibo, consumeAll, devolver, existe, forget, renovar, type RateLimitPedido, type RateLimitVerdict } from '@/shared/security/rateLimit';
+import { vigiarConsulta, type ContadorDeTentativas } from '@/shared/security/tentativasInvalidas';
 import {
-  CATALOGO,
   EPISTEMICOS,
   FONTES,
   REVISOES,
@@ -15,7 +16,6 @@ import {
   campoLista,
   campoSimples,
   catalogoParaCliente,
-  camposVisiveisAoCliente,
   type Epistemico,
   type Fonte,
   type Revisao,
@@ -51,6 +51,15 @@ import type {
   Marcacao,
 } from '@/modules/clients/domain/contexto/tipos';
 import { validarItem, validarValor } from '@/modules/clients/domain/contexto/valores';
+import {
+  catalogoDaVisao,
+  chavesLegiveisPeloCliente,
+  chavesVisiveisAoCliente,
+  recortarParaOCliente,
+  revisaoVisivelAoCliente,
+  visaoDoPapel,
+  type VisaoDoContexto,
+} from '@/modules/clients/domain/contexto/visaoDoCliente';
 import type { PortaDoArmazenamento } from '@/modules/clients/application/portaDoArmazenamento';
 import {
   ENVIOS_DO_LINK_POR_HORA,
@@ -226,8 +235,11 @@ export type SalvoPeloLink = { readonly versao: number; readonly itemId: string |
 
 export type SituacaoDoBrain = 'publicado' | 'inalterado' | 'sem_armazenamento';
 
+export type Leitura = Escopo & { readonly papelDeQuemLe: MemberRole };
+
 export type ContextoService = {
-  carregar(escopo: Escopo): Promise<Result<ContextoCompleto, Failure>>;
+  carregar(leitura: Leitura): Promise<Result<ContextoCompleto, Failure>>;
+  carregarNaVisao(escopo: Escopo, visao: VisaoDoContexto): Promise<Result<ContextoCompleto, Failure>>;
   salvarCampo(
     comando: Comando & {
       readonly fieldKey: string;
@@ -268,7 +280,7 @@ export type ContextoService = {
     ator: Ator,
   ): Promise<Result<{ readonly aplicadas: number; readonly ignoradas: number }, Failure>>;
   listarRevisoes(
-    escopo: Escopo & { readonly limite?: number; readonly chave?: string | null },
+    leitura: Leitura & { readonly limite?: number; readonly chave?: string | null },
   ): Promise<Result<readonly RevisaoDeContexto[], Failure>>;
   anexarArquivo(comando: Comando & NovoAnexo, ler: LerConteudo, ator: Ator): Promise<Result<ArquivoDeContexto, Failure>>;
   removerArquivo(comando: Comando & { readonly fileId: string }, ator: Ator): Promise<Result<null, Failure>>;
@@ -322,12 +334,29 @@ export type DependenciasDoContexto = {
   readonly armazenamento: PortaDoArmazenamento;
   readonly agora?: () => Date;
   readonly limitar?: (pedidos: readonly RateLimitPedido[], janelaMs: number) => RateLimitVerdict;
+  readonly limitador?: Omit<ContadorDeTentativas, 'consumeAll'>;
+  readonly avisarSemEndereco?: () => void;
   readonly agendador?: (publicar: (escopo: Escopo) => Promise<unknown>) => AgendadorDoBrain;
   readonly esperarMs?: (ms: number) => Promise<void>;
 };
 
-const LIMITE_POR_LINK = 120;
+const LIMITE_POR_CREDENCIAL = 120;
 const LIMITE_POR_IP = 300;
+const LIMITE_SEM_ENDERECO = 60;
+const CONSULTAS_DE_CREDENCIAL_DESCONHECIDA_POR_IP = 30;
+const SEM_ENDERECO = 'sem-endereco';
+
+function credencialBemFormada(credencial: CredencialPublica): boolean {
+  return credencial.tipo === 'link' ? tokenBemFormado(credencial.token) : tokenDeConviteBemFormado(credencial.token);
+}
+
+function impressaoDaCredencial(credencial: CredencialPublica): string {
+  return createHash('sha256').update(`${credencial.tipo}:${credencial.token}`).digest('hex').slice(0, 32);
+}
+
+function muitasTentativas(veredito: RateLimitVerdict): Failure {
+  return failure('rate_limited', 'Muitas tentativas. Aguarde um pouco.', { retryAfterSeconds: String(veredito.retryAfterSeconds) });
+}
 const JANELA_MS = 60_000;
 const TENTATIVAS_DE_GRAVACAO = 3;
 const ESPERA_DO_AGENDADOR_MS = 5_000;
@@ -402,16 +431,6 @@ function definicaoDeArquivo(anexo: Pick<NovoAnexo, 'fieldKey' | 'listKey'>): Def
     : null;
 }
 
-function chavesVisiveis(secoes: readonly string[]): string[] {
-  return camposVisiveisAoCliente(secoes).map((c) => c.key);
-}
-
-function chavesLegiveis(secoes: readonly string[]): string[] {
-  return camposVisiveisAoCliente(secoes).flatMap((c) =>
-    c.tipo === 'lista' ? [c.key, ...c.item.filter((i) => i.tipo === 'arquivo').map((i) => i.key)] : [c.key],
-  );
-}
-
 function mensagemDeErro(erro: unknown): string {
   if (erro && typeof erro === 'object' && 'message' in erro) return String((erro as { message: unknown }).message).slice(0, 300);
   return 'falha desconhecida';
@@ -441,6 +460,8 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
   const { repositorio, audit, armazenamento } = deps;
   const agora = deps.agora ?? (() => new Date());
   const limitar = deps.limitar ?? consumeAll;
+  const limitador = deps.limitador ?? { existe, renovar, cobrarComRecibo, devolver, forget };
+  const avisarSemEndereco = deps.avisarSemEndereco ?? (() => undefined);
   const esperar = deps.esperarMs ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 
   let agendador: AgendadorDoBrain = { agendar: () => undefined };
@@ -767,26 +788,35 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
   }
 
   async function resolverHash(credencial: CredencialPublica): Promise<string | null> {
-    if (credencial.tipo === 'link') return tokenBemFormado(credencial.token) ? hashDoToken(credencial.token) : null;
-    if (credencial.token.length < 16 || credencial.token.length > 64) return null;
+    if (!credencialBemFormada(credencial)) return null;
+    if (credencial.tipo === 'link') return hashDoToken(credencial.token);
     return repositorio.hashPeloConvite(credencial.token);
   }
 
-  async function abrirPublico(acesso: AcessoPublico): Promise<Result<{ hash: string; escopo: EscopoDoLink }, Failure>> {
-    const pedidos: RateLimitPedido[] = [
-      { key: `contexto:credencial:${createHash('sha256').update(acesso.credencial.token).digest('hex').slice(0, 24)}`, limit: LIMITE_POR_LINK },
-    ];
-    if (acesso.ip) pedidos.push({ key: `contexto:ip:${acesso.ip}`, limit: LIMITE_POR_IP });
-    const veredito = limitar(pedidos, JANELA_MS);
-    if (!veredito.allowed) {
-      return err(failure('rate_limited', 'Muitas tentativas. Aguarde um pouco.', { retryAfterSeconds: String(veredito.retryAfterSeconds) }));
-    }
 
-    const hash = await resolverHash(acesso.credencial);
-    if (!hash) return err(LINK_INVALIDO);
-    const escopo = await repositorio.abrirLink(hash);
-    if (!escopo) return err(LINK_INVALIDO);
-    return ok({ hash, escopo });
+  async function abrirPublico(acesso: AcessoPublico): Promise<Result<{ hash: string; escopo: EscopoDoLink }, Failure>> {
+    if (!credencialBemFormada(acesso.credencial)) return err(LINK_INVALIDO);
+    if (!acesso.ip) avisarSemEndereco();
+    const endereco = acesso.ip ?? SEM_ENDERECO;
+    const impressao = impressaoDaCredencial(acesso.credencial);
+    const consulta = vigiarConsulta({
+      janelaMs: JANELA_MS,
+      desconhecidas: { dominio: 'ip', chave: `contexto:desconhecidas:${endereco}`, limite: CONSULTAS_DE_CREDENCIAL_DESCONHECIDA_POR_IP },
+      total: { dominio: 'ip', chave: `contexto:ip:${endereco}`, limite: acesso.ip ? LIMITE_POR_IP : LIMITE_SEM_ENDERECO },
+      porCredencial: { dominio: 'publico', chave: `contexto:credencial:${impressao}`, limite: LIMITE_POR_CREDENCIAL },
+      validada: { chave: `contexto:${impressao}` },
+      ...(acesso.credencial.tipo === 'link' ? { recusada: { chave: `contexto:${impressao}` } } : {}),
+      contador: { consumeAll: limitar, ...limitador },
+    });
+
+    const resolucao = await consulta.resolver(async () => {
+      const hash = await resolverHash(acesso.credencial);
+      const escopo = hash ? await repositorio.abrirLink(hash) : null;
+      return hash && escopo ? { hash, escopo } : null;
+    });
+    if (resolucao.tipo === 'barrada') return err(muitasTentativas(resolucao.veredito));
+    if (resolucao.tipo === 'invalida') return err(LINK_INVALIDO);
+    return ok(resolucao.valor);
   }
 
   function falhaDaReserva(resultado: ResultadoDaReserva): Failure {
@@ -849,15 +879,19 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
   }
 
   const servico: ContextoService = {
-    async carregar(escopo) {
+    carregar(leitura) {
+      return servico.carregarNaVisao({ organizationId: leitura.organizationId, clientId: leitura.clientId }, visaoDoPapel(leitura.papelDeQuemLe));
+    },
+
+    async carregarNaVisao(escopo, visao) {
       const carregado = await repositorio.carregar(escopo.organizationId, escopo.clientId);
       if (!carregado) return err(CLIENTE_NAO_ENCONTRADO);
-      const { contexto } = carregado;
+      const contexto = visao === 'equipe' ? carregado.contexto : recortarParaOCliente(carregado.contexto);
       return ok({
         cliente: { id: escopo.clientId, nome: carregado.nome },
         cadastro: { modeloDeOperacao: carregado.cadastro.modeloDeOperacao, temRede: carregado.cadastro.temRede, redeNome: carregado.cadastro.redeNome },
         catalogoVersao: VERSAO_DO_CATALOGO,
-        catalogo: CATALOGO,
+        catalogo: catalogoDaVisao(visao),
         campos: Object.fromEntries(contexto.campos.map((e) => [e.fieldKey, e])),
         listas: emLote(contexto.itens, (i) => i.listKey),
         arquivos: contexto.arquivos,
@@ -1081,14 +1115,15 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
       return ok({ aplicadas, ignoradas });
     },
 
-    async listarRevisoes(escopo) {
-      const limite = Math.min(Math.max(escopo.limite ?? 50, 1), MAX_REVISOES);
-      const revisoes = await repositorio.listarRevisoes(escopo.organizationId, escopo.clientId, {
+    async listarRevisoes(leitura) {
+      const limite = Math.min(Math.max(leitura.limite ?? 50, 1), MAX_REVISOES);
+      const revisoes = await repositorio.listarRevisoes(leitura.organizationId, leitura.clientId, {
         limite,
-        chave: escopo.chave ?? null,
+        chave: leitura.chave ?? null,
       });
+      const visiveis = visaoDoPapel(leitura.papelDeQuemLe) === 'equipe' ? revisoes : revisoes.filter((r) => revisaoVisivelAoCliente(r));
       return ok(
-        revisoes.map((r) => ({
+        visiveis.map((r) => ({
           ...r,
           viaLink: r.linkId !== null,
           diferencas: diferencasDeDados(planificar(r.antes), planificar(r.depois)),
@@ -1243,7 +1278,7 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
       if (!aberto.ok) return aberto;
       const { hash, escopo } = aberto.value;
 
-      const visto = await repositorio.lerPeloLink(hash, chavesLegiveis(escopo.secoes));
+      const visto = await repositorio.lerPeloLink(hash, chavesLegiveisPeloCliente(escopo.secoes));
       if (!visto) return err(LINK_INVALIDO);
 
       if (await repositorio.registrarAberturaPeloLink(hash)) {
@@ -1308,7 +1343,7 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
       const aberto = await abrirPublico(acesso);
       if (!aberto.ok) return aberto;
       const { hash, escopo } = aberto.value;
-      const permitido = new Set(chavesVisiveis(escopo.secoes));
+      const permitido = new Set(chavesVisiveisAoCliente(escopo.secoes));
       const negar = () => err(failure('forbidden', 'Esta informação não faz parte do que foi pedido neste link.'));
 
       const epistemico = alteracao.tipo === 'remover_item' ? undefined : alteracao.epistemico;
@@ -1380,7 +1415,7 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
       const { hash, escopo } = aberto.value;
 
       const definicao = definicaoDeArquivo(anexo);
-      if (!definicao || !chavesVisiveis(escopo.secoes).includes(definicao.chaveDoCatalogo)) {
+      if (!definicao || !chavesVisiveisAoCliente(escopo.secoes).includes(definicao.chaveDoCatalogo)) {
         return err(failure('forbidden', 'Esta informação não faz parte do que foi pedido neste link.'));
       }
       const validado = validarAnexo(anexo);

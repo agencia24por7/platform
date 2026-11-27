@@ -78,4 +78,17 @@ describe('convite público: volta do OAuth, "não uso", erros e convite encerrad
       assert.ok(!caso.texto.includes('/oauth/'), 'sem botão de conectar');
     }
   });
+
+  it('token com caractere inválido responde como convite inexistente e não dá 500', async () => {
+    const base = randomBytes(12).toString('hex');
+    const cabecalhos = { 'X-Forwarded-For': `198.18.${randomBytes(1)[0]}.${1 + (randomBytes(1)[0] % 250)}` };
+    for (const ruim of [`${base}%00`, `${base}%27`, `${base}.x`]) {
+      const resposta = await fetch(`${BASE}/convite/${ruim}`, { headers: cabecalhos });
+      assert.equal(resposta.status, 200, ruim);
+      assert.ok((await resposta.text()).replaceAll('<!-- -->', '').includes('Convite indisponível'), ruim);
+      const inicio = await fetch(`${BASE}/api/convite/${ruim}/oauth/google/start`, { headers: cabecalhos, redirect: 'manual' });
+      assert.ok([302, 303, 307, 308].includes(inicio.status), `${ruim}: ${inicio.status}`);
+      assert.ok((inicio.headers.get('location') ?? '').includes('erro=convite_invalido'), ruim);
+    }
+  });
 });

@@ -57,12 +57,15 @@ export type MedidaDeCobertura = {
   readonly medidoEm: Date;
 };
 
+import type { DesempenhoMedido } from './desempenho.ts';
+
 export type InventarioDoCliente = {
   readonly cliente: ClienteDoInventario;
   readonly conexoesDaOrganizacao: readonly ConexaoDoInventario[];
   readonly fontes: readonly FonteDoInventario[];
   readonly coletas: readonly ResumoDeColetas[];
   readonly cobertura: readonly MedidaDeCobertura[];
+  readonly desempenho: readonly DesempenhoMedido[];
 };
 
 export function fontesVinculadas(inventario: InventarioDoCliente): readonly FonteDoInventario[] {

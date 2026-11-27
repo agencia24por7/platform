@@ -155,7 +155,7 @@ export async function Shell({ title, organization, active, children }: Props) {
             <ThemeToggle />
           </div>
         </header>
-        <div className="page" id="conteudo">
+        <div className="page" id="conteudo" tabIndex={-1}>
           {children}
         </div>
         <Suspense fallback={null}>

@@ -5,6 +5,8 @@ import type { AuditEvent } from '@/modules/audit/domain/auditEvent';
 import type { ContextoRepository, EscopoDoLink, LinkDeContexto } from '@/modules/clients/infrastructure/contextoRepository';
 import type { EntradaDeCampo, ItemDeLista } from '@/modules/clients/domain/contexto/tipos';
 import type { PortaDoArmazenamento } from './portaDoArmazenamento.ts';
+import type { RateLimitPedido, RateLimitVerdict } from '@/shared/security/rateLimit';
+import type { ContadorDeTentativas } from '@/shared/security/tentativasInvalidas';
 
 Object.assign(process.env, {
   DATABASE_URL: 'postgres://teste:teste@localhost:5432/teste',
@@ -21,6 +23,7 @@ const criarArmazenamentoNulo = () => adaptarArmazenamento(nuloCompartilhado());
 const { hashDoToken, gerarTokenDeContexto } = await import('@/modules/clients/domain/contexto/link.ts');
 const { ok, err } = await import('@/shared/result/result.ts');
 const { failure } = await import('@/shared/result/failure.ts');
+const { criarLimitadorDeTaxa } = await import('@/shared/security/rateLimit.ts');
 
 const ORG = '11111111-1111-4111-8111-111111111111';
 const CLIENTE = '22222222-2222-4222-8222-222222222222';
@@ -42,6 +45,12 @@ type OpcoesDoMontar = {
   semVaga?: boolean;
   reservasAVarrer?: { id: string; organizationId: string; clientId: string; caminho: string }[];
   conhecidos?: string[];
+  limitar?: (pedidos: readonly RateLimitPedido[], janelaMs: number) => RateLimitVerdict;
+  limitador?: Omit<ContadorDeTentativas, 'consumeAll'>;
+  hashValido?: string;
+  escopoDinamico?: () => EscopoDoLink | null;
+  avisarSemEndereco?: () => void;
+  hashDoConvite?: (token: string) => string | null;
 };
 
 function montar(opcoes: OpcoesDoMontar = {}) {
@@ -225,6 +234,8 @@ function montar(opcoes: OpcoesDoMontar = {}) {
     },
     async abrirLink(hash: string) {
       anota('abrirLink', hash);
+      if (opcoes.escopoDinamico) return opcoes.escopoDinamico();
+      if (opcoes.hashValido !== undefined && hash !== opcoes.hashValido) return null;
       return opcoes.escopo === undefined ? null : opcoes.escopo;
     },
     async lerPeloLink(hash: string, campos: readonly string[]) {
@@ -236,6 +247,8 @@ function montar(opcoes: OpcoesDoMontar = {}) {
       return { resultado: 'conflito' as const, versao: 3 };
     },
     async hashPeloConvite(token: string) {
+      anota('hashPeloConvite', token);
+      if (opcoes.hashDoConvite) return opcoes.hashDoConvite(token);
       return token === 'convite-com-contexto-123' ? 'f'.repeat(64) : null;
     },
   } as unknown as ContextoRepository;
@@ -257,9 +270,17 @@ function montar(opcoes: OpcoesDoMontar = {}) {
     audit,
     armazenamento: opcoes.armazenamento ?? criarArmazenamentoNulo(),
     agora: () => AGORA,
-    limitar: () => ({ allowed: opcoes.liberar ?? true, remaining: 1, retryAfterSeconds: 9 }),
+    limitar: opcoes.limitar ?? (() => ({ allowed: opcoes.liberar ?? true, remaining: 1, retryAfterSeconds: 9 })),
+    limitador: opcoes.limitador ?? {
+      existe: () => false,
+      renovar: () => undefined,
+      cobrarComRecibo: () => ({ veredito: { allowed: opcoes.liberar ?? true, remaining: 1, retryAfterSeconds: 9 }, recibo: null }),
+      devolver: () => undefined,
+      forget: () => undefined,
+    },
     agendador: () => ({ agendar: (escopo) => agendados.push(escopo.clientId) }),
     esperarMs: async () => undefined,
+    ...(opcoes.avisarSemEndereco ? { avisarSemEndereco: opcoes.avisarSemEndereco } : {}),
   });
 
   return { servico, eventos, chamadas, agendados, entradas, links, tentativas };
@@ -747,14 +768,14 @@ describe('publicação do brain', () => {
     assert.equal(r.ok && r.value.situacao, 'sem_armazenamento');
     await servico.salvarCampo({ ...comando, fieldKey: 'segmento', valor: 'x', versaoEsperada: 0 }, ator);
     assert.deepEqual(agendados, []);
-    const contexto = await servico.carregar({ organizationId: ORG, clientId: CLIENTE });
+    const contexto = await servico.carregar({ organizationId: ORG, clientId: CLIENTE, papelDeQuemLe: 'operator' });
     assert.equal(contexto.ok && contexto.value.brain.situacao, 'desativado');
     assert.deepEqual(await servico.publicarPendentes(), { publicados: 0, inalterados: 0, falhas: 0, desativado: true });
   });
 
   it('carregar expõe o modelo de operação e a rede vindos do cadastro', async () => {
     const { servico } = montar();
-    const r = await servico.carregar({ organizationId: ORG, clientId: CLIENTE });
+    const r = await servico.carregar({ organizationId: ORG, clientId: CLIENTE, papelDeQuemLe: 'operator' });
     assert.deepEqual(r.ok && r.value.cadastro, { modeloDeOperacao: 'leads', temRede: true, redeNome: 'Rede Pão' });
   });
 
@@ -792,4 +813,157 @@ describe('publicação do brain', () => {
     assert.equal((tentativas.at(-1) as { ok: boolean }).ok, false);
     assert.ok(eventos.some((e) => e.action === 'client.context.brain_failed'));
   });
+});
+
+describe('limite do formulário público', () => {
+  const codigo = (r: { ok: boolean; error?: { code: string } }) => (r.ok ? 'ok' : (r.error?.code ?? '?'));
+
+  function montarComLimitador(tetoPublico = 10_000) {
+    const limitador = criarLimitadorDeTaxa({ agora: () => AGORA.getTime(), tetos: { publico: tetoPublico } });
+    const tokenValido = gerarTokenDeContexto();
+    const montado = montar({
+      escopo: ESCOPO,
+      hashValido: hashDoToken(tokenValido),
+      limitar: limitador.consumeAll,
+      limitador,
+    });
+    const abrir = (token: string, ip: string | null) => montado.servico.carregarPeloLink({ credencial: { tipo: 'link', token }, ip, requestId: 'r' });
+    return { ...montado, limitador, tokenValido, abrir };
+  }
+
+  const tentativasRestantes = (limitador: ReturnType<typeof criarLimitadorDeTaxa>, endereco: string) => {
+    const chave = `contexto:desconhecidas:${endereco}`;
+    const { veredito, recibo } = limitador.cobrarComRecibo('ip', chave, 30, 60_000);
+    if (recibo) limitador.devolver(recibo);
+    return veredito.allowed ? veredito.remaining + 1 : 0;
+  };
+
+  it('escritório num IP só, com credencial válida, não gasta o limite de tentativas', async () => {
+    const { limitador, abrir, tokenValido } = montarComLimitador();
+    const escritorio = '200.1.1.1';
+    for (let i = 0; i < 110; i += 1) assert.equal(codigo(await abrir(tokenValido, escritorio)), 'ok');
+    assert.equal(tentativasRestantes(limitador, escritorio), 30);
+    assert.equal(codigo(await abrir(gerarTokenDeContexto(), escritorio)), 'not_found');
+    assert.equal(tentativasRestantes(limitador, escritorio), 29);
+    assert.equal(codigo(await abrir(tokenValido, escritorio)), 'ok');
+  });
+
+  it('credencial desconhecida não cria balde por credencial e o IP que acumula tentativas é barrado antes do banco', async () => {
+    const { limitador, abrir, chamadas, tokenValido } = montarComLimitador();
+    for (let i = 0; i < 30; i += 1) assert.equal(codigo(await abrir(gerarTokenDeContexto(), '7.7.7.7')), 'not_found');
+    assert.equal(limitador.tamanho('publico'), 0);
+
+    const consultasAntes = chamadas.filter((c) => c.metodo === 'abrirLink').length;
+    assert.equal(codigo(await abrir(gerarTokenDeContexto(), '7.7.7.7')), 'rate_limited');
+    assert.equal(codigo(await abrir(tokenValido, '7.7.7.7')), 'rate_limited', 'credencial que o banco ainda não validou também espera');
+    assert.equal(chamadas.filter((c) => c.metodo === 'abrirLink').length, consultasAntes, 'barrado não chega ao banco');
+    assert.equal(codigo(await abrir(tokenValido, '7.7.7.8')), 'ok', 'outro IP segue livre');
+    assert.equal(codigo(await abrir(tokenValido, '7.7.7.7')), 'ok', 'depois de validada, a credencial atravessa o IP saturado');
+  });
+
+  it('credencial revogada sai do registro e volta a contar como desconhecida', async () => {
+    const limitador = criarLimitadorDeTaxa({ agora: () => AGORA.getTime() });
+    const tokenValido = gerarTokenDeContexto();
+    let valido = true;
+    const { servico } = montar({ escopoDinamico: () => (valido ? ESCOPO : null), limitar: limitador.consumeAll, limitador });
+    const abrir = () => servico.carregarPeloLink({ credencial: { tipo: 'link', token: tokenValido }, ip: '9.9.9.9', requestId: 'r' });
+    assert.equal(codigo(await abrir()), 'ok');
+    assert.equal(limitador.tamanho('validadas'), 1);
+    valido = false;
+    assert.equal(codigo(await abrir()), 'not_found');
+    assert.equal(limitador.tamanho('validadas'), 0);
+    assert.equal(tentativasRestantes(limitador, '9.9.9.9'), 29);
+  });
+
+  it('link válido martelado de vários IPs não leva ao banco mais que o limite por credencial', async () => {
+    const { abrir, chamadas, tokenValido } = montarComLimitador();
+    for (let i = 0; i < 400; i += 1) await abrir(tokenValido, `30.0.${Math.floor(i / 200)}.${i % 200}`);
+    assert.equal(chamadas.filter((c) => c.metodo === 'abrirLink').length, 120);
+  });
+
+  it('convite desconhecido também é barrado antes do banco', async () => {
+    const { servico, chamadas } = montarComLimitador();
+    const convite = (token: string) => servico.carregarPeloLink({ credencial: { tipo: 'convite', token }, ip: '8.8.8.8', requestId: 'r' });
+    for (let i = 0; i < 30; i += 1) assert.equal(codigo(await convite(`convite-forjado-${String(i).padStart(4, '0')}`)), 'not_found');
+    const antes = chamadas.length;
+    assert.equal(codigo(await convite('convite-com-contexto-123')), 'rate_limited');
+    assert.equal(chamadas.length, antes);
+  });
+
+  it('forja em massa de credenciais não zera o balde de um link válido', async () => {
+    const { limitador, tokenValido, abrir } = montarComLimitador(3);
+    for (let i = 0; i < 120; i += 1) assert.equal(codigo(await abrir(tokenValido, `10.0.${Math.floor(i / 100)}.${i % 100}`)), 'ok');
+    assert.equal(codigo(await abrir(tokenValido, '10.9.9.9')), 'rate_limited');
+
+    for (let i = 0; i < 500; i += 1) {
+      assert.equal(codigo(await abrir(gerarTokenDeContexto(), `172.16.${Math.floor(i / 200)}.${i % 200}`)), 'not_found');
+    }
+
+    assert.equal(limitador.tamanho('publico'), 1);
+    assert.equal(codigo(await abrir(tokenValido, '10.8.8.8')), 'rate_limited', 'o balde do link segue cheio');
+  });
+
+  it('credencial com NUL ou fora do alfabeto não chega ao banco nem gasta cota', async () => {
+    const { servico, chamadas, limitador } = montarComLimitador();
+    const nul = String.fromCharCode(0);
+    const ruins = [
+      { tipo: 'convite' as const, token: `convite${nul}${'a'.repeat(20)}` },
+      { tipo: 'convite' as const, token: `${'a'.repeat(20)}%27` },
+      { tipo: 'convite' as const, token: 'curto' },
+      { tipo: 'link' as const, token: `${gerarTokenDeContexto().slice(0, 42)}${nul}` },
+      { tipo: 'link' as const, token: `${gerarTokenDeContexto().slice(0, 42)}.` },
+    ];
+    for (const credencial of ruins) {
+      const r = await servico.carregarPeloLink({ credencial, ip: '50.0.0.1', requestId: 'r' });
+      assert.equal(codigo(r), 'not_found');
+    }
+    assert.equal(chamadas.filter((c) => c.metodo === 'abrirLink' || c.metodo === 'hashPeloConvite').length, 0);
+    assert.equal(limitador.tamanho('ip'), 0);
+  });
+
+  it('link recusado repetido vai ao banco uma vez só e não gasta a cota a cada abertura', async () => {
+    const { abrir, chamadas, limitador } = montarComLimitador();
+    const revogado = gerarTokenDeContexto();
+    for (let i = 0; i < 100; i += 1) assert.equal(codigo(await abrir(revogado, '60.0.0.1')), 'not_found');
+    assert.equal(chamadas.filter((c) => c.metodo === 'abrirLink').length, 1);
+    assert.equal(tentativasRestantes(limitador, '60.0.0.1'), 29);
+  });
+
+  it('convite sem link de contexto que ganha um passa a abrir na hora: convite não entra nas recusadas', async () => {
+    const limitador = criarLimitadorDeTaxa({ agora: () => AGORA.getTime() });
+    const tokenDoConvite = gerarTokenDeContexto().slice(0, 32);
+    let temLink = false;
+    const { servico, chamadas } = montar({
+      escopo: ESCOPO,
+      limitar: limitador.consumeAll,
+      limitador,
+      hashDoConvite: () => (temLink ? 'f'.repeat(64) : null),
+    });
+    const abrir = () => servico.carregarPeloLink({ credencial: { tipo: 'convite', token: tokenDoConvite }, ip: '70.0.0.1', requestId: 'r' });
+    for (let i = 0; i < 3; i += 1) assert.equal(codigo(await abrir()), 'not_found');
+    assert.equal(limitador.tamanho('recusadas'), 0);
+    temLink = true;
+    assert.equal(codigo(await abrir()), 'ok');
+    assert.equal(chamadas.filter((c) => c.metodo === 'hashPeloConvite').length, 4);
+  });
+
+  it('acesso público sem endereço confiável avisa, e com endereço não', async () => {
+    let avisos = 0;
+    const { servico } = montar({ escopo: ESCOPO, avisarSemEndereco: () => (avisos += 1) });
+    await servico.carregarPeloLink({ credencial: { tipo: 'link', token: gerarTokenDeContexto() }, ip: '1.2.3.4', requestId: 'r' });
+    assert.equal(avisos, 0);
+    await servico.carregarPeloLink({ credencial: { tipo: 'link', token: gerarTokenDeContexto() }, ip: null, requestId: 'r' });
+    assert.equal(avisos, 1);
+  });
+
+  it('sem IP as tentativas inválidas e o total caem em baldes únicos e conservadores', async () => {
+    const tentativas = montarComLimitador();
+    for (let i = 0; i < 30; i += 1) assert.equal(codigo(await tentativas.abrir(gerarTokenDeContexto(), null)), 'not_found');
+    assert.equal(codigo(await tentativas.abrir(tentativas.tokenValido, null)), 'rate_limited');
+
+    const total = montarComLimitador();
+    for (let i = 0; i < 60; i += 1) assert.equal(codigo(await total.abrir(total.tokenValido, null)), 'ok');
+    assert.equal(codigo(await total.abrir(total.tokenValido, null)), 'rate_limited');
+  });
+
 });

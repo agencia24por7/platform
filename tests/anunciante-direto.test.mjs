@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 import { after, before, describe, it } from 'node:test';
-import { BASE, acaoComCampo, appIsUp, browse, ensureUser, signIn, signOut, submitAction } from './helpers.mjs';
+import { BASE, acaoComCampo, appIsUp, browse, ensureUser, env, signIn, signOut, sqlDeConexao, submitAction } from './helpers.mjs';
 import { psqlDonoPrimeiraLinha as dono } from './apoio/psql.mjs';
 
 const sufixo = randomBytes(4).toString('hex');
@@ -177,5 +177,107 @@ describe('anunciante direto: vocabulário, atalho e tipo da organização', { co
     signIn(pessoas.agencia);
     const aceito = await submitAction('/config', acao, { tipo: 'agency' });
     assert.match(decodeURIComponent(aceito.location ?? aceito.redirectedTo ?? ''), /feito=/);
+  });
+
+  it('seleção de contas: operador de anunciante é recusado no servidor e nenhuma conta muda de estado', async () => {
+    const org = organizacao('advertiser', 'onboarding');
+    const admin = membro('onbadmin', org, 'admin');
+    const operador = membro('onbop', org, 'operator');
+    const conexaoId = dono(
+      sqlDeConexao({ organizationId: org, platform: 'meta', label: `Meta ${sufixo}`, externalId: `meta-onb-${sufixo}` }).sql,
+    );
+    const descoberta = (externo) =>
+      dono(
+        `INSERT INTO integrations.connection_accounts (organization_id, connection_id, platform, external_id, name, state)
+         VALUES ('${org}', '${conexaoId}', 'meta', '${externo}-${sufixo}', 'Conta ${externo}', 'discovered') RETURNING id`,
+      );
+    const escolhida = descoberta('escolhida');
+    const outra = descoberta('outra');
+    const estados = () => dono(`SELECT string_agg(state::text, ',' ORDER BY external_id) FROM integrations.connection_accounts WHERE organization_id = '${org}'`);
+
+    signIn(admin);
+    const acao = await acaoComCampo('/comecar/contas', 'clientName');
+
+    signIn(operador);
+    const recusado = await submitAction('/comecar/contas', acao, { selecionadas: [escolhida], clientName: `Intruso ${sufixo}` });
+    assert.match(decodeURIComponent(recusado.location ?? recusado.redirectedTo ?? ''), /erro=/);
+    assert.equal(dono(`SELECT count(*) FROM core.clients WHERE organization_id = '${org}'`), '0');
+    assert.equal(estados(), 'discovered,discovered');
+
+    const existente = negocio(org, `Existente ${sufixo}`);
+    signIn(admin);
+    const conflito = await submitAction('/comecar/contas', acao, { selecionadas: [escolhida], clientName: `Existente ${sufixo}` });
+    assert.match(decodeURIComponent(conflito.location ?? conflito.redirectedTo ?? ''), /erro=/, 'falha ao criar não cai em outro negócio');
+    assert.equal(dono(`SELECT count(*) FROM integrations.ad_accounts WHERE organization_id = '${org}'`), '0');
+    assert.equal(dono(`SELECT count(*) FROM integrations.ad_accounts WHERE client_id = '${existente}'`), '0');
+    assert.equal(estados(), 'discovered,discovered', 'nenhuma conta vinculada nem ignorada');
+    assert.ok(outra);
+  });
+
+  it('seleção de contas: depois de falha parcial a nova tentativa retoma o mesmo negócio e recusa retomada forjada', async () => {
+    const org = organizacao('advertiser', 'retomada');
+    const admin = membro('retadmin', org, 'admin');
+    const conexaoId = dono(
+      sqlDeConexao({ organizationId: org, platform: 'meta', label: `Meta retomada ${sufixo}`, externalId: `meta-ret-${sufixo}` }).sql,
+    );
+    const digitos = String(parseInt(sufixo, 16)).padStart(10, '7');
+    const descoberta = (externo, nome) =>
+      dono(
+        `INSERT INTO integrations.connection_accounts (organization_id, connection_id, platform, external_id, name, state)
+         VALUES ('${org}', '${conexaoId}', 'meta', '${externo}', '${nome}', 'discovered') RETURNING id`,
+      );
+    const valida = descoberta(`act_${digitos}1`, `Válida ${sufixo}`);
+    const quebrada = descoberta(`act_1${sufixo.length}`, `Quebrada ${sufixo}`);
+    const ignorada = descoberta(`act_${digitos}9`, `Ignorada ${sufixo}`);
+    const estado = (id) => dono(`SELECT state::text FROM integrations.connection_accounts WHERE id = '${id}'`);
+    const negociosDaOrg = () => dono(`SELECT count(*) FROM core.clients WHERE organization_id = '${org}'`);
+    const destino = (r) => new URL(r.location ?? r.redirectedTo ?? '/', BASE);
+
+    signIn(admin);
+    const acao = await acaoComCampo('/comecar/contas', 'clientName');
+    const parcial = await submitAction('/comecar/contas', acao, { selecionadas: [valida, quebrada], clientName: `Retomada ${sufixo}` });
+    const aposFalha = destino(parcial);
+    assert.ok(aposFalha.searchParams.get('erro'), 'falha parcial volta com erro');
+    const token = aposFalha.searchParams.get('retomar');
+    assert.ok(token, 'falha parcial devolve a retomada assinada');
+    assert.equal(negociosDaOrg(), '1');
+    const criado = dono(`SELECT id FROM core.clients WHERE organization_id = '${org}' AND name = 'Retomada ${sufixo}'`);
+    assert.equal(estado(valida), 'linked');
+    assert.equal(estado(quebrada), 'discovered');
+    assert.equal(estado(ignorada), 'discovered', 'falha não marca conta como ignorada');
+
+    const assinar = (corpo) => {
+      const segredo = env().TRIA_SESSION_SECRET;
+      const chave = createHmac('sha256', segredo).update('orla.retomada-do-cadastro:v1').digest();
+      const texto = JSON.stringify(corpo);
+      return `${Buffer.from(texto).toString('base64url')}.${createHmac('sha256', chave).update(texto).digest('base64url')}`;
+    };
+    const prazo = Date.now() + 600_000;
+    const forjadas = [
+      assinar({ o: org, u: admin, c: orgs.cliente, e: prazo }),
+      assinar({ o: orgs.agencia, u: admin, c: orgs.cliente, e: prazo }),
+      assinar({ o: org, u: pessoas.dono, c: criado, e: prazo }),
+      assinar({ o: org, u: admin, c: criado, e: Date.now() - 1000 }),
+      criado,
+    ];
+    for (const forjada of forjadas) {
+      const recusada = await submitAction('/comecar/contas', acao, { selecionadas: [quebrada], retomada: forjada });
+      assert.ok(destino(recusada).searchParams.get('erro'), 'retomada forjada é recusada');
+    }
+    assert.equal(dono(`SELECT count(*) FROM integrations.ad_accounts WHERE client_id = '${orgs.cliente}'`), '0', 'nada vai para negócio de outra organização');
+    assert.equal(estado(quebrada), 'discovered');
+    assert.equal(negociosDaOrg(), '1');
+
+    const tela = await html(`/comecar/contas?retomar=${encodeURIComponent(token)}`);
+    assert.ok(tela.texto.includes('name="retomada"'), 'a tela leva a retomada no formulário');
+    assert.ok(tela.texto.includes(`Retomada ${sufixo}`));
+
+    dono(`UPDATE integrations.connection_accounts SET external_id = 'act_${digitos}2' WHERE id = '${quebrada}'`);
+    const retomada = await submitAction('/comecar/contas', acao, { selecionadas: [quebrada], retomada: token });
+    assert.ok(!destino(retomada).searchParams.get('erro'), `a retomada conclui: ${destino(retomada)}`);
+    assert.equal(negociosDaOrg(), '1', 'a retomada não cria outro negócio');
+    assert.equal(dono(`SELECT count(*) FROM integrations.ad_accounts WHERE organization_id = '${org}' AND client_id = '${criado}'`), '2');
+    assert.equal(estado(quebrada), 'linked');
+    assert.equal(estado(ignorada), 'ignored', 'só depois de tudo vinculado a não escolhida vira ignorada');
   });
 });
