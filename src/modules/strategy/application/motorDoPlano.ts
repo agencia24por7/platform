@@ -186,6 +186,11 @@ const MAXIMO_DE_PROBLEMAS_DEVOLVIDOS = 10;
 const AVISO_DE_CORRECAO_DE_INTEGRIDADE =
   'A entrada traz "problemasDeIntegridade": a versão anterior deste grupo ficou inconsistente com as seções já redigidas ou com ela mesma. Devolva o grupo corrigido, citando só ids que existem em "secoesJaRedigidas" ou neste grupo.';
 
+function motivoDoPlano(rotulo: string, problemas: readonly { readonly caminho: string; readonly mensagem: string }[]): string {
+  const itens = problemas.slice(0, 3).map((problema) => `${problema.caminho.replace(/[^a-z0-9_.]/gi, '').slice(0, 60)}=${problema.mensagem.slice(0, 60)}`);
+  return `${rotulo}:${itens.join(';')}`.slice(0, 220);
+}
+
 function motivoDaIntegridade(problemas: readonly { readonly caminho: string; readonly mensagem: string }[]): string {
   const itens = problemas.slice(0, 3).map((problema) => `${problema.caminho.replace(/[^a-z0-9_.]/gi, '').slice(0, 60)}=${problema.mensagem.slice(0, 60)}`);
   return `rascunho_fora_da_integridade:${itens.join(';')}`.slice(0, 220);
@@ -456,7 +461,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
       if (problemas.length > 0) throw falhaDeIA('saida_invalida', motivoDaIntegridade(problemas));
     }
     const lido = lerPlano(montarPlanoDeSecoes(intencaoConfiavel, secoes));
-    if (!lido.ok) throw falhaDeIA('saida_invalida', 'plano_fora_do_esquema');
+    if (!lido.ok) throw falhaDeIA('saida_invalida', motivoDoPlano('plano_fora_do_esquema', lido.error.problemas));
     const plano = lido.value;
     if (!planoSemDadoPessoal(plano).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano');
     const referencias = referenciasConferidas(plano, execucao, await pacoteComAsCitadas(execucao, contexto, plano, pacote));
@@ -598,7 +603,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     if (!validarAjuste(pareceres, validado.data, personas).ok) throw falhaDeIA('saida_invalida', 'ajuste_nao_responde_aos_pontos');
     if (!respostasDoAjusteSemDadoPessoal(validado.data.respostas).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_ajuste');
     const lido = lerPlano(corrente);
-    if (!lido.ok) throw falhaDeIA('saida_invalida', 'plano_ajustado_fora_do_esquema');
+    if (!lido.ok) throw falhaDeIA('saida_invalida', motivoDoPlano('plano_ajustado_fora_do_esquema', lido.error.problemas));
     const planoAjustado = lido.value;
     if (!planoSemDadoPessoal(planoAjustado).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano_ajustado');
     const referencias = referenciasConferidas(planoAjustado, execucao, await pacoteComAsCitadas(execucao, contexto, planoAjustado, pacote));
