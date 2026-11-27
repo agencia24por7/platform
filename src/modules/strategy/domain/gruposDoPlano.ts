@@ -75,6 +75,7 @@ export const SECOES_DA_CHECAGEM: Readonly<Record<string, readonly SecaoRedigida[
   orcamento_fecha: ['orcamento'],
   cobertura_do_plano_de_midia: ['plano_de_midia'],
   objetivo_com_metrica: ['metas_e_metricas', 'medicao'],
+  sugestoes_de_lacunas: ['lacunas'],
   comite_completo: ['resumo_executivo'],
 };
 

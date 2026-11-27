@@ -18,7 +18,7 @@ const { selar } = await import('../../brain/domain/entrada.ts');
 const { createMotorDoPlano } = await import('./motorDoPlano.ts');
 const { criarLeitorDoBrain } = await import('../infrastructure/leitorDoBrain.ts');
 const { criarRepositorioEmMemoria } = await import('../infrastructure/repositorioEmMemoria.ts');
-const { criarIaFalsa } = await import('../infrastructure/ia/iaFalsa.ts');
+const { criarIaFalsa, aceitaTodos } = await import('../infrastructure/ia/iaFalsa.ts');
 const { comValidacao } = await import('../infrastructure/ia/comValidacao.ts');
 const { ok } = await import('../../../shared/result/result.ts');
 
@@ -116,6 +116,7 @@ describe('o que cada tarefa de IA recebe em dados', () => {
         const chave = (pedido.dados as { persona: { chave: string } }).persona.chave;
         return chave === 'redator' ? parecer(chave, 'aprova_com_ajuste', [ponto('p1', 'estrategia', [URN_BENCHMARK_B])]) : parecer(chave, 'aprova');
       }
+      if (pedido.tarefa === 'juiz') return aceitaTodos(pedido.dados);
       return { resultado: 'aprovado', problemas: [] };
     });
     const leitorDoBrain = criarLeitorDoBrain({
@@ -148,7 +149,7 @@ describe('o que cada tarefa de IA recebe em dados', () => {
     assert.equal(final?.status, 'concluida', JSON.stringify(final));
 
     const tarefas = new Set(ia.pedidos.map((p) => p.tarefa));
-    assert.deepEqual([...tarefas].sort(), ['comite', 'gate', 'strategy_plan']);
+    assert.deepEqual([...tarefas].sort(), ['comite', 'gate', 'juiz', 'strategy_plan']);
     assert.ok(ia.pedidos.some((p) => p.chaveDeIdempotencia.includes(':ajustar:')), 'o ajuste foi exercitado');
     const todos = JSON.stringify(ia.pedidos.map((p) => p.dados));
     assert.ok(todos.includes('Base restrita extra'), 'a entrada restrita chega, só como metadados');

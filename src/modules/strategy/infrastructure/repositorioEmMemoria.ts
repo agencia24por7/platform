@@ -14,6 +14,7 @@ import type {
   Versao,
   VersaoResumo,
 } from '@/modules/strategy/application/portas';
+import { vereditosDoEvento } from '@/modules/strategy/domain/index';
 import {
   passouPeloComite,
   podeAplicar,
@@ -103,10 +104,10 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
       if (eventos.some((e) => e.versaoId === versao.id && e.agentId === agente.agentId && e.chave === agente.chaveDeIdempotencia)) {
         return err(erro('ja_feito', 'idempotência'));
       }
-    } else if (['parecer', 'ajuste', 'gate'].includes(novo.tipo)) {
+    } else if (['parecer', 'ajuste', 'gate', 'veredito_juiz'].includes(novo.tipo)) {
       return err(erro('sem_permissao', 'pessoa'));
     }
-    if (['parecer', 'ajuste', 'gate'].includes(novo.tipo) && versao.status !== 'rascunho') {
+    if (['parecer', 'ajuste', 'gate', 'veredito_juiz'].includes(novo.tipo) && versao.status !== 'rascunho') {
       return err(erro('transicao_invalida', 'só valem em versão rascunho'));
     }
     if (novo.tipo === 'parecer') {
@@ -126,6 +127,10 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
       if (!substituida || !passouPeloComite(respondida, mapa, agente?.agentRunId ?? null)) return err(erro('invalido', 'ajuste.responde_a'));
     }
     if (novo.tipo === 'gate' && !['aprovado', 'reprovado'].includes(String(novo.payload.resultado))) return err(erro('invalido', 'gate'));
+    if (novo.tipo === 'veredito_juiz') {
+      if (!vereditosDoEvento(novo.payload)) return err(erro('invalido', 'veredito do juiz'));
+      if (eventos.some((e) => e.versaoId === versao.id && e.tipo === 'veredito_juiz')) return err(erro('ja_feito', 'um veredito por versão'));
+    }
 
     const evento: EventoInterno = {
       id: id(),
@@ -337,6 +342,9 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
     async execucaoAtiva(_org, planoId) {
       const execucao = execucoes.find((e) => e.planoId === planoId && (e.status === 'pendente' || e.status === 'rodando'));
       return execucao ? { ...execucao } : null;
+    },
+    async execucoesDoPlano(_org, planoId, limite) {
+      return execucoes.filter((e) => e.planoId === planoId).map((e) => ({ ...e })).reverse().slice(0, limite);
     },
     async ultimaExecucao(_org, planoId) {
       const execucao = execucoes.filter((e) => e.planoId === planoId).at(-1);

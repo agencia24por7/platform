@@ -103,7 +103,7 @@ assert.equal(v2.autorTipo, 'agente');
 const eventosV1 = await repo.eventosDaVersao(c.orgA, v1.id);
 const eventosV2 = await repo.eventosDaVersao(c.orgA, v2.id);
 assert.equal(eventosV1.filter((e) => e.tipo === 'parecer').length, 9);
-assert.deepEqual(eventosV1.map((e) => e.tipo).filter((t) => t !== 'parecer'), ['cancelada']);
+assert.deepEqual(eventosV1.map((e) => e.tipo).filter((t) => t !== 'parecer'), ['veredito_juiz', 'cancelada']);
 assert.deepEqual(eventosV2.map((e) => e.tipo), ['ajuste', 'gate']);
 assert.equal(eventosV2[0].payload.responde_a, v1.id);
 assert.equal(eventosV2[1].payload.resultado, 'aprovado');

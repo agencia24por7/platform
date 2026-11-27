@@ -29,7 +29,16 @@ import {
   combinarReferencias,
   type AvaliacaoDeImpacto,
   hashesDoPacote,
+  correcoesNaLinhagem,
   lerPlano,
+  regraDaLacunaCasa,
+  podeAprovarSugestoes,
+  podeCorrigirMais,
+  valoresDeSugestaoIguais,
+  MAXIMO_DE_CORRECOES_POR_VERSAO_RAIZ,
+  type Lacuna,
+  type RegraVigenteParaLacuna,
+  type ValorDaSugestao,
   fixarIntencao,
   type IntencaoDoPlano,
   type Plano as PlanoLido,
@@ -43,6 +52,8 @@ import {
   type StatusDaVersao,
 } from '@/modules/strategy/domain/index';
 import {
+  AprovarSugestoesSchema,
+  CorrigirFalhaDoGateSchema,
   EditarManualSchema,
   EscopoDoClienteSchema,
   ExecucaoAlvoSchema,
@@ -54,6 +65,8 @@ import {
   VersaoAlvoSchema,
   detalhesDoZod,
   type EntradaDaPreviaDeUtm,
+  type EntradaDeAprovarSugestoes,
+  type EntradaDeCorrigirFalhaDoGate,
   type EntradaDeEditarManual,
   type EntradaDeExecucaoAlvo,
   type EntradaDoEscopoDoCliente,
@@ -81,8 +94,13 @@ import type {
 } from '@/modules/strategy/application/portas';
 import { lerUrn } from '@/modules/brain/domain/urn';
 import type { DestinoService } from '@/modules/clients/application/destinoService';
+import type { RegrasService } from '@/modules/clients/application/regrasService';
+import type { EntradaDeRegistro } from '@/modules/clients/application/regrasEntradas';
+import { valoresIguais, type Valor } from '@/modules/clients/domain/regras/valor';
 import type { LandingPage } from '@/modules/clients/domain/destino/tipos';
 import { cardDoPlano, type CardDoPlano } from '@/modules/strategy/interface/cardsDePlano';
+import { falhaDoGate, type FalhaDoGate } from '@/modules/strategy/interface/falhaDoGate';
+import { lacunasDoPlano, type LacunaDoPlano } from '@/modules/strategy/interface/lacunasDoPlano';
 import { ROTULO_DA_PLATAFORMA_DO_PLANO } from '@/modules/strategy/interface/rotulosDoPlano';
 import { aplicarUtm, ErroUtm } from '@/shared/utm/utm';
 import { catalogoAtualDoPacote, type CatalogoAtual } from '@/modules/strategy/application/catalogoAtual';
@@ -97,12 +115,14 @@ export type DependenciasDeEstrategia = {
   readonly audit: AuditRecorder;
   readonly leitorDoBrain: LeitorDoBrain;
   readonly destino: DestinoParaEstrategia;
+  readonly regras?: RegrasParaEstrategia;
   readonly catalogos?: readonly CatalogoDeCampos[];
   readonly relogio?: Relogio;
   readonly gerador?: GeradorDeId;
 };
 
 export type DestinoParaEstrategia = Pick<DestinoService, 'listarLandingPages' | 'lerWhatsapp'>;
+export type RegrasParaEstrategia = Pick<RegrasService, 'registrar' | 'listarVigentes' | 'listarDefinicoes'>;
 
 export type ModeloDeCriacao = {
   readonly tipos: readonly { readonly tipo: TipoDePlano; readonly rotulo: string }[];
@@ -123,6 +143,22 @@ export type ItemDaPreviaDeUtm = {
 export type PreviaDeUtmDoPedido = { readonly itens: readonly ItemDaPreviaDeUtm[] };
 
 export type PlanosDoCliente = { readonly geradoEm: Date; readonly cards: readonly CardDoPlano[] };
+
+export type EstadoDoItemDeSugestao = 'aprovada' | 'ja_aprovada' | 'falhou';
+
+export type ResultadoDoItemDeSugestao = {
+  readonly lacunaId: string;
+  readonly estado: EstadoDoItemDeSugestao;
+  readonly decisaoId?: string;
+  readonly numero?: number;
+  readonly erro?: { readonly codigo: string; readonly mensagem: string };
+};
+
+export type ResultadoDasSugestoes = {
+  readonly itens: readonly ResultadoDoItemDeSugestao[];
+  readonly aprovadas: number;
+  readonly falhas: number;
+};
 
 export type PedidoDePlano = { readonly plano: Plano; readonly execucao: Execucao };
 export type EdicaoManual = { readonly versao: Versao; readonly execucao: Execucao };
@@ -146,6 +182,8 @@ export type PainelDoPlano = {
   readonly execucaoAtiva: Execucao | null;
   readonly ultimaExecucao: Execucao | null;
   readonly desatualizado: AvaliacaoDeImpacto | 'indisponivel' | null;
+  readonly lacunas?: readonly LacunaDoPlano[];
+  readonly falhaDoGate?: FalhaDoGate | null;
   readonly historico: {
     readonly versoes: readonly VersaoResumo[];
     readonly eventos: readonly EventoDaVersao[];
@@ -178,6 +216,8 @@ export type EstrategiaService = {
   listarPlanos(comando: ComandoDeEstrategia, entrada: EntradaDoEscopoDoCliente): Promise<Result<PlanosDoCliente, Failure>>;
   pedirRevisao(comando: ComandoDeEstrategia, entrada: EntradaDePedirRevisao, ator: Ator): Promise<Result<Execucao, Failure>>;
   pedirMudanca(comando: ComandoDeEstrategia, entrada: EntradaDePedirMudanca, ator: Ator): Promise<Result<Execucao, Failure>>;
+  corrigirFalhaDoGate(comando: ComandoDeEstrategia, entrada: EntradaDeCorrigirFalhaDoGate, ator: Ator): Promise<Result<{ readonly execucao: Execucao }, Failure>>;
+  aprovarSugestoesDeLacunas(comando: ComandoDeEstrategia, entrada: EntradaDeAprovarSugestoes, ator: Ator): Promise<Result<ResultadoDasSugestoes, Failure>>;
   editarManual(comando: ComandoDeEstrategia, entrada: EntradaDeEditarManual, ator: Ator): Promise<Result<EdicaoManual, Failure>>;
   aplicar(comando: ComandoDeEstrategia, entrada: EntradaDeVersaoAlvo, ator: Ator): Promise<Result<EventoDaVersao, Failure>>;
   autorizar(comando: ComandoDeEstrategia, entrada: EntradaDeVersaoAlvo, ator: Ator): Promise<Result<EventoDaVersao, Failure>>;
@@ -277,7 +317,7 @@ function eventosParaAplicar(eventos: readonly EventoDaVersao[]): EventoParaAplic
 }
 
 export function createEstrategiaService(deps: DependenciasDeEstrategia): EstrategiaService {
-  const { repositorio, audit, leitorDoBrain, destino } = deps;
+  const { repositorio, audit, leitorDoBrain, destino, regras } = deps;
   const catalogos = deps.catalogos ?? CATALOGOS_DISPONIVEIS;
   const relogio = deps.relogio ?? { agora: () => new Date() };
   const gerador = deps.gerador ?? { novo: () => randomUUID() };
@@ -496,6 +536,219 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
       baseVersionId: base.id,
     });
     return ok(execucao.value);
+  }
+
+
+  async function correcoesDaLinhagem(comando: ComandoDeEstrategia, planoId: string, versaoBaseId: string): Promise<number> {
+    const [execucoes, versoes] = await Promise.all([
+      repositorio.execucoesDoPlano(comando.organizationId, planoId, 100),
+      repositorio.listarVersoes(comando.organizationId, planoId, 100),
+    ]);
+    const execucaoDaVersao = new Map(versoes.map((versao) => [versao.id, versao.agentRunId]));
+    return correcoesNaLinhagem({ versaoBaseId, execucoes, agentRunIdDaVersao: (id) => execucaoDaVersao.get(id) ?? null });
+  }
+
+  async function corrigirFalhaDoGate(comando: ComandoDeEstrategia, entrada: EntradaDeCorrigirFalhaDoGate, ator: Ator) {
+    const lida = CorrigirFalhaDoGateSchema.safeParse(entrada);
+    if (!lida.success) return err(failure('validation', 'Dados inválidos.', detalhesDoZod(lida.error)));
+    if (!pode('editar', comando.papelDeQuemAge)) return err(SEM_PERMISSAO);
+    if (!ator.userId) return err(SEM_USUARIO);
+
+    const plano = await planoDoCliente(comando, lida.data.planoId);
+    if (!plano || plano.clientId !== lida.data.clienteId) return err(PLANO_NAO_ENCONTRADO);
+    if (plano.plataformas === null) return err(PLANO_SEM_DESTINO);
+    const estado = await estadoDoPlano(plano);
+    const aberta = estado?.aberta ?? null;
+    if (!aberta || aberta.status !== 'rascunho') {
+      return err(failure('conflict', 'Só um rascunho que não passou na conferência pode ser corrigido.', { codigo: 'sem_rascunho_reprovado' }));
+    }
+    const eventos = await repositorio.eventosDaVersao(comando.organizationId, aberta.id);
+    const ultimoGate = [...eventos].reverse().find((evento) => evento.tipo === 'gate');
+    if (ultimoGate?.payload.resultado !== 'reprovado') {
+      return err(failure('conflict', 'A conferência mais recente deste rascunho não reprovou: não há o que corrigir.', { codigo: 'gate_nao_reprovou' }));
+    }
+    if (await repositorio.execucaoAtiva(comando.organizationId, plano.id)) return err(EXECUCAO_EM_ANDAMENTO);
+    const feitas = await correcoesDaLinhagem(comando, plano.id, aberta.id);
+    if (!podeCorrigirMais(feitas)) {
+      return err(
+        failure('conflict', `O limite de ${MAXIMO_DE_CORRECOES_POR_VERSAO_RAIZ} correções automáticas foi atingido. Ajuste o plano à mão.`, { codigo: 'limite_de_correcoes' }),
+      );
+    }
+
+    const execucao = await repositorio.criarExecucao(comando.organizationId, plano.clientId, {
+      planoId: plano.id,
+      pedido: { tipo: 'corrigir_gate' },
+      versaoBaseId: aberta.id,
+      agentRunId: novoIdDeExecucao(),
+      solicitadoPor: ator.userId,
+      requestId: ator.requestId,
+    });
+    if (!execucao.ok) return err(falhaDeEstrategia(execucao.error));
+
+    await auditar(comando, ator, 'strategy.plan.requested', 'strategy_plan', plano.id, {
+      clientId: plano.clientId,
+      tipoDePlano: plano.tipo,
+      execucaoId: execucao.value.id,
+      kind: 'corrigir_gate',
+      baseVersionId: aberta.id,
+      correcoesFeitas: feitas,
+    });
+    return ok({ execucao: execucao.value });
+  }
+
+  type RegraVigenteComValor = RegraVigenteParaLacuna & { readonly valor: Valor | string | null };
+  type Definicoes = Extract<Awaited<ReturnType<RegrasParaEstrategia['listarDefinicoes']>>, { ok: true }>['value'];
+  type RegrasDoCliente = { readonly vigentes: readonly RegraVigenteComValor[]; readonly definicoes: Definicoes };
+
+  async function regrasDoCliente(comando: ComandoDeEstrategia, clienteId: string): Promise<Result<RegrasDoCliente, Failure>> {
+    if (!regras) return err(failure('unavailable', 'O cadastro de regras do cliente não está disponível.'));
+    const escopo = { organizationId: comando.organizationId, clientId: clienteId };
+    const [vigentes, definicoes] = await Promise.all([regras.listarVigentes(escopo), regras.listarDefinicoes({ organizationId: comando.organizationId })]);
+    if (!vigentes.ok) return vigentes;
+    if (!definicoes.ok) return definicoes;
+    const medidaDe = new Map(definicoes.value.map((definicao) => [definicao.key, definicao.medida]));
+    return ok({
+      vigentes: vigentes.value.decisoes.map((d) => ({
+        natureza: d.natureza,
+        chave: d.chave,
+        escopo: d.escopo,
+        medida: d.definicaoChave === null ? null : (medidaDe.get(d.definicaoChave) ?? null),
+        valor: d.valor ?? d.texto,
+      })),
+      definicoes: definicoes.value,
+    });
+  }
+
+  function entradaDeRegistroDaLacuna(
+    lacuna: Lacuna,
+    valor: ValorDaSugestao,
+    planoId: string,
+    definicoes: Definicoes,
+  ): Result<EntradaDeRegistro, { readonly codigo: string; readonly mensagem: string }> {
+    const regra = lacuna.regra;
+    if (regra === undefined) return err({ codigo: 'sem_regra_estruturada', mensagem: 'Esta lacuna não traz a regra pronta para cadastrar.' });
+    const sugestao = lacuna.sugestao;
+    const doBrain = sugestao !== undefined && valoresDeSugestaoIguais(sugestao.valor, valor) && sugestao.origem === 'evidencia';
+    const origem = doBrain ? 'evidência do Brain' : 'valor informado pela pessoa';
+    const contexto = `Cadastrada a partir da lacuna "${lacuna.id}" do plano ${planoId}. Origem: ${origem}.${sugestao ? ` Justificativa: ${sugestao.justificativa}` : ''}`.slice(0, 2000);
+    const evidencia = doBrain ? juntarEvidencias(sugestao!.evidencias.filter((e) => e.papel !== 'contra').map((e) => e.urn)) : null;
+    if (regra.natureza === 'regra') {
+      if (!('texto' in valor)) return err({ codigo: 'valor_invalido', mensagem: 'Esta regra pede um texto.' });
+      return ok({
+        categoria: regra.categoria!,
+        natureza: 'regra',
+        chave: regra.chave!,
+        escopo: regra.escopo,
+        titulo: `Lacuna: ${lacuna.descricao}`.slice(0, 120),
+        texto: valor.texto,
+        contexto,
+        evidencia,
+      });
+    }
+    if ('texto' in valor) return err({ codigo: 'valor_invalido', mensagem: 'Este limite pede um valor numérico.' });
+    const tipo = regra.escopo === 'cliente' ? 'cliente' : 'plataforma';
+    const candidatas = definicoes.filter(
+      (d) => d.ativo && d.tiposDeEscopo.includes(tipo) && (regra.chave !== undefined ? d.key === regra.chave : d.medida === lacuna.medida),
+    );
+    if (candidatas.length === 0) return err({ codigo: 'sem_definicao_de_limite', mensagem: 'Não há tipo de limite ativo que atenda esta lacuna.' });
+    if (candidatas.length > 1) return err({ codigo: 'definicao_ambigua', mensagem: 'Mais de um tipo de limite atende esta lacuna; cadastre em Regras do cliente.' });
+    const definicao = candidatas[0]!;
+    return ok({ categoria: definicao.categoria, natureza: 'limite', chave: definicao.key, escopo: regra.escopo, valor, contexto, evidencia });
+  }
+
+  function juntarEvidencias(urns: readonly string[]): string | null {
+    const mantidas: string[] = [];
+    for (const urn of urns) {
+      if ([...mantidas, urn].join(' ').length > 500) break;
+      mantidas.push(urn);
+    }
+    return mantidas.length === 0 ? null : mantidas.join(' ');
+  }
+
+  async function aprovarSugestoesDeLacunas(comando: ComandoDeEstrategia, entrada: EntradaDeAprovarSugestoes, ator: Ator): Promise<Result<ResultadoDasSugestoes, Failure>> {
+    const lida = AprovarSugestoesSchema.safeParse(entrada);
+    if (!lida.success) return err(failure('validation', 'Dados inválidos.', detalhesDoZod(lida.error)));
+    if (!podeAprovarSugestoes(comando.papelDeQuemAge)) return err(SEM_PERMISSAO);
+    if (!ator.userId) return err(SEM_USUARIO);
+
+    const plano = await planoDoCliente(comando, lida.data.planoId);
+    if (!plano || plano.clientId !== lida.data.clienteId) return err(PLANO_NAO_ENCONTRADO);
+    const estado = await estadoDoPlano(plano);
+    const exibida = estado?.aberta ?? estado?.vigente ?? null;
+    const versao = exibida ? await repositorio.lerVersao(comando.organizationId, exibida.id) : null;
+    const conteudo = versao ? lerPlano(versao.conteudo) : null;
+    if (!versao || !conteudo?.ok) return err(failure('conflict', 'O plano ainda não tem versão para aprovar sugestões.', { codigo: 'sem_versao' }));
+
+    const cliente = await regrasDoCliente(comando, plano.clientId);
+    if (!cliente.ok) return cliente;
+    const comandoDeRegras = { organizationId: comando.organizationId, clientId: plano.clientId, papelDeQuemAge: comando.papelDeQuemAge };
+    const vigentes: RegraVigenteComValor[] = [...cliente.value.vigentes];
+
+    const resultados: ResultadoDoItemDeSugestao[] = [];
+    const vistos = new Set<string>();
+    for (const item of lida.data.itens) {
+      if (vistos.has(item.lacunaId)) continue;
+      vistos.add(item.lacunaId);
+      const falhou = (codigo: string, mensagem: string): ResultadoDoItemDeSugestao => ({ lacunaId: item.lacunaId, estado: 'falhou', erro: { codigo, mensagem } });
+      const lacuna = conteudo.value.lacunas.itens.find((candidata) => candidata.id === item.lacunaId);
+      if (!lacuna) {
+        resultados.push(falhou('lacuna_inexistente', 'Esta lacuna não existe no plano.'));
+        continue;
+      }
+      if (lacuna.regra === undefined) {
+        resultados.push(falhou('sem_regra_estruturada', 'Esta lacuna não traz a regra pronta para cadastrar.'));
+        continue;
+      }
+      const valor = item.valor ?? lacuna.sugestao?.valor ?? null;
+      if (valor === null) {
+        resultados.push(falhou('sem_valor', 'Informe o valor: o plano não tem sugestão com evidência para esta lacuna.'));
+        continue;
+      }
+      const existente = vigentes.find((regra) => regraDaLacunaCasa(lacuna, regra));
+      if (existente !== undefined) {
+        const igual =
+          existente.valor !== null &&
+          (typeof existente.valor === 'string' ? 'texto' in valor && existente.valor.trim() === valor.texto.trim() : !('texto' in valor) && valoresIguais(existente.valor, valor));
+        resultados.push(igual ? { lacunaId: item.lacunaId, estado: 'ja_aprovada' } : falhou('regra_ja_existe', 'Já existe regra vigente para esta lacuna com outro valor. Altere em Regras do cliente.'));
+        continue;
+      }
+      const montada = entradaDeRegistroDaLacuna(lacuna, valor, plano.id, cliente.value.definicoes);
+      if (!montada.ok) {
+        resultados.push(falhou(montada.error.codigo, montada.error.mensagem));
+        continue;
+      }
+      const registrada = await regras!.registrar(comandoDeRegras, montada.value, ator);
+      if (!registrada.ok) {
+        const detalhe = registrada.error.details as Record<string, string> | undefined;
+        resultados.push(falhou(detalhe?.codigo ?? registrada.error.code, registrada.error.message));
+        continue;
+      }
+      const decisao = registrada.value;
+      vigentes.push({ natureza: decisao.natureza, chave: decisao.chave, escopo: decisao.escopo, medida: lacuna.medida ?? null, valor: decisao.valor ?? decisao.texto });
+      resultados.push({ lacunaId: item.lacunaId, estado: 'aprovada', decisaoId: decisao.id, numero: decisao.numero });
+      await auditar(comando, ator, 'strategy.lacuna.approved', 'strategy_plan', plano.id, {
+        clientId: plano.clientId,
+        lacunaId: lacuna.id,
+        decisaoId: decisao.id,
+        numero: decisao.numero,
+        natureza: decisao.natureza,
+        valorDaSugestao: valoresDeSugestaoIguais(lacuna.sugestao?.valor, valor),
+      });
+    }
+    return ok({ itens: resultados, aprovadas: resultados.filter((r) => r.estado === 'aprovada').length, falhas: resultados.filter((r) => r.estado === 'falhou').length });
+  }
+
+  async function lacunasDoPainel(comando: ComandoDeEstrategia, plano: Plano, conteudo: unknown): Promise<readonly LacunaDoPlano[]> {
+    const lido = conteudo === null ? null : lerPlano(conteudo);
+    if (!lido?.ok) return [];
+    const comRegra = lido.value.lacunas.itens.some((lacuna) => lacuna.regra !== undefined);
+    const cliente = comRegra && regras ? await regrasDoCliente(comando, plano.clientId) : null;
+    return lacunasDoPlano({
+      plano: lido.value,
+      regrasVigentes: cliente?.ok ? cliente.value.vigentes : [],
+      papel: comando.papelDeQuemAge,
+      podeGravarRegras: cliente?.ok === true,
+    });
   }
 
   async function pedirRevisao(comando: ComandoDeEstrategia, entrada: EntradaDePedirRevisao, ator: Ator) {
@@ -836,6 +1089,18 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
     }
 
     const desatualizado = estado.vigente ? await impactoDoBrain(comando, estado.plano, estado.vigente, catalogoDado) : null;
+    const lacunas = await lacunasDoPainel(comando, estado.plano, versaoExibida?.conteudo ?? null);
+    const reprovouNoGate = versaoExibida?.status === 'rascunho' && ultimoGate?.payload.resultado === 'reprovado';
+    const falhaVisivel = reprovouNoGate
+      ? falhaDoGate({
+          status: versaoExibida.status,
+          resultadoDoGate: ultimoGate.payload,
+          execucaoAtiva: execucaoAtiva !== null,
+          ultimaExecucao: ultimaExecucao ? { tipo: ultimaExecucao.tipo, status: ultimaExecucao.status, erroCodigo: ultimaExecucao.erroCodigo } : null,
+          correcoesFeitas: await correcoesDaLinhagem(comando, estado.plano.id, versaoExibida.id),
+          papel: comando.papelDeQuemAge,
+        })
+      : null;
 
     return {
       plano: estado.plano,
@@ -849,6 +1114,8 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
       execucaoAtiva,
       ultimaExecucao,
       desatualizado,
+      lacunas,
+      falhaDoGate: falhaVisivel,
       historico: { versoes, eventos: eventosPorVersao.flatMap((item) => item.eventos) },
     };
   }
@@ -860,6 +1127,8 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
     listarPlanos,
     pedirRevisao,
     pedirMudanca,
+    corrigirFalhaDoGate,
+    aprovarSugestoesDeLacunas,
     editarManual,
     aplicar: (comando, entrada, ator) => agirNaVersao('aplicar', comando, entrada, ator),
     autorizar: (comando, entrada, ator) => agirNaVersao('autorizar', comando, entrada, ator),

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { SEM_MODELO_CONFIGURADO, type Executor } from '@/modules/ia/application/execucao';
 import { MENSAGEM_DO_BLOQUEIO } from '@/modules/ia/domain/modelos';
 import { TETO_DO_ORCAMENTO, type Orcamento, type Tarefa } from '@/modules/ia/domain/tarefa';
-import { COMITE_DA_ESTRATEGIA, GATE_DA_ESTRATEGIA, PLANO_DE_ESTRATEGIA } from '@/modules/ia/domain/tarefasInternas';
+import { COMITE_DA_ESTRATEGIA, GATE_DA_ESTRATEGIA, JUIZ_DA_ESTRATEGIA, PLANO_DE_ESTRATEGIA } from '@/modules/ia/domain/tarefasInternas';
 import type { Failure } from '@/shared/result/failure';
 import { err, ok, type Result } from '@/shared/result/result';
 import type { CodigoDeErroDeIA, ErroDeIA, ExecutorDeIA, PedidoDeIA, RespostaDeIA, TarefaDeIA } from '@/modules/strategy/application/portas';
@@ -11,6 +11,7 @@ const TAREFAS_REGISTRADAS: Readonly<Record<TarefaDeIA, Tarefa<unknown>>> = {
   strategy_plan: PLANO_DE_ESTRATEGIA,
   comite: COMITE_DA_ESTRATEGIA,
   gate: GATE_DA_ESTRATEGIA,
+  juiz: JUIZ_DA_ESTRATEGIA,
 };
 
 export const MARGEM_DA_CAMADA_MS = 10_000;

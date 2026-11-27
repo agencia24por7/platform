@@ -55,7 +55,7 @@ describe('status da versão (espelho do banco 0143)', () => {
   it('tem os mesmos tipos de evento do banco', () => {
     assert.deepEqual(
       [...TIPOS_DE_EVENTO],
-      ['proposta', 'parecer', 'ajuste', 'gate', 'cancelada', 'efetivada', 'rejeitada', 'revogada', 'revisao_aberta', 'impacto_anotado', 'redigida'],
+      ['proposta', 'parecer', 'ajuste', 'gate', 'veredito_juiz', 'cancelada', 'efetivada', 'rejeitada', 'revogada', 'revisao_aberta', 'impacto_anotado', 'redigida'],
     );
   });
 
@@ -66,6 +66,7 @@ describe('status da versão (espelho do banco 0143)', () => {
       parecer: null,
       ajuste: null,
       gate: null,
+      veredito_juiz: null,
       cancelada: 'cancelado',
       efetivada: 'vigente',
       rejeitada: 'rejeitado',

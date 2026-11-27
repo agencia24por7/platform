@@ -16,12 +16,13 @@ export const ROTULO_DA_SECAO_DE_CONEXOES: Record<SecaoDeConexoes, string> = {
   pedir: 'Pedir ao cliente',
 };
 
-export const SECOES_DE_CONTEXTO = ['perfil', 'brain'] as const;
+export const SECOES_DE_CONTEXTO = ['perfil', 'brain', 'destino'] as const;
 export type SecaoDeContexto = (typeof SECOES_DE_CONTEXTO)[number];
 
 export const ROTULO_DA_SECAO_DE_CONTEXTO: Record<SecaoDeContexto, string> = {
   perfil: 'Mapa de contexto',
   brain: 'Brain',
+  destino: 'Destino',
 };
 
 export function secaoDeConexoes(bruto: string | null | undefined): SecaoDeConexoes {
@@ -29,7 +30,7 @@ export function secaoDeConexoes(bruto: string | null | undefined): SecaoDeConexo
 }
 
 export function secaoDeContexto(bruto: string | null | undefined): SecaoDeContexto {
-  return bruto === 'brain' ? 'brain' : 'perfil';
+  return bruto === 'brain' || bruto === 'destino' ? bruto : 'perfil';
 }
 
 export const SECOES_DE_ESTRATEGIA = ['plano', 'comite', 'gates', 'historico'] as const;

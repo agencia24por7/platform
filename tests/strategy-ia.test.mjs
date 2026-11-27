@@ -7,7 +7,7 @@ import { psqlDonoPrimeiraLinha as query } from './apoio/psql.mjs';
 const sufixo = () => randomUUID().slice(0, 8);
 const chaveDeTeste = () => `orla-teste:${randomUUID()}${randomUUID()}`;
 const PAGINA = '/config/ia';
-const TAREFAS = ['strategy_plan', 'comite', 'gate'];
+const TAREFAS = ['strategy_plan', 'comite', 'juiz', 'gate'];
 const INTENCAO = JSON.stringify({
   objetivo: 'Gerar leads qualificados',
   horizonte: { inicio: '2026-12-01', fim: '2027-02-28' },
@@ -127,7 +127,7 @@ describe('Estratégia sobre a camada de IA (worker, chave e modelo por tarefa, u
     for (const chave of Object.keys(corpo).filter((k) => k !== 'codigos')) assert.ok(Number.isInteger(corpo[chave]) && corpo[chave] >= 0, chave);
     assert.equal(typeof corpo.codigos, 'object');
     assert.ok(corpo.codigos !== null && !Array.isArray(corpo.codigos));
-    const permitidos = ['ia_nao_configurada', 'ia_limite', 'ia_saida_invalida', 'ia_falha', 'ia_tempo', 'brain_indisponivel', 'gate_reprovado', 'interno'];
+    const permitidos = ['ia_nao_configurada', 'ia_limite', 'ia_saida_invalida', 'ia_falha', 'ia_tempo', 'brain_indisponivel', 'gate_reprovado', 'correcao_nao_convergiu', 'interno'];
     for (const [codigo, quantidade] of Object.entries(corpo.codigos)) {
       assert.ok(permitidos.includes(codigo), codigo);
       assert.ok(Number.isInteger(quantidade) && quantidade > 0, codigo);

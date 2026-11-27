@@ -1,6 +1,8 @@
 import type { EtapaDaExecucao, PlanoDoCliente } from '../application/portas.ts';
 import { ROTULO_DO_STATUS, type StatusDaVersao } from '../domain/status.ts';
 import { ROTULO_DO_TIPO_DE_PLANO, ehTipoDePlano } from '../domain/tipoDePlano.ts';
+import { dataEHoraBr } from './formatosDoPlano.ts';
+import { rotaDoPlano } from './rotasDaEstrategia.ts';
 import { ROTULO_DA_PLATAFORMA_DO_PLANO } from './rotulosDoPlano.ts';
 
 export type EstadoDoCard = StatusDaVersao | 'gerando' | 'falhou' | 'cancelada' | 'sem_versao';
@@ -70,4 +72,49 @@ export function cardDoPlano(estado: PlanoDoCliente): CardDoPlano {
     criadoEm: plano.criadoEm,
     atualizadoEm: estado.atualizadoEm,
   };
+}
+
+export type CardNaTela = {
+  readonly planoId: string;
+  readonly href: string;
+  readonly titulo: string;
+  readonly tipoRotulo: string;
+  readonly plataformas: readonly string[];
+  readonly rotulo: string;
+  readonly icone: 'ok' | 'atencao' | 'erro' | 'nao' | 'vazio';
+  readonly classe: string;
+  readonly atualizadoEm: Date;
+  readonly atualizadoEmTexto: string;
+  readonly progresso: ProgressoDoCard | null;
+};
+
+const APARENCIA_DO_CARD: Readonly<Record<EstadoDoCard, { readonly icone: CardNaTela['icone']; readonly classe: string }>> = {
+  rascunho: { icone: 'vazio', classe: '' },
+  proposto: { icone: 'atencao', classe: 'pill--warn' },
+  vigente: { icone: 'ok', classe: 'pill--ok' },
+  superado: { icone: 'nao', classe: '' },
+  revogado: { icone: 'nao', classe: '' },
+  rejeitado: { icone: 'erro', classe: 'pill--danger' },
+  cancelado: { icone: 'nao', classe: '' },
+  gerando: { icone: 'atencao', classe: 'pill--warn' },
+  falhou: { icone: 'erro', classe: 'pill--danger' },
+  cancelada: { icone: 'nao', classe: '' },
+  sem_versao: { icone: 'vazio', classe: '' },
+};
+
+export function cardsNaTela(cards: readonly CardDoPlano[], clienteId: string): CardNaTela[] {
+  return [...cards]
+    .sort((a, b) => b.atualizadoEm.getTime() - a.atualizadoEm.getTime())
+    .map((card) => ({
+      planoId: card.planoId,
+      href: rotaDoPlano(clienteId, card.planoId),
+      titulo: card.titulo,
+      tipoRotulo: card.tipoRotulo,
+      plataformas: card.plataformas.map((p) => p.rotulo),
+      rotulo: card.rotulo,
+      ...APARENCIA_DO_CARD[card.estado],
+      atualizadoEm: card.atualizadoEm,
+      atualizadoEmTexto: dataEHoraBr(card.atualizadoEm),
+      progresso: card.progresso,
+    }));
 }

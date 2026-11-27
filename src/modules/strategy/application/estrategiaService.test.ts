@@ -179,7 +179,7 @@ function criarRepositorio(estado: Estado): RepositorioDeEstrategia {
         organizationId: org,
         clientId,
         tipo: nova.pedido.tipo,
-        pedido: nova.pedido.tipo === 'criar' ? { ...nova.pedido.intencao } : nova.pedido.tipo === 'ajustar' ? { instrucao: nova.pedido.instrucao } : { motivo: nova.pedido.motivo },
+        pedido: nova.pedido.tipo === 'criar' ? { ...nova.pedido.intencao } : nova.pedido.tipo === 'ajustar' ? { instrucao: nova.pedido.instrucao } : nova.pedido.tipo === 'corrigir_gate' ? {} : { motivo: nova.pedido.motivo },
         versaoBaseId: nova.versaoBaseId,
         status: 'pendente',
         etapa: 'ler_brain',
@@ -202,6 +202,9 @@ function criarRepositorio(estado: Estado): RepositorioDeEstrategia {
     },
     async execucaoAtiva(_org, planoId) {
       return ativa(planoId);
+    },
+    async execucoesDoPlano(_org, planoId, limite) {
+      return estado.execucoes.filter((e) => e.planoId === planoId).slice(-limite).reverse();
     },
     async ultimaExecucao(_org, planoId) {
       return estado.execucoes.filter((e) => e.planoId === planoId).at(-1) ?? null;

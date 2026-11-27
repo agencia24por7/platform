@@ -45,7 +45,7 @@ export function EditorDeSecao({ clienteId, planoId, versaoId, secao, titulo, jso
         <input type="hidden" name="versaoId" value={versaoId} />
         <input type="hidden" name="secao" value={secao} />
         <p className="aviso">
-          <Icone nome="atencao" tamanho={14} /> Edição avançada: você altera o conteúdo bruto (JSON) desta seção. Toda mudança cria uma versão nova e volta ao Comitê e aos Gates.
+          <Icone nome="atencao" tamanho={14} /> Edição avançada: você altera o conteúdo bruto (JSON) desta seção. Toda mudança cria uma versão nova, que passa por revisão de novo.
         </p>
         <div className="field">
           <label className="field__label" htmlFor={`${base}-json`}>
@@ -82,7 +82,7 @@ export function EditorDeSecao({ clienteId, planoId, versaoId, secao, titulo, jso
           </div>
         ) : null}
         <BotaoDeEnvio className="btn btn--primary" pendente="Salvando…">
-          Salvar e enviar ao Comitê
+          Salvar alterações
         </BotaoDeEnvio>
       </form>
     </details>

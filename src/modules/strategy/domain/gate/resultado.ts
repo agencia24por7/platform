@@ -1,6 +1,7 @@
 import type { Medida } from '../../../clients/domain/regras/medida.ts';
 import type { Valor } from '../../../clients/domain/regras/valor.ts';
 import type { Ajuste } from '../comite/ajuste.ts';
+import type { VereditoDoJuiz } from '../comite/juiz.ts';
 import type { Parecer } from '../comite/parecer.ts';
 import type { CatalogoDeCampos } from '../catalogo/tipos.ts';
 import type { PacoteDeLeitura } from '../pacote.ts';
@@ -15,6 +16,7 @@ export type ContextoDoGate = {
   readonly hoje: string;
   readonly pareceres?: readonly Parecer[];
   readonly ajuste?: Ajuste;
+  readonly vereditosDoJuiz?: readonly VereditoDoJuiz[];
   readonly comiteDaMesmaExecucao?: boolean;
   readonly medidasComLimite: readonly Medida[];
   readonly planosBase?: readonly Plano[];

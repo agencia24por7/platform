@@ -21,15 +21,22 @@ Entrada em "dados": { intencao, secoesDoPlanoBase (só deste grupo), instrucaoDa
 export const TAREFA_PARA_ATUALIZAR_AO_BRAIN = `Tarefa: atualizar as seções pedidas ao pacote atual; mude só o que o pacote novo exige e mantenha o resto.
 Entrada em "dados": { intencao, secoesDoPlanoBase (só deste grupo), secoesJaRedigidas, pacote }.`;
 
-export const TAREFA_PARA_AJUSTAR_AO_COMITE = `Tarefa: revisar as seções pedidas respondendo aos pontos do Comitê e às pendências do Gate deste grupo.
-Para CADA ponto: { persona, pontoId, decisao (acatado|nao_acatado), motivo curto }. Reprovação de risco e legal não se recusa. Pontos da mesma fonte são um argumento. Mantenha ids referenciados.
+export const TAREFA_PARA_AJUSTAR_AO_COMITE = `Tarefa: revisar as seções pedidas aplicando os pontos do Comitê e sanando as pendências do Gate deste grupo. Os pontos já passaram pelo juiz: aplique todos. Reprovação de risco e legal é obrigatória.
+Para CADA ponto: { persona, pontoId, decisao: "acatado", motivo curto do que mudou }. Pontos da mesma fonte são um argumento. Mantenha ids referenciados.
 Entrada em "dados": { planoAtual (só as seções deste grupo), pontos, pendenciasObrigatorias, pendenciasDoGate, pacote }.`;
 
+export const TAREFA_PARA_CORRIGIR_O_GATE = `Tarefa: corrigir as seções pedidas para sanar as pendências do Gate, que são obrigatórias: restaure o que foi removido ou afrouxado e mantenha o resto. Sem pontos do Comitê: "respostas" vazia.
+Entrada em "dados": { planoAtual (só as seções deste grupo), pendenciasDoGate, pacote }.`;
+
+export const INSTRUCAO_DAS_LACUNAS = `Lacuna que a pessoa resolve com limite ou regra do cliente leva "regra" { natureza (limite|regra), chave (limite: a de "tiposDeLimite" cuja medida e período combinam; regra: grupo.nome com "categoria"), escopo ("cliente" ou "plataforma:<chave>") } e "sugestao" { valor, origem, evidencias, justificativa curta }. Valor de limite: { unidade, centavos|decimal }; de regra: { texto }.
+Com evidência a favor de nota A a C no pacote: origem "evidencia", evidencias [{ urn (ref), papel "favor" }] e o valor. Sem evidência, ou só nota D: origem "hipotese", valor null, evidencias []. Nunca invente número.`;
+
 export function instrucaoDoGrupo(tarefa: string, secoes: readonly string[], posicao: number, total: number, comRespostas = false): string {
+  const lacunas = secoes.includes('lacunas') ? `\n${INSTRUCAO_DAS_LACUNAS}` : '';
   const saida = comRespostas
     ? `Saída: { secoes, respostas }; "secoes" só com as chaves: ${secoes.join(', ')}.`
     : `Saída: objeto só com as chaves: ${secoes.join(', ')}.`;
-  return `${INSTRUCAO_DO_AGENTE_DE_PLANO}
+  return `${INSTRUCAO_DO_AGENTE_DE_PLANO}${lacunas}
 
 ${tarefa}
 Grupo ${posicao}/${total}. ${saida}`;

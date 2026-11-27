@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { TIPOS_DE_PLANO, dataIsoValida, esquemaIntencaoBase, esquemaPlataformasDoPedido } from '@/modules/strategy/domain/index';
+import { ValorSchema } from '@/modules/clients/domain/regras/valor';
+import { TIPOS_DE_PLANO, dataIsoValida, esquemaId, esquemaIntencaoBase, esquemaPlataformasDoPedido } from '@/modules/strategy/domain/index';
 
 export const TAMANHO_MAXIMO_DA_INSTRUCAO = 2000;
 export const TAMANHO_MAXIMO_DO_PEDIDO_BYTES = 7000;
@@ -36,6 +37,26 @@ export const PedirMudancaSchema = z.strictObject({
   instrucao: z.string().trim().min(3, 'Descreva a mudança (mínimo 3 caracteres).').max(TAMANHO_MAXIMO_DA_INSTRUCAO),
 });
 export type EntradaDePedirMudanca = z.input<typeof PedirMudancaSchema>;
+
+export const CorrigirFalhaDoGateSchema = z.strictObject({ clienteId: identificador, planoId: identificador });
+export type EntradaDeCorrigirFalhaDoGate = z.input<typeof CorrigirFalhaDoGateSchema>;
+
+export const MAXIMO_DE_ITENS_DAS_SUGESTOES = 30;
+
+export const AprovarSugestoesSchema = z.strictObject({
+  clienteId: identificador,
+  planoId: identificador,
+  itens: z
+    .array(
+      z.strictObject({
+        lacunaId: esquemaId,
+        valor: z.union([ValorSchema, z.strictObject({ texto: z.string().trim().min(1).max(400) })]).optional(),
+      }),
+    )
+    .min(1)
+    .max(MAXIMO_DE_ITENS_DAS_SUGESTOES),
+});
+export type EntradaDeAprovarSugestoes = z.input<typeof AprovarSugestoesSchema>;
 
 export const PedirRevisaoSchema = z.strictObject({ planoId: identificador });
 export type EntradaDePedirRevisao = z.input<typeof PedirRevisaoSchema>;

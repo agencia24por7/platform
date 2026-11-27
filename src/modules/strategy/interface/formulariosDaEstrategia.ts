@@ -86,6 +86,31 @@ export function lerIntencaoDoFormulario(campos: CamposBrutos): Result<IntencaoDo
   });
 }
 
+export type PedidoDePrevia = {
+  readonly tipoDePlano: TipoDePlano;
+  readonly plataformas: readonly Plataforma[];
+  readonly landingPageId: string;
+  readonly nomeDaCampanha: string;
+  readonly inicio: string;
+};
+
+export function lerPedidoDePrevia(campos: CamposBrutos): Result<PedidoDePrevia, ErrosDeCampo> {
+  const erros: Record<string, string> = {};
+  const aparado = (chave: string) => (campos[chave] ?? '').trim();
+  const tipo = z.enum(TIPOS_DE_PLANO).safeParse(aparado('tipoDePlano'));
+  if (!tipo.success) erros['tipoDePlano'] = 'Escolha o tipo de plano.';
+  const plataformas = z.array(z.enum(PLATAFORMAS)).min(1).safeParse([...new Set(aparado('plataformas').split(',').map((item) => item.trim()).filter((item) => item !== ''))]);
+  if (!plataformas.success) erros['plataformas'] = 'Escolha ao menos uma plataforma para ver os links.';
+  const landingPage = identificador.safeParse(aparado('landingPageId'));
+  if (!landingPage.success) erros['landingPageId'] = 'Escolha a landing page.';
+  const objetivo = aparado('objetivo');
+  if (objetivo.length < 3) erros['objetivo'] = 'Descreva o objetivo para ver os links (mínimo 3 caracteres).';
+  const inicio = esquemaDaData.safeParse(aparado('inicio'));
+  if (!inicio.success) erros['inicio'] = 'Informe a data de início para ver os links.';
+  if (!tipo.success || !plataformas.success || !landingPage.success || !inicio.success || objetivo.length < 3) return err(erros);
+  return ok({ tipoDePlano: tipo.data, plataformas: plataformas.data, landingPageId: landingPage.data, nomeDaCampanha: objetivo, inicio: inicio.data });
+}
+
 export function lerPedidoDeMudanca(campos: CamposBrutos): Result<{ readonly planoId: string; readonly versaoId: string; readonly instrucao: string }, ErrosDeCampo> {
   const lido = z
     .strictObject({

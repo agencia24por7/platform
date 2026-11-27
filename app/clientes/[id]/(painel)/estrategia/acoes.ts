@@ -1,17 +1,22 @@
 'use server';
 
+import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { escopoDoClienteNaOrganizacao } from '@/../app/clientes/[id]/_escopo';
 import { modules } from '@/composition';
-import { comAviso, rotaDoCliente } from '@/modules/clients/domain/painel/enderecos';
+import { comAviso } from '@/modules/clients/domain/painel/enderecos';
 import {
   lerEdicaoDeSecao,
   lerIdDoCampo,
   lerIntencaoDoFormulario,
   lerPedidoDeMudanca,
+  lerPedidoDePrevia,
   trocarSecao,
   type CamposBrutos,
 } from '@/modules/strategy/interface/formulariosDaEstrategia';
+import { errosPorCampo, formularioDeNovoPlano, previaNaTela, type FormularioDeNovoPlano, type PreviaNaTela } from '@/modules/strategy/interface/formularioDeNovoPlano';
+import { valorDaEdicao } from '@/modules/strategy/interface/edicaoDeSugestao';
+import { rotaDaListaDePlanos, rotaDoPlano } from '@/modules/strategy/interface/rotasDaEstrategia';
 import type { MemberRole } from '@/modules/identity/domain/user';
 import { atorAtual } from '@/shared/http/ator';
 import type { Failure } from '@/shared/result/failure';
@@ -21,6 +26,8 @@ export type EstadoDoFormulario = {
   readonly erro?: string;
   readonly campos?: Readonly<Record<string, string>>;
   readonly valores?: Readonly<Record<string, string | undefined>>;
+  readonly formulario?: FormularioDeNovoPlano;
+  readonly previa?: PreviaNaTela;
 };
 
 const NAO_ENCONTRADO: EstadoDoFormulario = { erro: 'Cliente não encontrado.' };
@@ -36,7 +43,7 @@ function camposDo(formData: FormData): CamposBrutos {
 }
 
 function textoDaFalha(falha: Failure): string {
-  const detalhes = falha.code === 'validation' && falha.details ? Object.values(falha.details).join(' ') : '';
+  const detalhes = falha.code === 'validation' && falha.details ? Object.entries(falha.details).filter(([chave]) => chave !== 'codigo').map(([, valor]) => valor).join(' ') : '';
   return `${falha.message}${detalhes ? ` ${detalhes}` : ''}`.slice(0, LIMITE_DA_MENSAGEM);
 }
 
@@ -44,12 +51,16 @@ function emEstado(falha: Failure, valores: CamposBrutos): EstadoDoFormulario {
   return falha.details ? { erro: falha.message, campos: falha.details, valores } : { erro: falha.message, valores };
 }
 
-function concluir(clienteId: string, mensagem: string): never {
-  redirect(comAviso(rotaDoCliente(clienteId, 'estrategia', { secao: 'plano' }), 'feito', mensagem));
+function destinoDaTela(clienteId: string, planoId: string | null): string {
+  return planoId ? rotaDoPlano(clienteId, planoId) : rotaDaListaDePlanos(clienteId);
 }
 
-function falhar(clienteId: string, mensagem: string): never {
-  redirect(comAviso(rotaDoCliente(clienteId, 'estrategia', { secao: 'plano' }), 'erro', mensagem));
+function concluir(clienteId: string, planoId: string | null, mensagem: string): never {
+  redirect(comAviso(destinoDaTela(clienteId, planoId), 'feito', mensagem));
+}
+
+function falhar(clienteId: string, planoId: string | null, mensagem: string): never {
+  redirect(comAviso(destinoDaTela(clienteId, planoId), 'erro', mensagem));
 }
 
 type ComandoDaAcao = { readonly organizationId: string; readonly papelDeQuemAge: MemberRole };
@@ -68,19 +79,40 @@ async function execucaoDoCliente(comando: ComandoDaAcao, clientId: string, execu
 
 const PLANO_MUDOU: EstadoDoFormulario = { erro: 'O plano mudou enquanto você editava. Recarregue a página.' };
 
-async function resolver<T>(clienteId: string, resultado: Result<T, Failure>, mensagem: string, valores: CamposBrutos): Promise<EstadoDoFormulario> {
+async function resolver<T>(clienteId: string, planoId: string, resultado: Result<T, Failure>, mensagem: string, valores: CamposBrutos): Promise<EstadoDoFormulario> {
   if (!resultado.ok) return emEstado(resultado.error, valores);
-  return concluir(clienteId, mensagem);
+  return concluir(clienteId, planoId, mensagem);
+}
+
+type EscopoDaAcao = NonNullable<Awaited<ReturnType<typeof escopoDoClienteNaOrganizacao>>>;
+
+async function estadoDoFormulario(escopo: EscopoDaAcao, valores: CamposBrutos, extra: Omit<EstadoDoFormulario, 'formulario' | 'valores'>): Promise<EstadoDoFormulario> {
+  const modelo = await modules().strategy.service.modeloDeCriacao(escopo.comando, { clienteId: escopo.cliente.id });
+  return { ...extra, valores, ...(modelo.ok ? { formulario: formularioDeNovoPlano(modelo.value, valores, escopo.cliente.id) } : {}) };
+}
+
+function erroDoNovoPlano(falha: Failure): Pick<EstadoDoFormulario, 'erro' | 'campos'> {
+  const campos = errosPorCampo(falha.details);
+  return Object.keys(campos).length > 0 ? { erro: falha.message, campos } : { erro: falha.message };
+}
+
+async function previaDoNovoPlano(escopo: EscopoDaAcao, campos: CamposBrutos): Promise<EstadoDoFormulario> {
+  const pedido = lerPedidoDePrevia(campos);
+  if (!pedido.ok) return estadoDoFormulario(escopo, campos, { campos: pedido.error });
+  const previa = await modules().strategy.service.previaDeUtm(escopo.comando, { clienteId: escopo.cliente.id, ...pedido.value, plataformas: [...pedido.value.plataformas] });
+  if (!previa.ok) return estadoDoFormulario(escopo, campos, erroDoNovoPlano(previa.error));
+  return estadoDoFormulario(escopo, campos, { previa: previaNaTela(previa.value) });
 }
 
 export async function novoPlanoAcao(_anterior: EstadoDoFormulario, formData: FormData): Promise<EstadoDoFormulario> {
   const campos = camposDo(formData);
   const escopo = await escopoDoClienteNaOrganizacao(campos['clienteId']);
   if (!escopo) return NAO_ENCONTRADO;
+  if (campos['acao'] === 'previa') return previaDoNovoPlano(escopo, campos);
   const entrada = lerIntencaoDoFormulario(campos);
-  if (!entrada.ok) return { erro: 'Corrija os campos indicados.', campos: entrada.error, valores: campos };
+  if (!entrada.ok) return estadoDoFormulario(escopo, campos, { erro: 'Corrija os campos indicados.', campos: entrada.error });
   const resultado = await modules().strategy.service.pedirPlano(
-    { organizationId: escopo.comando.organizationId, papelDeQuemAge: escopo.comando.papelDeQuemAge },
+    escopo.comando,
     {
       clienteId: escopo.cliente.id,
       tipoDePlano: entrada.value.tipoDePlano,
@@ -90,7 +122,8 @@ export async function novoPlanoAcao(_anterior: EstadoDoFormulario, formData: For
     },
     await atorAtual(),
   );
-  return resolver(escopo.cliente.id, resultado, 'Plano pedido. O agente está trabalhando; isso leva alguns minutos.', campos);
+  if (!resultado.ok) return estadoDoFormulario(escopo, campos, erroDoNovoPlano(resultado.error));
+  return concluir(escopo.cliente.id, resultado.value.plano.id, 'Plano pedido. O agente está trabalhando; isso leva alguns minutos.');
 }
 
 export async function pedirMudancaAcao(_anterior: EstadoDoFormulario, formData: FormData): Promise<EstadoDoFormulario> {
@@ -105,7 +138,7 @@ export async function pedirMudancaAcao(_anterior: EstadoDoFormulario, formData: 
   if (vista?.id !== entrada.value.versaoId) return { ...PLANO_MUDOU, valores: campos };
   const { versaoId: _versaoId, ...pedido } = entrada.value;
   const resultado = await modules().strategy.service.pedirMudanca(comando, pedido, await atorAtual());
-  return resolver(escopo.cliente.id, resultado, 'Mudança pedida. O plano volta ao Comitê e aos Gates.', campos);
+  return resolver(escopo.cliente.id, entrada.value.planoId, resultado, 'Mudança pedida. O agente está ajustando o plano.', campos);
 }
 
 export async function editarSecaoAcao(_anterior: EstadoDoFormulario, formData: FormData): Promise<EstadoDoFormulario> {
@@ -122,7 +155,7 @@ export async function editarSecaoAcao(_anterior: EstadoDoFormulario, formData: F
   const conteudo = trocarSecao(vista.conteudo, entrada.value.secao, entrada.value.valor);
   if (!conteudo) return { erro: 'O plano guardado está num formato que não permite edição.', valores: campos };
   const resultado = await modules().strategy.service.editarManual(comando, { planoId: entrada.value.planoId, conteudo }, await atorAtual());
-  return resolver(escopo.cliente.id, resultado, 'Seção editada. O plano volta ao Comitê e aos Gates.', campos);
+  return resolver(escopo.cliente.id, entrada.value.planoId, resultado, 'Seção editada. O plano será revisado de novo.', campos);
 }
 
 type CasoDeVersao = 'aplicar' | 'autorizar' | 'rejeitar' | 'revogar' | 'cancelarVersao';
@@ -135,17 +168,24 @@ const SUCESSO_POR_CASO: Readonly<Record<CasoDeVersao, string>> = {
   cancelarVersao: 'Rascunho cancelado.',
 };
 
+async function planoDaTela(comando: ComandoDaAcao, clienteId: string, campos: CamposBrutos): Promise<string | null> {
+  const lido = lerIdDoCampo(campos, 'planoId');
+  if (!lido.ok) return null;
+  return (await planoDoCliente(comando, clienteId, lido.value)) ? lido.value : null;
+}
+
 async function agirNaVersao(formData: FormData, caso: CasoDeVersao): Promise<void> {
   const campos = camposDo(formData);
   const escopo = await escopoDoClienteNaOrganizacao(campos['clienteId']);
   if (!escopo) redirect('/clientes');
+  const planoId = await planoDaTela(escopo.comando, escopo.cliente.id, campos);
   const versaoId = lerIdDoCampo(campos, 'versaoId');
-  if (!versaoId.ok) falhar(escopo.cliente.id, 'Versão inválida.');
+  if (!versaoId.ok) falhar(escopo.cliente.id, planoId, 'Versão inválida.');
   const comando = { organizationId: escopo.comando.organizationId, papelDeQuemAge: escopo.comando.papelDeQuemAge };
-  if (!(await versaoDoCliente(comando, escopo.cliente.id, versaoId.value))) falhar(escopo.cliente.id, 'Versão do plano não encontrada.');
+  if (!(await versaoDoCliente(comando, escopo.cliente.id, versaoId.value))) falhar(escopo.cliente.id, planoId, 'Versão do plano não encontrada.');
   const resultado = await modules().strategy.service[caso](comando, { versaoId: versaoId.value }, await atorAtual());
-  if (!resultado.ok) falhar(escopo.cliente.id, textoDaFalha(resultado.error));
-  concluir(escopo.cliente.id, SUCESSO_POR_CASO[caso]);
+  if (!resultado.ok) falhar(escopo.cliente.id, planoId, textoDaFalha(resultado.error));
+  concluir(escopo.cliente.id, planoId, SUCESSO_POR_CASO[caso]);
 }
 
 export async function aplicarAcao(formData: FormData): Promise<void> {
@@ -172,24 +212,76 @@ export async function pedirRevisaoAcao(formData: FormData): Promise<void> {
   const campos = camposDo(formData);
   const escopo = await escopoDoClienteNaOrganizacao(campos['clienteId']);
   if (!escopo) redirect('/clientes');
-  const planoId = lerIdDoCampo(campos, 'planoId');
-  if (!planoId.ok) falhar(escopo.cliente.id, 'Plano inválido.');
+  const planoId = await planoDaTela(escopo.comando, escopo.cliente.id, campos);
+  if (planoId === null) falhar(escopo.cliente.id, null, 'Plano não encontrado.');
   const comando = { organizationId: escopo.comando.organizationId, papelDeQuemAge: escopo.comando.papelDeQuemAge };
-  if (!(await planoDoCliente(comando, escopo.cliente.id, planoId.value))) falhar(escopo.cliente.id, 'Plano não encontrado.');
-  const resultado = await modules().strategy.service.pedirRevisao(comando, { planoId: planoId.value }, await atorAtual());
-  if (!resultado.ok) falhar(escopo.cliente.id, textoDaFalha(resultado.error));
-  concluir(escopo.cliente.id, 'Revisão pedida. O agente está atualizando o plano ao Brain.');
+  const resultado = await modules().strategy.service.pedirRevisao(comando, { planoId }, await atorAtual());
+  if (!resultado.ok) falhar(escopo.cliente.id, planoId, textoDaFalha(resultado.error));
+  concluir(escopo.cliente.id, planoId, 'Revisão pedida. O agente está atualizando o plano.');
 }
 
 export async function cancelarExecucaoAcao(formData: FormData): Promise<void> {
   const campos = camposDo(formData);
   const escopo = await escopoDoClienteNaOrganizacao(campos['clienteId']);
   if (!escopo) redirect('/clientes');
+  const planoId = await planoDaTela(escopo.comando, escopo.cliente.id, campos);
   const execucaoId = lerIdDoCampo(campos, 'execucaoId');
-  if (!execucaoId.ok) falhar(escopo.cliente.id, 'Execução inválida.');
+  if (!execucaoId.ok) falhar(escopo.cliente.id, planoId, 'Execução inválida.');
   const comando = { organizationId: escopo.comando.organizationId, papelDeQuemAge: escopo.comando.papelDeQuemAge };
-  if (!(await execucaoDoCliente(comando, escopo.cliente.id, execucaoId.value))) falhar(escopo.cliente.id, 'Execução não encontrada.');
+  if (!(await execucaoDoCliente(comando, escopo.cliente.id, execucaoId.value))) falhar(escopo.cliente.id, planoId, 'Execução não encontrada.');
   const resultado = await modules().strategy.service.cancelarExecucao(comando, { execucaoId: execucaoId.value }, await atorAtual());
-  if (!resultado.ok) falhar(escopo.cliente.id, textoDaFalha(resultado.error));
-  concluir(escopo.cliente.id, 'Execução cancelada.');
+  if (!resultado.ok) falhar(escopo.cliente.id, planoId, textoDaFalha(resultado.error));
+  concluir(escopo.cliente.id, planoId, 'Execução cancelada.');
+}
+
+export async function corrigirFalhaDoGateAcao(formData: FormData): Promise<void> {
+  const campos = camposDo(formData);
+  const escopo = await escopoDoClienteNaOrganizacao(campos['clienteId']);
+  if (!escopo) redirect('/clientes');
+  const planoId = await planoDaTela(escopo.comando, escopo.cliente.id, campos);
+  if (planoId === null) falhar(escopo.cliente.id, null, 'Plano não encontrado.');
+  const resultado = await modules().strategy.service.corrigirFalhaDoGate(escopo.comando, { clienteId: escopo.cliente.id, planoId }, await atorAtual());
+  if (!resultado.ok) falhar(escopo.cliente.id, planoId, textoDaFalha(resultado.error));
+  concluir(escopo.cliente.id, planoId, 'Correção pedida. O agente está ajustando o plano.');
+}
+
+export type EstadoDasSugestoes = { readonly erro?: string; readonly porLacuna?: Readonly<Record<string, string>> };
+
+function textoDasSugestoes(aprovadas: number, falhas: number): string {
+  const aprovou = `${aprovadas} ${aprovadas === 1 ? 'sugestão aprovada' : 'sugestões aprovadas'}`;
+  return falhas === 0 ? `${aprovou}.` : `${aprovou}; ${falhas} ${falhas === 1 ? 'não pôde ser aprovada' : 'não puderam ser aprovadas'}.`;
+}
+
+export async function aprovarSugestoesAcao(_anterior: EstadoDasSugestoes, formData: FormData): Promise<EstadoDasSugestoes> {
+  const campos = camposDo(formData);
+  const escopo = await escopoDoClienteNaOrganizacao(campos['clienteId']);
+  if (!escopo) redirect('/clientes');
+  const planoId = await planoDaTela(escopo.comando, escopo.cliente.id, campos);
+  if (planoId === null) return falhar(escopo.cliente.id, null, 'Plano não encontrado.');
+  const marcadas = formData.getAll('lacunaId').filter((valor): valor is string => typeof valor === 'string');
+  if (marcadas.length === 0) return { erro: 'Marque ao menos uma sugestão para aprovar.' };
+  const painel = await modules().strategy.service.painelDoPlano(escopo.comando, { clienteId: escopo.cliente.id, planoId });
+  const lacunas = painel.ok ? (painel.value.planos[0]?.lacunas ?? []) : [];
+  const itens = marcadas.map((lacunaId) => {
+    const lacuna = lacunas.find((candidata) => candidata.id === lacunaId);
+    const digitado = formData.get(`valor:${lacunaId}`);
+    const edicao = lacuna?.valorSugerido && typeof digitado === 'string' ? valorDaEdicao(lacuna.valorSugerido, digitado, lacuna.valorLegivel) : { valor: null };
+    return edicao.valor === null ? { lacunaId } : { lacunaId, valor: edicao.valor };
+  });
+  const resultado = await modules().strategy.service.aprovarSugestoesDeLacunas(escopo.comando, { clienteId: escopo.cliente.id, planoId, itens }, await atorAtual());
+  if (!resultado.ok) {
+    const porLacuna: Record<string, string> = {};
+    for (const [caminho, mensagem] of Object.entries(resultado.error.details ?? {})) {
+      const posicao = /^itens\.(\d+)/.exec(caminho)?.[1];
+      const lacunaId = posicao === undefined ? undefined : marcadas[Number(posicao)];
+      if (lacunaId !== undefined) porLacuna[lacunaId] ??= mensagem;
+    }
+    return { erro: textoDaFalha(resultado.error), porLacuna };
+  }
+  const { aprovadas, falhas } = resultado.value;
+  const porLacuna: Record<string, string> = {};
+  for (const item of resultado.value.itens) if (item.erro) porLacuna[item.lacunaId] = item.erro.mensagem;
+  if (falhas === 0) return concluir(escopo.cliente.id, planoId, textoDasSugestoes(aprovadas, falhas));
+  revalidatePath(rotaDoPlano(escopo.cliente.id, planoId));
+  return { erro: textoDasSugestoes(aprovadas, falhas), porLacuna };
 }

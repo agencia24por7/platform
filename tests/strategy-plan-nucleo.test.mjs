@@ -1480,7 +1480,7 @@ describe('Strategy Plan, tabelas núcleo (migração 0143, ADR 0056)', { concurr
     );
     assert.equal(
       ordem('strategy_plan_events'),
-      'strategy_plan_events_a0_inquilino,strategy_plan_events_antes,strategy_plan_events_antes_execucao,strategy_plan_events_b_teto',
+      'strategy_plan_events_a0_inquilino,strategy_plan_events_antes,strategy_plan_events_antes_execucao,strategy_plan_events_b_teto,strategy_plan_events_juiz',
     );
   });
 

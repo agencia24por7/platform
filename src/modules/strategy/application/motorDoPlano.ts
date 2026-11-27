@@ -43,6 +43,18 @@ import {
   rodarGates,
   validarAjuste,
   GRUPOS_DE_REDACAO,
+  CHAVE_NAO_FAREMOS_PRESERVADO,
+  argumentosParaAplicar,
+  checagensCorrigiveis,
+  conferirAjusteContraOJuiz,
+  conferirVereditos,
+  destinosDosPontos,
+  esquemaSaidaDoJuiz,
+  falhasDoGate,
+  pontosParaJulgar,
+  respostasDeRecusaDoJuiz,
+  restaurarNaoFaremos,
+  vereditosDoEvento,
   INDICE_DO_ULTIMO_GRUPO,
   MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA,
   abreviarUrnsParaCodigos,
@@ -51,6 +63,10 @@ import {
   type CodigosDoPacote,
   MAXIMO_DE_ENTRADAS_NO_PACOTE,
   type Ajuste,
+  type ChecagemReprovada,
+  type EventoDaCadeia,
+  type ProblemaDoModelo,
+  type VereditoDoJuiz,
   type Argumento,
   type Intencao,
   type PacoteDeLeitura,
@@ -66,6 +82,8 @@ import {
 import { carregarCadeia, pareceresDe, versaoDaRaizDaCadeia } from '@/modules/strategy/application/cadeiaDoComite';
 import {
   INSTRUCAO_DO_GATE_POR_MODELO,
+  INSTRUCAO_DO_JUIZ,
+  TAREFA_PARA_CORRIGIR_O_GATE,
   TAREFA_PARA_AJUSTAR_AO_COMITE,
   TAREFA_PARA_AJUSTAR_PLANO,
   TAREFA_PARA_ATUALIZAR_AO_BRAIN,
@@ -77,6 +95,7 @@ import {
 import { MAXIMO_DE_RESERVAS } from '@/modules/strategy/application/portas';
 import type {
   AvaliadorDeLimites,
+  CatalogoDeLimites,
   CodigoDeErroDaExecucao,
   CodigoDeErroDeIA,
   ErroDeEstrategia,
@@ -104,10 +123,12 @@ export const MAXIMO_DE_PROBLEMAS_DO_GATE = 10;
 export const MAXIMO_DE_VERSOES_LIDAS = 50;
 export const AGENTE_DE_PLANO = 'agente_de_plano';
 export const AGENTE_DO_GATE = 'gates';
+export const AGENTE_DO_JUIZ = 'juiz';
 
 export const ORCAMENTO_DA_IA: Readonly<Record<TarefaDeIA, { readonly tokensMaximos: number; readonly tempoMaximoMs: number }>> = {
   strategy_plan: { tokensMaximos: 6_500, tempoMaximoMs: 115_000 },
   comite: { tokensMaximos: 5_000, tempoMaximoMs: 90_000 },
+  juiz: { tokensMaximos: 4_500, tempoMaximoMs: 60_000 },
   gate: { tokensMaximos: 3_000, tempoMaximoMs: 60_000 },
 };
 
@@ -202,6 +223,7 @@ export type DependenciasDoMotor = {
   readonly executorDeIA: ExecutorDeIA;
   readonly leitorDoBrain: LeitorDoBrain;
   readonly avaliadorDeLimites: AvaliadorDeLimites;
+  readonly catalogoDeLimites?: CatalogoDeLimites;
   readonly audit: AuditRecorder;
   readonly relogio?: Relogio;
   readonly personas?: readonly Persona[];
@@ -358,6 +380,16 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     if (!lido.ok) throw new FalhaDaEtapa('brain_indisponivel', true);
     contexto.pacote = lido.value;
     return lido.value;
+  }
+
+  async function tiposDeLimiteDoGrupo(execucao: Execucao, indice: number): Promise<Record<string, unknown>> {
+    const grupo: readonly string[] = GRUPOS_DE_REDACAO[indice] ?? [];
+    if (!grupo.includes('lacunas') || deps.catalogoDeLimites === undefined) return {};
+    try {
+      return { tiposDeLimite: await deps.catalogoDeLimites.listar(execucao.organizationId) };
+    } catch {
+      throw new FalhaDaEtapa('interno', true);
+    }
   }
 
   async function renovarLease(execucao: Execucao, contexto: Contexto): Promise<void> {
@@ -580,6 +612,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
   }
 
   async function etapaRedigir(execucao: Execucao, contexto: Contexto): Promise<Efeito> {
+    if (execucao.tipo === 'corrigir_gate') return etapaCorrigir(execucao, contexto);
     if ((await versoesDaExecucao(execucao)).length > 0) return { proximo: { etapa: 'comite' }, contagens: { jaRedigido: 1 } };
     const pacote = await lerPacote(execucao, contexto, false);
     const base = execucao.versaoBaseId ? await repositorio.lerVersao(execucao.organizationId, execucao.versaoBaseId) : null;
@@ -593,6 +626,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
         continue;
       }
       const doGrupo = entradaDoGrupo(entrada, indice);
+      const tiposDoGrupo = await tiposDeLimiteDoGrupo(execucao, indice);
       const redigirGrupo = (problemasAnteriores: readonly { readonly caminho: string; readonly mensagem: string }[]) =>
         executarIA(
           execucao,
@@ -602,6 +636,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
           {
             ...(abreviarUrnsParaCodigos({ ...doGrupo, secoesJaRedigidas: { ...secoes } }, codigos) as Record<string, unknown>),
             ...(problemasAnteriores.length === 0 ? {} : { problemasDeIntegridade: problemasAnteriores.slice(0, MAXIMO_DE_PROBLEMAS_DEVOLVIDOS) }),
+            ...tiposDoGrupo,
             pacote: pacoteDoGrupo(pacote, perfilDoGrupo(indice), { secoes, base: doGrupo }),
           },
           esquemaDoGrupo(indice),
@@ -719,26 +754,30 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     return [...doCodigo, ...doModelo];
   }
 
-  async function etapaAjustar(execucao: Execucao, contexto: Contexto): Promise<Efeito> {
-    const versao = await versaoCorrente(execucao);
-    const eventos = await repositorio.eventosDaVersao(execucao.organizationId, versao.id);
-    const temAjuste = eventos.some((e) => e.tipo === 'ajuste');
-    const ultimoGate = [...eventos].reverse().find((e) => e.tipo === 'gate');
-    const reprovouNoGate = ultimoGate?.payload.resultado === 'reprovado';
+  function pendenciasDeFalhas(checagens: readonly ChecagemReprovada[], modelo: readonly ProblemaDoModelo[]): PendenciaDoGate[] {
+    const doCodigo = checagens.map((c) => ({
+      texto: `${c.chave}: ${c.motivo}`,
+      grupos: gruposDaPendenciaDoGate(c.chave, c.onde),
+      trechos: [...c.onde],
+    }));
+    const doModelo = modelo.map((p) => ({ texto: `${p.trecho}: ${p.problema}`, grupos: [grupoDoTrecho(p.trecho)] }));
+    return [...doCodigo, ...doModelo];
+  }
 
-    const cadeia = await carregarCadeia(repositorio, execucao.organizationId, versao.id, eventos);
-    const raiz = versaoDaRaizDaCadeia(cadeia, versao.id, execucao.agentRunId);
-    const pareceres = raiz === null ? [] : pareceresDe(cadeia.get(raiz) ?? []);
-    const comitePediuAjuste = !temAjuste && !aprovadoPeloComite(pareceres);
-    if (!reprovouNoGate && !comitePediuAjuste) return { proximo: { etapa: 'gates' }, contagens: { versaoId: versao.id } };
+  type EntradaDoAjusteDeGrupos = {
+    readonly execucao: Execucao;
+    readonly contexto: Contexto;
+    readonly plano: Plano;
+    readonly pacote: PacoteDeLeitura;
+    readonly codigos: CodigosDoPacote;
+    readonly pontosPorGrupo: ReadonlyMap<number, PontosDoGrupo>;
+    readonly tarefa: string;
+    readonly prefixoDaChave: 'ajustar' | 'corrigir';
+  };
 
-    const pacote = await lerPacote(execucao, contexto, false);
-    const codigos = codigosDoPacote(pacote);
-    const plano = planoDe(versao.conteudo);
+  async function ajustarGrupos(entrada: EntradaDoAjusteDeGrupos): Promise<{ corrente: Record<string, unknown>; respostas: RespostaDoAjuste[]; chamadas: number }> {
+    const { execucao, contexto, plano, pacote, codigos, pontosPorGrupo, tarefa, prefixoDaChave } = entrada;
     const intencao = intencaoCompleta(plano.intencao);
-    const consolidacao = consolidarPareceres(pareceres, personas);
-    const pontosPorGrupo = distribuirPontos(consolidacao.argumentos, consolidacao.pendenciasObrigatorias, reprovouNoGate ? pendenciasDoGate(eventos) : []);
-
     let corrente: Record<string, unknown> = { ...plano };
     const respostas: RespostaDoAjuste[] = [];
     let chamadas = 0;
@@ -747,6 +786,9 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
       const chaves = dadas.map((r) => `${r.persona}/${r.pontoId}`);
       if (new Set(chaves).size !== chaves.length || chaves.length !== esperadas.size || chaves.some((d) => !esperadas.has(d))) {
         throw falhaDeIA('saida_invalida', `respostas_do_grupo:g${indice}${plataforma ? `:${plataforma}` : ''}:esperadas${esperadas.size}:dadas${chaves.length}`);
+      }
+      if (dadas.some((r) => r.decisao !== 'acatado')) {
+        throw falhaDeIA('saida_invalida', `ponto_a_aplicar_nao_acatado:g${indice}${plataforma ? `:${plataforma}` : ''}`);
       }
     };
     const esperadasDe = (argumentos: readonly Argumento[]) => new Set(argumentos.flatMap((argumento) => argumento.pontos.map((p) => `${p.persona}/${p.pontoId}`)));
@@ -773,14 +815,14 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
             execucao,
             contexto,
             'strategy_plan',
-            instrucaoDoPlanoDeMidia(TAREFA_PARA_AJUSTAR_AO_COMITE, plataforma, posicao + 1, comCatalogo.length, true),
+            instrucaoDoPlanoDeMidia(tarefa, plataforma, posicao + 1, comCatalogo.length, true),
             {
               ...(abreviarUrnsParaCodigos({ intencao, planoAtual, pontos: argumentos, pendenciasObrigatorias: obrigatorias, pendenciasDoGate: doGate }, codigos) as Record<string, unknown>),
               catalogosDeCampos: [catalogo],
               pacote: pacoteDoGrupo(pacote, 'regras', { planoAtual, argumentos }),
             },
             esquemaDoAjusteDaMidia(plataforma),
-            `${execucao.id}:ajustar:${execucao.rodada}:g${indice}:${plataforma}`,
+            `${execucao.id}:${prefixoDaChave}:${execucao.rodada}:g${indice}:${plataforma}`,
             codigos,
           );
           chamadas += 1;
@@ -794,17 +836,19 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
         continue;
       }
       const planoAtual = secoesDoGrupo(corrente, indice);
+      const tiposDoGrupo = await tiposDeLimiteDoGrupo(execucao, indice);
       const doGrupo = await executarIA(
         execucao,
         contexto,
         'strategy_plan',
-        instrucaoDoGrupo(TAREFA_PARA_AJUSTAR_AO_COMITE, GRUPOS_DE_REDACAO[indice] ?? [], indice + 1, GRUPOS_DE_REDACAO.length, true),
+        instrucaoDoGrupo(tarefa, GRUPOS_DE_REDACAO[indice] ?? [], indice + 1, GRUPOS_DE_REDACAO.length, true),
         {
           ...(abreviarUrnsParaCodigos({ intencao, planoAtual, idsDisponiveis: idsReferenciaveis(corrente), pontos: pontos.argumentos, pendenciasObrigatorias: pontos.obrigatorias, pendenciasDoGate: pontos.doGate }, codigos) as Record<string, unknown>),
+          ...tiposDoGrupo,
           pacote: pacoteDoGrupo(pacote, perfilDoGrupo(indice), { planoAtual, argumentos: pontos.argumentos }),
         },
         esquemaDoAjusteDoGrupo(indice),
-        `${execucao.id}:ajustar:${execucao.rodada}:g${indice}`,
+        `${execucao.id}:${prefixoDaChave}:${execucao.rodada}:g${indice}`,
         codigos,
       );
       chamadas += 1;
@@ -812,14 +856,101 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
       corrente = { ...corrente, ...doGrupo.secoes };
       respostas.push(...doGrupo.respostas);
     }
+    return { corrente, respostas, chamadas };
+  }
+
+  async function julgarPontos(
+    execucao: Execucao,
+    contexto: Contexto,
+    versao: Versao,
+    plano: Plano,
+    pareceres: readonly Parecer[],
+    pacote: PacoteDeLeitura,
+    codigos: CodigosDoPacote,
+  ): Promise<readonly VereditoDoJuiz[]> {
+    const pontos = pontosParaJulgar(pareceres, personas);
+    const citadas = new Set(pontos.flatMap((ponto) => ponto.fontes));
+    const doJuiz = pacoteParaEntrada(pacote, MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA.comite, { somenteUrns: citadas, primeiras: citadas, comCatalogo: false });
+    const { utm: _utm, whatsapp: _whatsapp, destino: _destino, plataformas: _plataformas, ...intencaoEssencial } = plano.intencao;
+    const chave = `${execucao.id}:juiz`;
+    const saida = await executarIA(
+      execucao,
+      contexto,
+      'juiz',
+      INSTRUCAO_DO_JUIZ,
+      abreviarUrnsParaCodigos({ intencao: intencaoEssencial, resumo: plano.resumo_executivo, pontos, pacote: resumoDoPacote(doJuiz) }, codigos),
+      esquemaSaidaDoJuiz,
+      chave,
+      codigos,
+    );
+    const conferidos = conferirVereditos(pontos, saida, new Set(pacote.entradas.map((entrada) => entrada.urn)));
+    if (!conferidos.ok) throw falhaDeIA('saida_invalida', `juiz_incompleto:${conferidos.error.length}`);
+    if (!planoSemDadoPessoal({ motivos: conferidos.value.map((veredito) => veredito.motivo) }).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_juiz');
+    const gravado = await repositorio.registrarEvento(execucao.organizationId, {
+      versaoId: versao.id,
+      tipo: 'veredito_juiz',
+      payload: { vereditos: conferidos.value },
+      autoria: autoria(execucao, AGENTE_DO_JUIZ, chave, contexto),
+      requestId: requestIdDe(execucao, 'juiz'),
+    });
+    if (!gravado.ok && gravado.error.codigo !== 'ja_feito') throw falhaDoBanco(gravado.error);
+    return conferidos.value;
+  }
+
+  async function vereditosParaOAjuste(
+    execucao: Execucao,
+    contexto: Contexto,
+    versao: Versao,
+    raiz: string | null,
+    cadeia: ReadonlyMap<string, readonly EventoDaCadeia[]>,
+    pareceres: readonly Parecer[],
+    plano: Plano,
+    pacote: PacoteDeLeitura,
+    codigos: CodigosDoPacote,
+  ): Promise<readonly VereditoDoJuiz[] | undefined> {
+    const existente = vereditosDoEvento(raiz === null ? undefined : (cadeia.get(raiz) ?? []).find((evento) => evento.tipo === 'veredito_juiz')?.payload);
+    if (existente !== undefined || pontosParaJulgar(pareceres, personas).length === 0) return existente;
+    if (raiz !== versao.id) throw falhaDeIA('saida_invalida', 'juiz_ausente_na_cadeia');
+    return julgarPontos(execucao, contexto, versao, plano, pareceres, pacote, codigos);
+  }
+
+  async function etapaAjustar(execucao: Execucao, contexto: Contexto): Promise<Efeito> {
+    const versao = await versaoCorrente(execucao);
+    const eventos = await repositorio.eventosDaVersao(execucao.organizationId, versao.id);
+    const temAjuste = eventos.some((e) => e.tipo === 'ajuste');
+    const ultimoGate = [...eventos].reverse().find((e) => e.tipo === 'gate');
+    const reprovouNoGate = ultimoGate?.payload.resultado === 'reprovado';
+
+    const cadeia = await carregarCadeia(repositorio, execucao.organizationId, versao.id, eventos);
+    const raiz = versaoDaRaizDaCadeia(cadeia, versao.id, execucao.agentRunId);
+    const pareceres = raiz === null ? [] : pareceresDe(cadeia.get(raiz) ?? []);
+    const comitePediuAjuste = !temAjuste && !aprovadoPeloComite(pareceres);
+    if (!reprovouNoGate && !comitePediuAjuste) return { proximo: { etapa: 'gates' }, contagens: { versaoId: versao.id } };
+
+    const pacote = await lerPacote(execucao, contexto, false);
+    const codigos = codigosDoPacote(pacote);
+    const plano = planoDe(versao.conteudo);
+    const consolidacao = consolidarPareceres(pareceres, personas);
+
+    const vereditos = await vereditosParaOAjuste(execucao, contexto, versao, raiz, cadeia, pareceres, plano, pacote, codigos);
+    const destinos = destinosDosPontos(pareceres, vereditos, personas);
+    if (!destinos.ok) throw falhaDeIA('saida_invalida', `juiz_sem_veredito:${destinos.error.length}`);
+    const aplicar = argumentosParaAplicar(consolidacao.argumentos, destinos.value);
+    const doGate = reprovouNoGate ? pendenciasDoGate(eventos) : [];
+    const haPontos = aplicar.length > 0 || consolidacao.pendenciasObrigatorias.length > 0 || doGate.length > 0;
+    const pontosPorGrupo = haPontos ? distribuirPontos(aplicar, consolidacao.pendenciasObrigatorias, doGate) : new Map<number, PontosDoGrupo>();
+
+    const ajustado = await ajustarGrupos({ execucao, contexto, plano, pacote, codigos, pontosPorGrupo, tarefa: TAREFA_PARA_AJUSTAR_AO_COMITE, prefixoDaChave: 'ajustar' });
+    const respostas = [...ajustado.respostas, ...respostasDeRecusaDoJuiz(destinos.value)];
 
     const chave = `${execucao.id}:ajustar:${execucao.rodada}`;
     const ajuste: Ajuste = { responde_a: versao.id, respostas };
     const validado = esquemaAjuste.safeParse(ajuste);
     if (!validado.success) throw falhaDeIA('saida_invalida', motivoDoEsquema(validado.error));
     if (!validarAjuste(pareceres, validado.data, personas).ok) throw falhaDeIA('saida_invalida', 'ajuste_nao_responde_aos_pontos');
+    if (conferirAjusteContraOJuiz(pareceres, validado.data, vereditos, personas).length > 0) throw falhaDeIA('saida_invalida', 'ajuste_contra_o_veredito_do_juiz');
     if (!respostasDoAjusteSemDadoPessoal(validado.data.respostas).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_ajuste');
-    const lido = lerPlano(corrente);
+    const lido = lerPlano(ajustado.corrente);
     if (!lido.ok) throw falhaDeIA('saida_invalida', 'plano_ajustado_fora_do_esquema');
     const planoAjustado = lido.value;
     if (!planoSemDadoPessoal(planoAjustado).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano_ajustado');
@@ -839,7 +970,73 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
       requestId: requestIdDe(execucao, 'ajustar'),
     });
     if (!criada.ok && criada.error.codigo !== 'ja_feito') throw falhaDoBanco(criada.error);
-    return { proximo: { etapa: 'gates' }, contagens: { versaoId: criada.ok ? criada.value.id : versao.id, respostas: respostas.length, chamadas } };
+    return { proximo: { etapa: 'gates' }, contagens: { versaoId: criada.ok ? criada.value.id : versao.id, respostas: respostas.length, chamadas: ajustado.chamadas } };
+  }
+
+  async function planosBaseParaRestaurar(execucao: Execucao, versao: Versao): Promise<Plano[]> {
+    const ids = await idsDasBasesDoGate(execucao, versao, null);
+    const lidos = await Promise.all(ids.map((id) => lerPlanoDaVersao(execucao, id)));
+    return lidos.filter((plano): plano is Plano => plano !== null);
+  }
+
+  async function etapaCorrigir(execucao: Execucao, contexto: Contexto): Promise<Efeito> {
+    if ((await versoesDaExecucao(execucao)).length > 0) return { proximo: { etapa: 'comite' }, contagens: { jaRedigido: 1 } };
+    if (execucao.versaoBaseId === null) throw new FalhaDaEtapa('interno', false);
+    const base = await repositorio.lerVersao(execucao.organizationId, execucao.versaoBaseId);
+    if (!base || base.status !== 'rascunho') throw new FalhaDaEtapa('interno', false);
+    const eventosDaBase = await repositorio.eventosDaVersao(execucao.organizationId, base.id);
+    const falhas = falhasDoGate([...eventosDaBase].reverse().find((evento) => evento.tipo === 'gate')?.payload);
+    if (falhas === null) throw new FalhaDaEtapa('interno', false);
+
+    const pacote = await lerPacote(execucao, contexto, false);
+    const codigos = codigosDoPacote(pacote);
+    const planoBase = planoDe(base.conteudo);
+    let planoCorrente = planoBase;
+    let restantes = checagensCorrigiveis(falhas);
+
+    let restauradas = 0;
+    if (restantes.some((checagem) => checagem.chave === CHAVE_NAO_FAREMOS_PRESERVADO)) {
+      const bases = await planosBaseParaRestaurar(execucao, base);
+      const restaurado = restaurarNaoFaremos(planoBase, bases);
+      if (restaurado.restauradas.length > 0 && restaurarNaoFaremos(restaurado.plano, bases).restauradas.length === 0) {
+        planoCorrente = restaurado.plano;
+        restauradas = restaurado.restauradas.length;
+        restantes = restantes.filter((checagem) => checagem.chave !== CHAVE_NAO_FAREMOS_PRESERVADO);
+      }
+    }
+
+    const pendencias = pendenciasDeFalhas(restantes, falhas.modelo);
+    const ajustado =
+      pendencias.length === 0
+        ? { corrente: { ...planoCorrente } as Record<string, unknown>, chamadas: 0 }
+        : await ajustarGrupos({
+            execucao,
+            contexto,
+            plano: planoCorrente,
+            pacote,
+            codigos,
+            pontosPorGrupo: distribuirPontos([], [], pendencias),
+            tarefa: TAREFA_PARA_CORRIGIR_O_GATE,
+            prefixoDaChave: 'corrigir',
+          });
+
+    const lido = lerPlano(ajustado.corrente);
+    if (!lido.ok) throw falhaDeIA('saida_invalida', 'plano_corrigido_fora_do_esquema');
+    const planoCorrigido = lido.value;
+    if (!planoSemDadoPessoal(planoCorrigido).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano_corrigido');
+    const referencias = referenciasConferidas(planoCorrigido, execucao, await pacoteComAsCitadas(execucao, contexto, planoCorrigido, pacote));
+    const estado = await estadoDoPlano(execucao);
+    const criada = await repositorio.criarVersaoRascunho(execucao.organizationId, {
+      planoId: execucao.planoId,
+      conteudo: planoCorrigido,
+      schemaVersion: SCHEMA_VERSION,
+      supersedesId: estado?.vigente?.id ?? null,
+      autoria: autoria(execucao, AGENTE_DE_PLANO, `${execucao.id}:corrigir`, contexto),
+      referencias,
+      requestId: requestIdDe(execucao, 'corrigir'),
+    });
+    if (!criada.ok && criada.error.codigo !== 'ja_feito') throw falhaDoBanco(criada.error);
+    return { proximo: { etapa: 'comite' }, contagens: { restauradas, pendencias: pendencias.length, chamadas: ajustado.chamadas } };
   }
 
   async function resultadoDoGateExistente(eventos: readonly EventoDaVersao[]): Promise<EventoDaVersao | null> {
@@ -915,6 +1112,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     const limites = await avaliadorDeLimites.avaliador(execucao.organizationId, execucao.clientId, plano);
     if (!limites.ok) throw new FalhaDaEtapa('interno', true);
 
+    const doJuiz = raiz === null ? undefined : vereditosDoEvento((cadeia.get(raiz) ?? []).find((evento) => evento.tipo === 'veredito_juiz')?.payload);
     const veredito = rodarGates({
       plano,
       pacote,
@@ -922,6 +1120,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
       pareceres,
       comiteDaMesmaExecucao: raiz !== null,
       ...(ajusteLido?.success ? { ajuste: ajusteLido.data } : {}),
+      ...(doJuiz === undefined ? {} : { vereditosDoJuiz: doJuiz }),
       catalogosDeCampos: catalogos,
       avaliarLimite: limites.value,
       medidasComLimite: limites.value.medidasComLimite,
@@ -977,7 +1176,8 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     const contagens = { versaoId: versao.id, gate: aprovado ? 'aprovado' : 'reprovado' };
     if (aprovado) return { proximo: { status: 'concluida', etapa: 'fim', erroCodigo: null, leaseAte: null }, contagens };
     if (execucao.rodada < maximoDeRodadas) return { proximo: { rodada: execucao.rodada + 1, etapa: 'ajustar' }, contagens };
-    return { proximo: { status: 'falhou', erroCodigo: 'gate_reprovado', leaseAte: null }, contagens };
+    const erroCodigo = execucao.tipo === 'corrigir_gate' ? 'correcao_nao_convergiu' : 'gate_reprovado';
+    return { proximo: { status: 'falhou', erroCodigo, leaseAte: null }, contagens };
   }
 
   async function executarEtapa(execucao: Execucao, contexto: Contexto): Promise<Efeito> {

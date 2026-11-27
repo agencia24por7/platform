@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { err, ok, type Result } from '../../../shared/result/result.ts';
+import { CATEGORIAS } from '../../clients/domain/regras/categoria.ts';
+import { EscopoSchema, ChaveSchema } from '../../clients/domain/regras/definicaoDeLimite.ts';
 import { MEDIDAS } from '../../clients/domain/regras/medida.ts';
 import { ValorSchema } from '../../clients/domain/regras/valor.ts';
 import { lerUrn } from '../../brain/domain/urn.ts';
@@ -366,6 +368,41 @@ const esquemaRegraAplicavel = z.strictObject({
 export const TIPOS_DE_LACUNA = ['limite_ausente', 'dado_ausente', 'evidencia_fraca', 'regra_ausente', 'outro'] as const;
 export type TipoDeLacuna = (typeof TIPOS_DE_LACUNA)[number];
 
+export const NATUREZAS_DA_REGRA_DA_LACUNA = ['limite', 'regra'] as const;
+export const ORIGENS_DA_SUGESTAO = ['evidencia', 'hipotese'] as const;
+
+const esquemaRegraDaLacuna = z.strictObject({
+  natureza: z.enum(NATUREZAS_DA_REGRA_DA_LACUNA),
+  categoria: z.enum(CATEGORIAS).optional(),
+  chave: ChaveSchema.optional(),
+  escopo: EscopoSchema,
+});
+export type RegraDaLacuna = z.infer<typeof esquemaRegraDaLacuna>;
+
+const esquemaValorDaSugestao = z.union([ValorSchema, z.strictObject({ texto: texto(400) })]);
+export type ValorDaSugestao = z.infer<typeof esquemaValorDaSugestao>;
+
+const esquemaSugestaoDaLacuna = z
+  .strictObject({
+    valor: esquemaValorDaSugestao.nullable(),
+    origem: z.enum(ORIGENS_DA_SUGESTAO),
+    evidencias: lista(esquemaEvidencia, 5).default([]),
+    justificativa: texto(300),
+  })
+  .superRefine((sugestao, contexto) => {
+    const sustentos = sugestao.evidencias.filter((e) => e.papel !== 'contra');
+    if (sugestao.origem === 'hipotese' && (sugestao.valor !== null || sugestao.evidencias.length > 0)) {
+      contexto.addIssue({ code: 'custom', path: ['valor'], message: 'Hipótese não traz valor nem evidência: sem evidência só há "sem sugestão".' });
+    }
+    if (sugestao.origem === 'evidencia' && sustentos.length === 0) {
+      contexto.addIssue({ code: 'custom', path: ['evidencias'], message: 'Sugestão com origem em evidência cita ao menos uma evidência a favor.' });
+    }
+    if (sugestao.valor !== null && sugestao.origem !== 'evidencia') {
+      contexto.addIssue({ code: 'custom', path: ['origem'], message: 'Valor sugerido exige origem em evidência do Brain.' });
+    }
+  });
+export type SugestaoDaLacuna = z.infer<typeof esquemaSugestaoDaLacuna>;
+
 const esquemaLacuna = z
   .strictObject({
     id: esquemaId,
@@ -374,6 +411,8 @@ const esquemaLacuna = z
     descricao: texto(400),
     impacto: texto(300),
     como_preencher: texto(300).optional(),
+    regra: esquemaRegraDaLacuna.optional(),
+    sugestao: esquemaSugestaoDaLacuna.optional(),
   })
   .superRefine((lacuna, contexto) => {
     if (lacuna.tipo === 'limite_ausente' && lacuna.medida === undefined) {
@@ -381,6 +420,23 @@ const esquemaLacuna = z
     }
     if (lacuna.tipo !== 'limite_ausente' && lacuna.medida !== undefined) {
       contexto.addIssue({ code: 'custom', path: ['medida'], message: 'Só a lacuna de limite ausente tem medida.' });
+    }
+    const { regra, sugestao } = lacuna;
+    if (regra === undefined) {
+      if (sugestao !== undefined) contexto.addIssue({ code: 'custom', path: ['sugestao'], message: 'Sugestão exige a regra estruturada da lacuna.' });
+      return;
+    }
+    if (regra.natureza === 'limite' && lacuna.tipo !== 'limite_ausente') {
+      contexto.addIssue({ code: 'custom', path: ['regra', 'natureza'], message: 'Regra de natureza limite só em lacuna de limite ausente.' });
+    }
+    if (regra.natureza === 'regra' && (lacuna.tipo === 'limite_ausente' || regra.categoria === undefined || regra.chave === undefined)) {
+      contexto.addIssue({ code: 'custom', path: ['regra', 'chave'], message: 'Regra que não é limite informa categoria e chave e não vem de lacuna de limite.' });
+    }
+    const valor = sugestao?.valor;
+    if (valor !== undefined && valor !== null) {
+      const ehTexto = 'texto' in valor;
+      if (regra.natureza === 'limite' && ehTexto) contexto.addIssue({ code: 'custom', path: ['sugestao', 'valor'], message: 'Limite sugere valor numérico, não texto.' });
+      if (regra.natureza === 'regra' && !ehTexto) contexto.addIssue({ code: 'custom', path: ['sugestao', 'valor'], message: 'Regra sugere texto, não número.' });
     }
   });
 export type Lacuna = z.infer<typeof esquemaLacuna>;

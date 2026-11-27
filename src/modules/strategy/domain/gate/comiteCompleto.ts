@@ -1,4 +1,5 @@
 import { validarAjuste } from '../comite/ajuste.ts';
+import { conferirAjusteContraOJuiz } from '../comite/juiz.ts';
 import { PERSONAS } from '../comite/personas.ts';
 import { aprovar, reprovar, type ContextoDoGate, type ResultadoDaChecagem } from './resultado.ts';
 
@@ -24,7 +25,13 @@ export function checarComiteCompleto(contexto: ContextoDoGate): ResultadoDaCheca
   }
 
   const validacao = validarAjuste(pareceres, ajuste);
-  if (validacao.ok) return aprovar(CHAVE_COMITE_COMPLETO, 'Comitê completo e todo ponto respondido.');
-  const problemas = validacao.error.map((erro) => `comite/${erro.persona}/${erro.pontoId} (${erro.codigo})`);
-  return reprovar(CHAVE_COMITE_COMPLETO, `${problemas.length} problema(s) na resposta do ajuste aos pareceres.`, problemas);
+  if (!validacao.ok) {
+    const problemas = validacao.error.map((erro) => `comite/${erro.persona}/${erro.pontoId} (${erro.codigo})`);
+    return reprovar(CHAVE_COMITE_COMPLETO, `${problemas.length} problema(s) na resposta do ajuste aos pareceres.`, problemas);
+  }
+  const contraOJuiz = conferirAjusteContraOJuiz(pareceres, ajuste, contexto.vereditosDoJuiz).map((erro) => `comite/${erro.persona}/${erro.pontoId} (${erro.codigo})`);
+  if (contraOJuiz.length > 0) {
+    return reprovar(CHAVE_COMITE_COMPLETO, `${contraOJuiz.length} ponto(s) em desacordo com o veredito do juiz.`, contraOJuiz);
+  }
+  return aprovar(CHAVE_COMITE_COMPLETO, 'Comitê completo, todo ponto respondido e todo aceito pelo juiz aplicado.');
 }

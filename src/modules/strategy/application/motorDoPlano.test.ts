@@ -25,7 +25,7 @@ Object.assign(process.env, {
 const { codigosDoPacote } = await import('../domain/codigosCurtos.ts');
 const { createMotorDoPlano, MAXIMO_DE_RODADAS, MAXIMO_DE_TENTATIVAS } = await import('./motorDoPlano.ts');
 const { criarRepositorioEmMemoria } = await import('../infrastructure/repositorioEmMemoria.ts');
-const { criarIaFalsa } = await import('../infrastructure/ia/iaFalsa.ts');
+const { criarIaFalsa, aceitaTodos } = await import('../infrastructure/ia/iaFalsa.ts');
 const { criarIaNaoConfigurada } = await import('../infrastructure/ia/iaNaoConfigurada.ts');
 const { comValidacao } = await import('../infrastructure/ia/comValidacao.ts');
 const { ok, err } = await import('../../../shared/result/result.ts');
@@ -52,6 +52,7 @@ function roteiroPadrao(sobrescrita: { comite?: (persona: string) => unknown; gat
       const chave = (pedido.dados as { persona: { chave: string } }).persona.chave;
       return sobrescrita.comite ? sobrescrita.comite(chave) : parecer(chave, 'aprova');
     }
+    if (pedido.tarefa === 'juiz') return aceitaTodos(pedido.dados);
     chamadasDoGate += 1;
     return sobrescrita.gate ? sobrescrita.gate(chamadasDoGate) : { resultado: 'aprovado', problemas: [] };
   };

@@ -39,9 +39,19 @@ export const GATE_DA_ESTRATEGIA = definirTarefa({
   raciocinio: 'low',
 });
 
+export const JUIZ_DA_ESTRATEGIA = definirTarefa({
+  chave: 'juiz',
+  classe: 'raciocinio_forte',
+  instrucao: 'Julgue, como publicitário cético focado em resultado, cada ponto de mudança do Comitê sobre o plano de marketing recebido como dado, citando só provas do pacote de leitura.',
+  saida: SAIDA_ESTRUTURADA_DA_ESTRATEGIA,
+  orcamento: { passos: 1, tokensDeSaida: 4_500, tempoMs: 60_000 },
+  raciocinio: 'low',
+});
+
 export const TAREFAS_INTERNAS = [
   { chave: TESTE_DE_MODELO.chave, titulo: 'Teste de modelo', classe: TESTE_DE_MODELO.classe },
   { chave: PLANO_DE_ESTRATEGIA.chave, titulo: 'Estratégia: redação e ajuste do plano, por grupo de seções', classe: PLANO_DE_ESTRATEGIA.classe },
   { chave: COMITE_DA_ESTRATEGIA.chave, titulo: 'Estratégia: parecer de cada persona do Comitê', classe: COMITE_DA_ESTRATEGIA.classe },
+  { chave: JUIZ_DA_ESTRATEGIA.chave, titulo: 'Estratégia: juiz das mudanças pedidas pelo Comitê', classe: JUIZ_DA_ESTRATEGIA.classe },
   { chave: GATE_DA_ESTRATEGIA.chave, titulo: 'Estratégia: conferência de qualidade do plano (Gate)', classe: GATE_DA_ESTRATEGIA.classe },
 ] as const;

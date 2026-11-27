@@ -107,6 +107,13 @@ function build() {
     executorDeIA,
     leitorDoBrain: leitorDoBrainDaEstrategia,
     avaliadorDeLimites,
+    catalogoDeLimites: {
+      async listar(organizationId) {
+        const definicoes = await regras.listarDefinicoes({ organizationId });
+        if (!definicoes.ok) throw new Error(definicoes.error.message);
+        return definicoes.value.filter((d) => d.ativo).map((d) => ({ key: d.key, medida: d.medida, periodo: d.periodo, sentido: d.sentido, unidade: d.unidade }));
+      },
+    },
     audit,
   });
 
@@ -159,7 +166,7 @@ function build() {
     brain,
     ia,
     strategy: {
-      service: createEstrategiaService({ repositorio: estrategiaRepository, audit, leitorDoBrain: leitorDoBrainDaEstrategia, destino }),
+      service: createEstrategiaService({ repositorio: estrategiaRepository, audit, leitorDoBrain: leitorDoBrainDaEstrategia, destino, regras }),
     },
     strategyDoWorker: {
       processador: createProcessadorDeExecucoes({ repositorio: estrategiaRepository, motor: motorDoPlano }),

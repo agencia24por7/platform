@@ -8,17 +8,17 @@ import { payloadDoGate, rodarGates } from './rodarGates.ts';
 const verdadeira: Checagem = { chave: 'ok', executar: () => aprovar('ok', 'passou') };
 
 describe('rodarGates', () => {
-  it('registra as doze checagens (nove do ADR 0065 §7, o Comitê completo, o não faremos preservado e a cobertura do plano de mídia), com chaves únicas', () => {
+  it('registra as treze checagens (nove do ADR 0065 §7, o Comitê completo, o não faremos preservado, a cobertura do plano de mídia e as sugestões de lacunas), com chaves únicas', () => {
     const chaves = CHECAGENS_EM_CODIGO.map((c) => c.chave);
-    assert.equal(chaves.length, 12);
-    assert.equal(new Set(chaves).size, 12);
+    assert.equal(chaves.length, 13);
+    assert.equal(new Set(chaves).size, 13);
   });
 
   it('aprova o plano completo quando todas aprovam', () => {
     const v = rodarGates(contextoDeTeste());
     assert.equal(v.resultado, 'aprovado');
     assert.deepEqual(v.pendencias, []);
-    assert.equal(v.checagens.length, 12);
+    assert.equal(v.checagens.length, 13);
     assert.ok(v.checagens.every((c) => c.resultado === 'aprovado'));
   });
 
@@ -54,7 +54,7 @@ describe('rodarGates', () => {
     );
     assert.equal(v.resultado, 'reprovado');
     assert.equal(v.checagens.find((c) => c.chave === 'limites_do_cliente')?.resultado, 'nao_rodou');
-    assert.equal(v.checagens.filter((c) => c.resultado === 'aprovado').length, 11);
+    assert.equal(v.checagens.filter((c) => c.resultado === 'aprovado').length, 12);
   });
 
   it('checagem que devolve resultado fora do contrato é nao_rodou', () => {
@@ -70,7 +70,7 @@ describe('rodarGates', () => {
     const extra: Checagem = { chave: 'extra', executar: () => montarResultado('extra', 'reprovado', 'não', ['x']) };
     const v = rodarGates(contextoDeTeste(), [...CHECAGENS_EM_CODIGO, extra]);
     assert.equal(v.resultado, 'reprovado');
-    assert.equal(v.checagens.length, 13);
+    assert.equal(v.checagens.length, 14);
   });
 
   it('sem pareceres no contexto o veredito geral reprova', () => {

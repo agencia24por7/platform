@@ -15,7 +15,7 @@ Object.assign(process.env, {
 const { createMotorDoPlano } = await import('./motorDoPlano.ts');
 const { createProcessadorDeExecucoes } = await import('./processadorDeExecucoes.ts');
 const { criarRepositorioEmMemoria } = await import('../infrastructure/repositorioEmMemoria.ts');
-const { criarIaFalsa } = await import('../infrastructure/ia/iaFalsa.ts');
+const { criarIaFalsa, aceitaTodos } = await import('../infrastructure/ia/iaFalsa.ts');
 const { criarIaNaoConfigurada } = await import('../infrastructure/ia/iaNaoConfigurada.ts');
 const { ok } = await import('../../../shared/result/result.ts');
 
@@ -24,6 +24,7 @@ async function montar(executor: 'falsa' | 'nao_configurada', quantidade: number)
   const ia = criarIaFalsa((p) => {
     if (p.tarefa === 'strategy_plan') return secoesDoGrupoDaChave(p.chaveDeIdempotencia);
     if (p.tarefa === 'comite') return parecer((p.dados as { persona: { chave: string } }).persona.chave, 'aprova');
+    if (p.tarefa === 'juiz') return aceitaTodos(p.dados);
     return { resultado: 'aprovado', problemas: [] };
   });
   const motor = createMotorDoPlano({ catalogos: CATALOGOS_DE_TESTE,

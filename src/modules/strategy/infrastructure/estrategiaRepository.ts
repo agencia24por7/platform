@@ -107,6 +107,7 @@ const LIMITE_DE_REQUEST_ID = 120;
 export function pedidoParaOBanco(pedido: PedidoDaExecucao): Record<string, unknown> {
   if (pedido.tipo === 'criar') return { ...pedido.intencao };
   if (pedido.tipo === 'ajustar') return { instrucao: pedido.instrucao };
+  if (pedido.tipo === 'corrigir_gate') return {};
   return { motivo: pedido.motivo };
 }
 
@@ -509,6 +510,16 @@ export function createEstrategiaRepository(): RepositorioDeEstrategia {
            WHERE plan_id = ${planoId} AND organization_id = ${organizationId} AND status IN ('pendente', 'rodando') LIMIT 1
         `) as unknown as ExecucaoRow[];
         return rows[0] ? paraExecucao(rows[0]) : null;
+      });
+    },
+
+    async execucoesDoPlano(organizationId, planoId, limite) {
+      return withTenant(organizationId, async (tx) => {
+        const rows = (await tx`
+          SELECT ${colunasDaExecucao(tx)} FROM core.strategy_plan_runs
+           WHERE plan_id = ${planoId} AND organization_id = ${organizationId} ORDER BY created_at DESC, id DESC LIMIT ${limite}
+        `) as unknown as ExecucaoRow[];
+        return rows.map(paraExecucao);
       });
     },
 
