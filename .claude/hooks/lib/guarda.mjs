@@ -35,7 +35,7 @@ function absoluto(caminho, raiz) {
 function versionado(caminhoAbsoluto, raiz) {
   if (!existsSync(caminhoAbsoluto)) return false
   try {
-    execFileSync('git', ['ls-files', '--error-unmatch', relative(raiz, caminhoAbsoluto)], { cwd: raiz, stdio: 'ignore', timeout: 2000 })
+    execFileSync('git', ['ls-files', '--error-unmatch', relative(raiz, caminhoAbsoluto)], { cwd: raiz, stdio: 'ignore', timeout: 1500 })
     return true
   } catch {
     return false
@@ -71,7 +71,7 @@ function primeiraDecisao(caminhos, avaliar) {
 
 function ramoDoDiretorio(diretorio) {
   try {
-    return execFileSync('git', ['-C', diretorio, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000 }).trim()
+    return execFileSync('git', ['-C', diretorio, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 1500 }).trim()
   } catch {
     return null
   }
@@ -79,10 +79,13 @@ function ramoDoDiretorio(diretorio) {
 
 const FLAGS_DO_PUSH_COM_VALOR = new Set(['-o', '--push-option', '--repo', '--receive-pack', '--exec'])
 const SEM_ASPAS = /^["']|["']$/g
+const LIMITE_DE_PUSHES = 3
 
 function avaliarPushSemDestino(comando, diretorioBase) {
   const pushes = String(comando ?? '').matchAll(/\bgit\b((?:\s+(?:-[cC]\s+(?:"[^"]*"|'[^']*'|\S+)|--[\w-]+(?:=\S+)?))*)\s+push\b([^;&|\n]*)/g)
-  for (const push of pushes) {
+  const lista = [...pushes]
+  if (lista.length > LIMITE_DE_PUSHES) return { decisao: 'ask', motivo: 'Muitos git push no mesmo comando para a guarda avaliar com segurança: divida o comando.' }
+  for (const push of lista) {
     const diretorioDoC = /-C\s+("[^"]*"|'[^']*'|\S+)/.exec(push[1])?.[1]
     const diretorio = diretorioDoC ? absoluto(diretorioDoC.replace(SEM_ASPAS, ''), diretorioBase) : diretorioBase
     const tokens = push[2].trim().split(/\s+/).filter(Boolean)
@@ -104,7 +107,10 @@ function decidir(evento, raiz) {
   const ferramenta = evento.tool_name
   const entrada = evento.tool_input ?? {}
   if (ferramenta === 'Bash') {
-    return avaliarPushSemDestino(entrada.command, evento.cwd ?? raiz) ?? avaliarComando(entrada.command)
+    const regra = avaliarComando(entrada.command)
+    if (regra?.decisao === 'deny') return regra
+    const push = avaliarPushSemDestino(entrada.command, evento.cwd ?? raiz)
+    return push?.decisao === 'deny' ? push : (regra ?? push)
   }
   if (ferramenta === 'Grep' || ferramenta === 'Glob') {
     const glob = entrada.glob ?? (ferramenta === 'Glob' ? entrada.pattern : undefined)

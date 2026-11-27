@@ -126,6 +126,14 @@ test('comandos perigosos são negados, os de risco pedem confirmação e os comu
     "git push origin 'main'",
     'git push origin main && echo ok',
     'git push origin main>/dev/null',
+    "sh -c 'rm -f /srv/backups/a.sql'",
+    'ls | xargs rm backups/a.sql',
+    'find /srv/backups -name "*.sql" -delete',
+    'if true; then rm -f backups/a.sql; fi',
+    'git checkout main\ngit pull\ngit push',
+    'git checkout main -- x.md && git checkout main && git push',
+    'grep --file=.env x',
+    'cat --file=.env',
     'git --no-pager push origin main',
     'git -C "/tmp/a b" push origin main',
     "node -e \"console.log(process.env['GH_TOKEN'])\"",
@@ -331,11 +339,12 @@ test('hook PreToolUse termina em até 9 s e nunca deixa passar uma avaliação l
 
 test('push sem destino a partir da main é negado e o resto passa', () => {
   const pasta = mkdtempSync(join(tmpdir(), 'guarda-main-'))
+  const vazia = mkdtempSync(join(tmpdir(), 'guarda-vazia-'))
   try {
     execFileSync('git', ['init', '-q', '-b', 'main', pasta])
     execFileSync('git', ['-C', pasta, 'commit', '-q', '--allow-empty', '-m', 'x', '--no-gpg-sign'], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
-    const decidir = (command) => {
-      const saida = spawnSync('node', [hook('guarda-pre-uso.mjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command }, cwd: pasta }), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: pasta } })
+    const decidir = (command, diretorio = pasta) => {
+      const saida = spawnSync('node', [hook('guarda-pre-uso.mjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command }, cwd: diretorio }), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: diretorio } })
       return saida.stdout ? JSON.parse(saida.stdout).hookSpecificOutput.permissionDecision : 'allow'
     }
     assert.equal(decidir('git push'), 'deny')
@@ -343,8 +352,13 @@ test('push sem destino a partir da main é negado e o resto passa', () => {
     assert.equal(decidir('git push origin HEAD'), 'deny')
     assert.equal(decidir('git push origin feature/x'), 'allow')
     assert.equal(decidir('git status'), 'allow')
+    execFileSync('git', ['init', '-q', '-b', 'main', vazia])
+    assert.equal(decidir('git push', vazia), 'ask')
+    assert.equal(decidir('git push && cat .env', vazia), 'deny')
+    assert.equal(decidir('git push; git push; git push; git push', pasta), 'ask')
   } finally {
     rmSync(pasta, { recursive: true, force: true })
+    rmSync(vazia, { recursive: true, force: true })
   }
 })
 
