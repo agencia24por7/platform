@@ -32,8 +32,8 @@ Os ADRs 0046, 0047 e 0048 e os hooks do ADR 0039 fizeram o agente pedir confirma
 
 ## Consequências
 
-- Supera os ADRs 0046, 0047 e 0048 por inteiro e os ADRs 0039 (hooks do git e varredura) e 0058 (varredura no CI por intervalo e cadeia de suprimentos). Supera do ADR 0038 as partes de orientação por prompt, aviso de contexto e varredura no Stop; a escolha de modelo e esforço do `start.sh` continua.
+- Supera os ADRs 0046, 0047 e 0048 por inteiro e os ADRs 0039 (hooks do git e varredura) e 0058 só na parte da varredura no CI por intervalo (a cadeia de suprimentos dele, com imagem por digest e `npm ci --ignore-scripts`, continua). Supera do ADR 0038 as partes de orientação por prompt, aviso de contexto e varredura no Stop; a escolha de modelo e esforço do `start.sh` continua.
 - Mantém o ADR 0034 (roteiro de release), o ADR 0042 (precondição da chave KMS), o ADR 0028 (ler o alvo impresso antes de aplicar) e o ADR 0053 (fluxos n8n de terceiros).
-- Os itens 4 a 9 são conduta, não mecanismo: a guarda só garante o item 2. Quem garante o resto é o agente seguir este ADR, a revisão do humano no PR e o ruleset da `main`.
+- Os itens 4 a 9 são conduta, não mecanismo. A guarda é uma lista de padrões em melhor esforço: pega o comando comum, mas não garante nada contra comando montado de propósito (variável, script que grava por dentro, nome composto). Quem fecha o resto é o agente seguir este ADR, a revisão do humano no PR, o ruleset da `main` e o IAM do principal que o agente usa (sem permissão de ler valor de segredo).
 - Risco aceito e registrado: sem hooks nem varredura, um segredo ou padrão inseguro só é pego na revisão do diff (item 6), e um comando de produção errado não passa por confirmação automática. O dono do projeto aceitou o risco para ganhar velocidade.
 - Aceites legais e logins em contas de terceiros continuam fora do alcance técnico do agente: ele diz o que falta.

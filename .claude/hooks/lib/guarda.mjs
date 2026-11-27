@@ -69,10 +69,29 @@ function primeiraDecisao(caminhos, avaliar) {
   return null
 }
 
+function ramoAtual(raiz) {
+  try {
+    return execFileSync('git', ['-C', raiz, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000 }).trim()
+  } catch {
+    return ''
+  }
+}
+
+function pushSemDestinoNoRamoPrincipal(comando, raiz) {
+  const push = /\bgit\b(?:\s+-[cC]\s+\S+)*\s+push\b([^;&|\n]*)/.exec(String(comando ?? ''))
+  if (!push) return false
+  const argumentos = push[1].trim().split(/\s+/).filter((argumento) => argumento && !argumento.startsWith('-'))
+  const semDestinoExplicito = argumentos.length <= 1 || argumentos.slice(1).every((argumento) => argumento === 'HEAD')
+  return semDestinoExplicito && ramoAtual(raiz) === 'main'
+}
+
 function decidir(evento, raiz) {
   const ferramenta = evento.tool_name
   const entrada = evento.tool_input ?? {}
-  if (ferramenta === 'Bash') return avaliarComando(entrada.command)
+  if (ferramenta === 'Bash') {
+    if (pushSemDestinoNoRamoPrincipal(entrada.command, raiz)) return { decisao: 'deny', motivo: 'Push a partir da main sem destino explícito é push direto em main: use PR e gh pr merge.' }
+    return avaliarComando(entrada.command)
+  }
   if (ferramenta === 'Grep' || ferramenta === 'Glob') {
     const glob = entrada.glob ?? (ferramenta === 'Glob' ? entrada.pattern : undefined)
     const caminhos = caminhosParaAvaliar(entrada.path ?? '', raiz)

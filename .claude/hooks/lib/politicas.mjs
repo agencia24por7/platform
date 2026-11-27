@@ -164,8 +164,11 @@ export function avaliarEscrita({ caminho, conteudo, existeVersionado }) {
   if (/(^|[/])package-lock\.json$/.test(alvo)) return { decisao: 'deny', motivo: 'O lockfile só muda pelo npm (npm install / npm ci).' }
   const achados = detectarSegredo(conteudo)
   if (achados.length > 0) return { decisao: 'deny', motivo: `Conteúdo com aparência de segredo (${achados.join(', ')}). Use variável de ambiente ou Secret Manager; nunca o valor no código.` }
-  if (/(^|[/])(?:\.claude[/]hooks[/]|\.claude[/]settings[^/]*\.json$)/i.test(alvo.replace(/\\/g, '/').replace(/[/](?:[.][/])+/g, '/').replace(/[/]{2,}/g, '/'))) {
+  if (/(^|[/])(?:\.claude[/]hooks[/]|\.claude[/]settings[^/]*\.json$|\.claude\.json$|claude-profiles[/][^/]+[/]home[/](?:settings[^/]*\.json|CLAUDE\.md)$)/i.test(alvo.replace(/\\/g, '/').replace(/[/](?:[.][/])+/g, '/').replace(/[/]{2,}/g, '/'))) {
     return { decisao: 'ask', motivo: 'Editar a guarda ou os settings do Claude Code muda o que protege a sessão: confirme a edição.' }
+  }
+  if (/disableAllHooks/.test(String(conteudo ?? ''))) {
+    return { decisao: 'ask', motivo: 'Desligar os hooks do Claude Code remove a guarda: confirme.' }
   }
   if (existeVersionado && /(^|[/])db[/]migrations[/][^/]+\.sql$/.test(alvo)) {
     return { decisao: 'ask', motivo: 'Migração já versionada é imutável: o livro-razão pode ter aplicado a versão antiga. Crie uma migração nova, salvo exceção que o humano confirme.' }
@@ -179,24 +182,36 @@ const REGRAS_DE_COMANDO = [
   { padrao: /\bcurl\b[^|;&]*\|\s*(sudo\s+)?(ba|z)?sh\b|\bwget\b[^|;&]*\|\s*(sudo\s+)?(ba|z)?sh\b/, decisao: 'deny', motivo: 'Baixar e executar script direto no shell é proibido. Baixe, leia e só então execute.' },
   { padrao: /\b(cat|less|more|head|tail|bat|nl|cut|sort|uniq|vim?|nano|tr|wc|column|paste|fold|rev|tac|while|read|strings|xxd|od|sed|awk|grep|rg|cp|mv|ln|tar|zip|gzip|base64|openssl|python3?|node|perl|ruby|source|xargs|diff|jq|curl|wget|scp|rsync|tee|git\s+(?:show|diff|add))\b[^|;&]*(?<![\w-])(\.env(?!\.example)(\.[\w.-]+)?|[\w./-]*\.(pem|key|p12|pfx)|id_rsa|id_ed25519|credentials\.json)\b/i, decisao: 'deny', motivo: 'Leitura de arquivo de segredo bloqueada. Nunca imprima valor de segredo.' },
   { padrao: /<\s*["']?[^\s|;&<>]*(?:\.env(?!\.example)(?:\.[\w.-]+)?|\.(?:pem|key|p12|pfx)|id_rsa|id_ed25519|credentials\.json)\b/i, decisao: 'deny', motivo: 'Redirecionar arquivo de segredo para um comando o expõe. Nunca imprima valor de segredo.' },
-  { padrao: /(?:^|[;&|(\n]|\bsudo\s|\bexec\s+\S+\s)\s*(?:printenv|env(?:\s+-\S+)*|export(?:\s+-p)?|declare\s+-x|set)\s*(?:$|[|;&\n'")])/, decisao: 'deny', motivo: 'Despejar o ambiente expõe segredos. Consulte uma variável específica pelo nome sem imprimir o valor.' },
+  { padrao: /(?:^|[;&|\n]|\bsudo\s)\s*(?:printenv|env(?:\s+-\S+)*|export(?:\s+-p)?|declare\s+-x|set)\s*(?:$|[|;&\n>])/, decisao: 'deny', motivo: 'Despejar o ambiente expõe segredos. Consulte uma variável específica pelo nome sem imprimir o valor.' },
+  { padrao: /(?:\bexec(?:\s+\S+){1,4}?\s+|--command[=\s]+|\s--\s+)["']?(?:printenv|env(?:\s+-\S+)*|export(?:\s+-p)?|declare\s+-x)\s*(?:$|[|;&\n>'"])/, decisao: 'deny', motivo: 'Despejar o ambiente de outra máquina ou contêiner expõe segredos. Consulte uma variável específica sem imprimir o valor.' },
+  { padrao: /\bprintenv\s+\S*(?:TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|DATABASE_URL)/i, decisao: 'deny', motivo: 'Imprimir variável de segredo expõe o valor.' },
   { padrao: /\bnode\b[^;&|\n]*process\.env(?![.[\w])/, decisao: 'deny', motivo: 'Despejar process.env expõe segredos. Leia uma variável específica pelo nome sem imprimir o valor.' },
+  { padrao: /\bnode\b[^;&|\n]*\s-p\b[^;&|\n]*process\.env/, decisao: 'deny', motivo: 'node -p imprime o valor da variável de ambiente.' },
+  { padrao: /\/proc\/[\w$*]*\/environ|\bpython3?\b[^\n]*\s-c\b[^\n]*os\.environ|\bdocker\s+inspect\b[^;&|\n]*\bEnv\b/, decisao: 'deny', motivo: 'Ler o ambiente de um processo ou contêiner expõe segredos.' },
   { padrao: /\b(?:echo|printf|print)\b[^|;&]*\$\{?\w*(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|DATABASE_URL)\w*/i, decisao: 'deny', motivo: 'Não imprima variável de segredo.' },
   { padrao: /(\brm\b|\bgcloud\s+storage\s+rm\b|\bgsutil\s+(-m\s+)?rm\b|\bgcloud\s+sql\s+backups\s+delete\b|\bDROP\b)[^;&|]*backup/i, decisao: 'deny', motivo: 'Backups do Postgres nunca são apagados.' },
   { padrao: /\bgcloud\s+storage\s+buckets\s+(?:update|delete)\b[^;&|\n]*backup/i, decisao: 'deny', motivo: 'Mudar ou apagar o bucket de backups (inclusive por regra de ciclo de vida) é proibido.' },
+  { padrao: /\bgsutil\s+(?:lifecycle|retention|versioning|rm)\b[^;&|\n]*backup/i, decisao: 'deny', motivo: 'Mudar ou apagar o bucket de backups (inclusive por regra de ciclo de vida) é proibido.' },
   { padrao: /\brm\s+(?:-[a-z]*r[a-z]*|--recursive)(?:\s+-[a-z]+)*\s+(?:[/]\*?|~|\$HOME|\.git|\*)\s*(?:$|[;&|])/, decisao: 'deny', motivo: 'Remoção recursiva em raiz, HOME, .git ou curinga solto.' },
   { padrao: /\bgcloud\b(?=[^;&|\n]*\bsecrets\b)(?=[^;&|\n]*\bversions\b)(?=[^;&|\n]*\baccess\b)/, decisao: 'deny', motivo: 'Ler o valor de um segredo direto no comando imprime o segredo no contexto. Use um script do projeto que o leia sem eco.' },
   { padrao: /\bgh\s+pr\s+merge\b[^;&|\n]*--admin\b/, decisao: 'deny', motivo: 'Merge com --admin passa por cima do CI e das regras do repositório (ADR 0069, item 6).' },
-  { padrao: /\bgit\b(?:\s+-[cC]\s+\S+)*\s+push\b[^;&|]*(?:\bmain\b|HEAD:main|--all\b|--mirror\b)/, decisao: 'deny', motivo: 'Push direto em main não passa pelo CI: use PR e gh pr merge.' },
+  { padrao: /\bgit\b(?:\s+-[cC]\s+\S+)*\s+push\b[^;&|]*(?:[\s:+](?:refs\/heads\/)?main(?=\s|$|["'])|--all\b|--mirror\b)/, decisao: 'deny', motivo: 'Push direto em main não passa pelo CI: use PR e gh pr merge.' },
+  { padrao: /^(?=[\s\S]*\bgit\b(?:\s+-[cC]\s+\S+)*\s+(?:checkout|switch)\s+(?:-\S+\s+)*main\b)(?=[\s\S]*\bgit\b(?:\s+-[cC]\s+\S+)*\s+push\b)/, decisao: 'deny', motivo: 'Trocar para main e dar push no mesmo comando é push direto em main: use PR e gh pr merge.' },
   { padrao: /\bgcloud\s+sql\s+(backups\s+delete|instances\s+delete)\b/, decisao: 'deny', motivo: 'Apagar backup ou instância do Postgres é proibido.' },
   { padrao: /(?:(?<![-=])>>?(?!&)|\btee\b|\bsed\s+(?:-[a-zA-Z]*i|--in-place)|\bperl\s+-[a-zA-Z]*i|\b(?:cp|mv|rm|ln|install|chmod|truncate|dd)\b)[^;&|\n]*\.claude[/\\](?:hooks|settings[^/\s]*\.json)/i, decisao: 'ask', motivo: 'Alterar a guarda ou os settings do Claude Code por shell muda o que protege a sessão: confirme a edição.' },
   { padrao: /\bgit\b[^;&|\n]*\b(?:checkout|restore|apply|reset|stash|rm|mv)\b[^;&|\n]*\.claude[/\\](?:hooks|settings)/i, decisao: 'ask', motivo: 'Restaurar ou reescrever a guarda ou os settings do Claude Code pelo git muda o que protege a sessão: confirme.' },
-  { padrao: /\b(?:rm|mv)\b[^;&|\n]*\s\.claude[/\\]?(?:\s|$)/, decisao: 'ask', motivo: 'Apagar ou mover a pasta .claude remove a guarda: confirme.' },
-  { padrao: /\.claude[/\\]?\s*(?:&&|;)\s*(?:rm|mv|cp|sed|tee)\b/, decisao: 'ask', motivo: 'Entrar em .claude e alterar arquivos muda a guarda: confirme.' },
+  { padrao: /\b(?:rm|mv)\b[^;&|\n]*[\s"'/]\.claude[/\\]?["']?(?:\s|$)/i, decisao: 'ask', motivo: 'Apagar ou mover a pasta .claude remove a guarda: confirme.' },
+  { padrao: /\.claude(?:[/\\][^\s;&|]*)?["']?\s*(?:&&|;)\s*(?:rm|mv|cp|sed|tee|find|echo|printf|dd)\b/i, decisao: 'ask', motivo: 'Entrar em .claude e alterar arquivos muda a guarda: confirme.' },
+  { padrao: /\bfind\b[^;&|\n]*\.claude[^;&|\n]*(?:-delete|-exec)/i, decisao: 'ask', motivo: 'Apagar ou executar sobre arquivos de .claude muda a guarda: confirme.' },
+  { padrao: /(?:>|\btee\b|\bcp\b|\bmv\b|\brm\b|\bsed\s+-i|\bln\b)[^;&|\n]*(?:claude-profiles|CLAUDE_CONFIG_DIR|\.claude\.json)/i, decisao: 'ask', motivo: 'Alterar a configuração do Claude Code do usuário pode desligar a guarda: confirme.' },
+  { padrao: /disableAllHooks/, decisao: 'ask', motivo: 'Desligar os hooks do Claude Code remove a guarda: confirme.' },
   { padrao: /\bterraform\b[^;&|\n]*(?:\bdestroy\b|-destroy\b)/, decisao: 'ask', motivo: 'Destruir recurso é irreversível: confirme o alvo, o plan e a reversão (ADR 0069, item 7).' },
-  { padrao: /\bautorizar_corte=true\b/, decisao: 'ask', motivo: 'IRREVERSÍVEL: o corte roda migração destrutiva sem volta. Confirme depois do pre-flight verde e do backup (ADR 0034, ADR 0069, item 7).' },
-  { padrao: /\bbq\b(?:\s+-\S*)*\s+rm\b/, decisao: 'ask', motivo: 'Apagar tabela, dataset ou rotina no BigQuery é irreversível: confirme o alvo (ADR 0069, item 7).' },
-  { padrao: /^(?=[\s\S]*\bbq\b)(?=[\s\S]*\b(?:DROP|TRUNCATE|DELETE\s+FROM)\b)/i, decisao: 'ask', motivo: 'SQL destrutivo no BigQuery: confirme o alvo e a necessidade (ADR 0069, item 7). Falso positivo é aceito.' },
+  { padrao: /\bautorizar_corte\b\]?["']?\s*[=:]\s*["']?true|\bRELEASE_CORTE_AUTORIZADO\b/i, decisao: 'ask', motivo: 'IRREVERSÍVEL: o corte roda migração destrutiva sem volta. Confirme depois do pre-flight verde e do backup (ADR 0034, ADR 0069, item 7).' },
+  { padrao: /\bgh\s+api\b(?=[^;&|\n]*(?:git\/refs\/heads\/main|\/rulesets\b|branches\/[^\s/]+\/protection))(?=[^;&|\n]*(?:\s-[XfF]\b|--method|--field|--raw-field|--input))/, decisao: 'ask', motivo: 'Mudar a branch main, os rulesets ou a proteção de branch pela API tira o controle do repositório: confirme.' },
+  { padrao: /\bbq\b(?:\s+-\S*)*\s+rm\b|\bbq\b[^;&|\n]*\b(?:mk\b[^;&|\n]*--force|load\b[^;&|\n]*--replace)/, decisao: 'ask', motivo: 'Apagar ou sobrescrever tabela no BigQuery é irreversível: confirme o alvo (ADR 0069, item 7).' },
+  { padrao: /^(?=[\s\S]*\bbq\b)(?=[\s\S]*\b(?:DROP|TRUNCATE|DELETE\s+FROM|CREATE\s+OR\s+REPLACE)\b)/i, decisao: 'ask', motivo: 'SQL destrutivo ou que sobrescreve no BigQuery: confirme o alvo e a necessidade (ADR 0069, item 7). Falso positivo é aceito.' },
+  { padrao: /\bgcloud\b(?=[^;&|\n]*\bsecrets\b)(?=[^;&|\n]*\b(?:delete|destroy|disable)\b)/, decisao: 'ask', motivo: 'Apagar ou desativar segredo não tem volta: confirme o segredo e a versão (ADR 0069, item 7).' },
+  { padrao: /\bgcloud\s+(?:sql\s+databases|compute\s+(?:instances|disks)|projects|container\s+clusters)\s+delete\b|\bgcloud\s+storage\s+rm\b/, decisao: 'ask', motivo: 'Apagar recurso ou dado em produção é irreversível: confirme o alvo (ADR 0069, item 7).' },
   { padrao: /\bgcloud\s+kms\s+keys\s+(versions\s+(destroy|disable)|update)\b/, decisao: 'ask', motivo: 'Desativar ou destruir versão de chave KMS não tem volta: confirme a chave e a recifragem com avaliadas = 0 e falhas = 0 (ADR 0042).' },
   { padrao: /\bgit\s+(reset\s+--hard|clean\s+-[a-z]*f|checkout\s+--\s|checkout\s+\.|restore\s+\.|branch\s+-D|worktree\s+remove)/, decisao: 'ask', motivo: 'Pode descartar trabalho não commitado ou de outro agente.' },
   { padrao: /\bgit\b(?:\s+-[cC]\s+\S+)*\s+push\b[^;&|]*(--force|\s-f\b)/, decisao: 'ask', motivo: 'Reescreve histórico remoto.' },
