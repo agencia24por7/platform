@@ -1,5 +1,6 @@
 import { campoAplicavel, campoNaoVerificado, catalogoDaPlataforma, objetivoDoValor, VALOR_A_CONFIRMAR, type CampoDoCatalogo, type CatalogoDeCampos, type PapelDoCampo } from '../catalogo/tipos.ts';
 import { problemasDeDependenciaDaMeta } from './dependenciasDaMeta.ts';
+import { problemasDeDependenciaDoGoogle } from './dependenciasDoGoogle.ts';
 import type { CampoDeMidia, IntencaoDoPlano, MidiaDaPlataforma, Plataforma } from '../plano.ts';
 import { aprovar, reprovar, type ContextoDoGate, type ResultadoDaChecagem } from './resultado.ts';
 
@@ -39,7 +40,7 @@ function utmConfere(valor: CampoDeMidia['valor'], utm: { readonly utm_source: st
   });
 }
 
-function problemasDoDestino(catalogo: CatalogoDeCampos, porChave: ReadonlyMap<string, Presente>, intencao: IntencaoDoPlano): string[] {
+function problemasDoDestino(catalogo: CatalogoDeCampos, porChave: ReadonlyMap<string, Presente>, intencao: IntencaoDoPlano, objetivo: string | undefined): string[] {
   const plataforma = catalogo.plataforma;
   const problemas: string[] = [];
   const local = (chave: string) => `plano_de_midia/${plataforma}/${chave}`;
@@ -50,9 +51,10 @@ function problemasDoDestino(catalogo: CatalogoDeCampos, porChave: ReadonlyMap<st
     { papel: 'utm', existe: utm !== undefined, confere: (valor) => utm !== undefined && utmConfere(valor, utm), erro: 'UTM difere da gerada pelo sistema; copie sem alterar' },
   ];
   for (const { papel, existe, confere, erro } of conferencias) {
-    const campos = catalogo.campos.filter((campo) => campo.papel === papel);
-    if (existe && campos.length === 0) {
-      problemas.push(`plano_de_midia/${plataforma} (o catálogo não tem campo com papel ${papel}; não dá para garantir o valor da intenção)`);
+    const campos = catalogo.campos.filter((campo) => campo.papel === papel && campoAplicavel(campo, objetivo));
+    const exigido = papel !== 'whatsapp' || catalogo.campos.some((campo) => campo.papel === papel);
+    if (existe && exigido && campos.length === 0) {
+      problemas.push(`plano_de_midia/${plataforma} (o catálogo não tem campo aplicável ao objetivo com papel ${papel}; não dá para garantir o valor da intenção)`);
     }
     for (const campo of campos) {
       const achado = porChave.get(campo.chave);
@@ -108,7 +110,11 @@ export function analisarPlataforma(entrada: MidiaDaPlataforma | undefined, catal
     const valores = new Map(presentes.map((p) => [p.campo.campo, p.campo.valor]));
     problemas.push(...problemasDeDependenciaDaMeta(valores, chavesDoCatalogo, local));
   }
-  return { problemas: [...problemas, ...problemasDoDestino(catalogo, porChave, intencao)], pendencias };
+  if (plataforma === 'google') {
+    const valores = new Map(presentes.map((p) => [p.campo.campo, p.campo.valor]));
+    problemas.push(...problemasDeDependenciaDoGoogle(valores, objetivo, local, catalogo));
+  }
+  return { problemas: [...problemas, ...problemasDoDestino(catalogo, porChave, intencao, objetivo)], pendencias };
 }
 
 export function problemasDaPlataforma(entrada: MidiaDaPlataforma | undefined, catalogo: CatalogoDeCampos, intencao: IntencaoDoPlano): string[] {

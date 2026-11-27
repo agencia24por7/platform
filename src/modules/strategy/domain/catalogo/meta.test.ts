@@ -28,8 +28,8 @@ describe('catalogo de campos da Meta', () => {
     assert.ok(catalogoMeta.campos.filter((campo) => campo.papel !== undefined).every((campo) => campo.evidenciaDaApi !== 'nao_verificado_pela_api'));
   });
 
-  it('so a Meta e selecionavel e o objetivo vem de um campo do catalogo', () => {
-    assert.deepEqual(plataformasComCatalogo(CATALOGOS_DISPONIVEIS), ['meta']);
+  it('Meta e Google sao selecionaveis e o objetivo vem de um campo do catalogo', () => {
+    assert.deepEqual(plataformasComCatalogo(CATALOGOS_DISPONIVEIS), ['meta', 'google']);
     assert.ok(catalogoMeta.campos.some((campo) => campo.chave === catalogoMeta.campoDoObjetivo));
   });
 

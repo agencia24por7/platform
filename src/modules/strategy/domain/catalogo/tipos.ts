@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { PLATAFORMAS, esquemaId, type Plataforma } from '../plano.ts';
+import { PLATAFORMAS, esquemaChaveDeCampo, esquemaId, type Plataforma } from '../plano.ts';
 
 export const TIPOS_DE_VALOR_DO_CAMPO = ['texto', 'numero', 'booleano', 'lista', 'escolha'] as const;
 export type TipoDoValor = (typeof TIPOS_DE_VALOR_DO_CAMPO)[number];
@@ -14,7 +14,7 @@ export const VALOR_A_CONFIRMAR = 'a_confirmar';
 
 export const esquemaCampoDoCatalogo = z
   .strictObject({
-    chave: esquemaId,
+    chave: esquemaChaveDeCampo,
     secao: esquemaId,
     obrigatorio: z.boolean(),
     aplicavelA: z.array(esquemaId).min(1).max(60).optional(),
@@ -35,7 +35,7 @@ export const esquemaCatalogoDeCampos = z
     plataforma: z.enum(PLATAFORMAS),
     versaoDaApi: z.string().min(1).max(40),
     objetivos: z.array(esquemaId).min(1).max(60),
-    campoDoObjetivo: esquemaId,
+    campoDoObjetivo: esquemaChaveDeCampo,
     campos: z.array(esquemaCampoDoCatalogo).min(1).max(600),
   })
   .refine((catalogo) => new Set(catalogo.campos.map((campo) => campo.chave)).size === catalogo.campos.length, {
