@@ -24,10 +24,10 @@ describe('dependencias do Google Ads', () => {
     assert.deepEqual(problemas({ campaign_target_cpa_micros: 10000000, campaign_bidding_strategy: 'TARGET_CPA' }), []);
   });
 
-  it('CPA alvo e recusado em Display, Demand Gen e app', () => {
+  it('CPA alvo de Search e campo de outro canal em Display, Demand Gen e app', () => {
     for (const objetivo of ['display', 'demand_gen', 'multi_channel']) {
       const achados = problemas({ campaign_target_cpa_micros: 10000000, campaign_bidding_strategy: 'MAXIMIZE_CONVERSIONS' }, objetivo);
-      assert.ok(achados.includes(`plano_de_midia/google/campaign_target_cpa_micros (a API recusa CPA alvo em ${objetivo})`));
+      assert.ok(achados.includes(`plano_de_midia/google/campaign_target_cpa_micros (não se aplica ao objetivo ${objetivo})`));
     }
   });
 

@@ -35,6 +35,7 @@ export const esquemaCatalogoDeCampos = z
     plataforma: z.enum(PLATAFORMAS),
     versaoDaApi: z.string().min(1).max(40),
     objetivos: z.array(esquemaId).min(1).max(60),
+    objetivosSemDestino: z.array(esquemaId).max(60).optional(),
     campoDoObjetivo: esquemaChaveDeCampo,
     campos: z.array(esquemaCampoDoCatalogo).min(1).max(600),
   })
@@ -44,6 +45,20 @@ export const esquemaCatalogoDeCampos = z
   .refine((catalogo) => catalogo.campos.some((campo) => campo.chave === catalogo.campoDoObjetivo), {
     message: 'O campo do objetivo precisa existir no catálogo.',
   })
+  .refine((catalogo) => (catalogo.objetivosSemDestino ?? []).every((objetivo) => catalogo.objetivos.includes(objetivo)), {
+    message: 'objetivosSemDestino cita objetivo que o catálogo não declara.',
+  })
+  .refine(
+    (catalogo) =>
+      catalogo.campos
+        .filter((campo) => campo.papel === 'url_destino' || campo.papel === 'utm')
+        .every(
+          (campo) =>
+            (catalogo.objetivosSemDestino ?? []).length === 0 ||
+            (campo.aplicavelA !== undefined && campo.aplicavelA.every((objetivo) => !(catalogo.objetivosSemDestino ?? []).includes(objetivo))),
+        ),
+    { message: 'Campo de URL ou UTM precisa declarar aplicavelA sem objetivo que não carrega destino.' },
+  )
   .refine((catalogo) => catalogo.campos.every((campo) => (campo.aplicavelA ?? []).every((objetivo) => catalogo.objetivos.includes(objetivo))), {
     message: 'aplicavelA cita objetivo que o catálogo não declara.',
   });
