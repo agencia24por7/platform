@@ -1,5 +1,6 @@
 ---
-status: accepted
+status: superseded
+superseded_by: ADR-0069
 date: 2026-11-24
 ---
 # ADR-0058: Varredura no CI por intervalo, allowlist amarrada ao conteúdo e cadeia de suprimentos

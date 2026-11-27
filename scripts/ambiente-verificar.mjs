@@ -216,6 +216,7 @@ function checarEconomiaESeguranca() {
   for (const [evento, script] of exigidos) {
     if (!registrados(evento).includes(script)) falhar(`hook ${script} não está registrado em ${evento}`)
   }
+  if (!registrados('PreToolUse').includes('|| exit 2')) falhar('o hook PreToolUse precisa terminar em || exit 2 para falhar fechado')
   for (const chave of ['BASH_MAX_OUTPUT_LENGTH', 'MAX_MCP_OUTPUT_TOKENS', 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE']) {
     if (!configuracao.env?.[chave]) falhar(`settings.env sem ${chave}`)
   }

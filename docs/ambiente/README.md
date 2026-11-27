@@ -26,15 +26,17 @@ Decisão e porquês: ADR 0037 (`docs/adr/0037-ambiente-de-agentes-claude-e-orca.
 | Item | Onde | O que faz |
 |---|---|---|
 | Escolha de modelo e esforço | `.claude/hooks/lib/politicas.mjs`, `scripts/start.sh` | classifica a tarefa; modelo fixo na sessão (cache por modelo) |
-| Guarda pré-uso | `.claude/hooks/guarda-pre-uso.mjs`, `.claude/hooks/lib/guarda.mjs`, `.claude/hooks/lib/politicas.mjs` | `deny` para ler segredo, apagar backup ou instância do Postgres, e push direto em `main`; `ask` para KMS destrutivo, migração versionada editada e comando que descarta trabalho. O resto é livre (ADR 0069). Editar `.claude/hooks/` e `.claude/settings*.json` é `ask`, pela ferramenta de escrita e por shell (`>`, `tee`, `sed -i`, `cp`, `mv`, `rm`; um script que grave por dentro não é detectado); `gcloud secrets versions access` direto é `deny`. `permissions.allow` no settings fica restrito a terraform plan e apply, SSH, merge, workflow, release, scripts da VM e Chrome |
+| Guarda pré-uso | `.claude/hooks/guarda-pre-uso.mjs`, `.claude/hooks/lib/guarda.mjs`, `.claude/hooks/lib/politicas.mjs` | `deny` para ler segredo, apagar backup ou instância do Postgres, e push direto em `main`; `ask` para KMS destrutivo, migração versionada editada e comando que descarta trabalho. O resto é livre (ADR 0069). Editar `.claude/hooks/` e `.claude/settings*.json` é `ask`, pela ferramenta de escrita e por shell (`>`, `tee`, `sed -i`, `cp`, `mv`, `rm`; um script que grave por dentro não é detectado); `gcloud secrets versions access` direto é `deny`. `permissions.allow` no settings lista só terraform plan e apply, SSH, merge, workflow, release, scripts da VM e Chrome (um teste garante que não há `gcloud:*`, `gh:*` e semelhantes). A guarda nega `gh pr merge --admin` e pede confirmação em `terraform destroy` e `apply -destroy`, `autorizar_corte=true`, `DROP`/`TRUNCATE`/`DELETE` e `bq rm` no BigQuery e comando acima de 30 mil caracteres |
 | Limites de saída | `settings.env` | `BASH_MAX_OUTPUT_LENGTH`, `MAX_MCP_OUTPUT_TOKENS`, `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` |
 | Esforço | `effortLevel` e `effort` dos agentes | medium padrão; explorer low; security-reviewer high |
 
 Rotina de contexto: `/clear` entre tarefas (grátis), `/handoff` antes, `/rewind` se as últimas voltas erraram, `/compact` só focado em decisões, arquivos alterados e pendências, `/context` uma vez numa sessão nova. Ao pausar mais de uma hora, o cache expirou: prefira `/clear` com HANDOFF a retomar uma sessão enorme.
 
+## Conduta do agente (ADR 0069)
+O acesso amplo é compensado por conduta, não por bloqueio: tarefa só do humano na sessão, plano antes de agir em produção, revisão do diff antes de commitar, merge só com CI verde, confirmação nomeada para o que é irreversível e relato depois. O texto vive no `CLAUDE.md` e em `.claude/agents/arquiteto.md`. A `main` deve ter ruleset no GitHub exigindo PR e os checks `qualidade` e `integracao`.
+
 ## Verificação
 Os hooks do git e a varredura de segurança foram removidos (ADR 0069). O CI (`ci.yml`) roda typecheck, testes de unidade, build e integração; a integração é dividida em 6 fatias paralelas (`testes`) e um job `smoke`, e `integracao` agrega as duas.
-|---|---|---|
 
 
 ## Regras de manutenção
@@ -49,7 +51,7 @@ Os hooks do git e a varredura de segurança foram removidos (ADR 0069). O CI (`c
 9. Comentário novo em código é negado por hook; o porquê vai para ADR e este documento descreve o ambiente.
 10. Política de segurança ou de modelo nova entra em `.claude/hooks/lib/politicas.mjs` com teste em `tests/ambiente-economia-seguranca.test.mjs`; regra sem teste não vale. Nunca coloque valor real de segredo em fixture: monte em tempo de execução.
 11. O classificador de tarefas é heurístico: se errou, ajuste a palavra-chave e acrescente o caso ao teste, em vez de contornar no prompt.
-12. Número de limiar (700 KB, 1,2 MB, 70% de auto-compact, 100 KB de leitura) é hipótese. Reavalie com `/context` e `/usage` depois de algumas semanas e registre aqui.
+12. Número de limiar (70% de auto-compact, 100 KB de leitura) é hipótese. Reavalie com `/context` e `/usage` depois de algumas semanas e registre aqui.
 
 ## Gatilhos de revisão
 Rode a skill `revisar-ambiente` quando:

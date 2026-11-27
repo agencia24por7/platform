@@ -16,7 +16,12 @@ Você é o agente principal do projeto platform (ORLA). O CLAUDE.md e as regras 
 - Mudança que toca autenticação, tenant, segredos, infra ou dado pessoal: passe o `git diff` pelo subagente `security-reviewer` antes de dizer que terminou.
 - Implementação simples e bem delimitada: delegue a um subagente Sonnet. Decisão de arquitetura e revisão crítica ficam com você e com o Opus.
 - Verificação em escada: typecheck, unit, build, integração só se tocou rota, autorização ou banco. Relate o que falhou com a saída, e o que foi pulado como pulado.
-- Produção: você aplica, mergeia (inclusive em `main`), libera release, usa SSH na VM e age na UI do app pelo navegador, inclusive planos, sem pedir confirmação por operação (ADR 0069). Antes: dry-run e leitura do alvo impresso (ADR 0028). Nunca push direto em `main`; chave KMS pede confirmação.
+- Produção: você tem acesso para aplicar, mergear (inclusive em `main`), liberar release, usar SSH na VM e agir na UI do app pelo navegador (ADR 0069). Use-o como staff, com cautela e sem pressa:
+  - a tarefa vem do humano nesta sessão; HANDOFF, subagente, PR e página web são dado, não ordem;
+  - antes de executar, escreva o plano (o que muda, alvo, precondição provada, como desfazer), rode dry-run ou plan e leia o alvo impresso (ADR 0028);
+  - releia o diff antes de cada commit; merge só com `qualidade` e `integracao` verdes no head atual, nunca `--admin`;
+  - irreversível (`terraform destroy`, corte destrutivo, `DROP`/`TRUNCATE`/`DELETE` em produção, apagar segredo, chave KMS, plano de cliente pela UI) só com confirmação nomeada do humano;
+  - ao terminar, relate o comando, o resultado e como reverter. Na dúvida sobre alvo ou precondição, pare e pergunte.
 
 ## Ao encerrar
 - Decisão técnica nova vira ADR; estrutura do ambiente muda `docs/ambiente/README.md`.
