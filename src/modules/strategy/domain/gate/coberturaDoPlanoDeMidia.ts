@@ -1,4 +1,5 @@
-import { catalogoDaPlataforma, type CampoDoCatalogo, type CatalogoDeCampos } from '../catalogo/tipos.ts';
+import { campoAplicavel, campoNaoVerificado, catalogoDaPlataforma, objetivoDoValor, VALOR_A_CONFIRMAR, type CampoDoCatalogo, type CatalogoDeCampos } from '../catalogo/tipos.ts';
+import { problemasDeDependenciaDaMeta } from './dependenciasDaMeta.ts';
 import type { CampoDeMidia, IntencaoDoPlano, MidiaDaPlataforma, Plataforma } from '../plano.ts';
 import { aprovar, reprovar, type ContextoDoGate, type ResultadoDaChecagem } from './resultado.ts';
 
@@ -54,31 +55,55 @@ function problemasDoDestino(porChave: ReadonlyMap<string, Presente>, intencao: I
   return problemas;
 }
 
-export function problemasDaPlataforma(
-  entrada: MidiaDaPlataforma | undefined,
-  catalogo: CatalogoDeCampos,
-  intencao: IntencaoDoPlano,
-): string[] {
+function ehAConfirmar(campo: CampoDoCatalogo, valor: CampoDeMidia['valor']): boolean {
+  return valor === VALOR_A_CONFIRMAR && campoNaoVerificado(campo);
+}
+
+export type AnaliseDaPlataforma = { readonly problemas: string[]; readonly pendencias: string[] };
+
+export function analisarPlataforma(entrada: MidiaDaPlataforma | undefined, catalogo: CatalogoDeCampos, intencao: IntencaoDoPlano): AnaliseDaPlataforma {
   const plataforma = catalogo.plataforma;
   const presentes = entrada === undefined ? [] : presentesDaEntrada(entrada);
   const porChave = new Map(presentes.map((p) => [p.campo.campo, p]));
   const problemas: string[] = [];
+  const pendencias: string[] = [];
+  const local = (chave: string) => `plano_de_midia/${plataforma}/${chave}`;
+  const declarado = porChave.get(catalogo.campoDoObjetivo)?.campo.valor;
+  const objetivo = objetivoDoValor(declarado);
+  if (objetivo === undefined || !catalogo.objetivos.includes(objetivo)) {
+    problemas.push(`${local(catalogo.campoDoObjetivo)} (objetivo ausente ou fora do catálogo; não dá para conferir o que se aplica)`);
+  }
   for (const campo of catalogo.campos) {
-    const local = `plano_de_midia/${plataforma}/${campo.chave}`;
     const achado = porChave.get(campo.chave);
     if (achado === undefined) {
-      if (campo.obrigatorio) problemas.push(`${local} (campo obrigatório ausente)`);
+      if (campo.chave !== catalogo.campoDoObjetivo && campo.obrigatorio && campoAplicavel(campo, objetivo)) problemas.push(`${local(campo.chave)} (campo obrigatório ausente)`);
       continue;
     }
-    if (achado.secao !== campo.secao) problemas.push(`${local} (na seção ${achado.secao}; o catálogo pede ${campo.secao})`);
-    if (achado.campo.justificativa.trim().length === 0) problemas.push(`${local} (sem justificativa)`);
-    if (!valorCombina(campo, achado.campo.valor)) problemas.push(`${local} (valor fora do tipo ${campo.tipoDoValor})`);
+    if (achado.secao !== campo.secao) problemas.push(`${local(campo.chave)} (na seção ${achado.secao}; o catálogo pede ${campo.secao})`);
+    if (achado.campo.justificativa.trim().length === 0) problemas.push(`${local(campo.chave)} (sem justificativa)`);
+    if (ehAConfirmar(campo, achado.campo.valor)) {
+      pendencias.push(`${local(campo.chave)} (a confirmar; a API não verifica este campo)`);
+      continue;
+    }
+    if (achado.campo.valor === VALOR_A_CONFIRMAR) {
+      problemas.push(`${local(campo.chave)} (a_confirmar só vale em campo que a API não verifica)`);
+      continue;
+    }
+    if (!valorCombina(campo, achado.campo.valor)) problemas.push(`${local(campo.chave)} (valor fora do tipo ${campo.tipoDoValor})`);
   }
   const chavesDoCatalogo = new Set(catalogo.campos.map((campo) => campo.chave));
   for (const { campo } of presentes) {
-    if (!chavesDoCatalogo.has(campo.campo)) problemas.push(`plano_de_midia/${plataforma}/${campo.campo} (campo fora do catálogo)`);
+    if (!chavesDoCatalogo.has(campo.campo)) problemas.push(`${local(campo.campo)} (campo fora do catálogo)`);
   }
-  return [...problemas, ...problemasDoDestino(porChave, intencao, plataforma)];
+  if (plataforma === 'meta') {
+    const valores = new Map(presentes.map((p) => [p.campo.campo, p.campo.valor]));
+    problemas.push(...problemasDeDependenciaDaMeta(valores, chavesDoCatalogo, local));
+  }
+  return { problemas: [...problemas, ...problemasDoDestino(porChave, intencao, plataforma)], pendencias };
+}
+
+export function problemasDaPlataforma(entrada: MidiaDaPlataforma | undefined, catalogo: CatalogoDeCampos, intencao: IntencaoDoPlano): string[] {
+  return analisarPlataforma(entrada, catalogo, intencao).problemas;
 }
 
 export function checarCoberturaDoPlanoDeMidia(contexto: ContextoDoGate): ResultadoDaChecagem {
@@ -88,6 +113,7 @@ export function checarCoberturaDoPlanoDeMidia(contexto: ContextoDoGate): Resulta
     return reprovar(CHAVE_COBERTURA_DO_PLANO_DE_MIDIA, 'A intenção não traz plataformas escolhidas.', ['intencao/plataformas']);
   }
   const problemas: string[] = [];
+  const pendencias: string[] = [];
   for (const plataforma of escolhidas) {
     const catalogo = catalogoDaPlataforma(catalogosDeCampos, plataforma);
     if (catalogo === undefined) {
@@ -95,8 +121,15 @@ export function checarCoberturaDoPlanoDeMidia(contexto: ContextoDoGate): Resulta
       continue;
     }
     const entrada = plano.plano_de_midia.plataformas.find((candidata) => candidata.plataforma === plataforma);
-    problemas.push(...problemasDaPlataforma(entrada, catalogo, plano.intencao));
+    const analise = analisarPlataforma(entrada, catalogo, plano.intencao);
+    problemas.push(...analise.problemas);
+    pendencias.push(...analise.pendencias);
   }
-  if (problemas.length === 0) return aprovar(CHAVE_COBERTURA_DO_PLANO_DE_MIDIA, 'Todo campo obrigatório do catálogo está no plano de mídia, com justificativa.');
-  return reprovar(CHAVE_COBERTURA_DO_PLANO_DE_MIDIA, `${problemas.length} problema(s) de cobertura do plano de mídia.`, problemas);
+  if (problemas.length === 0) {
+    const motivo = pendencias.length === 0
+      ? 'Todo campo aplicável do catálogo está no plano de mídia, com justificativa.'
+      : `Cobertura completa, com ${pendencias.length} campo(s) a confirmar.`;
+    return aprovar(CHAVE_COBERTURA_DO_PLANO_DE_MIDIA, motivo, pendencias);
+  }
+  return reprovar(CHAVE_COBERTURA_DO_PLANO_DE_MIDIA, `${problemas.length} problema(s) de cobertura do plano de mídia.`, [...problemas, ...pendencias]);
 }

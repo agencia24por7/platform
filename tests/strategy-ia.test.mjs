@@ -14,6 +14,9 @@ const INTENCAO = JSON.stringify({
   ousadia: 'moderado',
   retorno_esperado: { descricao: 'Custo por lead abaixo da meta' },
   verba: { centavos: '1000000', moeda: 'BRL' },
+  plataformas: ['meta'],
+  destino: { landingPageId: 'lp_principal', url: 'https://exemplo.com.br/oferta' },
+  utm: { meta: { utm_source: 'meta', utm_medium: 'paid_social', utm_campaign: 'aquisicao-leads-do-trimestre-202612' } },
 });
 
 const ligado = await appIsUp();
@@ -71,7 +74,7 @@ describe('Estratégia sobre a camada de IA (worker, chave e modelo por tarefa, u
   it('com chave e modelo: a chamada chega ao executor pelo worker e registra uso; saída fora do esquema falha com o código certo e nada inválido é gravado', async () => {
     const o = organizacao('a');
     await configurarIa(o);
-    assert.equal(query(`select count(*) from core.ai_task_models where organization_id = '${o.org}'`), '3');
+    assert.equal(query(`select count(*) from core.ai_task_models where organization_id = '${o.org}'`), String(TAREFAS.length));
     assert.equal(await ate(o), 'falhou');
     assert.equal(execucao(o), 'falhou|ia_saida_invalida');
     assert.equal(versoes(o), 0);

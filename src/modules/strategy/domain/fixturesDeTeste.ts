@@ -102,6 +102,7 @@ export const CATALOGOS_DE_TESTE: readonly CatalogoDeCampos[] = [
     plataforma: 'google',
     versaoDaApi: 'v99',
     objetivos: ['leads'],
+    campoDoObjetivo: 'objetivo_da_campanha',
     campos: [
       { chave: 'objetivo_da_campanha', secao: 'objetivo', obrigatorio: true, tipoDoValor: 'escolha', opcoes: ['leads', 'vendas'] },
       { chave: 'orcamento_diario', secao: 'orcamento_e_lances', obrigatorio: true, tipoDoValor: 'numero' },
@@ -112,6 +113,7 @@ export const CATALOGOS_DE_TESTE: readonly CatalogoDeCampos[] = [
     plataforma: 'meta',
     versaoDaApi: 'v99',
     objetivos: ['leads'],
+    campoDoObjetivo: 'objetivo_da_campanha',
     campos: [
       { chave: 'objetivo_da_campanha', secao: 'objetivo', obrigatorio: true, tipoDoValor: 'texto' },
       { chave: 'posicionamento_automatico', secao: 'posicionamentos', obrigatorio: true, tipoDoValor: 'booleano' },

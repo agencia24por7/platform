@@ -166,7 +166,7 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
       redirect: 'manual',
     });
     const texto = (await resposta.text()).replaceAll('<!-- -->', '');
-    const destino = decodeURIComponent(resposta.headers.get('location') ?? texto.match(/"(\/[a-z0-9/?=%.&;-]*)"/i)?.[1] ?? '');
+    const destino = decodeURIComponent(resposta.headers.get('location') ?? texto.match(/"(\/clientes\/[a-z0-9/?=%.&;-]*)"/i)?.[1] ?? '');
     return { status: resposta.status, texto, destino };
   }
 
@@ -494,7 +494,7 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
     for (const atacante of atacantes) {
       signIn(atacante.quem);
       for (const caso of simples) {
-        const resposta = await submitAction(rota(atacante.cliente), caso.acao, { clienteId: atacante.cliente, [caso.campo]: caso.alvo });
+        const resposta = await submitAction(rotaPlano(atacante.cliente, ids.pronto.plano), caso.acao, { clienteId: atacante.cliente, [caso.campo]: caso.alvo });
         assert.match(destinoDe(resposta), caso.mensagem, `${caso.nome} por ${atacante.rotulo}`);
       }
     }
@@ -507,7 +507,7 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
     for (const comando of comandos) {
       const ocultos = await ocultosDoFormulario(rotaPlano(clientes.pronto, ids.pronto.plano), ids.operador, comando.campo);
       for (const atacante of atacantes) {
-        const resposta = await postar(rota(atacante.cliente), atacante.quem, ocultos, { clienteId: atacante.cliente, planoId: ids.pronto.plano, versaoId: ids.pronto.versao, ...comando.extra });
+        const resposta = await postar(rotaPlano(atacante.cliente, ids.pronto.plano), atacante.quem, ocultos, { clienteId: atacante.cliente, planoId: ids.pronto.plano, versaoId: ids.pronto.versao, ...comando.extra });
         assert.ok(resposta.status < 500, `${comando.nome}: ${resposta.status}`);
         assert.match(resposta.texto, /Plano não encontrado/, `${comando.nome} por ${atacante.rotulo}`);
       }
@@ -518,10 +518,10 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
   it('a edição e o pedido de mudança recusam quando a versão vista já não é a atual', async () => {
     const antes = semear.fotografia();
     const ocultosDaMudanca = await ocultosDoFormulario(rotaPlano(clientes.pronto, ids.pronto.plano), ids.operador, 'instrucao');
-    const mudanca = await postar(rota(clientes.pronto), ids.operador, ocultosDaMudanca, { clienteId: clientes.pronto, planoId: ids.pronto.plano, versaoId: ids.pronto.primeira, instrucao: 'Reduzir a verba de social' });
+    const mudanca = await postar(rotaPlano(clientes.pronto, ids.pronto.plano), ids.operador, ocultosDaMudanca, { clienteId: clientes.pronto, planoId: ids.pronto.plano, versaoId: ids.pronto.primeira, instrucao: 'Reduzir a verba de social' });
     assert.match(mudanca.texto, /O plano mudou enquanto você editava\. Recarregue a página\./);
     const ocultosDaEdicao = await ocultosDoFormulario(rotaPlano(clientes.pronto, ids.pronto.plano), ids.operador, 'json');
-    const edicao = await postar(rota(clientes.pronto), ids.operador, ocultosDaEdicao, { clienteId: clientes.pronto, planoId: ids.pronto.plano, versaoId: ids.pronto.primeira, secao: 'lacunas', json: '{"itens":[]}' });
+    const edicao = await postar(rotaPlano(clientes.pronto, ids.pronto.plano), ids.operador, ocultosDaEdicao, { clienteId: clientes.pronto, planoId: ids.pronto.plano, versaoId: ids.pronto.primeira, secao: 'lacunas', json: '{"itens":[]}' });
     assert.match(edicao.texto, /O plano mudou enquanto você editava\. Recarregue a página\./);
     assert.equal(semear.fotografia(), antes);
     const pagina2 = await pagina(rotaPlano(clientes.pronto, ids.pronto.plano));
@@ -594,7 +594,7 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
 
   it('o formulário de novo plano valida no servidor, mostra a prévia de UTM e cria a execução', async () => {
     const caminho = rota(clientes.semPlano, '?novo=1');
-    const campos = { clienteId: clientes.semPlano, acao: 'criar', tipoDePlano: 'aquisicao', plataformas: 'google', landingPageId: ids.landing, objetivo: 'Gerar leads qualificados', inicio: '2026-12-01', fim: '2027-02-28', ousadia: 'moderado', retorno: '300 leads por mês', verba: '15.000,00' };
+    const campos = { clienteId: clientes.semPlano, acao: 'criar', tipoDePlano: 'aquisicao', plataformas: 'meta', landingPageId: ids.landing, objetivo: 'Gerar leads qualificados', inicio: '2026-12-01', fim: '2027-02-28', ousadia: 'moderado', retorno: '300 leads por mês', verba: '15.000,00' };
     const invalido = await postarFormulario(caminho, ids.operador, 'objetivo', { ...campos, objetivo: 'a', fim: '2026-11-01', verba: 'abc' });
     assert.ok(invalido.status < 500, `status ${invalido.status}`);
     assert.match(invalido.texto, /Corrija os campos indicados/);
@@ -606,7 +606,7 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
     assert.match(semObjetivo.texto, /Descreva o objetivo para ver os links/);
     const previa = await postarFormulario(caminho, ids.operador, 'objetivo', { ...campos, acao: 'previa' });
     assert.ok(previa.status < 500, `status ${previa.status}`);
-    assert.match(previa.texto, /https:\/\/padaria\.example\.com\.br\/oferta\?utm_source=google/);
+    assert.match(previa.texto, /https:\/\/padaria\.example\.com\.br\/oferta\?utm_source=meta/);
     assert.equal(Number(dono(`SELECT count(*) FROM core.strategy_plan_runs WHERE client_id = '${clientes.semPlano}'`)), 0);
 
     const valido = await postarFormulario(caminho, ids.operador, 'objetivo', campos);
@@ -689,6 +689,8 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
           { urn: urnDe(cli, ...dividir(URN_REGRA)), papel: 'premissa' },
         ],
       };
+      plano.resumo_executivo.aposta_central = { ...plano.resumo_executivo.aposta_central, evidencias: plano.posicionamento_e_mensagem.promessa.evidencias };
+      plano.resumo_executivo.resultado_esperado = { ...plano.resumo_executivo.resultado_esperado, evidencias: [...plano.resumo_executivo.resultado_esperado.evidencias, { urn: urnDe(cli, ...dividir(URN_LIMITE)), papel: 'premissa' }] };
       return plano;
     }
 

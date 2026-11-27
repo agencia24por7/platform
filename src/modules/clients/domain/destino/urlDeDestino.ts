@@ -32,7 +32,8 @@ export function validarUrlDeDestino(entrada: unknown): Result<string, Failure> {
 
   const host = url.hostname.toLowerCase().replace(/\.$/, '');
   if (host.startsWith('[') || host.includes(':') || IPV4_NUMERICO.test(host)) return invalida('Endereço IP não é aceito; use o domínio da página.');
-  if (host === 'localhost' || SUFIXOS_INTERNOS.some((sufixo) => host.endsWith(sufixo))) return invalida('Host interno ou reservado não é aceito.');
+  const hostComPontoInicial = `.${host}`;
+  if (SUFIXOS_INTERNOS.some((sufixo) => hostComPontoInicial.endsWith(sufixo))) return invalida('Host interno ou reservado não é aceito.');
   if (!host.includes('.') || !TLD_VALIDO.test(host)) return invalida('Domínio inválido.');
   if (host.length > 253 || host.split('.').some((rotulo) => rotulo.length === 0 || rotulo.length > 63)) return invalida('Domínio inválido.');
 

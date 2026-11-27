@@ -1,11 +1,11 @@
-# Release: camada de IA, MCP, Strategy Plan e Brain de conhecimento (ADR 0063 a 0068)
+# Release: camada de IA, MCP, Strategy Plan e Brain de conhecimento (ADR 0063 a 0069)
 
 Acompanha, no mesmo merge `dev` → `main`, os roteiros `2026-11-identidades-e-metadados.md` (infra: environment `plano`, bootstrap, Terraform, segredo de borda, metadados da VM) e `2026-11-release-cofre-e-contexto.md`. Este roteiro cobre só o que a camada de IA e a Estratégia acrescentam. A ordem das camadas de infra desses roteiros não muda.
 
 ## O que entra
 
 - Camada de IA (ADR 0063, 0064, 0066): chave de fornecedor cifrada pela cifra do cofre, modelo por tarefa, teto diário, servidor MCP, credenciais de agente. Telas `/config/ia` e `/config/agentes`.
-- Strategy Plan fase 1 (ADR 0056, 0065, 0067, 0068): aba Estratégia na página do cliente, motor por grupos, Comitê, Gates, ferramentas `brain_consultar_catalogo` e `brain_consultar_item`.
+- Strategy Plan fase 1 (ADR 0056, 0065, 0067, 0068, 0069): página única de planos na página do cliente (o 0069 substitui as abas do 0065), motor por grupos, Comitê, Gates, ferramentas `brain_consultar_catalogo` e `brain_consultar_item`.
 - Brain: provedores `conhecimento` e `desempenho` (consultas BigQuery só de leitura).
 - Fluxo n8n `n8n/workflows/plataforma/strategy-avancar-execucoes.json`.
 
