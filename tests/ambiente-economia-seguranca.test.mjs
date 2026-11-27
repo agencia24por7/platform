@@ -324,8 +324,9 @@ test('hook PreToolUse termina em até 9 s e nunca deixa passar uma avaliação l
   const resultado = spawnSync('node', [hook('guarda-pre-uso.mjs')], { input: evento, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: raiz } })
   assert.ok(Date.now() - inicio < 9000, `levou ${Date.now() - inicio} ms`)
   const decidiu = resultado.status === 0
-  const bloqueouPorTempo = resultado.status === 2 || resultado.signal === 'SIGKILL'
+  const bloqueouPorTempo = resultado.status === 2
   assert.ok(decidiu || bloqueouPorTempo, `status ${resultado.status}, sinal ${resultado.signal}`)
+  assert.equal(resultado.signal, null)
 })
 
 test('push sem destino a partir da main é negado e o resto passa', () => {
