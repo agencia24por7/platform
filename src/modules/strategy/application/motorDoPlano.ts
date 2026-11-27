@@ -116,7 +116,9 @@ import type {
 } from '@/modules/strategy/application/portas';
 
 export const MAXIMO_DE_RODADAS = 2;
-export const MAXIMO_DE_TENTATIVAS = 2;
+export const MAXIMO_DE_REPETICOES_POR_ETAPA = 2;
+export const MAXIMO_DE_FALHAS_TRANSITORIAS = 6;
+const LIMITE_DE_LINHAS_DA_AUDITORIA_DA_EXECUCAO = 200;
 export const PARALELISMO_DO_COMITE = 3;
 export { MAXIMO_DE_RESERVAS };
 export const LEASE_DA_EXECUCAO_MS = 300_000;
@@ -230,7 +232,8 @@ export type DependenciasDoMotor = {
   readonly relogio?: Relogio;
   readonly personas?: readonly Persona[];
   readonly maximoDeRodadas?: number;
-  readonly maximoDeTentativas?: number;
+  readonly repeticoesPorEtapa?: number;
+  readonly maximoDeFalhasTransitorias?: number;
   readonly paralelismoDoComite?: number;
   readonly leaseMs?: number;
   readonly catalogos?: readonly CatalogoDeCampos[];
@@ -271,14 +274,28 @@ const MAXIMO_DE_PROBLEMAS_DEVOLVIDOS = 10;
 const AVISO_DE_CORRECAO_DE_INTEGRIDADE =
   'A entrada traz "problemasDeIntegridade": a versão anterior deste grupo ficou inconsistente com as seções já redigidas ou com ela mesma. Devolva o grupo corrigido, citando só ids que existem em "secoesJaRedigidas" ou neste grupo.';
 
-function motivoDoPlano(rotulo: string, problemas: readonly { readonly caminho: string; readonly mensagem: string }[]): string {
-  const itens = problemas.slice(0, 3).map((problema) => `${problema.caminho.replace(/[^a-z0-9_.]/gi, '').slice(0, 60)}=${problema.mensagem.slice(0, 60)}`);
-  return `${rotulo}:${itens.join(';')}`.slice(0, 220);
+const LIMITE_DO_ITEM_DO_MOTIVO = 68;
+const LIMITE_DO_PORQUE_NO_MOTIVO = 36;
+const MINIMO_DO_ONDE_NO_MOTIVO = 12;
+
+function itemDoMotivo(problema: { readonly caminho: string; readonly mensagem: string }): string {
+  const caminho = problema.caminho.replace(/[^a-z0-9_.]/gi, '').slice(0, 60);
+  const repetido = problema.mensagem.startsWith(`${caminho}/`);
+  const texto = (repetido ? problema.mensagem.slice(caminho.length + 1) : problema.mensagem).replace(/\s+/g, ' ').trim();
+  const corte = texto.indexOf(' (');
+  const onde = corte < 0 ? texto : texto.slice(0, corte);
+  const porque = corte < 0 ? '' : texto.slice(corte).slice(0, LIMITE_DO_PORQUE_NO_MOTIVO);
+  const orcamentoDoOnde = Math.max(MINIMO_DO_ONDE_NO_MOTIVO, LIMITE_DO_ITEM_DO_MOTIVO - porque.length);
+  const ondeCurto = onde.length > orcamentoDoOnde ? onde.slice(onde.length - orcamentoDoOnde) : onde;
+  return repetido ? `${ondeCurto}${porque}` : `${caminho}=${ondeCurto}${porque}`;
 }
 
-function motivoDaIntegridade(problemas: readonly { readonly caminho: string; readonly mensagem: string }[]): string {
-  const itens = problemas.slice(0, 3).map((problema) => `${problema.caminho.replace(/[^a-z0-9_.]/gi, '').slice(0, 60)}=${problema.mensagem.slice(0, 60)}`);
-  return `rascunho_fora_da_integridade:${itens.join(';')}`.slice(0, 220);
+function motivoDoPlano(rotulo: string, problemas: readonly { readonly caminho: string; readonly mensagem: string }[]): string {
+  return `${rotulo}:${problemas.slice(0, 3).map(itemDoMotivo).join(';')}`.slice(0, 260);
+}
+
+export function motivoDaIntegridade(problemas: readonly { readonly caminho: string; readonly mensagem: string }[]): string {
+  return motivoDoPlano('rascunho_fora_da_integridade', problemas);
 }
 
 function motivoDoEsquema(erro: { readonly issues: readonly { readonly path: readonly PropertyKey[] }[] }): string {
@@ -287,7 +304,7 @@ function motivoDoEsquema(erro: { readonly issues: readonly { readonly path: read
 }
 
 function motivoDaFalhaDeIA(erro: { readonly codigo: string; readonly mensagem: string }): string {
-  const caminhos = erro.codigo === 'saida_invalida' ? /\[(esquema:[a-z0-9_.,\[\]]*)\]$/i.exec(erro.mensagem)?.[1] : undefined;
+  const caminhos = erro.codigo === 'saida_invalida' ? /\[(esquema:[a-z0-9_.,:]*)\]$/i.exec(erro.mensagem)?.[1] : undefined;
   return caminhos ? `ia:${erro.codigo}:${caminhos}` : `ia:${erro.codigo}`;
 }
 
@@ -360,7 +377,8 @@ export function createMotorDoPlano(deps: DependenciasDoMotor): MotorDoPlano {
   const relogio = deps.relogio ?? { agora: () => new Date() };
   const personas = deps.personas ?? PERSONAS;
   const maximoDeRodadas = deps.maximoDeRodadas ?? MAXIMO_DE_RODADAS;
-  const maximoDeTentativas = deps.maximoDeTentativas ?? MAXIMO_DE_TENTATIVAS;
+  const repeticoesPorEtapa = deps.repeticoesPorEtapa ?? MAXIMO_DE_REPETICOES_POR_ETAPA;
+  const maximoDeFalhasTransitorias = deps.maximoDeFalhasTransitorias ?? MAXIMO_DE_FALHAS_TRANSITORIAS;
   const paralelismo = deps.paralelismoDoComite ?? PARALELISMO_DO_COMITE;
   const leaseMs = deps.leaseMs ?? LEASE_DA_EXECUCAO_MS;
   const catalogos = deps.catalogos ?? CATALOGOS_DISPONIVEIS;
@@ -1228,8 +1246,17 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     return { estado: 'final', execucao: relida };
   }
 
+  async function repeticoesNaEtapa(execucao: Execucao): Promise<number> {
+    try {
+      const linhas = await audit.search(execucao.organizationId, { action: 'strategy.run.step', targetId: execucao.id, limit: LIMITE_DE_LINHAS_DA_AUDITORIA_DA_EXECUCAO });
+      return linhas.filter((linha) => linha.metadata?.['etapa'] === execucao.etapa && linha.metadata?.['status'] === 'adiada').length;
+    } catch {
+      return 0;
+    }
+  }
+
   async function falhar(execucao: Execucao, falha: FalhaDaEtapa, ficha: number): Promise<ResultadoDoPasso> {
-    const reintentar = falha.transitoria && execucao.falhas + 1 < maximoDeTentativas;
+    const reintentar = falha.transitoria && execucao.falhas + 1 < maximoDeFalhasTransitorias && (await repeticoesNaEtapa(execucao)) < repeticoesPorEtapa;
     const mudanca: MudancaDaExecucao = reintentar
       ? { status: 'pendente', falhas: execucao.falhas + 1, leaseAte: null }
       : { status: 'falhou', falhas: execucao.falhas + 1, erroCodigo: falha.codigo, leaseAte: null };

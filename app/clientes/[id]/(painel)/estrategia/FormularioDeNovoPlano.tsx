@@ -76,7 +76,7 @@ export function FormularioDeNovoPlano({ clienteId, voltarPara, inicial }: { read
           </div>
         ) : null}
         <Campo id={id('tipoDePlano')} rotulo="Tipo de plano" erro={erros['tipoDePlano']}>
-          <select className="select" name="tipoDePlano" defaultValue={modelo.tipos.find((o) => o.marcada)?.valor} {...ligacao('tipoDePlano')}>
+          <select key={modelo.selecionados.tipo} className="select" name="tipoDePlano" defaultValue={modelo.selecionados.tipo} {...ligacao('tipoDePlano')}>
             <Opcoes opcoes={modelo.tipos} />
           </select>
         </Campo>
@@ -102,7 +102,7 @@ export function FormularioDeNovoPlano({ clienteId, voltarPara, inicial }: { read
           <Aviso texto={modelo.semLandingPage.texto} link={modelo.semLandingPage.link} />
         ) : (
           <Campo id={id('landingPageId')} rotulo="Landing page" erro={erros['landingPageId']}>
-            <select className="select" name="landingPageId" defaultValue={modelo.landingPages.find((o) => o.marcada)?.valor ?? ''} {...ligacao('landingPageId')}>
+            <select key={modelo.selecionados.landingPage} className="select" name="landingPageId" defaultValue={modelo.selecionados.landingPage} {...ligacao('landingPageId')}>
               <option value="" disabled>
                 Escolha a página
               </option>
@@ -132,7 +132,7 @@ export function FormularioDeNovoPlano({ clienteId, voltarPara, inicial }: { read
         </div>
         <div className="estrategia-form__linha">
           <Campo id={id('ousadia')} rotulo="Ousadia" erro={erros['ousadia']}>
-            <select className="select" name="ousadia" defaultValue={modelo.ousadias.find((o) => o.marcada)?.valor} {...ligacao('ousadia')}>
+            <select key={modelo.selecionados.ousadia} className="select" name="ousadia" defaultValue={modelo.selecionados.ousadia} {...ligacao('ousadia')}>
               <Opcoes opcoes={modelo.ousadias} />
             </select>
           </Campo>

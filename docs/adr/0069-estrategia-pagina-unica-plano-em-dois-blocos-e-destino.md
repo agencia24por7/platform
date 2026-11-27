@@ -50,6 +50,9 @@ O plano da fase 1 (ADR 0065) era único por tipo, tinha esquema com `criativos`,
 - O plano diz onde o tráfego cai e é conferível campo a campo; Comitê e Gates deixam de ser tela, mas seguem auditáveis no banco.
 - Planos antigos ficam só para leitura: qualquer mudança recusa com `plano_sem_destino`.
 - Cada execução com ponto não obrigatório do Comitê custa uma chamada a mais (o judge).
+- Repetição por etapa do motor: falha transitória (saída inválida da IA, fornecedor, tempo, Brain fora) repete a mesma etapa até `MAXIMO_DE_REPETICOES_POR_ETAPA` = 2 vezes (a 3ª falha na mesma etapa derruba a execução), com teto de `MAXIMO_DE_FALHAS_TRANSITORIAS` = 6 por execução (a 6ª derruba), guardado por `execucoes.falhas`, que só cresce por gatilho do banco. A contagem por etapa vem das linhas `strategy.run.step` com status `adiada` da própria execução (`audit.search`), sem coluna nova nem migração: a auditoria é de melhor esforço, então uma linha perdida só permite uma repetição a mais, nunca acima do teto total. Erro não transitório e cancelamento seguem sem repetição, e o teto de 2 correções do Gate não muda. Custo: no pior caso são até 5 repetições de etapa por execução (cada uma refaz as chamadas da etapa), contra 1 antes.
+- O motivo gravado na auditoria é compacto sem perder o problema: o caminho repetido sai e, quando falta espaço, corta-se o começo do caminho, não o motivo entre parênteses. Saída fora do formato traz só `caminho:tipo` dos campos inválidos (`ia:saida_invalida:esquema:respostas.3.motivo:too_big`), nunca o texto do modelo.
+- "Tentar de novo" na tela: plano cuja última execução falhou por erro repetível reabre uma execução nova com o mesmo pedido (`tentarDeNovo`, auditoria `strategy.run.retry`); `corrigir_gate` não passa por esse caminho.
 
 ## Riscos residuais
 

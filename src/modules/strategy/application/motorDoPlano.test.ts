@@ -23,7 +23,7 @@ Object.assign(process.env, {
 });
 
 const { codigosDoPacote } = await import('../domain/codigosCurtos.ts');
-const { createMotorDoPlano, MAXIMO_DE_RODADAS, MAXIMO_DE_TENTATIVAS } = await import('./motorDoPlano.ts');
+const { createMotorDoPlano, MAXIMO_DE_RODADAS, MAXIMO_DE_REPETICOES_POR_ETAPA, MAXIMO_DE_FALHAS_TRANSITORIAS, motivoDaIntegridade } = await import('./motorDoPlano.ts');
 const { criarRepositorioEmMemoria } = await import('../infrastructure/repositorioEmMemoria.ts');
 const { criarIaFalsa, aceitaTodos } = await import('../infrastructure/ia/iaFalsa.ts');
 const { criarIaNaoConfigurada } = await import('../infrastructure/ia/iaNaoConfigurada.ts');
@@ -81,7 +81,7 @@ async function montar(opcoes: Montagem = {}, tipoDeExecucao: 'criar' | 'ajustar'
     executorDeIA: opcoes.executor ?? ia,
     leitorDoBrain: opcoes.brain ?? brainOk,
     avaliadorDeLimites: opcoes.avaliador ?? aprovaTudo,
-    audit: { async record(e) { auditorias.push(e); }, async list() { return []; }, async search() { return []; } },
+    audit: { async record(e) { auditorias.push(e); }, async list() { return []; }, async search(_org, filtro) { return auditorias.filter((a) => a.action === filtro.action && a.targetId === filtro.targetId) as never; } },
     ...(opcoes.tempo ? { relogio: { agora: opcoes.tempo } } : {}),
   });
   const plano = await repositorio.criarPlano(ESCOPO, 'aquisicao');
@@ -331,8 +331,8 @@ describe('motor do plano: erros de IA e do Brain', () => {
       const final = await ate(m);
       assert.equal(final.status, 'falhou');
       assert.equal(final.erroCodigo, esperado);
-      assert.equal(final.falhas, MAXIMO_DE_TENTATIVAS);
-      assert.equal(final.tentativas, MAXIMO_DE_TENTATIVAS);
+      assert.equal(final.falhas, MAXIMO_DE_REPETICOES_POR_ETAPA + 1);
+      assert.equal(final.tentativas, MAXIMO_DE_REPETICOES_POR_ETAPA + 1);
       assert.equal(m.repositorio.estado.versoes.length, 0);
     });
   }
@@ -973,5 +973,87 @@ describe('motor do plano: redação e ajuste por grupos de seções', () => {
     const ajustesDaRodada2 = doPlano(m).filter((p) => /:ajustar:1:g\d+$/.test(p.chaveDeIdempotencia)).map((p) => Number(p.chaveDeIdempotencia.split(':g').at(-1)));
     assert.ok(esperados.every((g) => ajustesDaRodada2.includes(g)), `esperados ${esperados} chamados ${ajustesDaRodada2}`);
     assert.ok(!(ajustesDaRodada2.length === 1 && ajustesDaRodada2[0] === GRUPOS_DE_REDACAO.length - 1) || esperados.includes(GRUPOS_DE_REDACAO.length - 1));
+  });
+});
+
+describe('motor do plano: repetição por etapa e teto total de falhas transitórias', () => {
+  type Falhas = { redigir?: number; comite?: number; ajustar?: number };
+  const comAjuste = (persona: string) =>
+    persona === 'redator' ? parecer('redator', 'aprova_com_ajuste', [ponto('p1', 'estrategia', [URN_BENCHMARK_B])]) : parecer(persona, 'aprova');
+
+  function roteiroComFalhas(falhas: Falhas): Roteiro {
+    const base = roteiroPadrao({ comite: comAjuste });
+    const restantes = { redigir: falhas.redigir ?? 0, comite: falhas.comite ?? 0, ajustar: falhas.ajustar ?? 0 };
+    const transitoria = { codigo: 'saida_invalida', mensagem: 'x' } as never;
+    return (pedido) => {
+      if (pedido.tarefa === 'strategy_plan') {
+        const etapa = pedido.chaveDeIdempotencia.includes(':ajustar:') ? 'ajustar' : 'redigir';
+        if (restantes[etapa] > 0) {
+          restantes[etapa] -= 1;
+          return transitoria;
+        }
+      }
+      if (pedido.tarefa === 'comite' && (pedido.dados as { persona: { chave: string } }).persona.chave === 'redator' && restantes.comite > 0) {
+        restantes.comite -= 1;
+        return transitoria;
+      }
+      return base(pedido);
+    };
+  }
+
+  it('falha em redigir e depois falha em ajustar não derruba a execução', async () => {
+    const m = await montar({ roteiro: roteiroComFalhas({ redigir: 1, ajustar: 1 }) });
+    const final = await ate(m);
+    assert.equal(final.status, 'concluida');
+    assert.equal(final.falhas, 2);
+  });
+
+  it('a repetição é por etapa: duas falhas em redigir e duas em ajustar ainda concluem', async () => {
+    const m = await montar({ roteiro: roteiroComFalhas({ redigir: MAXIMO_DE_REPETICOES_POR_ETAPA, ajustar: MAXIMO_DE_REPETICOES_POR_ETAPA }) });
+    const final = await ate(m);
+    assert.equal(final.status, 'concluida');
+    assert.equal(final.falhas, 2 * MAXIMO_DE_REPETICOES_POR_ETAPA);
+  });
+
+  it('a terceira falha na mesma etapa derruba a execução com o código da IA', async () => {
+    const m = await montar({ roteiro: roteiroComFalhas({ ajustar: MAXIMO_DE_REPETICOES_POR_ETAPA + 1 }) });
+    const final = await ate(m);
+    assert.equal(final.status, 'falhou');
+    assert.equal(final.erroCodigo, 'ia_saida_invalida');
+    assert.equal(final.falhas, MAXIMO_DE_REPETICOES_POR_ETAPA + 1);
+  });
+
+  it('o teto total de falhas transitórias derruba mesmo com cada etapa dentro do seu limite', async () => {
+    const m = await montar({ roteiro: roteiroComFalhas({ redigir: 2, comite: 2, ajustar: 2 }) });
+    const final = await ate(m);
+    assert.equal(MAXIMO_DE_FALHAS_TRANSITORIAS, 6);
+    assert.equal(final.status, 'falhou');
+    assert.equal(final.falhas, MAXIMO_DE_FALHAS_TRANSITORIAS);
+  });
+
+  it('falha não transitória segue derrubando de imediato, sem repetição', async () => {
+    const m = await montar({ roteiro: () => ({ codigo: 'limite_atingido', mensagem: 'x' }) as never });
+    const final = await ate(m);
+    assert.equal(final.status, 'falhou');
+    assert.equal(final.falhas, 1);
+  });
+
+  it('o motivo da saída inválida traz só caminho e tipo do problema, nunca o texto do modelo', async () => {
+    const m = await montar({ roteiro: () => ({ codigo: 'saida_invalida', mensagem: 'O modelo devolveu uma resposta fora do formato esperado. [esquema:respostas.3.motivo:too_big,secoes:invalid_type]' }) as never });
+    await ate(m);
+    const motivos = m.auditorias.map((a) => String(a.metadata?.motivo ?? '')).filter((x) => x !== '');
+    assert.ok(motivos.length > 0);
+    assert.equal(motivos[0], 'ia:saida_invalida:esquema:respostas.3.motivo:too_big,secoes:invalid_type');
+  });
+});
+
+describe('motivo da integridade', () => {
+  it('mantém o problema (a parte útil) quando o caminho do campo é longo e não repete o prefixo', () => {
+    const motivo = motivoDaIntegridade([
+      { caminho: 'plano_de_midia', mensagem: 'plano_de_midia/google/campaign_contains_eu_political_advertising (valor fora das opções)' },
+    ]);
+    assert.match(motivo, /campaign_contains_eu_political_advertising \(valor fora das opções\)$/);
+    assert.ok(!motivo.includes('plano_de_midia=plano_de_midia'));
+    assert.ok(motivo.length <= 260);
   });
 });

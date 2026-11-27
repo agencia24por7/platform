@@ -82,7 +82,7 @@ describe('Estratégia sobre a camada de IA (worker, chave e modelo por tarefa, u
     assert.ok(usos(o, `task = 'strategy_plan' and provider = 'google' and model = 'modelo-de-teste-a'`) >= 1);
     assert.equal(usos(o, `task <> 'strategy_plan'`), 0);
     assert.equal(usos(o, `result = 'reservada'`), 0, 'toda reserva foi concluída');
-    assert.equal(usos(o), 2, 'uma chamada por tentativa: sem idempotência, cada tentativa gasta cota');
+    assert.equal(usos(o), 3, 'uma chamada por tentativa (a primeira e duas repetições da etapa): sem idempotência, cada tentativa gasta cota');
   });
 
   it('sem chave nem modelo: falha com ia_nao_configurada e nenhum uso', async () => {

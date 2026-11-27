@@ -55,3 +55,7 @@ Release seguinte, só de código de domínio: Display, Performance Max, Demand G
 ## Adendo: correção da instrução do plano (PR 197)
 
 Em produção, a redação falhou com `ia_saida_invalida` (canal com plataforma `whatsapp` e campos repetidos no plano de mídia). O release leva só a instrução do agente de plano: sem migração e sem mudança de infra. Depois do deploy, gerar um plano no cliente de teste e conferir o `motivo` em `strategy.run.step`. Reversão: voltar a imagem.
+
+## Adendo: tentar de novo, tentativas por etapa e loading do plano (PR da UI)
+
+Depois do teste em produção: botão "Tentar de novo" na execução que falhou, até 2 repetições por etapa (teto de 6 por execução), motivo da falha sem corte e com o caminho do erro de formato, instrução do Google com os valores padrão, seletores do formulário que mantêm o valor e til animado no plano em andamento. Sem migração e sem mudança de infra. Depois do deploy: num plano que falhou, usar "Tentar de novo" e conferir `strategy.run.step` e `strategy.run.retry` na auditoria. Reversão: voltar a imagem.

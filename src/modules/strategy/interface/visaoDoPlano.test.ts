@@ -458,3 +458,38 @@ describe('visão do plano: execução presa', () => {
     assert.equal(visao.execucao?.parada, true);
   });
 });
+
+describe('visão do plano: tentar de novo', () => {
+  const falha = (erroCodigo: Execucao['erroCodigo'], tipo: Execucao['tipo'] = 'criar') => execucao({ status: 'falhou', erroCodigo, tipo });
+  const temAcao = (papel: MemberRole, p: PainelDoPlano) => ver(papel, p).acoes.some((a) => a.chave === 'tentar_de_novo' && a.habilitada);
+
+  it('oferece a ação a quem pode quando o erro é repetível, sem versão e com versão', () => {
+    assert.equal(temAcao('operator', painel({ versaoExibida: null, ultimaExecucao: falha('ia_falha') })), true);
+    assert.equal(temAcao('operator', painel({ ultimaExecucao: falha('ia_tempo', 'ajustar') })), true);
+    const aviso = ver('operator', painel({ versaoExibida: null, ultimaExecucao: falha('ia_falha') })).avisos.find((a) => a.chave === 'execucao_falhou');
+    assert.match(aviso?.texto ?? '', /Tentar de novo/);
+  });
+
+  it('não oferece para viewer, erro de configuração, gate reprovado, corrigir_gate, execução ativa ou última que não falhou', () => {
+    assert.equal(temAcao('viewer', painel({ ultimaExecucao: falha('ia_falha') })), false);
+    assert.equal(temAcao('operator', painel({ ultimaExecucao: falha('ia_nao_configurada') })), false);
+    assert.equal(temAcao('operator', painel({ ultimaExecucao: falha('gate_reprovado') })), false);
+    assert.equal(temAcao('operator', painel({ ultimaExecucao: falha('ia_falha', 'corrigir_gate') })), false);
+    assert.equal(temAcao('operator', painel({ execucaoAtiva: execucao(), ultimaExecucao: falha('ia_falha') })), false);
+    assert.equal(temAcao('operator', painel({ ultimaExecucao: execucao({ status: 'concluida' }) })), false);
+  });
+
+  it('sem botão o texto não manda tentar de novo', () => {
+    const aviso = ver('viewer', painel({ ultimaExecucao: falha('ia_falha') })).avisos.find((a) => a.chave === 'execucao_falhou');
+    assert.ok(!/Tentar de novo|Tente de novo/.test(aviso?.texto ?? ''));
+  });
+
+  it('criar: esconde o botão quando já existe versão da pessoa ou vigente', () => {
+    const feita = painel({ versaoExibida: null, ultimaExecucao: falha('ia_falha') });
+    assert.equal(temAcao('operator', feita), true);
+    const daPessoa = painel({ versaoExibida: null, ultimaExecucao: falha('ia_falha'), historico: { versoes: [resumo({ autorTipo: 'usuario' })], eventos: [] } });
+    assert.equal(temAcao('operator', daPessoa), false);
+    const vigente = painel({ versaoExibida: null, ultimaExecucao: falha('ia_falha'), historico: { versoes: [resumo({ status: 'vigente' })], eventos: [] } });
+    assert.equal(temAcao('operator', vigente), false);
+  });
+});

@@ -32,6 +32,12 @@ describe('formulário de novo plano', () => {
     assert.equal(vm.landingPages[0]?.marcada, true);
     assert.equal(vm.ousadias.find((o) => o.marcada)?.valor, 'ousado');
     assert.equal(vm.valores.objetivo, 'Mais leads');
+    assert.deepEqual(vm.selecionados, { tipo: 'marca', landingPage: PAGINA, ousadia: 'ousado' });
+  });
+
+  it('sem página escolhida o select de landing page fica no valor vazio', () => {
+    assert.equal(formularioDeNovoPlano(modelo(), {}, CLIENTE).selecionados.landingPage, '');
+    assert.equal(formularioDeNovoPlano(modelo(), { landingPageId: 'outra' }, CLIENTE).selecionados.landingPage, '');
   });
 
   it('começa em aquisição e ousadia moderada', () => {

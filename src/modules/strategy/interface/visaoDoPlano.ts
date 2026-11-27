@@ -2,6 +2,7 @@ import { rotaDoCliente } from '../../clients/domain/painel/enderecos.ts';
 import type { MemberRole } from '../../identity/domain/user.ts';
 import { aplicarUtm } from '../../../shared/utm/utm.ts';
 import type { FaltaParaAplicar } from '../domain/aplicacao.ts';
+import { criarPodeRepetir, erroRepetivel } from '../domain/repeticaoDaExecucao.ts';
 import { podeExecutar, type AcaoDoPlano } from '../domain/papeis.ts';
 import { lerPlano, type Afirmacao, type Evidencia, type Plano, type SecaoDoPlano } from '../domain/plano.ts';
 import { ROTULO_DO_STATUS, type StatusDaVersao } from '../domain/status.ts';
@@ -117,6 +118,7 @@ export type ChaveDeAcao =
   | 'pedir_mudanca'
   | 'pedir_revisao'
   | 'cancelar_execucao'
+  | 'tentar_de_novo'
   | 'editar_secao';
 
 export type AcaoDaVisao = {
@@ -202,17 +204,17 @@ const MOTIVO_POR_FALTA: Readonly<Record<FaltaParaAplicar, string>> = {
   gate_reprovado: 'O plano não passou na conferência final. Peça uma mudança ao agente ou edite o plano.',
 };
 
-export type MensagemDeFalha = { readonly titulo: string; readonly texto: string | null; readonly link: 'config' | null };
+export type MensagemDeFalha = { readonly titulo: string; readonly texto: string | null; readonly textoSemBotao: string | null; readonly link: 'config' | null };
 
 export const MENSAGEM_POR_ERRO_DA_EXECUCAO: Readonly<Record<string, MensagemDeFalha>> = {
-  ia_nao_configurada: { titulo: 'A inteligência artificial ainda não está configurada', texto: 'Sem ela o plano não pode ser criado nem ajustado.', link: 'config' },
-  ia_limite: { titulo: 'O limite de uso da inteligência artificial foi atingido', texto: 'Tente de novo mais tarde.', link: null },
-  ia_saida_invalida: { titulo: 'A resposta da inteligência artificial não pôde ser usada', texto: 'Ela veio fora do formato esperado. Tente de novo.', link: null },
-  ia_falha: { titulo: 'O serviço de inteligência artificial falhou', texto: 'Tente de novo em alguns minutos.', link: null },
-  ia_tempo: { titulo: 'O pedido demorou mais do que o permitido', texto: 'Tente de novo.', link: null },
-  brain_indisponivel: { titulo: 'Não foi possível ler o contexto do cliente agora', texto: 'Tente de novo em alguns minutos.', link: null },
-  gate_reprovado: { titulo: 'O plano não passou na conferência final', texto: 'Peça uma mudança ao agente ou edite o plano.', link: null },
-  interno: { titulo: 'Algo deu errado ao montar o plano', texto: 'Tente de novo. Se repetir, avise a equipe.', link: null },
+  ia_nao_configurada: { titulo: 'A inteligência artificial ainda não está configurada', texto: 'Sem ela o plano não pode ser criado nem ajustado.', textoSemBotao: null, link: 'config' },
+  ia_limite: { titulo: 'O limite de uso da inteligência artificial foi atingido', texto: 'Quando o limite voltar, use Tentar de novo.', textoSemBotao: 'Quem pode pedir o plano deve repetir mais tarde.', link: null },
+  ia_saida_invalida: { titulo: 'A resposta da inteligência artificial não pôde ser usada', texto: 'Ela veio fora do formato esperado. Use Tentar de novo.', textoSemBotao: 'Ela veio fora do formato esperado. Quem pode pedir o plano deve repetir.', link: null },
+  ia_falha: { titulo: 'O serviço de inteligência artificial falhou', texto: 'Use Tentar de novo em alguns minutos.', textoSemBotao: 'Quem pode pedir o plano deve repetir em alguns minutos.', link: null },
+  ia_tempo: { titulo: 'O pedido demorou mais do que o permitido', texto: 'Use Tentar de novo.', textoSemBotao: 'Quem pode pedir o plano deve repetir.', link: null },
+  brain_indisponivel: { titulo: 'Não foi possível ler o contexto do cliente agora', texto: 'Use Tentar de novo em alguns minutos.', textoSemBotao: 'Quem pode pedir o plano deve repetir em alguns minutos.', link: null },
+  gate_reprovado: { titulo: 'O plano não passou na conferência final', texto: 'Peça uma mudança ao agente ou edite o plano.', textoSemBotao: null, link: null },
+  interno: { titulo: 'Algo deu errado ao montar o plano', texto: 'Use Tentar de novo. Se repetir, avise a equipe.', textoSemBotao: 'Se repetir, avise a equipe.', link: null },
 };
 
 const MENSAGEM_DE_FALHA_DESCONHECIDA: MensagemDeFalha = MENSAGEM_POR_ERRO_DA_EXECUCAO['interno']!;
@@ -381,6 +383,14 @@ function avisoDoImpacto(desatualizado: PainelDoPlano['desatualizado'], entradas:
   };
 }
 
+export function podeTentarDeNovo(painel: PainelDoPlano | null, papel: MemberRole): boolean {
+  const ultima = painel?.ultimaExecucao ?? null;
+  if (!painel || !ultima || painel.execucaoAtiva || ultima.status !== 'falhou') return false;
+  if (ultima.tipo === 'corrigir_gate' || !erroRepetivel(ultima.erroCodigo)) return false;
+  if (ultima.tipo === 'criar' && !criarPodeRepetir(painel.historico.versoes, ultima.criadaEm)) return false;
+  return podeExecutar(ultima.tipo === 'criar' ? 'criar' : 'editar', { tipo: 'pessoa', papel });
+}
+
 function acoesDaVisao(painel: PainelDoPlano | null, papel: MemberRole): AcaoDaVisao[] {
   const pode = (acao: AcaoDoPlano) => podeExecutar(acao, { tipo: 'pessoa', papel });
   if (papel === 'viewer') return [];
@@ -397,6 +407,7 @@ function acoesDaVisao(painel: PainelDoPlano | null, papel: MemberRole): AcaoDaVi
 
   if (painel === null || status === null) {
     if (execucaoAtiva && pode('cancelar')) adicionar('cancelar_execucao', 'Cancelar execução', []);
+    if (podeTentarDeNovo(painel, papel)) adicionar('tentar_de_novo', 'Tentar de novo', []);
     return acoes;
   }
 
@@ -424,6 +435,7 @@ function acoesDaVisao(painel: PainelDoPlano | null, papel: MemberRole): AcaoDaVi
     adicionar('pedir_revisao', 'Pedir revisão', motivosDeEscrita('editar', 'Seu papel não permite pedir revisão.'));
   }
   if (execucaoAtiva) adicionar('cancelar_execucao', 'Cancelar execução', pode('cancelar') ? [] : ['Seu papel não permite cancelar a execução.']);
+  if (podeTentarDeNovo(painel, papel)) adicionar('tentar_de_novo', 'Tentar de novo', []);
   return acoes;
 }
 
@@ -447,7 +459,7 @@ function avisosDeConferencia(plano: Plano, contexto: Contexto): AvisoDaVisao[] {
   return avisos;
 }
 
-function avisosDaVisao(painel: PainelDoPlano, plano: Plano | null, planoLegivel: boolean, clienteId: string, agora: Date, contexto: Contexto): AvisoDaVisao[] {
+function avisosDaVisao(painel: PainelDoPlano, plano: Plano | null, planoLegivel: boolean, clienteId: string, agora: Date, contexto: Contexto, repetir: boolean): AvisoDaVisao[] {
   const avisos: AvisoDaVisao[] = [];
   const ativa = painel.execucaoAtiva;
   if (ativa && execucaoSemAvanco(ativa, agora)) {
@@ -465,7 +477,7 @@ function avisosDaVisao(painel: PainelDoPlano, plano: Plano | null, planoLegivel:
       chave: 'execucao_falhou',
       tom: 'danger',
       titulo: mensagem.titulo,
-      texto: mensagem.texto,
+      texto: repetir ? mensagem.texto : (mensagem.textoSemBotao ?? mensagem.texto),
       itens: [],
       link: mensagem.link === 'config' ? { rotulo: 'Abrir configurações', href: '/config' } : null,
     });
@@ -501,6 +513,7 @@ export function visaoDoPlano(entrada: EntradaDaVisao): VisaoDoPlano {
   const contexto: Contexto = { clienteId, entradas: entrada.entradasDoBrain ?? new Map(), hoje: agora.toISOString().slice(0, 10) };
   const somenteLeitura = papel === 'viewer';
   const acoes = acoesDaVisao(painel, papel);
+  const repetir = acoes.some((acao) => acao.chave === 'tentar_de_novo');
   const tipo = painel?.plano.tipo ?? '';
   const tipoRotulo = ehTipoDePlano(tipo) ? ROTULO_DO_TIPO_DE_PLANO[tipo] : tipo;
   const plataformas = (painel?.plano.plataformas ?? []).map(nomeDaPlataforma);
@@ -520,7 +533,7 @@ export function visaoDoPlano(entrada: EntradaDaVisao): VisaoDoPlano {
       icone: semVersao.icone,
       classe: semVersao.classe,
       versao: null,
-      avisos: painel ? avisosDaVisao(painel, null, true, clienteId, agora, contexto) : [],
+      avisos: painel ? avisosDaVisao(painel, null, true, clienteId, agora, contexto, repetir) : [],
       execucao,
       acoes,
       resumo: null,
@@ -548,7 +561,7 @@ export function visaoDoPlano(entrada: EntradaDaVisao): VisaoDoPlano {
     icone: aparencia.icone,
     classe: aparencia.classe,
     versao: { id: versaoExibida.id, em: versaoExibida.criadaEm, emTexto: dataEHoraBr(versaoExibida.criadaEm) },
-    avisos: avisosDaVisao(painel, plano, lida.ok, clienteId, agora, contexto),
+    avisos: avisosDaVisao(painel, plano, lida.ok, clienteId, agora, contexto, repetir),
     execucao,
     acoes,
     resumo: plano ? { chave: 'resumo_executivo', titulo: TITULO_DA_SECAO.resumo_executivo, json: JSON.stringify(plano.resumo_executivo, null, 2), conteudo: blocosDoResumo(plano, contexto) } : null,

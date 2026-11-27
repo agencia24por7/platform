@@ -8,6 +8,7 @@ import {
   pedirRevisaoAcao,
   rejeitarAcao,
   revogarAcao,
+  tentarDeNovoAcao,
 } from '@/../app/clientes/[id]/(painel)/estrategia/acoes';
 import { FormularioDeMudanca } from '@/../app/clientes/[id]/(painel)/estrategia/FormularioDeMudanca';
 import type { AcaoDaVisao, ChaveDeAcao, VisaoDoPlano } from '@/modules/strategy/interface/visaoDoPlano';
@@ -66,6 +67,17 @@ export function AcoesDoPlano({ clienteId, visao }: Props) {
         <form className="estrategia-acao" key={acao.chave} action={acao.chave === 'aplicar' ? aplicarAcao : autorizarAcao}>
           {campos}
           <BotaoDeEnvio className="btn btn--primary" pendente={acao.chave === 'aplicar' ? 'Aplicando…' : 'Autorizando…'}>
+            {acao.rotulo}
+          </BotaoDeEnvio>
+        </form>
+      );
+    }
+    if (acao.chave === 'tentar_de_novo') {
+      return (
+        <form className="estrategia-acao" key={acao.chave} action={tentarDeNovoAcao}>
+          <input type="hidden" name="clienteId" value={clienteId} />
+          <input type="hidden" name="planoId" value={planoId} />
+          <BotaoDeEnvio className="btn btn--primary" pendente="Pedindo…">
             {acao.rotulo}
           </BotaoDeEnvio>
         </form>

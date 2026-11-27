@@ -55,6 +55,16 @@ describe('adaptador do AI SDK (ADR 0063 §3)', () => {
     }
   });
 
+  it('a falha de validação traz só caminho e tipo dos campos inválidos, nunca o valor do modelo', async () => {
+    const { porta: q } = porta(async () => texto('{"ok":"SEGREDO-DO-CLIENTE","nota":1.5}'));
+    const r2 = await q.gerar(pedido());
+    assert.equal(r2.ok, false);
+    if (!r2.ok) {
+      assert.match(r2.error.message, /\[esquema:ok:invalid_type,nota:invalid_type\]$/);
+      assert.equal(JSON.stringify(r2.error).includes('SEGREDO'), false);
+    }
+  });
+
   it('erro do fornecedor vira falha genérica por código e nunca carrega a chave nem o corpo', async () => {
     const casos: [number, string][] = [[401, 'unauthorized'], [403, 'unauthorized'], [404, 'not_found'], [429, 'rate_limited'], [400, 'unavailable'], [500, 'unavailable']];
     for (const [status, codigo] of casos) {
