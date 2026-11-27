@@ -84,7 +84,7 @@ const LIMITE_DE_PUSHES = 3
 function avaliarPushSemDestino(comando, diretorioBase) {
   const pushes = String(comando ?? '').matchAll(/\bgit\b((?:\s+(?:-[cC]\s+(?:"[^"]*"|'[^']*'|\S+)|--[\w-]+(?:=\S+)?))*)\s+push\b([^;&|\n]*)/g)
   const lista = [...pushes]
-  if (lista.length > LIMITE_DE_PUSHES) return { decisao: 'ask', motivo: 'Muitos git push no mesmo comando para a guarda avaliar com segurança: divida o comando.' }
+  if (lista.length > LIMITE_DE_PUSHES) return { decisao: 'deny', motivo: 'Muitos git push no mesmo comando para a guarda avaliar com segurança: divida o comando.' }
   for (const push of lista) {
     const diretorioDoC = /-C\s+("[^"]*"|'[^']*'|\S+)/.exec(push[1])?.[1]
     const diretorio = diretorioDoC ? absoluto(diretorioDoC.replace(SEM_ASPAS, ''), diretorioBase) : diretorioBase

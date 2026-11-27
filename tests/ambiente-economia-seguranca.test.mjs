@@ -104,6 +104,7 @@ test('comandos perigosos são negados, os de risco pedem confirmação e os comu
     'printenv DATABASE_URL',
     'node -p "JSON.stringify(process.env)"',
     'node -p process.env.DATABASE_URL',
+    'node -p "Boolean(process.env.DATABASE_URL)"',
     'node -e "console.log(process.env.DATABASE_URL)"',
     'cat /proc/1/environ',
     "python3 -c 'import os;print(dict(os.environ))'",
@@ -246,7 +247,6 @@ test('comandos perigosos são negados, os de risco pedem confirmação e os comu
   const livres = [
     'npm run typecheck',
     'cat .env.example',
-    'node -e "console.log(Boolean(process.env.DATABASE_URL))"',
     'git push origin feature/x',
     'git push -u origin feat/main-menu',
     'git status',
@@ -355,7 +355,7 @@ test('push sem destino a partir da main é negado e o resto passa', () => {
     execFileSync('git', ['init', '-q', '-b', 'main', vazia])
     assert.equal(decidir('git push', vazia), 'ask')
     assert.equal(decidir('git push && cat .env', vazia), 'deny')
-    assert.equal(decidir('git push; git push; git push; git push', pasta), 'ask')
+    assert.equal(decidir('git push; git push; git push; git push', pasta), 'deny')
   } finally {
     rmSync(pasta, { recursive: true, force: true })
     rmSync(vazia, { recursive: true, force: true })
