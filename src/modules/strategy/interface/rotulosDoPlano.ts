@@ -10,27 +10,27 @@ export const TITULO_DA_SECAO: Readonly<Record<SecaoDoPlano, string>> = {
   estrategia: 'Estratégia',
   canais_e_plataformas: 'Canais e plataformas',
   campanhas: 'Campanhas',
-  criativos: 'Criativos',
   orcamento: 'Orçamento',
   metas_e_metricas: 'Metas e métricas',
   medicao: 'Medição',
   calendario: 'Calendário',
+  plano_de_midia: 'Plano de mídia',
   riscos_e_regras: 'Riscos e regras',
   lacunas: 'Lacunas',
 };
 
-export const ROTULO_DO_CANAL: Readonly<Record<string, string>> = {
-  busca: 'Busca',
-  social: 'Redes sociais',
-  video: 'Vídeo',
-  display: 'Display',
-  email: 'E-mail',
-  mensageria: 'Mensageria',
-  conteudo_organico: 'Conteúdo orgânico',
-  creators: 'Creators',
-  marketplace: 'Marketplace',
-  offline: 'Offline',
+export const TITULO_DA_SECAO_DE_MIDIA: Readonly<Record<string, string>> = {
+  objetivo: 'Objetivo',
+  publico: 'Público',
+  orcamento_e_lances: 'Orçamento e lances',
+  programacao: 'Programação',
+  posicionamentos: 'Posicionamentos',
+  conversao: 'Conversão',
+  copy: 'Textos',
+  testes_ab: 'Testes A/B',
+  metas: 'Metas',
 };
+
 
 export const ROTULO_DA_PLATAFORMA_DO_PLANO: Readonly<Record<string, string>> = {
   google: 'Google',
@@ -48,48 +48,12 @@ export const ROTULO_DA_PLATAFORMA_DO_PLANO: Readonly<Record<string, string>> = {
   outra: 'Outra',
 };
 
-export const ROTULO_DO_FORMATO: Readonly<Record<string, string>> = {
-  imagem: 'Imagem',
-  video_curto: 'Vídeo curto',
-  video_longo: 'Vídeo longo',
-  carrossel: 'Carrossel',
-  texto: 'Texto',
-  audio: 'Áudio',
-  formulario_nativo: 'Formulário nativo',
-  busca_responsiva: 'Anúncio responsivo de busca',
-  catalogo: 'Catálogo',
-  stories: 'Stories',
-  email: 'E-mail',
-  mensagem: 'Mensagem',
-};
 
 export const ROTULO_DA_OUSADIA: Readonly<Record<string, string>> = { conservador: 'Conservador', moderado: 'Moderado', ousado: 'Ousado' };
-export const ROTULO_DO_PAPEL_DO_CANAL: Readonly<Record<string, string>> = { marca: 'Marca', ativacao: 'Ativação', retencao: 'Retenção', teste: 'Teste' };
-export const ROTULO_DA_SEVERIDADE: Readonly<Record<string, string>> = { baixa: 'Baixa', media: 'Média', alta: 'Alta' };
-export const ROTULO_DO_NIVEL_DE_META: Readonly<Record<string, string>> = { negocio: 'Negócio', canal: 'Canal' };
-export const ROTULO_DO_EXPERIMENTO: Readonly<Record<string, string>> = {
-  holdout: 'Grupo de controle (holdout)',
-  geo: 'Teste por região',
-  lift_de_plataforma: 'Lift da plataforma',
-  antes_e_depois: 'Antes e depois',
-};
 export const ROTULO_DO_PAPEL_DA_EVIDENCIA: Readonly<Record<string, string>> = { favor: 'a favor', contra: 'contra', premissa: 'premissa' };
-export const ROTULO_DA_LACUNA: Readonly<Record<string, string>> = {
-  limite_ausente: 'Limite ausente',
-  dado_ausente: 'Dado ausente',
-  evidencia_fraca: 'Evidência fraca',
-  regra_ausente: 'Regra ausente',
-  outro: 'Outro',
-};
-
-export const ROTULO_DO_VEREDITO_DO_COMITE: Readonly<Record<string, string>> = {
-  aprova: 'Aprova',
-  aprova_com_ajuste: 'Aprova com ajuste',
-  reprova: 'Reprova',
-};
 
 export const ROTULO_DA_CHECAGEM: Readonly<Record<string, string>> = {
-  urns_no_pacote: 'Toda afirmação cita uma entrada do Brain',
+  urns_no_pacote: 'Toda afirmação cita uma fonte do contexto do cliente',
   evidencia_vigente: 'Nenhuma evidência vencida',
   meta_sem_nota_d: 'Nenhuma meta sustentada só por nota D',
   limites_do_cliente: 'Limites e regras do cliente respeitados',
@@ -98,7 +62,7 @@ export const ROTULO_DA_CHECAGEM: Readonly<Record<string, string>> = {
   secoes_obrigatorias: 'Seções obrigatórias preenchidas',
   orcamento_fecha: 'A verba fecha com a soma das campanhas',
   objetivo_com_metrica: 'Todo objetivo tem métrica e forma de medir',
-  comite_completo: 'Comitê completo e todos os pontos respondidos',
+  comite_completo: 'Revisão do plano completa e todos os pontos respondidos',
   nao_faremos_preservado: 'O que "não faremos" da versão base foi mantido',
 };
 
@@ -117,11 +81,11 @@ export const ROTULO_DA_NOTA: Readonly<Record<string, string>> = {
 };
 
 export const ROTULO_DA_ETAPA: Readonly<Record<string, string>> = {
-  ler_brain: 'Lendo o Brain',
-  redigir: 'Redigindo',
-  comite: 'Comitê',
-  ajustar: 'Ajustando',
-  gates: 'Gates',
+  ler_brain: 'Lendo o contexto do cliente',
+  redigir: 'Redigindo o plano',
+  comite: 'Revisando o plano',
+  ajustar: 'Ajustando o plano',
+  gates: 'Conferindo o plano',
 };
 
 export const ROTULO_DO_MOTIVO_DE_IMPACTO: Readonly<Record<string, string>> = {
@@ -137,20 +101,6 @@ export const ROTULO_DO_TIPO_DE_ENTRADA: Readonly<Record<string, string>> = {
   decisao: 'decisão',
   contexto_secao: 'seção de contexto',
   contexto_lista: 'lista de contexto',
-};
-
-export const ROTULO_DO_EVENTO_DO_PLANO: Readonly<Record<string, string>> = {
-  proposta: 'Plano aplicado: foi para autorização',
-  parecer: 'Parecer do Comitê',
-  ajuste: 'Ajuste do plano aos pareceres',
-  gate: 'Gates executados',
-  cancelada: 'Versão cancelada',
-  efetivada: 'Plano autorizado',
-  rejeitada: 'Plano rejeitado',
-  revogada: 'Plano revogado',
-  revisao_aberta: 'Revisão aberta',
-  impacto_anotado: 'Mudança do Brain anotada',
-  redigida: 'Conteúdo redigido (LGPD)',
 };
 
 export function nomeDoCampo(chave: string): string {

@@ -271,8 +271,11 @@ describe('Strategy Plan, tabelas núcleo (migração 0143, ADR 0056)', { concurr
     );
     assert.equal(doApp(`SELECT status || '/' || schema_version || '/' || author_kind FROM core.strategy_plan_versions WHERE id = '${versao}'`), 'rascunho/1/usuario');
     assert.equal(doApp(`SELECT urn || '/' || content_hash || '/' || role FROM core.strategy_plan_refs WHERE version_id = '${versao}'`), `${urn}/${HASH}/evidencia_favor`);
-    const duplicado = recusa(() => dono(`INSERT INTO core.strategy_plans (organization_id, client_id, plan_type_key) VALUES ('${ids.orgA}', '${ids.cliA}', '${tipo}')`));
-    assert.match(duplicado ?? '', /23505.*strategy_plans_tipo_unico/s);
+    dono(`INSERT INTO core.strategy_plans (organization_id, client_id, plan_type_key) VALUES ('${ids.orgA}', '${ids.cliA}', '${tipo}')`);
+    assert.equal(dono(`SELECT count(*) FROM core.strategy_plans WHERE client_id = '${ids.cliA}' AND plan_type_key = '${tipo}'`), '2', 'planos do mesmo tipo são independentes (24K-132)');
+    assert.equal(dono(`SELECT plataformas IS NULL AND whatsapp IS NULL AND landing_page_id IS NULL FROM core.strategy_plans WHERE id = '${plano}'`), 't', 'colunas de destino nulas, sem valor inventado');
+    assert.match(recusa(() => dono(`INSERT INTO core.strategy_plans (organization_id, client_id, plan_type_key, plataformas) VALUES ('${ids.orgA}', '${ids.cliA}', '${tipo}', ARRAY['inexistente'])`)) ?? '', /23514.*plataformas_validas/s);
+    assert.match(recusa(() => dono(`INSERT INTO core.strategy_plans (organization_id, client_id, plan_type_key, whatsapp) VALUES ('${ids.orgA}', '${ids.cliA}', '${tipo}', '11999998888')`)) ?? '', /23514.*whatsapp_e164/s);
     assert.match(recusa(() => doApp(`INSERT INTO core.strategy_plans (organization_id, client_id, plan_type_key) VALUES ('${ids.orgA}', '${ids.cliA}', 'Maiuscula')`)) ?? '', /23514.*plan_type_key_check/s);
   });
 
@@ -301,7 +304,7 @@ describe('Strategy Plan, tabelas núcleo (migração 0143, ADR 0056)', { concurr
     assert.match(
       recusa(() => doApp(`INSERT INTO core.strategy_plans (id, organization_id, client_id, plan_type_key)
         SELECT id, organization_id, client_id, plan_type_key FROM core.strategy_plans WHERE id = '${plano}'
-        ON CONFLICT (client_id, plan_type_key) DO UPDATE SET created_at = now()`)) ?? '',
+        ON CONFLICT (id) DO UPDATE SET created_at = now()`)) ?? '',
       /42501.*permission denied/s,
     );
     const tipo = dono(`SELECT plan_type_key FROM core.strategy_plans WHERE id = '${plano}'`);
@@ -1477,7 +1480,7 @@ describe('Strategy Plan, tabelas núcleo (migração 0143, ADR 0056)', { concurr
     );
     assert.equal(
       ordem('strategy_plan_events'),
-      'strategy_plan_events_a0_inquilino,strategy_plan_events_antes,strategy_plan_events_antes_execucao,strategy_plan_events_b_teto',
+      'strategy_plan_events_a0_inquilino,strategy_plan_events_antes,strategy_plan_events_antes_execucao,strategy_plan_events_b_teto,strategy_plan_events_juiz',
     );
   });
 

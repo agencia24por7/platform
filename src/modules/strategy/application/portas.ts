@@ -8,6 +8,7 @@ import type {
   PacoteDeLeitura,
   PapelDaEvidencia,
   Plano as PlanoDeMarketing,
+  Plataforma,
   StatusDaVersao,
   TipoDeEvento,
   VereditoDoLimite,
@@ -17,9 +18,19 @@ import type { Valor } from '@/modules/clients/domain/regras/valor';
 
 export const MAXIMO_DE_RESERVAS = 20;
 
+export const CHAVE_DE_IDEMPOTENCIA_COM_OUTRO_PEDIDO: ErroDeEstrategia = {
+  codigo: 'conflito',
+  mensagem: 'Esta chave de idempotência já foi usada para um pedido diferente. Gere uma nova chave para criar outro plano.',
+};
+
+export function mesmoPedidoDePlano(existente: Pick<Plano, 'tipo' | 'plataformas' | 'landingPageId'>, novo: Pick<NovoPlano, 'tipo' | 'plataformas' | 'landingPageId'>): boolean {
+  const ordenadas = (lista: readonly string[] | null) => (lista === null ? '' : [...lista].sort().join(','));
+  return existente.tipo === novo.tipo && existente.landingPageId === novo.landingPageId && ordenadas(existente.plataformas) === ordenadas(novo.plataformas);
+}
+
 export type EscopoDoPlano = { readonly organizationId: string; readonly clientId: string };
 
-export type TipoDeExecucao = 'criar' | 'ajustar' | 'revisar';
+export type TipoDeExecucao = 'criar' | 'ajustar' | 'revisar' | 'corrigir_gate';
 export type StatusDaExecucao = 'pendente' | 'rodando' | 'concluida' | 'falhou' | 'cancelada';
 export type EtapaDaExecucao = 'ler_brain' | 'redigir' | 'comite' | 'ajustar' | 'gates' | 'fim';
 export type CodigoDeErroDaExecucao =
@@ -30,6 +41,7 @@ export type CodigoDeErroDaExecucao =
   | 'ia_tempo'
   | 'brain_indisponivel'
   | 'gate_reprovado'
+  | 'correcao_nao_convergiu'
   | 'interno';
 
 export type MotivoDeRevisao = 'edicao_manual' | 'brain_mudou';
@@ -37,7 +49,8 @@ export type MotivoDeRevisao = 'edicao_manual' | 'brain_mudou';
 export type PedidoDaExecucao =
   | { readonly tipo: 'criar'; readonly intencao: Intencao }
   | { readonly tipo: 'ajustar'; readonly instrucao: string }
-  | { readonly tipo: 'revisar'; readonly motivo: MotivoDeRevisao };
+  | { readonly tipo: 'revisar'; readonly motivo: MotivoDeRevisao }
+  | { readonly tipo: 'corrigir_gate' };
 
 export type CodigoDeErroDeEstrategia =
   | 'sem_permissao'
@@ -62,7 +75,18 @@ export type Plano = {
   readonly organizationId: string;
   readonly clientId: string;
   readonly tipo: string;
+  readonly plataformas: readonly Plataforma[] | null;
+  readonly whatsapp: string | null;
+  readonly landingPageId: string | null;
   readonly criadoEm: Date;
+};
+
+export type NovoPlano = {
+  readonly tipo: string;
+  readonly plataformas: readonly Plataforma[];
+  readonly whatsapp: string;
+  readonly landingPageId: string;
+  readonly chaveDeIdempotencia?: string;
 };
 
 export type AutorDaVersao = 'usuario' | 'agente';
@@ -99,11 +123,14 @@ export type PlanoDoCliente = {
   readonly maisRecente: VersaoResumo | null;
   readonly vigente: VersaoResumo | null;
   readonly aberta: VersaoResumo | null;
+  readonly objetivo: string | null;
+  readonly ultimaExecucao: Execucao | null;
+  readonly atualizadoEm: Date;
 };
 
 export type TipoDeEventoRegistravel = Extract<
   TipoDeEvento,
-  'proposta' | 'parecer' | 'ajuste' | 'gate' | 'cancelada' | 'efetivada' | 'rejeitada' | 'revogada'
+  'proposta' | 'parecer' | 'ajuste' | 'gate' | 'veredito_juiz' | 'cancelada' | 'efetivada' | 'rejeitada' | 'revogada'
 >;
 
 export type EventoDaVersao = {
@@ -204,11 +231,15 @@ export type TipoDeRecurso = 'plano' | 'versao' | 'execucao';
 
 export type RepositorioDeEstrategia = {
   clienteVisivel(organizationId: string, clientId: string): Promise<boolean>;
-  buscarPlano(escopo: EscopoDoPlano, tipo: string): Promise<Plano | null>;
   buscarPlanoPorId(organizationId: string, planoId: string): Promise<Plano | null>;
   clienteDoRecurso(organizationId: string, tipo: TipoDeRecurso, id: string): Promise<string | null>;
-  criarPlano(escopo: EscopoDoPlano, tipo: string, requestId: string): Promise<Result<Plano, ErroDeEstrategia>>;
+  criarPlanoComExecucao(
+    escopo: EscopoDoPlano,
+    novo: NovoPlano,
+    execucao: Omit<NovaExecucao, 'planoId'>,
+  ): Promise<Result<{ readonly plano: Plano; readonly execucao: Execucao; readonly reaproveitado?: boolean }, ErroDeEstrategia>>;
   listarPlanosDoCliente(escopo: EscopoDoPlano): Promise<readonly PlanoDoCliente[]>;
+  estadoDoPlano(organizationId: string, planoId: string): Promise<PlanoDoCliente | null>;
   criarVersaoRascunho(organizationId: string, nova: NovaVersao): Promise<Result<Versao, ErroDeEstrategia>>;
   registrarEvento(organizationId: string, novo: NovoEvento): Promise<Result<EventoDaVersao, ErroDeEstrategia>>;
   lerVersao(organizationId: string, versaoId: string): Promise<Versao | null>;
@@ -217,6 +248,7 @@ export type RepositorioDeEstrategia = {
   criarExecucao(organizationId: string, clientId: string, nova: NovaExecucao): Promise<Result<Execucao, ErroDeEstrategia>>;
   lerExecucao(organizationId: string, execucaoId: string): Promise<Execucao | null>;
   execucaoAtiva(organizationId: string, planoId: string): Promise<Execucao | null>;
+  execucoesDoPlano(organizationId: string, planoId: string, limite: number): Promise<readonly Execucao[]>;
   ultimaExecucao(organizationId: string, planoId: string): Promise<Execucao | null>;
   cancelarExecucao(organizationId: string, execucaoId: string, requestId: string): Promise<Result<Execucao, ErroDeEstrategia>>;
   atualizarExecucao(
@@ -240,7 +272,7 @@ export type CodigoDeErroDeIA = 'nao_configurada' | 'limite_atingido' | 'saida_in
 
 export type ErroDeIA = { readonly codigo: CodigoDeErroDeIA; readonly mensagem: string };
 
-export type TarefaDeIA = 'strategy_plan' | 'comite' | 'gate';
+export type TarefaDeIA = 'strategy_plan' | 'comite' | 'juiz' | 'gate';
 
 export type PedidoDeIA<T> = {
   readonly tarefa: TarefaDeIA;
@@ -285,6 +317,18 @@ export type ErroDeLimites = { readonly codigo: 'limites_indisponiveis'; readonly
 
 export type AvaliadorDeLimites = {
   avaliador(organizacaoId: string, clienteId: string, plano: PlanoDeMarketing): Promise<Result<AvaliarLimite, ErroDeLimites>>;
+};
+
+export type TipoDeLimiteDisponivel = {
+  readonly key: string;
+  readonly medida: string;
+  readonly periodo: string;
+  readonly sentido: string;
+  readonly unidade: string;
+};
+
+export type CatalogoDeLimites = {
+  listar(organizationId: string): Promise<readonly TipoDeLimiteDisponivel[]>;
 };
 
 export type Relogio = { agora(): Date };

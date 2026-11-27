@@ -32,7 +32,7 @@ function citacoesDe(valor: unknown, secao: SecaoDoPlano, idAtual: string | null,
     return;
   }
   if (!ehRegistro(valor)) return;
-  const id = typeof valor.id === 'string' ? valor.id : idAtual;
+  const id = typeof valor.id === 'string' ? valor.id : typeof valor.campo === 'string' ? valor.campo : idAtual;
   const trecho = id === null ? secao : `${secao}/${id}`;
   for (const [chave, filho] of Object.entries(valor)) {
     if (chave === 'evidencias' && Array.isArray(filho)) {
@@ -102,4 +102,25 @@ export function combinarReferencias(
     if (!unicas.has(chave)) unicas.set(chave, ref);
   }
   return [...unicas.values()].sort((a, b) => a.urn.localeCompare(b.urn) || a.papel.localeCompare(b.papel));
+}
+
+export function urnsDeRegraOuLimite(pacote: PacoteDeLeitura): Set<string> {
+  return new Set(
+    pacote.entradas
+      .filter((entrada) => TIPOS_DE_REGRA_NO_PACOTE.includes(entrada.tipo) || entrada.evidencia?.categoria === 'regra_legal')
+      .map((entrada) => entrada.urn),
+  );
+}
+
+export function urnsCitadasNasSecoes(valor: unknown, urns: Set<string> = new Set(), profundidade = 0): Set<string> {
+  if (profundidade > 24) return urns;
+  if (Array.isArray(valor)) {
+    for (const item of valor) urnsCitadasNasSecoes(item, urns, profundidade + 1);
+  } else if (valor !== null && typeof valor === 'object') {
+    for (const [chave, filho] of Object.entries(valor)) {
+      if (chave === 'urn' && typeof filho === 'string') urns.add(filho);
+      else urnsCitadasNasSecoes(filho, urns, profundidade + 1);
+    }
+  }
+  return urns;
 }

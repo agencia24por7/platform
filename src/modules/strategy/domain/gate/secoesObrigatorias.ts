@@ -15,11 +15,11 @@ export const SECOES_OBRIGATORIAS: readonly Regra[] = [
   { secao: 'estrategia', preenchida: (p) => p.estrategia.politica.texto.trim().length > 0 },
   { secao: 'canais_e_plataformas', preenchida: (p) => p.canais_e_plataformas.canais.length > 0 },
   { secao: 'campanhas', preenchida: (p) => p.campanhas.campanhas.length > 0 },
-  { secao: 'criativos', preenchida: (p) => p.criativos.conceitos.length > 0 },
   { secao: 'orcamento', preenchida: (p) => centavosDe(p.orcamento.total) > 0n },
   { secao: 'metas_e_metricas', preenchida: (p) => p.metas_e_metricas.metas.some((m) => m.nivel === 'negocio') },
   { secao: 'medicao', preenchida: (p) => p.medicao.itens.length > 0 },
   { secao: 'calendario', preenchida: (p) => p.calendario.fases.length > 0 },
+  { secao: 'plano_de_midia', preenchida: (p) => p.plano_de_midia.plataformas.some((m) => m.secoes.some((s) => s.campos.length > 0)) },
   { secao: 'riscos_e_regras', preenchida: (p) => p.riscos_e_regras.riscos.length > 0 },
 ];
 

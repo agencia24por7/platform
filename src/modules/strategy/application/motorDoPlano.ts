@@ -9,8 +9,23 @@ import {
   consolidarPareceres,
   esquemaAjuste,
   esquemaDoGrupo,
+  esquemaDaMidiaDaPlataforma,
   esquemaIntencao,
+  mesclarMidiaDaPlataforma,
+  secoesDoGrupo,
+  secoesDoPlano,
+  planoParaOGateDeModelo,
+  problemasDaPlataforma,
+  catalogoDaPlataforma,
+  CATALOGOS_DISPONIVEIS,
+  catalogoParaModelo,
+  INDICE_DO_PLANO_DE_MIDIA,
+  urnsCitadasNasSecoes,
+  urnsDeRegraOuLimite,
+  type CatalogoDeCampos,
+  type Plataforma,
   esquemaParecer,
+  PADRAO_DO_TRECHO,
   esquemaRespostaDoAjuste,
   gruposDaPendenciaDoGate,
   grupoDoTrecho,
@@ -30,6 +45,18 @@ import {
   rodarGates,
   validarAjuste,
   GRUPOS_DE_REDACAO,
+  CHAVE_NAO_FAREMOS_PRESERVADO,
+  argumentosParaAplicar,
+  checagensCorrigiveis,
+  conferirAjusteContraOJuiz,
+  conferirVereditos,
+  destinosDosPontos,
+  esquemaSaidaDoJuiz,
+  falhasDoGate,
+  pontosParaJulgar,
+  respostasDeRecusaDoJuiz,
+  restaurarNaoFaremos,
+  vereditosDoEvento,
   INDICE_DO_ULTIMO_GRUPO,
   MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA,
   abreviarUrnsParaCodigos,
@@ -38,6 +65,10 @@ import {
   type CodigosDoPacote,
   MAXIMO_DE_ENTRADAS_NO_PACOTE,
   type Ajuste,
+  type ChecagemReprovada,
+  type EventoDaCadeia,
+  type ProblemaDoModelo,
+  type VereditoDoJuiz,
   type Argumento,
   type Intencao,
   type PacoteDeLeitura,
@@ -53,16 +84,20 @@ import {
 import { carregarCadeia, pareceresDe, versaoDaRaizDaCadeia } from '@/modules/strategy/application/cadeiaDoComite';
 import {
   INSTRUCAO_DO_GATE_POR_MODELO,
+  INSTRUCAO_DO_JUIZ,
+  TAREFA_PARA_CORRIGIR_O_GATE,
   TAREFA_PARA_AJUSTAR_AO_COMITE,
   TAREFA_PARA_AJUSTAR_PLANO,
   TAREFA_PARA_ATUALIZAR_AO_BRAIN,
   TAREFA_PARA_CRIAR_PLANO,
   instrucaoDaPersona,
   instrucaoDoGrupo,
+  instrucaoDoPlanoDeMidia,
 } from '@/modules/strategy/application/instrucoes/index';
 import { MAXIMO_DE_RESERVAS } from '@/modules/strategy/application/portas';
 import type {
   AvaliadorDeLimites,
+  CatalogoDeLimites,
   CodigoDeErroDaExecucao,
   CodigoDeErroDeIA,
   ErroDeEstrategia,
@@ -90,10 +125,12 @@ export const MAXIMO_DE_PROBLEMAS_DO_GATE = 10;
 export const MAXIMO_DE_VERSOES_LIDAS = 50;
 export const AGENTE_DE_PLANO = 'agente_de_plano';
 export const AGENTE_DO_GATE = 'gates';
+export const AGENTE_DO_JUIZ = 'juiz';
 
 export const ORCAMENTO_DA_IA: Readonly<Record<TarefaDeIA, { readonly tokensMaximos: number; readonly tempoMaximoMs: number }>> = {
   strategy_plan: { tokensMaximos: 6_500, tempoMaximoMs: 115_000 },
   comite: { tokensMaximos: 5_000, tempoMaximoMs: 90_000 },
+  juiz: { tokensMaximos: 4_500, tempoMaximoMs: 60_000 },
   gate: { tokensMaximos: 3_000, tempoMaximoMs: 60_000 },
 };
 
@@ -125,9 +162,55 @@ type PontosDoGrupo = {
   readonly argumentos: Argumento[];
   readonly obrigatorias: PendenciaObrigatoria[];
   readonly doGate: string[];
+  readonly pendenciasDoGate: PendenciaDoGate[];
 };
 
-export type PendenciaDoGate = { readonly texto: string; readonly grupos: readonly number[] };
+export type PendenciaDoGate = { readonly texto: string; readonly grupos: readonly number[]; readonly trechos?: readonly string[] };
+
+const esquemaDoAjusteDaMidia = (plataforma: Plataforma) =>
+  z.strictObject({
+    secoes: esquemaDaMidiaDaPlataforma(plataforma),
+    respostas: z.array(esquemaRespostaDoAjuste).max(80),
+  });
+
+type PerfilDoPacote = 'completo' | 'regras' | 'citadas';
+
+const SECOES_QUE_O_PLANO_DE_MIDIA_USA = ['publico_alvo', 'posicionamento_e_mensagem', 'campanhas', 'orcamento', 'calendario', 'metas_e_metricas'] as const;
+
+function perfilDoGrupo(indice: number): PerfilDoPacote {
+  const grupo: readonly string[] = GRUPOS_DE_REDACAO[indice] ?? [];
+  if (grupo.includes('lacunas')) return 'citadas';
+  if (grupo.some((secao) => secao === 'plano_de_midia' || secao === 'orcamento' || secao === 'riscos_e_regras')) return 'regras';
+  return 'completo';
+}
+
+function pacoteDoGrupo(pacote: PacoteDeLeitura, perfil: PerfilDoPacote, jaEscrito: unknown): PacoteDeLeitura {
+  const citadas = urnsCitadasNasSecoes(jaEscrito);
+  if (perfil === 'completo') return pacoteParaEntrada(pacote, MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA.redigir, { primeiras: citadas });
+  const regras = urnsDeRegraOuLimite(pacote);
+  return pacoteParaEntrada(pacote, MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA[perfil], {
+    somenteUrns: new Set([...regras, ...citadas]),
+    primeiras: regras,
+    comCatalogo: false,
+  });
+}
+
+function idsReferenciaveis(plano: Record<string, unknown>) {
+  const ids = (secao: unknown, colecao: string) => {
+    const lista = (secao as Record<string, unknown> | undefined)?.[colecao];
+    return Array.isArray(lista) ? lista.map((item) => (item as { id?: unknown }).id).filter((id): id is string => typeof id === 'string') : [];
+  };
+  return {
+    segmentos: ids(plano.publico_alvo, 'segmentos'),
+    canais: ids(plano.canais_e_plataformas, 'canais'),
+    metas: ids(plano.metas_e_metricas, 'metas'),
+  };
+}
+
+function plataformaDoTrecho(trecho: string, escolhidas: readonly Plataforma[]): Plataforma | null {
+  const [secao, plataforma] = trecho.split('/');
+  return secao === 'plano_de_midia' && escolhidas.includes(plataforma as Plataforma) ? (plataforma as Plataforma) : null;
+}
 
 export type EstadoDoPasso = 'avancou' | 'adiado' | 'final' | 'nao_reservada' | 'inexistente' | 'perdida';
 
@@ -142,6 +225,7 @@ export type DependenciasDoMotor = {
   readonly executorDeIA: ExecutorDeIA;
   readonly leitorDoBrain: LeitorDoBrain;
   readonly avaliadorDeLimites: AvaliadorDeLimites;
+  readonly catalogoDeLimites?: CatalogoDeLimites;
   readonly audit: AuditRecorder;
   readonly relogio?: Relogio;
   readonly personas?: readonly Persona[];
@@ -149,6 +233,7 @@ export type DependenciasDoMotor = {
   readonly maximoDeTentativas?: number;
   readonly paralelismoDoComite?: number;
   readonly leaseMs?: number;
+  readonly catalogos?: readonly CatalogoDeCampos[];
 };
 
 export type MotorDoPlano = {
@@ -254,14 +339,17 @@ export function distribuirPontos(
   const grupo = (indice: number): PontosDoGrupo => {
     const existente = porGrupo.get(indice);
     if (existente) return existente;
-    const novo: PontosDoGrupo = { argumentos: [], obrigatorias: [], doGate: [] };
+    const novo: PontosDoGrupo = { argumentos: [], obrigatorias: [], doGate: [], pendenciasDoGate: [] };
     porGrupo.set(indice, novo);
     return novo;
   };
   for (const argumento of argumentos) grupo(grupoDoTrecho(argumento.trecho)).argumentos.push(argumento);
   for (const pendencia of obrigatorias) grupo(grupoDoTrecho(pendencia.trecho)).obrigatorias.push(pendencia);
   for (const pendencia of doGate) {
-    for (const indice of pendencia.grupos) grupo(indice).doGate.push(pendencia.texto);
+    for (const indice of pendencia.grupos) {
+      grupo(indice).doGate.push(pendencia.texto);
+      grupo(indice).pendenciasDoGate.push(pendencia);
+    }
   }
   if (porGrupo.size === 0) grupo(INDICE_DO_ULTIMO_GRUPO);
   return porGrupo;
@@ -275,6 +363,7 @@ export function createMotorDoPlano(deps: DependenciasDoMotor): MotorDoPlano {
   const maximoDeTentativas = deps.maximoDeTentativas ?? MAXIMO_DE_TENTATIVAS;
   const paralelismo = deps.paralelismoDoComite ?? PARALELISMO_DO_COMITE;
   const leaseMs = deps.leaseMs ?? LEASE_DA_EXECUCAO_MS;
+  const catalogos = deps.catalogos ?? CATALOGOS_DISPONIVEIS;
 
   const novoLease = () => new Date(relogio.agora().getTime() + leaseMs);
 
@@ -298,6 +387,16 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     if (!lido.ok) throw new FalhaDaEtapa('brain_indisponivel', true);
     contexto.pacote = lido.value;
     return lido.value;
+  }
+
+  async function tiposDeLimiteDoGrupo(execucao: Execucao, indice: number): Promise<Record<string, unknown>> {
+    const grupo: readonly string[] = GRUPOS_DE_REDACAO[indice] ?? [];
+    if (!grupo.includes('lacunas') || deps.catalogoDeLimites === undefined) return {};
+    try {
+      return { tiposDeLimite: await deps.catalogoDeLimites.listar(execucao.organizationId) };
+    } catch {
+      throw new FalhaDaEtapa('interno', true);
+    }
   }
 
   async function renovarLease(execucao: Execucao, contexto: Contexto): Promise<void> {
@@ -367,8 +466,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
   }
 
   async function estadoDoPlano(execucao: Execucao) {
-    const planos = await repositorio.listarPlanosDoCliente({ organizationId: execucao.organizationId, clientId: execucao.clientId });
-    return planos.find((p) => p.plano.id === execucao.planoId) ?? null;
+    return repositorio.estadoDoPlano(execucao.organizationId, execucao.planoId);
   }
 
   async function versoesDaExecucao(execucao: Execucao): Promise<VersaoResumo[]> {
@@ -406,37 +504,136 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     return { proximo: { etapa: pulaRedigir ? 'comite' : 'redigir' }, contagens: { entradas: pacote.entradas.length } };
   }
 
-  function criarEntradaDaRedacao(execucao: Execucao, base: Versao | null) {
+  function intencaoCompleta(candidata: unknown): Intencao {
+    const lida = esquemaIntencao.safeParse(candidata);
+    if (!lida.success) throw new FalhaDaEtapa('interno', false);
+    return lida.data;
+  }
+
+  type EntradaDaRedacao = {
+    readonly tarefa: string;
+    readonly intencaoConfiavel: Intencao;
+    readonly planoBase: Plano | null;
+    readonly instrucaoDaPessoa: string | null;
+  };
+
+  function criarEntradaDaRedacao(execucao: Execucao, base: Versao | null): EntradaDaRedacao {
     if (execucao.tipo === 'criar') {
-      const intencao = esquemaIntencao.safeParse(execucao.pedido);
-      if (!intencao.success) throw new FalhaDaEtapa('interno', false);
-      const limpa = sanitizarIntencao(intencao.data);
+      const intencao = intencaoCompleta(execucao.pedido);
+      const limpa = sanitizarIntencao(intencao);
       if (!limpa.ok) throw new FalhaDaEtapa('interno', false);
-      return { tarefa: TAREFA_PARA_CRIAR_PLANO, entrada: { intencao: limpa.value }, intencaoConfiavel: limpa.value };
+      return { tarefa: TAREFA_PARA_CRIAR_PLANO, intencaoConfiavel: limpa.value, planoBase: null, instrucaoDaPessoa: null };
     }
     if (!base) throw new FalhaDaEtapa('interno', false);
     const planoBase = planoDe(base.conteudo);
+    const intencaoConfiavel = intencaoCompleta(planoBase.intencao);
     if (execucao.tipo === 'ajustar') {
       const pedida = execucao.pedido.instrucao;
       if (typeof pedida !== 'string') throw new FalhaDaEtapa('interno', false);
-      return {
-        tarefa: TAREFA_PARA_AJUSTAR_PLANO,
-        entrada: { planoBase, instrucaoDaPessoa: textoSeguro(pedida) },
-        intencaoConfiavel: planoBase.intencao,
-      };
+      return { tarefa: TAREFA_PARA_AJUSTAR_PLANO, intencaoConfiavel, planoBase, instrucaoDaPessoa: textoSeguro(pedida) };
     }
-    return { tarefa: TAREFA_PARA_ATUALIZAR_AO_BRAIN, entrada: { planoVigente: planoBase }, intencaoConfiavel: planoBase.intencao };
+    return { tarefa: TAREFA_PARA_ATUALIZAR_AO_BRAIN, intencaoConfiavel, planoBase, instrucaoDaPessoa: null };
+  }
+
+  function entradaDoGrupo(entrada: EntradaDaRedacao, indice: number) {
+    return {
+      intencao: entrada.intencaoConfiavel,
+      ...(entrada.instrucaoDaPessoa === null ? {} : { instrucaoDaPessoa: entrada.instrucaoDaPessoa }),
+      ...(entrada.planoBase === null ? {} : { secoesDoPlanoBase: secoesDoGrupo(entrada.planoBase as unknown as Record<string, unknown>, indice) }),
+    };
+  }
+
+  function secoesParaOPlanoDeMidia(secoes: SecoesRedigidas, plataforma: Plataforma): Record<string, unknown> {
+    const escolhidas: Record<string, unknown> = {};
+    for (const chave of SECOES_QUE_O_PLANO_DE_MIDIA_USA) {
+      const secao = secoes[chave];
+      if (secao === undefined) continue;
+      escolhidas[chave] =
+        chave === 'campanhas'
+          ? { campanhas: ((secao as { campanhas: { plataforma?: string }[] }).campanhas ?? []).filter((c) => c.plataforma === undefined || c.plataforma === plataforma) }
+          : secao;
+    }
+    return escolhidas;
+  }
+
+  function problemasDaMidia(saida: { plano_de_midia: { plataformas: readonly unknown[] } }, catalogo: CatalogoDeCampos, intencao: Intencao, secoes: SecoesRedigidas, atual: unknown) {
+    const entrada = saida.plano_de_midia.plataformas[0] as Parameters<typeof problemasDaPlataforma>[0];
+    const daCobertura = problemasDaPlataforma(entrada, catalogo, intencao).map((mensagem) => ({ caminho: 'plano_de_midia', mensagem }));
+    const mesclado = mesclarMidiaDaPlataforma(atual as { plataformas: { plataforma: string }[] } | undefined, saida.plano_de_midia as never, intencao.plataformas);
+    return [...daCobertura, ...problemasDoRascunho({ ...secoes, plano_de_midia: mesclado } as SecoesRedigidas)];
+  }
+
+  async function redigirMidia(
+    execucao: Execucao,
+    contexto: Contexto,
+    entrada: EntradaDaRedacao,
+    secoes: SecoesRedigidas,
+    pacote: PacoteDeLeitura,
+    codigos: CodigosDoPacote,
+  ): Promise<Record<string, unknown>> {
+    const { intencaoConfiavel: intencao, tarefa } = entrada;
+    const comCatalogo = intencao.plataformas.filter((plataforma) => catalogoDaPlataforma(catalogos, plataforma) !== undefined);
+    let midia: ReturnType<typeof mesclarMidiaDaPlataforma> | undefined;
+    for (const [posicao, plataforma] of comCatalogo.entries()) {
+      const catalogo = catalogoDaPlataforma(catalogos, plataforma)!;
+      const baseDaPlataforma = entrada.planoBase?.plano_de_midia.plataformas.find((item) => item.plataforma === plataforma);
+      const chamar = (problemasAnteriores: readonly { readonly caminho: string; readonly mensagem: string }[]) => {
+        const jaEscrito = secoesParaOPlanoDeMidia(secoes, plataforma);
+        return executarIA(
+          execucao,
+          contexto,
+          'strategy_plan',
+          instrucaoDoPlanoDeMidia(problemasAnteriores.length === 0 ? tarefa : `${tarefa}\n${AVISO_DE_CORRECAO_DE_INTEGRIDADE}`, plataforma, posicao + 1, comCatalogo.length),
+          {
+            ...(abreviarUrnsParaCodigos(
+              {
+                intencao,
+                plataforma,
+                ...(entrada.instrucaoDaPessoa === null ? {} : { instrucaoDaPessoa: entrada.instrucaoDaPessoa }),
+                ...(baseDaPlataforma === undefined ? {} : { planoDeMidiaBase: baseDaPlataforma }),
+                secoesJaRedigidas: jaEscrito,
+              },
+              codigos,
+            ) as Record<string, unknown>),
+            catalogosDeCampos: [catalogoParaModelo(catalogo)],
+            ...(problemasAnteriores.length === 0 ? {} : { problemasDeIntegridade: problemasAnteriores.slice(0, MAXIMO_DE_PROBLEMAS_DEVOLVIDOS) }),
+            pacote: pacoteDoGrupo(pacote, 'regras', { jaEscrito, baseDaPlataforma }),
+          },
+          esquemaDaMidiaDaPlataforma(plataforma),
+          problemasAnteriores.length === 0
+            ? `${execucao.id}:redigir:${execucao.rodada}:g${INDICE_DO_PLANO_DE_MIDIA}:${plataforma}`
+            : `${execucao.id}:redigir:${execucao.rodada}:corrigir:g${INDICE_DO_PLANO_DE_MIDIA}:${plataforma}`,
+          codigos,
+        );
+      };
+      let saida = await chamar([]);
+      let problemas = problemasDaMidia(saida, catalogo, intencao, secoes, midia);
+      if (problemas.length > 0) {
+        saida = await chamar(problemas);
+        problemas = problemasDaMidia(saida, catalogo, intencao, secoes, midia);
+      }
+      if (problemas.length > 0) throw falhaDeIA('saida_invalida', motivoDaIntegridade(problemas));
+      midia = mesclarMidiaDaPlataforma(midia, saida.plano_de_midia, intencao.plataformas);
+    }
+    return { plano_de_midia: midia ?? { plataformas: [] } };
   }
 
   async function etapaRedigir(execucao: Execucao, contexto: Contexto): Promise<Efeito> {
+    if (execucao.tipo === 'corrigir_gate') return etapaCorrigir(execucao, contexto);
     if ((await versoesDaExecucao(execucao)).length > 0) return { proximo: { etapa: 'comite' }, contagens: { jaRedigido: 1 } };
     const pacote = await lerPacote(execucao, contexto, false);
     const base = execucao.versaoBaseId ? await repositorio.lerVersao(execucao.organizationId, execucao.versaoBaseId) : null;
-    const { tarefa, entrada, intencaoConfiavel } = criarEntradaDaRedacao(execucao, base);
-    const pacoteDaChamada = pacoteParaEntrada(pacote, MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA.redigir);
+    const entrada = criarEntradaDaRedacao(execucao, base);
+    const { tarefa, intencaoConfiavel } = entrada;
     const codigos = codigosDoPacote(pacote);
     const secoes: SecoesRedigidas = {};
     for (const [indice, grupo] of GRUPOS_DE_REDACAO.entries()) {
+      if (indice === INDICE_DO_PLANO_DE_MIDIA) {
+        Object.assign(secoes, await redigirMidia(execucao, contexto, entrada, secoes, pacote, codigos));
+        continue;
+      }
+      const doGrupo = entradaDoGrupo(entrada, indice);
+      const tiposDoGrupo = await tiposDeLimiteDoGrupo(execucao, indice);
       const redigirGrupo = (problemasAnteriores: readonly { readonly caminho: string; readonly mensagem: string }[]) =>
         executarIA(
           execucao,
@@ -444,9 +641,10 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
           'strategy_plan',
           instrucaoDoGrupo(problemasAnteriores.length === 0 ? tarefa : `${tarefa}\n${AVISO_DE_CORRECAO_DE_INTEGRIDADE}`, grupo, indice + 1, GRUPOS_DE_REDACAO.length),
           {
-            ...(abreviarUrnsParaCodigos({ ...entrada, secoesJaRedigidas: { ...secoes } }, codigos) as Record<string, unknown>),
+            ...(abreviarUrnsParaCodigos({ ...doGrupo, secoesJaRedigidas: { ...secoes } }, codigos) as Record<string, unknown>),
             ...(problemasAnteriores.length === 0 ? {} : { problemasDeIntegridade: problemasAnteriores.slice(0, MAXIMO_DE_PROBLEMAS_DEVOLVIDOS) }),
-            pacote: pacoteDaChamada,
+            ...tiposDoGrupo,
+            pacote: pacoteDoGrupo(pacote, perfilDoGrupo(indice), { secoes, base: doGrupo }),
           },
           esquemaDoGrupo(indice),
           problemasAnteriores.length === 0 ? `${execucao.id}:redigir:${execucao.rodada}:g${indice}` : `${execucao.id}:redigir:${execucao.rodada}:corrigir:g${indice}`,
@@ -463,7 +661,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     const lido = lerPlano(montarPlanoDeSecoes(intencaoConfiavel, secoes));
     if (!lido.ok) throw falhaDeIA('saida_invalida', motivoDoPlano('plano_fora_do_esquema', lido.error.problemas));
     const plano = lido.value;
-    if (!planoSemDadoPessoal(plano).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano');
+    if (!planoSemDadoPessoal(plano, catalogos, intencaoConfiavel.whatsapp).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano');
     const referencias = referenciasConferidas(plano, execucao, await pacoteComAsCitadas(execucao, contexto, plano, pacote));
     const estado = await estadoDoPlano(execucao);
     const chave = `${execucao.id}:redigir:${execucao.rodada}`;
@@ -483,7 +681,15 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
   async function executarPersona(execucao: Execucao, contexto: Contexto, versao: Versao, plano: Plano, pacote: PacoteDeLeitura, persona: Persona) {
     const chave = `${execucao.id}:parecer:${persona.chave}`;
     const codigos = codigosDoPacote(pacote);
-    const dados = { plano: abreviarUrnsParaCodigos(plano, codigos), pacote: pacoteParaEntrada(pacote, MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA.comite, { comCatalogo: false }), persona: { chave: persona.chave, nome: persona.nome, foco: persona.foco } };
+    const visaoDaPersona = secoesDoPlano(plano, persona.secoes);
+    const dados = {
+      plano: abreviarUrnsParaCodigos(visaoDaPersona, codigos),
+      pacote: pacoteParaEntrada(pacote, MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA.comite, {
+        primeiras: new Set([...urnsDeRegraOuLimite(pacote), ...urnsCitadasNasSecoes(visaoDaPersona)]),
+        comCatalogo: false,
+      }),
+      persona: { chave: persona.chave, nome: persona.nome, foco: persona.foco },
+    };
     const bruto = await executarIA(execucao, contexto, 'comite', instrucaoDaPersona(persona), dados, esquemaParecer, chave, codigos);
     const urns = new Set(pacote.entradas.map((e) => e.urn));
     let descartadas = 0;
@@ -545,6 +751,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
       .map((c) => ({
         texto: `${String(c.chave)}: ${String(c.motivo)}`,
         grupos: gruposDaPendenciaDoGate(String(c.chave), Array.isArray(c.onde) ? c.onde.map(String) : []),
+        trechos: Array.isArray(c.onde) ? c.onde.map(String) : [],
       }));
     const modelo = ultimo.payload.modelo as { problemas?: { trecho?: unknown; problema?: unknown }[] } | null | undefined;
     const doModelo = (modelo?.problemas ?? []).map((p) => ({
@@ -552,6 +759,166 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
       grupos: [grupoDoTrecho(String(p.trecho))],
     }));
     return [...doCodigo, ...doModelo];
+  }
+
+  function pendenciasDeFalhas(checagens: readonly ChecagemReprovada[], modelo: readonly ProblemaDoModelo[]): PendenciaDoGate[] {
+    const doCodigo = checagens.map((c) => ({
+      texto: `${c.chave}: ${c.motivo}`,
+      grupos: gruposDaPendenciaDoGate(c.chave, c.onde),
+      trechos: [...c.onde],
+    }));
+    const doModelo = modelo.map((p) => ({ texto: `${p.trecho}: ${p.problema}`, grupos: [grupoDoTrecho(p.trecho)] }));
+    return [...doCodigo, ...doModelo];
+  }
+
+  type EntradaDoAjusteDeGrupos = {
+    readonly execucao: Execucao;
+    readonly contexto: Contexto;
+    readonly plano: Plano;
+    readonly pacote: PacoteDeLeitura;
+    readonly codigos: CodigosDoPacote;
+    readonly pontosPorGrupo: ReadonlyMap<number, PontosDoGrupo>;
+    readonly tarefa: string;
+    readonly prefixoDaChave: 'ajustar' | 'corrigir';
+  };
+
+  async function ajustarGrupos(entrada: EntradaDoAjusteDeGrupos): Promise<{ corrente: Record<string, unknown>; respostas: RespostaDoAjuste[]; chamadas: number }> {
+    const { execucao, contexto, plano, pacote, codigos, pontosPorGrupo, tarefa, prefixoDaChave } = entrada;
+    const intencao = intencaoCompleta(plano.intencao);
+    let corrente: Record<string, unknown> = { ...plano };
+    const respostas: RespostaDoAjuste[] = [];
+    let chamadas = 0;
+
+    const validarRespostas = (indice: number, plataforma: Plataforma | null, esperadas: ReadonlySet<string>, dadas: readonly RespostaDoAjuste[]) => {
+      const chaves = dadas.map((r) => `${r.persona}/${r.pontoId}`);
+      if (new Set(chaves).size !== chaves.length || chaves.length !== esperadas.size || chaves.some((d) => !esperadas.has(d))) {
+        throw falhaDeIA('saida_invalida', `respostas_do_grupo:g${indice}${plataforma ? `:${plataforma}` : ''}:esperadas${esperadas.size}:dadas${chaves.length}`);
+      }
+      if (dadas.some((r) => r.decisao !== 'acatado')) {
+        throw falhaDeIA('saida_invalida', `ponto_a_aplicar_nao_acatado:g${indice}${plataforma ? `:${plataforma}` : ''}`);
+      }
+    };
+    const esperadasDe = (argumentos: readonly Argumento[]) => new Set(argumentos.flatMap((argumento) => argumento.pontos.map((p) => `${p.persona}/${p.pontoId}`)));
+
+    for (const [indice, pontos] of [...pontosPorGrupo.entries()].sort(([a], [b]) => a - b)) {
+      if (indice === INDICE_DO_PLANO_DE_MIDIA) {
+        const comCatalogo = intencao.plataformas.filter((plataforma) => catalogoDaPlataforma(catalogos, plataforma) !== undefined);
+        if (comCatalogo.length === 0) throw falhaDeIA('saida_invalida', 'plano_de_midia_sem_catalogo');
+        for (const [posicao, plataforma] of comCatalogo.entries()) {
+          const daPlataforma = (trecho: string) => (plataformaDoTrecho(trecho, intencao.plataformas) ?? comCatalogo[0]) === plataforma;
+          const argumentos = pontos.argumentos.filter((argumento) => daPlataforma(argumento.trecho));
+          const obrigatorias = pontos.obrigatorias.filter((pendencia) => daPlataforma(pendencia.trecho));
+          const doGate = pontos.pendenciasDoGate
+            .filter((pendencia) => {
+              const alvos = (pendencia.trechos ?? []).map((trecho) => plataformaDoTrecho(trecho, intencao.plataformas)).filter((alvo): alvo is Plataforma => alvo !== null);
+              return alvos.length === 0 || alvos.includes(plataforma);
+            })
+            .map((pendencia) => pendencia.texto);
+          if (argumentos.length === 0 && obrigatorias.length === 0 && doGate.length === 0) continue;
+          const catalogo = catalogoDaPlataforma(catalogos, plataforma)!;
+          const baseDaPlataforma = (corrente.plano_de_midia as Plano['plano_de_midia'] | undefined)?.plataformas.find((item) => item.plataforma === plataforma);
+          const planoAtual = baseDaPlataforma === undefined ? {} : { plano_de_midia: { plataformas: [baseDaPlataforma] } };
+          const saida = await executarIA(
+            execucao,
+            contexto,
+            'strategy_plan',
+            instrucaoDoPlanoDeMidia(tarefa, plataforma, posicao + 1, comCatalogo.length, true),
+            {
+              ...(abreviarUrnsParaCodigos({ intencao, planoAtual, pontos: argumentos, pendenciasObrigatorias: obrigatorias, pendenciasDoGate: doGate }, codigos) as Record<string, unknown>),
+              catalogosDeCampos: [catalogoParaModelo(catalogo)],
+              pacote: pacoteDoGrupo(pacote, 'regras', { planoAtual, argumentos }),
+            },
+            esquemaDoAjusteDaMidia(plataforma),
+            `${execucao.id}:${prefixoDaChave}:${execucao.rodada}:g${indice}:${plataforma}`,
+            codigos,
+          );
+          chamadas += 1;
+          validarRespostas(indice, plataforma, esperadasDe(argumentos), saida.respostas);
+          const mesclado = mesclarMidiaDaPlataforma(corrente.plano_de_midia as { plataformas: { plataforma: string }[] } | undefined, saida.secoes.plano_de_midia, intencao.plataformas);
+          const problemasDaPlataformaAjustada = problemasDaPlataforma(saida.secoes.plano_de_midia.plataformas[0], catalogo, intencao);
+          if (problemasDaPlataformaAjustada.length > 0) throw falhaDeIA('saida_invalida', motivoDaIntegridade(problemasDaPlataformaAjustada.map((mensagem) => ({ caminho: 'plano_de_midia', mensagem }))));
+          corrente = { ...corrente, plano_de_midia: mesclado };
+          respostas.push(...saida.respostas);
+        }
+        continue;
+      }
+      const planoAtual = secoesDoGrupo(corrente, indice);
+      const tiposDoGrupo = await tiposDeLimiteDoGrupo(execucao, indice);
+      const doGrupo = await executarIA(
+        execucao,
+        contexto,
+        'strategy_plan',
+        instrucaoDoGrupo(tarefa, GRUPOS_DE_REDACAO[indice] ?? [], indice + 1, GRUPOS_DE_REDACAO.length, true),
+        {
+          ...(abreviarUrnsParaCodigos({ intencao, planoAtual, idsDisponiveis: idsReferenciaveis(corrente), pontos: pontos.argumentos, pendenciasObrigatorias: pontos.obrigatorias, pendenciasDoGate: pontos.doGate }, codigos) as Record<string, unknown>),
+          ...tiposDoGrupo,
+          pacote: pacoteDoGrupo(pacote, perfilDoGrupo(indice), { planoAtual, argumentos: pontos.argumentos }),
+        },
+        esquemaDoAjusteDoGrupo(indice),
+        `${execucao.id}:${prefixoDaChave}:${execucao.rodada}:g${indice}`,
+        codigos,
+      );
+      chamadas += 1;
+      validarRespostas(indice, null, esperadasDe(pontos.argumentos), doGrupo.respostas);
+      corrente = { ...corrente, ...doGrupo.secoes };
+      respostas.push(...doGrupo.respostas);
+    }
+    return { corrente, respostas, chamadas };
+  }
+
+  async function julgarPontos(
+    execucao: Execucao,
+    contexto: Contexto,
+    versao: Versao,
+    plano: Plano,
+    pareceres: readonly Parecer[],
+    pacote: PacoteDeLeitura,
+    codigos: CodigosDoPacote,
+  ): Promise<readonly VereditoDoJuiz[]> {
+    const pontos = pontosParaJulgar(pareceres, personas);
+    const citadas = new Set(pontos.flatMap((ponto) => ponto.fontes));
+    const doJuiz = pacoteParaEntrada(pacote, MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA.comite, { somenteUrns: citadas, primeiras: citadas, comCatalogo: false });
+    const { utm: _utm, whatsapp: _whatsapp, destino: _destino, plataformas: _plataformas, ...intencaoEssencial } = plano.intencao;
+    const chave = `${execucao.id}:juiz`;
+    const saida = await executarIA(
+      execucao,
+      contexto,
+      'juiz',
+      INSTRUCAO_DO_JUIZ,
+      abreviarUrnsParaCodigos({ intencao: intencaoEssencial, resumo: plano.resumo_executivo, pontos, pacote: resumoDoPacote(doJuiz) }, codigos),
+      esquemaSaidaDoJuiz,
+      chave,
+      codigos,
+    );
+    const conferidos = conferirVereditos(pontos, saida, new Set(pacote.entradas.map((entrada) => entrada.urn)));
+    if (!conferidos.ok) throw falhaDeIA('saida_invalida', `juiz_incompleto:${conferidos.error.length}`);
+    if (!planoSemDadoPessoal({ motivos: conferidos.value.map((veredito) => veredito.motivo) }).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_juiz');
+    const gravado = await repositorio.registrarEvento(execucao.organizationId, {
+      versaoId: versao.id,
+      tipo: 'veredito_juiz',
+      payload: { vereditos: conferidos.value },
+      autoria: autoria(execucao, AGENTE_DO_JUIZ, chave, contexto),
+      requestId: requestIdDe(execucao, 'juiz'),
+    });
+    if (!gravado.ok && gravado.error.codigo !== 'ja_feito') throw falhaDoBanco(gravado.error);
+    return conferidos.value;
+  }
+
+  async function vereditosParaOAjuste(
+    execucao: Execucao,
+    contexto: Contexto,
+    versao: Versao,
+    raiz: string | null,
+    cadeia: ReadonlyMap<string, readonly EventoDaCadeia[]>,
+    pareceres: readonly Parecer[],
+    plano: Plano,
+    pacote: PacoteDeLeitura,
+    codigos: CodigosDoPacote,
+  ): Promise<readonly VereditoDoJuiz[] | undefined> {
+    const existente = vereditosDoEvento(raiz === null ? undefined : (cadeia.get(raiz) ?? []).find((evento) => evento.tipo === 'veredito_juiz')?.payload);
+    if (existente !== undefined || pontosParaJulgar(pareceres, personas).length === 0) return existente;
+    if (raiz !== versao.id) throw falhaDeIA('saida_invalida', 'juiz_ausente_na_cadeia');
+    return julgarPontos(execucao, contexto, versao, plano, pareceres, pacote, codigos);
   }
 
   async function etapaAjustar(execucao: Execucao, contexto: Contexto): Promise<Efeito> {
@@ -568,44 +935,32 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     if (!reprovouNoGate && !comitePediuAjuste) return { proximo: { etapa: 'gates' }, contagens: { versaoId: versao.id } };
 
     const pacote = await lerPacote(execucao, contexto, false);
-    const pacoteDaChamada = pacoteParaEntrada(pacote, MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA.redigir);
     const codigos = codigosDoPacote(pacote);
     const plano = planoDe(versao.conteudo);
     const consolidacao = consolidarPareceres(pareceres, personas);
-    const pontosPorGrupo = distribuirPontos(consolidacao.argumentos, consolidacao.pendenciasObrigatorias, reprovouNoGate ? pendenciasDoGate(eventos) : []);
 
-    let corrente: Record<string, unknown> = { ...plano };
-    const respostas: RespostaDoAjuste[] = [];
-    for (const [indice, pontos] of [...pontosPorGrupo.entries()].sort(([a], [b]) => a - b)) {
-      const esperadas = new Set(pontos.argumentos.flatMap((argumento) => argumento.pontos.map((p) => `${p.persona}/${p.pontoId}`)));
-      const doGrupo = await executarIA(
-        execucao,
-        contexto,
-        'strategy_plan',
-        instrucaoDoGrupo(TAREFA_PARA_AJUSTAR_AO_COMITE, GRUPOS_DE_REDACAO[indice] ?? [], indice + 1, GRUPOS_DE_REDACAO.length, true),
-        { ...(abreviarUrnsParaCodigos({ planoAtual: corrente, pontos: pontos.argumentos, pendenciasObrigatorias: pontos.obrigatorias, pendenciasDoGate: pontos.doGate }, codigos) as Record<string, unknown>), pacote: pacoteDaChamada },
-        esquemaDoAjusteDoGrupo(indice),
-        `${execucao.id}:ajustar:${execucao.rodada}:g${indice}`,
-        codigos,
-      );
-      const dadas = doGrupo.respostas.map((r) => `${r.persona}/${r.pontoId}`);
-      if (new Set(dadas).size !== dadas.length || dadas.length !== esperadas.size || dadas.some((d) => !esperadas.has(d))) {
-        throw falhaDeIA('saida_invalida', `respostas_do_grupo:g${indice}:esperadas${esperadas.size}:dadas${dadas.length}`);
-      }
-      corrente = { ...corrente, ...doGrupo.secoes };
-      respostas.push(...doGrupo.respostas);
-    }
+    const vereditos = await vereditosParaOAjuste(execucao, contexto, versao, raiz, cadeia, pareceres, plano, pacote, codigos);
+    const destinos = destinosDosPontos(pareceres, vereditos, personas);
+    if (!destinos.ok) throw falhaDeIA('saida_invalida', `juiz_sem_veredito:${destinos.error.length}`);
+    const aplicar = argumentosParaAplicar(consolidacao.argumentos, destinos.value);
+    const doGate = reprovouNoGate ? pendenciasDoGate(eventos) : [];
+    const haPontos = aplicar.length > 0 || consolidacao.pendenciasObrigatorias.length > 0 || doGate.length > 0;
+    const pontosPorGrupo = haPontos ? distribuirPontos(aplicar, consolidacao.pendenciasObrigatorias, doGate) : new Map<number, PontosDoGrupo>();
+
+    const ajustado = await ajustarGrupos({ execucao, contexto, plano, pacote, codigos, pontosPorGrupo, tarefa: TAREFA_PARA_AJUSTAR_AO_COMITE, prefixoDaChave: 'ajustar' });
+    const respostas = [...ajustado.respostas, ...respostasDeRecusaDoJuiz(destinos.value)];
 
     const chave = `${execucao.id}:ajustar:${execucao.rodada}`;
     const ajuste: Ajuste = { responde_a: versao.id, respostas };
     const validado = esquemaAjuste.safeParse(ajuste);
     if (!validado.success) throw falhaDeIA('saida_invalida', motivoDoEsquema(validado.error));
     if (!validarAjuste(pareceres, validado.data, personas).ok) throw falhaDeIA('saida_invalida', 'ajuste_nao_responde_aos_pontos');
+    if (conferirAjusteContraOJuiz(pareceres, validado.data, vereditos, personas).length > 0) throw falhaDeIA('saida_invalida', 'ajuste_contra_o_veredito_do_juiz');
     if (!respostasDoAjusteSemDadoPessoal(validado.data.respostas).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_ajuste');
-    const lido = lerPlano(corrente);
+    const lido = lerPlano(ajustado.corrente);
     if (!lido.ok) throw falhaDeIA('saida_invalida', motivoDoPlano('plano_ajustado_fora_do_esquema', lido.error.problemas));
     const planoAjustado = lido.value;
-    if (!planoSemDadoPessoal(planoAjustado).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano_ajustado');
+    if (!planoSemDadoPessoal(planoAjustado, catalogos, plano.intencao.whatsapp).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano_ajustado');
     const referencias = referenciasConferidas(planoAjustado, execucao, await pacoteComAsCitadas(execucao, contexto, planoAjustado, pacote));
     const estado = await estadoDoPlano(execucao);
 
@@ -622,7 +977,73 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
       requestId: requestIdDe(execucao, 'ajustar'),
     });
     if (!criada.ok && criada.error.codigo !== 'ja_feito') throw falhaDoBanco(criada.error);
-    return { proximo: { etapa: 'gates' }, contagens: { versaoId: criada.ok ? criada.value.id : versao.id, respostas: respostas.length, chamadas: pontosPorGrupo.size } };
+    return { proximo: { etapa: 'gates' }, contagens: { versaoId: criada.ok ? criada.value.id : versao.id, respostas: respostas.length, chamadas: ajustado.chamadas } };
+  }
+
+  async function planosBaseParaRestaurar(execucao: Execucao, versao: Versao): Promise<Plano[]> {
+    const ids = await idsDasBasesDoGate(execucao, versao, null);
+    const lidos = await Promise.all(ids.map((id) => lerPlanoDaVersao(execucao, id)));
+    return lidos.filter((plano): plano is Plano => plano !== null);
+  }
+
+  async function etapaCorrigir(execucao: Execucao, contexto: Contexto): Promise<Efeito> {
+    if ((await versoesDaExecucao(execucao)).length > 0) return { proximo: { etapa: 'comite' }, contagens: { jaRedigido: 1 } };
+    if (execucao.versaoBaseId === null) throw new FalhaDaEtapa('interno', false);
+    const base = await repositorio.lerVersao(execucao.organizationId, execucao.versaoBaseId);
+    if (!base || base.status !== 'rascunho') throw new FalhaDaEtapa('interno', false);
+    const eventosDaBase = await repositorio.eventosDaVersao(execucao.organizationId, base.id);
+    const falhas = falhasDoGate([...eventosDaBase].reverse().find((evento) => evento.tipo === 'gate')?.payload);
+    if (falhas === null) throw new FalhaDaEtapa('interno', false);
+
+    const pacote = await lerPacote(execucao, contexto, false);
+    const codigos = codigosDoPacote(pacote);
+    const planoBase = planoDe(base.conteudo);
+    let planoCorrente = planoBase;
+    let restantes = checagensCorrigiveis(falhas);
+
+    let restauradas = 0;
+    if (restantes.some((checagem) => checagem.chave === CHAVE_NAO_FAREMOS_PRESERVADO)) {
+      const bases = await planosBaseParaRestaurar(execucao, base);
+      const restaurado = restaurarNaoFaremos(planoBase, bases);
+      if (restaurado.restauradas.length > 0 && restaurarNaoFaremos(restaurado.plano, bases).restauradas.length === 0) {
+        planoCorrente = restaurado.plano;
+        restauradas = restaurado.restauradas.length;
+        restantes = restantes.filter((checagem) => checagem.chave !== CHAVE_NAO_FAREMOS_PRESERVADO);
+      }
+    }
+
+    const pendencias = pendenciasDeFalhas(restantes, falhas.modelo);
+    const ajustado =
+      pendencias.length === 0
+        ? { corrente: { ...planoCorrente } as Record<string, unknown>, chamadas: 0 }
+        : await ajustarGrupos({
+            execucao,
+            contexto,
+            plano: planoCorrente,
+            pacote,
+            codigos,
+            pontosPorGrupo: distribuirPontos([], [], pendencias),
+            tarefa: TAREFA_PARA_CORRIGIR_O_GATE,
+            prefixoDaChave: 'corrigir',
+          });
+
+    const lido = lerPlano(ajustado.corrente);
+    if (!lido.ok) throw falhaDeIA('saida_invalida', 'plano_corrigido_fora_do_esquema');
+    const planoCorrigido = lido.value;
+    if (!planoSemDadoPessoal(planoCorrigido, catalogos, planoBase.intencao.whatsapp).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_plano_corrigido');
+    const referencias = referenciasConferidas(planoCorrigido, execucao, await pacoteComAsCitadas(execucao, contexto, planoCorrigido, pacote));
+    const estado = await estadoDoPlano(execucao);
+    const criada = await repositorio.criarVersaoRascunho(execucao.organizationId, {
+      planoId: execucao.planoId,
+      conteudo: planoCorrigido,
+      schemaVersion: SCHEMA_VERSION,
+      supersedesId: estado?.vigente?.id ?? null,
+      autoria: autoria(execucao, AGENTE_DE_PLANO, `${execucao.id}:corrigir`, contexto),
+      referencias,
+      requestId: requestIdDe(execucao, 'corrigir'),
+    });
+    if (!criada.ok && criada.error.codigo !== 'ja_feito') throw falhaDoBanco(criada.error);
+    return { proximo: { etapa: 'comite' }, contagens: { restauradas, pendencias: pendencias.length, chamadas: ajustado.chamadas } };
   }
 
   async function resultadoDoGateExistente(eventos: readonly EventoDaVersao[]): Promise<EventoDaVersao | null> {
@@ -698,6 +1119,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     const limites = await avaliadorDeLimites.avaliador(execucao.organizationId, execucao.clientId, plano);
     if (!limites.ok) throw new FalhaDaEtapa('interno', true);
 
+    const doJuiz = raiz === null ? undefined : vereditosDoEvento((cadeia.get(raiz) ?? []).find((evento) => evento.tipo === 'veredito_juiz')?.payload);
     const veredito = rodarGates({
       plano,
       pacote,
@@ -705,6 +1127,8 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
       pareceres,
       comiteDaMesmaExecucao: raiz !== null,
       ...(ajusteLido?.success ? { ajuste: ajusteLido.data } : {}),
+      ...(doJuiz === undefined ? {} : { vereditosDoJuiz: doJuiz }),
+      catalogosDeCampos: catalogos,
       avaliarLimite: limites.value,
       medidasComLimite: limites.value.medidasComLimite,
       exigePlanoBase: base.exigePlanoBase,
@@ -720,7 +1144,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
       });
       const chave = `${execucao.id}:gate-modelo:${execucao.rodada}`;
       const dadosDoGate = {
-        plano,
+        plano: planoParaOGateDeModelo(plano),
         resumoDoPacote: resumoDoPacote(pacoteDoGate),
         limitesDeclaradosComoNaoAplicaveis: plano.riscos_e_regras.limites_nao_aplicaveis,
         naoFaremosSoDeTexto: plano.estrategia.nao_faremos.filter((item) => item.teste === undefined).map((item) => ({ id: item.id, texto: item.texto })),
@@ -728,7 +1152,8 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
           .filter((e) => e.tipo === 'regra' || e.tipo === 'decisao')
           .map((e) => ({ urn: e.urn, tipo: e.tipo, titulo: e.titulo, resumo: e.resumo.slice(0, 600) })),
       };
-      modelo = await executarIA(execucao, contexto, 'gate', INSTRUCAO_DO_GATE_POR_MODELO, dadosDoGate, esquemaDoGateDoModelo, chave);
+      const doModelo = await executarIA(execucao, contexto, 'gate', INSTRUCAO_DO_GATE_POR_MODELO, dadosDoGate, esquemaDoGateDoModelo, chave);
+      modelo = { ...doModelo, problemas: doModelo.problemas.map((p) => ({ ...p, trecho: PADRAO_DO_TRECHO.test(p.trecho) ? p.trecho : '' })) };
       if (!problemasDoGateSemDadoPessoal(modelo.problemas).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_gate');
     }
     const resultado: 'aprovado' | 'reprovado' = veredito.resultado === 'aprovado' && modelo?.resultado === 'aprovado' ? 'aprovado' : 'reprovado';
@@ -759,7 +1184,8 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     const contagens = { versaoId: versao.id, gate: aprovado ? 'aprovado' : 'reprovado' };
     if (aprovado) return { proximo: { status: 'concluida', etapa: 'fim', erroCodigo: null, leaseAte: null }, contagens };
     if (execucao.rodada < maximoDeRodadas) return { proximo: { rodada: execucao.rodada + 1, etapa: 'ajustar' }, contagens };
-    return { proximo: { status: 'falhou', erroCodigo: 'gate_reprovado', leaseAte: null }, contagens };
+    const erroCodigo = execucao.tipo === 'corrigir_gate' ? 'correcao_nao_convergiu' : 'gate_reprovado';
+    return { proximo: { status: 'falhou', erroCodigo, leaseAte: null }, contagens };
   }
 
   async function executarEtapa(execucao: Execucao, contexto: Contexto): Promise<Efeito> {

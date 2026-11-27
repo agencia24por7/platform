@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import {
   ESQUEMAS_DAS_SECOES,
+  esquemaMidiaDaPlataforma,
+  type Plataforma,
   SCHEMA_VERSION,
   problemasDeIntegridadeParcial,
   type Intencao,
@@ -13,12 +15,36 @@ export type SecaoRedigida = Exclude<SecaoDoPlano, 'intencao'>;
 export const GRUPOS_DE_REDACAO: readonly (readonly SecaoRedigida[])[] = [
   ['diagnostico', 'publico_alvo', 'comunidades_alvo'],
   ['posicionamento_e_mensagem', 'estrategia', 'canais_e_plataformas'],
-  ['criativos', 'metas_e_metricas', 'medicao'],
-  ['campanhas', 'orcamento', 'calendario'],
-  ['riscos_e_regras', 'lacunas', 'resumo_executivo'],
+  ['metas_e_metricas', 'medicao', 'campanhas'],
+  ['orcamento', 'calendario', 'riscos_e_regras'],
+  ['plano_de_midia'],
+  ['lacunas', 'resumo_executivo'],
 ];
 
 export const INDICE_DO_ULTIMO_GRUPO = GRUPOS_DE_REDACAO.length - 1;
+export const INDICE_DO_PLANO_DE_MIDIA = GRUPOS_DE_REDACAO.findIndex((grupo) => (grupo as readonly string[]).includes('plano_de_midia'));
+
+export function esquemaDaMidiaDaPlataforma(plataforma: Plataforma) {
+  return z.strictObject({
+    plano_de_midia: z.strictObject({
+      plataformas: z.array(esquemaMidiaDaPlataforma).length(1),
+    }),
+  }).refine((saida) => saida.plano_de_midia.plataformas[0]?.plataforma === plataforma, { message: `O passo é só da plataforma ${plataforma}.` });
+}
+
+export type SaidaDaMidiaDaPlataforma = z.infer<ReturnType<typeof esquemaDaMidiaDaPlataforma>>;
+
+export function mesclarMidiaDaPlataforma(
+  atual: { readonly plataformas: readonly { readonly plataforma: string }[] } | undefined,
+  nova: SaidaDaMidiaDaPlataforma['plano_de_midia'],
+  ordem: readonly Plataforma[],
+) {
+  const entrada = nova.plataformas[0]!;
+  const demais = (atual?.plataformas ?? []).filter((item) => item.plataforma !== entrada.plataforma);
+  const todas = [...demais, entrada] as typeof nova.plataformas;
+  const posicao = (item: { readonly plataforma: string }) => ordem.indexOf(item.plataforma as Plataforma);
+  return { plataformas: [...todas].sort((a, b) => posicao(a) - posicao(b)) };
+}
 
 export function esquemaDoGrupo(indice: number) {
   const secoes = GRUPOS_DE_REDACAO[indice];
@@ -47,7 +73,9 @@ export const SECOES_DA_CHECAGEM: Readonly<Record<string, readonly SecaoRedigida[
   regra_legal_presente: ['riscos_e_regras'],
   secoes_obrigatorias: ['resumo_executivo'],
   orcamento_fecha: ['orcamento'],
+  cobertura_do_plano_de_midia: ['plano_de_midia'],
   objetivo_com_metrica: ['metas_e_metricas', 'medicao'],
+  sugestoes_de_lacunas: ['lacunas'],
   comite_completo: ['resumo_executivo'],
 };
 

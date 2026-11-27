@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { ABAS_DO_CLIENTE, ROTULO_DA_ABA, ROTULO_DA_SECAO_DE_ESTRATEGIA, SECOES_DE_ESTRATEGIA, comAviso, destinoSeguro, enderecoDoFormulario, idValido, rotaDoCliente, secaoDeEstrategia } from './enderecos.ts';
+import { ABAS_DO_CLIENTE, ROTULO_DA_ABA, ROTULO_DA_SECAO_DE_CONTEXTO, SECOES_DE_CONTEXTO, comAviso, destinoSeguro, enderecoDoFormulario, idValido, rotaDoCliente, secaoDeContexto } from './enderecos.ts';
 import { formatarCentavos, mascararDinheiro, normalizarArrobaDigitado, numeroDeTexto, tamanhoLegivel } from './formato.ts';
 import { mensagemProntaDoLink, minutosEstimados, secoesDoPreset } from './mensagem.ts';
 import { barrasDaSecao, resumirCompletude, saudeDosDados, tempoRelativo } from './resumo.ts';
@@ -19,15 +19,15 @@ describe('endereços do painel do cliente', () => {
   it('enumera as quatro abas na ordem e monta a rota da Estratégia', () => {
     assert.deepEqual([...ABAS_DO_CLIENTE], ['conexoes', 'contexto', 'regras', 'estrategia']);
     assert.deepEqual(ABAS_DO_CLIENTE.map((aba) => ROTULO_DA_ABA[aba]), ['Conexões', 'Contexto', 'Regras', 'Estratégia']);
-    assert.equal(rotaDoCliente(ID, 'estrategia', { secao: 'gates' }), `/clientes/${ID}/estrategia?secao=gates`);
+    assert.equal(rotaDoCliente(ID, 'estrategia', { novo: '1' }), `/clientes/${ID}/estrategia?novo=1`);
   });
 
-  it('seções da Estratégia: Plano é o padrão e o resto cai nele', () => {
-    assert.deepEqual([...SECOES_DE_ESTRATEGIA], ['plano', 'comite', 'gates', 'historico']);
-    assert.deepEqual(SECOES_DE_ESTRATEGIA.map((s) => ROTULO_DA_SECAO_DE_ESTRATEGIA[s]), ['Plano', 'Comitê', 'Gates', 'Histórico']);
-    assert.equal(secaoDeEstrategia('gates'), 'gates');
-    assert.equal(secaoDeEstrategia('xyz'), 'plano');
-    assert.equal(secaoDeEstrategia(undefined), 'plano');
+  it('seções do Contexto: Mapa de contexto é o padrão e o Destino é uma seção própria', () => {
+    assert.deepEqual([...SECOES_DE_CONTEXTO], ['perfil', 'brain', 'destino']);
+    assert.deepEqual(SECOES_DE_CONTEXTO.map((s) => ROTULO_DA_SECAO_DE_CONTEXTO[s]), ['Mapa de contexto', 'Brain', 'Destino']);
+    assert.equal(secaoDeContexto('destino'), 'destino');
+    assert.equal(secaoDeContexto('xyz'), 'perfil');
+    assert.equal(secaoDeContexto(undefined), 'perfil');
   });
 
   it('só aceita destino dentro do próprio cliente', () => {

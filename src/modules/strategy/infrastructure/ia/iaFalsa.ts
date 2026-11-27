@@ -20,6 +20,15 @@ export function ehErroDeIA(valor: unknown): valor is ErroDeIA {
   );
 }
 
+function ehSaidaDoJuiz(valor: unknown): boolean {
+  return valor !== null && typeof valor === 'object' && Array.isArray((valor as { vereditos?: unknown }).vereditos);
+}
+
+export function aceitaTodos(dados: unknown): unknown {
+  const pontos = (dados as { pontos?: { persona: string; pontoId: string }[] }).pontos ?? [];
+  return { vereditos: pontos.map((p) => ({ persona: p.persona, pontoId: p.pontoId, veredito: 'aceito', motivo: 'aceito', prova: [] })) };
+}
+
 export function criarIaFalsa(roteiro: RoteiroDaIaFalsa, uso: UsoDeIA = USO_PADRAO): IaFalsa {
   const pedidos: PedidoDeIA<unknown>[] = [];
   return {
@@ -33,7 +42,7 @@ export function criarIaFalsa(roteiro: RoteiroDaIaFalsa, uso: UsoDeIA = USO_PADRA
       const saida = await roteiro(pedido as PedidoDeIA<unknown>);
       if (pedido.sinal?.aborted) return err(TEMPO_ESGOTADO);
       if (ehErroDeIA(saida)) return err(saida);
-      const lida = pedido.esquema.safeParse(saida);
+      const lida = pedido.esquema.safeParse(pedido.tarefa === 'juiz' && !ehSaidaDoJuiz(saida) ? aceitaTodos(pedido.dados) : saida);
       if (!lida.success) return err({ codigo: 'saida_invalida', mensagem: 'A saída do roteiro não bate com o esquema do pedido.' });
       return ok({ saida: lida.data, uso });
     },

@@ -4,7 +4,7 @@ import '../../../shared/testing/registrarAlias.mjs';
 import type { EntradaDoCatalogo, EntradaSemSelo } from '../../brain/domain/entrada.ts';
 import type { PedidoDeIA } from '@/modules/strategy/application/portas';
 import { parecer, ponto } from '../domain/comite/fixturesDeParecer.ts';
-import { CLIENTE_ID, ORGANIZACAO_ID, URN_BENCHMARK_B, pacoteDeTeste, planoCompleto, secoesDoGrupoDaChave, urnDeTeste } from '../domain/fixturesDeTeste.ts';
+import { CLIENTE_ID, ORGANIZACAO_ID, URN_BENCHMARK_B, CATALOGOS_DE_TESTE, pacoteDeTeste, planoCompleto, secoesDoGrupoDaChave, urnDeTeste } from '../domain/fixturesDeTeste.ts';
 
 Object.assign(process.env, {
   DATABASE_URL: 'postgres://teste:teste@localhost:5432/teste',
@@ -18,7 +18,7 @@ const { selar } = await import('../../brain/domain/entrada.ts');
 const { createMotorDoPlano } = await import('./motorDoPlano.ts');
 const { criarLeitorDoBrain } = await import('../infrastructure/leitorDoBrain.ts');
 const { criarRepositorioEmMemoria } = await import('../infrastructure/repositorioEmMemoria.ts');
-const { criarIaFalsa } = await import('../infrastructure/ia/iaFalsa.ts');
+const { criarIaFalsa, aceitaTodos } = await import('../infrastructure/ia/iaFalsa.ts');
 const { comValidacao } = await import('../infrastructure/ia/comValidacao.ts');
 const { ok } = await import('../../../shared/result/result.ts');
 
@@ -116,19 +116,20 @@ describe('o que cada tarefa de IA recebe em dados', () => {
         const chave = (pedido.dados as { persona: { chave: string } }).persona.chave;
         return chave === 'redator' ? parecer(chave, 'aprova_com_ajuste', [ponto('p1', 'estrategia', [URN_BENCHMARK_B])]) : parecer(chave, 'aprova');
       }
+      if (pedido.tarefa === 'juiz') return aceitaTodos(pedido.dados);
       return { resultado: 'aprovado', problemas: [] };
     });
     const leitorDoBrain = criarLeitorDoBrain({
       brain: { async montarNaOrganizacao() { return ok({ organizationId: ORGANIZACAO_ID, clienteId: CLIENTE_ID, entradas: entradasDoCatalogo() } as never); } },
     });
-    const motor = createMotorDoPlano({
+    const motor = createMotorDoPlano({ catalogos: CATALOGOS_DE_TESTE,
       repositorio,
       executorDeIA: comValidacao(ia),
       leitorDoBrain,
       avaliadorDeLimites: { async avaliador() { return ok(Object.assign(() => 'ok' as const, { medidasComLimite: [] as const })); } },
       audit: { async record() {}, async list() { return []; }, async search() { return []; } },
     });
-    const plano = await repositorio.criarPlano({ organizationId: ORGANIZACAO_ID, clientId: CLIENTE_ID }, 'aquisicao', 'req');
+    const plano = await repositorio.criarPlano({ organizationId: ORGANIZACAO_ID, clientId: CLIENTE_ID }, 'aquisicao');
     assert.ok(plano.ok);
     const execucao = await repositorio.criarExecucao(ORGANIZACAO_ID, CLIENTE_ID, {
       planoId: plano.value.id,
@@ -148,7 +149,7 @@ describe('o que cada tarefa de IA recebe em dados', () => {
     assert.equal(final?.status, 'concluida', JSON.stringify(final));
 
     const tarefas = new Set(ia.pedidos.map((p) => p.tarefa));
-    assert.deepEqual([...tarefas].sort(), ['comite', 'gate', 'strategy_plan']);
+    assert.deepEqual([...tarefas].sort(), ['comite', 'gate', 'juiz', 'strategy_plan']);
     assert.ok(ia.pedidos.some((p) => p.chaveDeIdempotencia.includes(':ajustar:')), 'o ajuste foi exercitado');
     const todos = JSON.stringify(ia.pedidos.map((p) => p.dados));
     assert.ok(todos.includes('Base restrita extra'), 'a entrada restrita chega, só como metadados');

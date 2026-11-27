@@ -7,13 +7,14 @@ const RESTRICOES_DE_IDEMPOTENCIA: readonly string[] = [
   'strategy_plan_events_idempotencia',
   'strategy_plan_events_um_ajuste',
   'strategy_plan_events_parecer_persona',
+  'strategy_plan_events_um_veredito',
   'strategy_plan_versions_pkey',
   'strategy_plan_runs_agent_run_id_key',
   'strategy_plans_tipo_unico',
 ];
 
 const MENSAGENS_DE_TRANSICAO = [/transi[çc][ãa]o inv[áa]lida/i, /estado final/i, /s[óo] .* pode ser/i, /s[óo] valem em vers[ãa]o rascunho/i];
-const MENSAGENS_DE_CONFLITO = [/j[áa] tem vers[ãa]o vigente/i, /n[ãa]o est[áa] mais vigente/i, /s[óo] vers[ãa]o vigente pode ser superada/i];
+const MENSAGENS_DE_CONFLITO = [/limite de 2 corre[çc][õo]es/i, /corrigir_gate (s[óo] vale|exige)/i, /j[áa] tem vers[ãa]o vigente/i, /n[ãa]o est[áa] mais vigente/i, /s[óo] vers[ãa]o vigente pode ser superada/i];
 
 function texto(valor: unknown): string {
   return typeof valor === 'string' ? valor : '';

@@ -16,6 +16,8 @@ const { comoWorker } = await import('@/shared/db/client.ts');
 const { issueSession } = await import('@/modules/identity/domain/session.ts');
 const { createEstrategiaRepository } = await import('@/modules/strategy/infrastructure/estrategiaRepository.ts');
 const { createEstrategiaService } = await import('@/modules/strategy/application/estrategiaService.ts');
+const { createDestinoService } = await import('@/modules/clients/application/destinoService.ts');
+const { createDestinoRepository } = await import('@/modules/clients/infrastructure/destinoRepository.ts');
 const { ok, err } = await import('@/shared/result/result.ts');
 const { referenciasDoPlano, SCHEMA_VERSION } = await import('@/modules/strategy/domain/index.ts');
 const fixtures = await import('@/modules/strategy/domain/fixturesDeTeste.ts');
@@ -41,19 +43,48 @@ const repo = new Proxy(base, {
   },
 });
 const auditorias = [];
+const audit = { async record(e) { auditorias.push(e); }, async list() { return []; }, async search() { return []; } };
+const destino = createDestinoService(createDestinoRepository(), audit);
 const service = createEstrategiaService({
   repositorio: repo,
-  audit: { async record(e) { auditorias.push(e); }, async list() { return []; }, async search() { return []; } },
+  audit,
+  destino,
+  catalogos: fixtures.CATALOGOS_DE_TESTE,
   leitorDoBrain: { async lerPacote() { return ok(pacote); } },
 });
 const ator = (userId) => ({ userId, requestId: `req-${Math.random().toString(16).slice(2)}`, sourceIp: '10.0.0.1' });
 const comando = (papelDeQuemAge, organizationId = c.orgA) => ({ organizationId, papelDeQuemAge });
 const codigoDe = (r) => (r.ok ? 'ok' : (r.error.details?.codigo ?? r.error.code));
-const intencao = plano.intencao;
+const { plataformas: _p, whatsapp: _w, destino: _d, utm: _u, ...intencao } = plano.intencao;
 const escopoA = { organizationId: c.orgA, clientId: c.cliA };
+let paginaDeSemente = null;
+const criarPlano = async (escopo, tipo, requestId) => {
+  paginaDeSemente ??= (await destino.listarLandingPages(escopo)).value[0].id;
+  const criado = await repo.criarPlanoComExecucao(
+    escopo,
+    { tipo, plataformas: ['meta'], whatsapp: '+5511912345678', landingPageId: paginaDeSemente },
+    { pedido: { tipo: 'criar', intencao: plano.intencao }, versaoBaseId: null, agentRunId: `run-semente-${requestId}`, solicitadoPor: c.operator, requestId },
+  );
+  if (!criado.ok) return criado;
+  const cancelada = await repo.cancelarExecucao(escopo.organizationId, criado.value.execucao.id, requestId);
+  assert.ok(cancelada.ok, JSON.stringify(cancelada));
+  return { ok: true, value: criado.value.plano };
+};
 
 como(c.operator);
-const pedido = await service.pedirPlano(comando('operator'), { clienteId: c.cliA, tipoDePlano: 'aquisicao', intencao }, ator(c.operator));
+const umaPagina = (clientId, url) => destino.criarLandingPage({ organizationId: c.orgA, clientId, papelDeQuemAge: 'operator', url, rotulo: 'Oferta' }, ator(c.operator));
+const landingA = await umaPagina(c.cliA, 'https://exemplo.com.br/oferta');
+assert.ok(landingA.ok, JSON.stringify(landingA));
+const landingA2 = await umaPagina(c.cliA2, 'https://exemplo.com.br/outra');
+assert.ok(landingA2.ok, JSON.stringify(landingA2));
+const semZap = await service.pedirPlano(comando('operator'), { clienteId: c.cliA, tipoDePlano: 'aquisicao', plataformas: ['meta'], landingPageId: landingA.value.id, intencao }, ator(c.operator));
+assert.equal(codigoDe(semZap), 'whatsapp_do_cliente_ausente');
+assert.equal((await service.listarPlanos(comando('operator'), { clienteId: c.cliA })).value.cards.length, 0, 'nada gravado sem WhatsApp');
+assert.ok((await destino.gravarWhatsapp({ organizationId: c.orgA, clientId: c.cliA, papelDeQuemAge: 'operator', whatsapp: '(11) 91234-5678' }, ator(c.operator))).ok);
+const deOutroCliente = await service.pedirPlano(comando('operator'), { clienteId: c.cliA, tipoDePlano: 'aquisicao', plataformas: ['meta'], landingPageId: landingA2.value.id, intencao }, ator(c.operator));
+assert.equal(deOutroCliente.ok, false, 'landing page de outro cliente da mesma organização é recusada');
+const pedidoBase = { tipoDePlano: 'aquisicao', plataformas: ['meta'], landingPageId: landingA.value.id, intencao };
+const pedido = await service.pedirPlano(comando('operator'), { clienteId: c.cliA, ...pedidoBase }, ator(c.operator));
 assert.ok(pedido.ok, JSON.stringify(pedido));
 const planoId = pedido.value.plano.id;
 const execucao = pedido.value.execucao;
@@ -62,11 +93,14 @@ assert.equal(execucao.etapa, 'ler_brain');
 assert.equal(execucao.solicitadoPor, c.operator);
 assert.match(execucao.agentRunId, /^run-/);
 
-const repetido = await service.pedirPlano(comando('operator'), { clienteId: c.cliA, tipoDePlano: 'aquisicao', intencao }, ator(c.operator));
-assert.equal(codigoDe(repetido), 'execucao_ativa');
+assert.equal(pedido.value.plano.whatsapp, '+5511912345678');
+assert.deepEqual(pedido.value.plano.plataformas, ['meta']);
+assert.equal(pedido.value.plano.landingPageId, landingA.value.id);
+assert.equal(execucao.pedido.destino.url, 'https://exemplo.com.br/oferta');
+assert.equal(execucao.pedido.utm.meta.utm_medium, 'paid_social');
 
 como(c.viewer);
-assert.equal(codigoDe(await service.pedirPlano(comando('viewer'), { clienteId: c.cliA, tipoDePlano: 'marca', intencao }, ator(c.viewer))), 'forbidden');
+assert.equal(codigoDe(await service.pedirPlano(comando('viewer'), { clienteId: c.cliA, ...pedidoBase, tipoDePlano: 'marca' }, ator(c.viewer))), 'forbidden');
 const doViewer = await repo.criarExecucao(c.orgA, c.cliA, { planoId, pedido: { tipo: 'revisar', motivo: 'brain_mudou' }, versaoBaseId: null, agentRunId: 'run-viewer', solicitadoPor: c.viewer, requestId: 'r' });
 assert.equal(!doViewer.ok && doViewer.error.codigo, 'sem_permissao');
 const painelDoViewer = await service.painelDoPlano(comando('viewer'), { clienteId: c.cliA });
@@ -75,8 +109,13 @@ assert.equal(codigoDe(painelDoViewer), 'forbidden');
 como(c.operator);
 const painelDoOperator = await service.painelDoPlano(comando('operator'), { clienteId: c.cliA });
 assert.ok(painelDoOperator.ok);
-assert.equal(painelDoOperator.value.planos[0].execucaoAtiva.id, execucao.id);
-const segundo = await service.pedirPlano(comando('operator'), { clienteId: c.cliA, tipoDePlano: 'marca', intencao }, ator(c.operator));
+assert.equal(painelDoOperator.value.planos.find((p) => p.plano.id === planoId).execucaoAtiva.id, execucao.id);
+const segundo = await service.pedirPlano(comando('operator'), { clienteId: c.cliA, ...pedidoBase, tipoDePlano: 'aquisicao' }, ator(c.operator));
+assert.ok(segundo.ok && segundo.value.plano.id !== planoId, 'dois planos do mesmo tipo, independentes');
+const cards = (await service.listarPlanos(comando('operator'), { clienteId: c.cliA })).value.cards;
+assert.equal(cards.length, 2);
+assert.deepEqual(cards.map((card) => card.planoId), [segundo.value.plano.id, planoId], 'mais recente primeiro');
+assert.equal(cards[0].estado, 'gerando');
 assert.ok(segundo.ok);
 
 const agora = new Date();
@@ -262,7 +301,7 @@ assert.ok(!textoAuditado.includes('maria@'), 'a auditoria não leva a instruçã
 
 
 como(c.operator);
-const planoDaFicha = await repo.criarPlano(escopoA, 'ficha_teste', 'r-ficha');
+const planoDaFicha = await criarPlano(escopoA, 'ficha_teste', 'r-ficha');
 assert.ok(planoDaFicha.ok);
 const novaExecucaoDe = async (idDoPlano, run, base = null, tipo = { tipo: 'revisar', motivo: 'brain_mudou' }) => {
   const criada = await repo.criarExecucao(c.orgA, c.cliA, { planoId: idDoPlano, pedido: tipo, versaoBaseId: base, agentRunId: run, solicitadoPor: c.operator, requestId: 'r-exec' });
@@ -309,7 +348,7 @@ const eventoAtrasado = await repo.registrarEvento(c.orgA, { versaoId: viva.value
 assert.equal(!eventoAtrasado.ok && eventoAtrasado.error.codigo, 'execucao_perdida');
 assert.equal((await repo.listarVersoes(c.orgA, planoDaFicha.value.id, 10)).length, 1);
 
-const planoDoTeto = await repo.criarPlano(escopoA, 'teto_reservas', 'r-teto');
+const planoDoTeto = await criarPlano(escopoA, 'teto_reservas', 'r-teto');
 assert.ok(planoDoTeto.ok);
 const doTeto = await novaExecucaoDe(planoDoTeto.value.id, `run-teto-${Date.now()}`);
 const momento = new Date();
@@ -329,7 +368,7 @@ const depoisDoTeto = await comoWorker(() => repo.descobrirExecucoesPendentes(50)
 assert.ok(!depoisDoTeto.some((d) => d.id === doTeto.id));
 assert.ok((await repo.criarExecucao(c.orgA, c.cliA, { planoId: planoDoTeto.value.id, pedido: { tipo: 'revisar', motivo: 'brain_mudou' }, versaoBaseId: null, agentRunId: `run-teto2-${Date.now()}`, solicitadoPor: c.operator, requestId: 'r' })).ok, 'o plano fica livre para outra execução');
 
-const planoManual = await repo.criarPlano(escopoA, 'edicao_atomica', 'r-atomica');
+const planoManual = await criarPlano(escopoA, 'edicao_atomica', 'r-atomica');
 assert.ok(planoManual.ok);
 const aberta = await repo.criarVersaoRascunho(c.orgA, { planoId: planoManual.value.id, conteudo: plano, schemaVersion: 1, supersedesId: null, autoria: { tipo: 'pessoa', userId: c.operator }, referencias: [], requestId: 'r-aberta' });
 assert.ok(aberta.ok);
@@ -342,7 +381,7 @@ assert.equal((await repo.listarVersoes(c.orgA, planoManual.value.id, 10)).length
 assert.equal((await repo.lerVersao(c.orgA, aberta.value.id)).status, 'rascunho', 'a versão aberta anterior não foi cancelada');
 assert.ok((await service.cancelarExecucao(comando('operator'), { execucaoId: ativa.id }, ator(c.operator))).ok);
 
-const planoDaCorrida = await repo.criarPlano(escopoA, 'edicao_corrida', 'r-corrida');
+const planoDaCorrida = await criarPlano(escopoA, 'edicao_corrida', 'r-corrida');
 assert.ok(planoDaCorrida.ok);
 const abertaDaCorrida = await repo.criarVersaoRascunho(c.orgA, { ...novaManual('r-ab2'), planoId: planoDaCorrida.value.id });
 assert.ok(abertaDaCorrida.ok);
