@@ -33,6 +33,14 @@ export function problemasDeDependenciaDaMeta(valores: Valores, chavesDoCatalogo:
     problemas.push(`${local('adset_bid_amount')} (proibido com ${ESTRATEGIA_SEM_TETO})`);
   }
 
+  if (tem('ad_bid_amount') && estrategia !== 'LOWEST_COST_WITH_BID_CAP') {
+    problemas.push(`${local('adset_bid_strategy')} (LOWEST_COST_WITH_BID_CAP é obrigatório com ad_bid_amount)`);
+  }
+
+  if (tem('ad_bid_amount') && estrategia !== 'LOWEST_COST_WITH_BID_CAP') {
+    problemas.push(`${local('adset_bid_strategy')} (LOWEST_COST_WITH_BID_CAP é obrigatório com ad_bid_amount)`);
+  }
+
   if (tem('adset_lifetime_budget') && !tem('adset_end_time')) {
     problemas.push(`${local('adset_end_time')} (obrigatório com orçamento vitalício)`);
   }

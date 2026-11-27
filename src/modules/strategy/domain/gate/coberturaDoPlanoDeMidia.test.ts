@@ -168,6 +168,7 @@ describe('gate: cobertura_do_plano_de_midia', () => {
         campoCat('ad_name', 'texto', { obrigatorio: true, evidenciaDaApi: 'nao_verificado_pela_api' }),
         campoCat('adset_bid_strategy', 'escolha', { opcoes: ['COST_CAP', 'LOWEST_COST_WITHOUT_CAP'] }),
         campoCat('adset_bid_amount', 'numero'),
+        campoCat('ad_bid_amount', 'numero'),
         campoCat('adset_daily_budget', 'numero'),
         campoCat('adset_lifetime_budget', 'numero'),
         campoCat('adset_end_time', 'texto'),
@@ -238,6 +239,7 @@ describe('gate: cobertura_do_plano_de_midia', () => {
       const texto = (campos: Record<string, string | number | boolean | string[]>) => rodar(campos).onde.join('|');
       assert.ok(texto({ adset_bid_strategy: 'COST_CAP' }).includes('adset_bid_amount (obrigatório com COST_CAP)'));
       assert.ok(texto({ adset_bid_strategy: 'LOWEST_COST_WITHOUT_CAP', adset_bid_amount: 100 }).includes('proibido com LOWEST_COST_WITHOUT_CAP'));
+      assert.ok(texto({ adset_bid_strategy: 'COST_CAP', adset_bid_amount: 300, ad_bid_amount: 300 }).includes('LOWEST_COST_WITH_BID_CAP é obrigatório com ad_bid_amount'));
       assert.ok(texto({ adset_daily_budget: undefined as never, adset_lifetime_budget: 5000 }).includes('adset_end_time (obrigatório com orçamento vitalício)'));
       assert.ok(texto({ adset_pacing_type: ['day_parting'] }).includes('day_parting exige orçamento vitalício'));
       assert.ok(texto({ adset_daily_budget: 100 }).includes('abaixo do mínimo de 570 centavos'));
