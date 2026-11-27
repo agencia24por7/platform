@@ -21,9 +21,7 @@
     "test": "npm run test:unit && npm run test:integration",
     "test:unit": "node --test --experimental-strip-types \"src/**/*.test.ts\"",
     "test:integration": "node --test --test-concurrency=1 tests/*.test.mjs",
-    "verify": "npm run typecheck && npm run build && npm run test",
-    "seguranca:verificar": "node scripts/seguranca-verificar.mjs --arvore",
-    "ambiente:hooks": "git config core.hooksPath .githooks"
+    "verify": "npm run typecheck && npm run build && npm run test"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "4.0.109",

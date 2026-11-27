@@ -3,7 +3,6 @@ scripts:
     set -eu
     [ -f .env ] || { [ -f "$ORCA_ROOT_PATH/.env" ] && cp "$ORCA_ROOT_PATH/.env" .env; } || true
     [ -d node_modules ] || npm ci --no-audit --no-fund
-    git config core.hooksPath .githooks
     node scripts/ambiente-verificar.mjs --rapido
   archive: |
     git status --short

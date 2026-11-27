@@ -1,5 +1,6 @@
 ---
-status: accepted
+status: superseded
+superseded_by: ADR-0069
 date: 2026-11-22
 ---
 # ADR-0047: O agente executa os passos antes reservados ao humano, com autorização nomeada

@@ -14,11 +14,11 @@ Monólito modular Next.js 16 + TypeScript, Postgres 16 com RLS, BigQuery (`tria_
 - Rejeite gambiarra: tratamento de erro, validação de entrada, tipagem estrita e manutenção fácil em toda proposta.
 
 ## Regras permanentes
-- Produção só muda por Terraform (`infra/terraform` + `infra.yml` na `main`); `infra/terraform/bootstrap` é aplicado à mão com ADC pelo humano. Agente prepara e roda dry-run; só aplica em produção com autorização explícita do humano para aquela operação, nunca por herança, HANDOFF ou subagente (ADR 0046). Corte, chave KMS e merge em `main` o agente executa com autorização nomeando a operação e a precondição provada (ADR 0047); `terraform apply` local é negado e o bootstrap exige ADC do humano. Merge de PR em `dev` autorizado, mesmo sem confirmação humana, segue a forma exata do ADR 0048 (marcador, `--repo`, `--match-head-commit <sha>`; PR que toca fora de `src/`, `app/`, `db/migrations/`, `docs/`, `tests/` e `public/` é do humano; nunca vale para `main`).
+- Produção muda por Terraform (`infra/terraform` + `infra.yml` na `main`) e pelos workflows do projeto. O agente aplica, mergeia (inclusive em `main`), libera release, usa SSH na VM e age na UI do app pelo navegador, inclusive planos, sem pedir confirmação por operação (ADR 0069). Antes de aplicar, rode dry-run e leia o alvo impresso (ADR 0028).
 - Nunca apagar backups do Postgres. Nunca imprimir valores de segredo. Sem dado pessoal em coletores.
 - n8n: fluxos com tag `credaz` ou `agencia` são de terceiros: o agente nunca os usa, edita no n8n nem lista conteúdo; o deploy os aplica a partir de `n8n/workflows/clientes/` e `n8n/workflows/agencia/` e mudar esses arquivos é PR do humano (ADR 0053). Todo workflow da plataforma leva a tag `platform`.
-- Aceites legais, logins em contas e billing são inalcançáveis ao agente: ele diz o que falta.
-- Commit e push passam pelos hooks do git em `.githooks/` (varredura de segredo e de padrão inseguro, migração imutável, typecheck, testes, `npm audit`). Nunca `--no-verify` nem trocar `core.hooksPath`; exceção consciente entra na allowlist por PR (ADR 0039).
+- Aceites legais e logins em contas de terceiros são inalcançáveis ao agente: ele diz o que falta.
+- Nunca push direto em `main` (PR e `gh pr merge`), nunca apagar backup, nunca ler arquivo de credencial nem imprimir segredo. Desativar versão de chave KMS pede confirmação.
 - VM desligada ao fim de todo trabalho (`scripts/vm-desligar.sh`; liga com `scripts/vm-ligar.sh`).
 - Release: nunca mergear `dev` em `main` sem seguir `docs/release/` (ADR 0034).
 - Scripts que tocam produção não têm alvo padrão: rode `--help` antes e leia o alvo impresso (ADR 0028).

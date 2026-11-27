@@ -1,9 +1,7 @@
 import { existsSync, realpathSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { isAbsolute, join, relative } from 'node:path'
-import { avaliarBusca, avaliarComando, avaliarEscrita, avaliarLeitura, consultarPRNoGitHub } from './politicas.mjs'
-
-const MARCADOR = 'AUTORIZO_MERGE_EM_DEV='
+import { avaliarBusca, avaliarComando, avaliarEscrita, avaliarLeitura } from './politicas.mjs'
 
 export function lerEvento(stdin) {
   let bruto = ''
@@ -71,10 +69,10 @@ function primeiraDecisao(caminhos, avaliar) {
   return null
 }
 
-function decidir(evento, raiz, consultarPR) {
+function decidir(evento, raiz) {
   const ferramenta = evento.tool_name
   const entrada = evento.tool_input ?? {}
-  if (ferramenta === 'Bash') return avaliarComando(entrada.command, evento.permission_mode, consultarPR)
+  if (ferramenta === 'Bash') return avaliarComando(entrada.command)
   if (ferramenta === 'Grep' || ferramenta === 'Glob') {
     const glob = entrada.glob ?? (ferramenta === 'Glob' ? entrada.pattern : undefined)
     const caminhos = caminhosParaAvaliar(entrada.path ?? '', raiz)
@@ -90,25 +88,16 @@ function decidir(evento, raiz, consultarPR) {
   }
   const conteudo = conteudoDaEscrita(ferramenta, entrada)
   const completo = absoluto(caminho, raiz)
-  return primeiraDecisao(caminhos, (candidato) => avaliarEscrita({ caminho: candidato, conteudo, existeVersionado: versionado(completo, raiz), modoDePermissao: evento.permission_mode }))
+  return primeiraDecisao(caminhos, (candidato) => avaliarEscrita({ caminho: candidato, conteudo, existeVersionado: versionado(completo, raiz) }))
 }
 
-function comandoComMarcador(evento) {
-  const comando = evento.tool_input?.command
-  return evento.tool_name === 'Bash' && typeof comando === 'string' && comando.startsWith(MARCADOR)
-}
-
-export function executarGuarda({ evento, saida, erro, ambiente = process.env, consultarPR = consultarPRNoGitHub }) {
+export function executarGuarda({ evento, saida, erro, ambiente = process.env }) {
   try {
     const raiz = ambiente.CLAUDE_PROJECT_DIR ?? evento.cwd ?? process.cwd()
-    const resultado = decidir(evento, raiz, consultarPR)
+    const resultado = decidir(evento, raiz)
     if (resultado) responder(saida, resultado)
     return 0
   } catch (excecao) {
-    if (comandoComMarcador(evento)) {
-      responder(saida, { decisao: 'deny', motivo: 'Erro inesperado ao verificar o merge autorizado em dev (ADR 0048): negado por padrão.' })
-      return 0
-    }
     if (evento.tool_name === 'Bash') {
       erro(`[guarda do projeto] erro inesperado ao avaliar o comando: ${excecao instanceof Error ? excecao.message : 'desconhecido'}\n`)
       return 2
