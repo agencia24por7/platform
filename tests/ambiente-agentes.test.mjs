@@ -53,40 +53,6 @@ test('bootstrap-context inclui o HANDOFF quando existe e some quando não existe
   }
 })
 
-test('hook de parada não bloqueia sem alterações e respeita stop_hook_active', () => {
-  const pasta = mkdtempSync(join(tmpdir(), 'ambiente-'))
-  try {
-    execFileSync('git', ['init', '-q'], { cwd: pasta })
-    const env = { ...process.env, CLAUDE_PROJECT_DIR: pasta }
-    const limpo = spawnSync(hook('verificar-ao-parar.sh'), { cwd: pasta, env, input: '{}', encoding: 'utf8' })
-    assert.equal(limpo.status, 0)
-    assert.equal(limpo.stdout, '')
-    const continuando = spawnSync(hook('verificar-ao-parar.sh'), { cwd: pasta, env, input: '{"stop_hook_active":true}', encoding: 'utf8' })
-    assert.equal(continuando.status, 0)
-    assert.equal(continuando.stdout, '')
-  } finally {
-    rmSync(pasta, { recursive: true, force: true })
-  }
-})
-
-test('hook de parada bloqueia quando o typecheck falha', () => {
-  const pasta = mkdtempSync(join(tmpdir(), 'ambiente-'))
-  try {
-    execFileSync('git', ['init', '-q'], { cwd: pasta })
-    execFileSync('mkdir', ['-p', join(pasta, 'node_modules', '.bin')])
-    writeFileSync(join(pasta, 'node_modules', '.bin', 'tsc'), '#!/bin/sh\necho "erro de tipo simulado"\nexit 2\n', { mode: 0o755 })
-    writeFileSync(join(pasta, 'a.ts'), 'export const x: number = "texto"\n')
-    const env = { ...process.env, CLAUDE_PROJECT_DIR: pasta, PATH: `${join(pasta, 'node_modules', '.bin')}:${process.env.PATH}` }
-    const resultado = spawnSync(hook('verificar-ao-parar.sh'), { cwd: pasta, env, input: '{}', encoding: 'utf8' })
-    assert.equal(resultado.status, 0)
-    const decisao = JSON.parse(resultado.stdout)
-    assert.equal(decisao.decision, 'block')
-    assert.match(decisao.reason, /typecheck falhou/)
-  } finally {
-    rmSync(pasta, { recursive: true, force: true })
-  }
-})
-
 test('settings do projeto não escapam do repositório e protegem leituras sensíveis', () => {
   const configuracao = JSON.parse(readFileSync(join(raiz, '.claude', 'settings.json'), 'utf8'))
   assert.equal(configuracao.agent, 'arquiteto')

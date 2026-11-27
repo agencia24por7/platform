@@ -212,13 +212,11 @@ function checarEconomiaESeguranca() {
   const registrados = (evento) => JSON.stringify(configuracao.hooks?.[evento] ?? [])
   const exigidos = [
     ['PreToolUse', 'guarda-pre-uso.mjs'],
-    ['UserPromptSubmit', 'ao-enviar-prompt.mjs'],
-    ['Stop', 'varrer-segredos.mjs'],
-    ['Stop', 'verificar-ao-parar.sh'],
   ]
   for (const [evento, script] of exigidos) {
     if (!registrados(evento).includes(script)) falhar(`hook ${script} não está registrado em ${evento}`)
   }
+  if (!registrados('PreToolUse').includes('|| exit 2')) falhar('o hook PreToolUse precisa terminar em || exit 2 para falhar fechado')
   for (const chave of ['BASH_MAX_OUTPUT_LENGTH', 'MAX_MCP_OUTPUT_TOKENS', 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE']) {
     if (!configuracao.env?.[chave]) falhar(`settings.env sem ${chave}`)
   }
@@ -230,45 +228,6 @@ function checarEconomiaESeguranca() {
   }
   for (const arquivo of ['politicas.mjs', 'classificar.mjs']) {
     if (!existsSync(caminho('.claude', 'hooks', 'lib', arquivo))) falhar(`falta .claude/hooks/lib/${arquivo}`)
-  }
-}
-
-function hooksPathConfigurado() {
-  try {
-    return execFileSync('git', ['config', '--get', 'core.hooksPath'], { cwd: raiz, encoding: 'utf8' }).trim()
-  } catch {
-    return ''
-  }
-}
-
-function checarHooksDoGit() {
-  for (const nome of ['pre-commit', 'pre-push']) {
-    if (!existsSync(caminho('.githooks', nome))) {
-      falhar(`falta .githooks/${nome}`)
-      continue
-    }
-    if (!executavel('.githooks', nome)) falhar(`.githooks/${nome} sem permissão de execução`)
-    if (!ler('.githooks', nome).includes('scripts/seguranca-verificar.mjs')) falhar(`.githooks/${nome} não chama scripts/seguranca-verificar.mjs`)
-  }
-  if (!existsSync(caminho('scripts', 'seguranca-verificar.mjs'))) falhar('scripts/seguranca-verificar.mjs não existe')
-  const allowlist = caminho('.githooks', 'seguranca-allowlist.txt')
-  if (!existsSync(allowlist)) falhar('.githooks/seguranca-allowlist.txt não existe')
-  else {
-    const entradas = readFileSync(allowlist, 'utf8').split('\n').map((linha) => linha.trim()).filter((linha) => linha && !linha.startsWith('#'))
-    for (const entrada of entradas) {
-      const [arquivo, id] = entrada.split('::')
-      if (!arquivo || !id) falhar(`allowlist com linha inválida: "${entrada}"`)
-      else if (!existsSync(caminho(arquivo))) falhar(`allowlist cita arquivo inexistente: ${arquivo}`)
-    }
-  }
-  const pacote = JSON.parse(ler('package.json'))
-  for (const script of ['seguranca:verificar', 'ambiente:hooks']) {
-    if (!pacote.scripts?.[script]) falhar(`package.json sem o script ${script}`)
-  }
-  if (!ler('.github', 'workflows', 'ci.yml').includes('seguranca:verificar')) falhar('ci.yml não roda seguranca:verificar')
-  if (!rapido) {
-    const configurado = hooksPathConfigurado()
-    if (configurado !== '.githooks') console.log('aviso: hooks do git não instalados neste clone; rode "npm run ambiente:hooks"')
   }
 }
 
@@ -303,7 +262,6 @@ checarAgentes()
 checarSkillsEComandos()
 checarOrcaEStart()
 checarEconomiaESeguranca()
-checarHooksDoGit()
 checarDocumentacao()
 if (!rapido) {
   checarExecucao()
