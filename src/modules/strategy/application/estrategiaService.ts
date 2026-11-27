@@ -701,7 +701,7 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
     let versaoBaseId: string | null = null;
     if (pedido.tipo === 'criar') {
       const versoes = await repositorio.listarVersoes(comando.organizationId, plano.id, 100);
-      if (!criarPodeRepetir(versoes, anterior.criadaEm)) return err(BASE_MUDOU);
+      if (!criarPodeRepetir(versoes)) return err(BASE_MUDOU);
     } else {
       const estado = await estadoDoPlano(plano);
       const base = pedido.tipo === 'revisar' ? (estado?.vigente ?? null) : (estado?.aberta ?? estado?.vigente ?? null);

@@ -4,15 +4,8 @@ export function erroRepetivel(codigo: string | null): boolean {
   return codigo !== null && CODIGOS_REPETIVEIS.has(codigo);
 }
 
-export type VersaoParaRepeticao = { readonly status: string; readonly autorTipo: string; readonly criadaEm: Date };
+export type VersaoParaRepeticao = { readonly status: string; readonly autorTipo: string };
 
-const STATUS_ABERTOS = ['rascunho', 'proposto'];
-
-export function criarPodeRepetir(versoes: readonly VersaoParaRepeticao[], execucaoCriadaEm: Date): boolean {
-  return !versoes.some(
-    (versao) =>
-      versao.autorTipo === 'usuario' ||
-      versao.status === 'vigente' ||
-      (STATUS_ABERTOS.includes(versao.status) && versao.criadaEm.getTime() > execucaoCriadaEm.getTime()),
-  );
+export function criarPodeRepetir(versoes: readonly VersaoParaRepeticao[]): boolean {
+  return !versoes.some((versao) => versao.autorTipo === 'usuario' || versao.status === 'vigente');
 }

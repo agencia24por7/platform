@@ -394,7 +394,7 @@ export function podeTentarDeNovo(painel: PainelDoPlano | null, papel: MemberRole
   const ultima = painel?.ultimaExecucao ?? null;
   if (!painel || !ultima || painel.execucaoAtiva || ultima.status !== 'falhou') return false;
   if (ultima.tipo === 'corrigir_gate' || !erroRepetivel(ultima.erroCodigo)) return false;
-  if (ultima.tipo === 'criar' && !criarPodeRepetir(painel.historico.versoes, ultima.criadaEm)) return false;
+  if (ultima.tipo === 'criar' && !criarPodeRepetir(painel.historico.versoes)) return false;
   return podeExecutar(ultima.tipo === 'criar' ? 'criar' : 'editar', { tipo: 'pessoa', papel });
 }
 
