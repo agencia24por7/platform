@@ -182,6 +182,15 @@ function falhaDeIA(codigo: CodigoDeErroDeIA, motivo: string | null = null): Falh
   return new FalhaDaEtapa(CODIGO_DA_FALHA_DE_IA[codigo], codigo !== 'nao_configurada' && codigo !== 'limite_atingido', false, motivo);
 }
 
+const MAXIMO_DE_PROBLEMAS_DEVOLVIDOS = 10;
+const AVISO_DE_CORRECAO_DE_INTEGRIDADE =
+  'A entrada traz "problemasDeIntegridade": a versão anterior deste grupo ficou inconsistente com as seções já redigidas ou com ela mesma. Devolva o grupo corrigido, citando só ids que existem em "secoesJaRedigidas" ou neste grupo.';
+
+function motivoDaIntegridade(problemas: readonly { readonly caminho: string; readonly mensagem: string }[]): string {
+  const itens = problemas.slice(0, 3).map((problema) => `${problema.caminho.replace(/[^a-z0-9_.]/gi, '').slice(0, 60)}=${problema.mensagem.slice(0, 60)}`);
+  return `rascunho_fora_da_integridade:${itens.join(';')}`.slice(0, 220);
+}
+
 function motivoDoEsquema(erro: { readonly issues: readonly { readonly path: readonly PropertyKey[] }[] }): string {
   const caminhos = [...new Set(erro.issues.slice(0, 3).map((problema) => problema.path.map(String).join('.').replace(/[^a-z0-9_.]/gi, '').slice(0, 60)))];
   return `esquema:${caminhos.join(',')}`.slice(0, 160);
@@ -423,19 +432,28 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     const codigos = codigosDoPacote(pacote);
     const secoes: SecoesRedigidas = {};
     for (const [indice, grupo] of GRUPOS_DE_REDACAO.entries()) {
-      const chaveDoGrupo = `${execucao.id}:redigir:${execucao.rodada}:g${indice}`;
-      const doGrupo = await executarIA(
-        execucao,
-        contexto,
-        'strategy_plan',
-        instrucaoDoGrupo(tarefa, grupo, indice + 1, GRUPOS_DE_REDACAO.length),
-        { ...(abreviarUrnsParaCodigos({ ...entrada, secoesJaRedigidas: { ...secoes } }, codigos) as Record<string, unknown>), pacote: pacoteDaChamada },
-        esquemaDoGrupo(indice),
-        chaveDoGrupo,
-        codigos,
-      );
-      Object.assign(secoes, doGrupo);
-      if (problemasDoRascunho(secoes).length > 0) throw falhaDeIA('saida_invalida', 'rascunho_fora_da_integridade');
+      const redigirGrupo = (problemasAnteriores: readonly { readonly caminho: string; readonly mensagem: string }[]) =>
+        executarIA(
+          execucao,
+          contexto,
+          'strategy_plan',
+          instrucaoDoGrupo(problemasAnteriores.length === 0 ? tarefa : `${tarefa}\n${AVISO_DE_CORRECAO_DE_INTEGRIDADE}`, grupo, indice + 1, GRUPOS_DE_REDACAO.length),
+          {
+            ...(abreviarUrnsParaCodigos({ ...entrada, secoesJaRedigidas: { ...secoes } }, codigos) as Record<string, unknown>),
+            ...(problemasAnteriores.length === 0 ? {} : { problemasDeIntegridade: problemasAnteriores.slice(0, MAXIMO_DE_PROBLEMAS_DEVOLVIDOS) }),
+            pacote: pacoteDaChamada,
+          },
+          esquemaDoGrupo(indice),
+          problemasAnteriores.length === 0 ? `${execucao.id}:redigir:${execucao.rodada}:g${indice}` : `${execucao.id}:redigir:${execucao.rodada}:corrigir:g${indice}`,
+          codigos,
+        );
+      Object.assign(secoes, await redigirGrupo([]));
+      let problemas = problemasDoRascunho(secoes);
+      if (problemas.length > 0) {
+        Object.assign(secoes, await redigirGrupo(problemas));
+        problemas = problemasDoRascunho(secoes);
+      }
+      if (problemas.length > 0) throw falhaDeIA('saida_invalida', motivoDaIntegridade(problemas));
     }
     const lido = lerPlano(montarPlanoDeSecoes(intencaoConfiavel, secoes));
     if (!lido.ok) throw falhaDeIA('saida_invalida', 'plano_fora_do_esquema');

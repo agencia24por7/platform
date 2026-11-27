@@ -488,6 +488,54 @@ describe('motor do plano: erros de IA e do Brain', () => {
     });
   });
 
+  describe('rascunho inconsistente entre seções', () => {
+    const quebrado = (chave: string) => {
+      const secoes = secoesDoGrupoDaChave(chave) as { comunidades_alvo?: { comunidades: { segmento_id?: string }[] } };
+      secoes.comunidades_alvo!.comunidades[0]!.segmento_id = 'segmento_que_nao_existe';
+      return secoes;
+    };
+
+    it('devolve o problema ao modelo e conclui quando o grupo volta corrigido', async () => {
+      const pedidos: PedidoDeIA<unknown>[] = [];
+      const base = roteiroPadrao();
+      const m = await montar({
+        roteiro: (pedido) => {
+          pedidos.push(pedido);
+          if (/:redigir:\d+:g0$/.test(pedido.chaveDeIdempotencia)) return quebrado(pedido.chaveDeIdempotencia);
+          return base(pedido);
+        },
+      });
+      const final = await ate(m);
+      assert.equal(final.status, 'concluida');
+      const reparo = pedidos.filter((p) => /:corrigir:g0$/.test(p.chaveDeIdempotencia));
+      assert.equal(reparo.length, 1);
+      const dados = reparo[0]!.dados as { problemasDeIntegridade: { caminho: string; mensagem: string }[] };
+      assert.ok(dados.problemasDeIntegridade[0]!.mensagem.includes('Segmento inexistente'));
+      assert.match(reparo[0]!.instrucoes, /problemasDeIntegridade/);
+      assert.equal(pedidos.filter((p) => /:redigir:\d+:g0$/.test(p.chaveDeIdempotencia)).length >= 1, true);
+    });
+
+    it('só corrige uma vez: segunda inconsistência falha com o motivo na auditoria', async () => {
+      const base = roteiroPadrao();
+      const m = await montar({
+        roteiro: (pedido) => (/:g0$/.test(pedido.chaveDeIdempotencia) && pedido.tarefa === 'strategy_plan' ? quebrado(pedido.chaveDeIdempotencia) : base(pedido)),
+      });
+      const final = await ate(m);
+      assert.equal(final.erroCodigo, 'ia_saida_invalida');
+      assert.equal(m.repositorio.estado.versoes.length, 0);
+      const motivo = String(m.auditorias.find((a) => a.metadata?.motivo !== undefined)?.metadata?.motivo);
+      assert.match(motivo, /^rascunho_fora_da_integridade:comunidades_alvo\.comunidades\.0\.segmento_id=Segmento inexistente/);
+    });
+
+    it('o grupo que passa de primeira não gasta chamada de correção', async () => {
+      const pedidos: PedidoDeIA<unknown>[] = [];
+      const base = roteiroPadrao();
+      const m = await montar({ roteiro: (pedido) => { pedidos.push(pedido); return base(pedido); } });
+      await ate(m);
+      assert.equal(pedidos.filter((p) => p.chaveDeIdempotencia.includes(':corrigir:')).length, 0);
+    });
+  });
+
   it('Brain indisponível: tenta de novo e falha com brain_indisponivel', async () => {
     const m = await montar({ brain: brainFora });
     const final = await ate(m);
