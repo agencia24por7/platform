@@ -127,6 +127,11 @@ test('comandos perigosos são negados, os de risco pedem confirmação e os comu
     'git push origin main && echo ok',
     'git push origin main>/dev/null',
     'sudo -E env',
+    'rtk proxy printenv',
+    'rtk proxy env | sort',
+    'grep -rn TOKEN',
+    'grep -rn TOKEN ..',
+    'grep -rn TOKEN "$PWD"',
     'node -e "console.log({ ...process.env })"',
     'node -p "JSON.stringify({ ...process.env })"',
     'sudo -u x env',
@@ -349,11 +354,12 @@ test('permissions.allow do settings é exatamente a lista combinada', () => {
 test('hook PreToolUse, pelo comando do settings, termina em até 9 s e nunca deixa passar uma avaliação lenta', () => {
   const settings = JSON.parse(execFileSync('cat', [join(raiz, '.claude', 'settings.json')], { encoding: 'utf8' }))
   const comandoDoHook = settings.hooks.PreToolUse[0].hooks[0].command
-  const evento = JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git checkout '.repeat(2200) }, cwd: raiz })
+  const evento = JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git ' + '-c a="b" '.repeat(40) + 'status' }, cwd: raiz })
   const inicio = Date.now()
   const resultado = spawnSync('sh', ['-c', comandoDoHook], { input: evento, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: raiz } })
   assert.ok(Date.now() - inicio < 9000, `levou ${Date.now() - inicio} ms`)
   assert.ok(resultado.status === 0 || resultado.status === 2, `status ${resultado.status}`)
+  assert.ok(Date.now() - inicio < 9000)
   assert.equal(resultado.signal, null)
 })
 
@@ -378,6 +384,7 @@ test('push sem destino a partir da main é negado e o resto passa', () => {
     assert.equal(decidir('git push && cat .env', vazia), 'deny')
     assert.equal(decidir('git push; git push; git push; git push', pasta), 'deny')
     assert.equal(decidir('git push origin HEAD 2>&1'), 'deny')
+    assert.equal(decidir('git push origin +HEAD'), 'deny')
     assert.equal(decidir('git push -u origin HEAD > /tmp/p.log 2>&1'), 'deny')
     assert.equal(decidir('git push -u origin "$(git branch --show-current)"'), 'deny')
     assert.equal(decidir('git push -u origin `git branch --show-current`'), 'deny')

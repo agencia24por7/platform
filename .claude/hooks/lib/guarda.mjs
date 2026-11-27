@@ -80,7 +80,7 @@ function ramoDoDiretorio(diretorio) {
 const FLAGS_DO_PUSH_COM_VALOR = new Set(['-o', '--push-option', '--repo', '--receive-pack', '--exec'])
 const SEM_ASPAS = /^["']|["']$/g
 const LIMITE_DE_PUSHES = 3
-const PADRAO_DE_PUSH = /\bgit\b((?:\s+(?:-[cC]\s+(?:(?:[^\s"']*(?:"[^"]*"|'[^']*'))+|\S+)|--[\w-]+(?:=\S+)?))*)\s+push\b([^;&|\n]*)/g
+const PADRAO_DE_PUSH = /\bgit\b((?:\s+(?:-[cC]\s+(?:[^\s"']|"[^"]*"|'[^']*')+|--[\w-]+(?:=\S+)?))*)\s+push\b([^;&|\n]*)/g
 
 function diretorioDoCd(antes, base) {
   const trocas = [...antes.matchAll(/\bcd\s+("[^"]*"|'[^']*'|[^\s;&|]+)/g)]
@@ -96,7 +96,8 @@ function avaliarPushSemDestino(comando, diretorioBase) {
   if (pushes.length > LIMITE_DE_PUSHES) return { decisao: 'deny', motivo: 'Muitos git push no mesmo comando para a guarda avaliar com segurança: divida o comando.' }
   for (const push of pushes) {
     const diretorioDoC = /-C\s+("[^"]*"|'[^']*'|\S+)/.exec(push[1])?.[1]
-    const diretorio = diretorioDoC ? absoluto(diretorioDoC.replace(SEM_ASPAS, ''), diretorioBase) : diretorioDoCd(texto.slice(0, push.index), diretorioBase)
+    const baseDoCd = diretorioDoCd(texto.slice(0, push.index), diretorioBase)
+    const diretorio = diretorioDoC ? (baseDoCd === null ? null : absoluto(diretorioDoC.replace(SEM_ASPAS, ''), baseDoCd)) : baseDoCd
     const argumentosDoPush = push[2].split(/\s\d+(?=[<>])|[<>`)]/)[0]
     const tokens = argumentosDoPush.trim().split(/\s+/).filter(Boolean)
     const posicionais = []
@@ -105,7 +106,7 @@ function avaliarPushSemDestino(comando, diretorioBase) {
       else if (!tokens[indice].startsWith('-')) posicionais.push(tokens[indice].replace(SEM_ASPAS, ''))
     }
     const destinoDinamico = /[$`]/.test(push[2])
-    const semDestinoExplicito = posicionais.length <= 1 || destinoDinamico || posicionais.slice(1).every((argumento) => argumento === 'HEAD' || argumento === '@')
+    const semDestinoExplicito = posicionais.length <= 1 || destinoDinamico || posicionais.slice(1).every((argumento) => ['HEAD', '@'].includes(argumento.replace(/^\+/, '')))
     if (!semDestinoExplicito) continue
     const ramo = diretorio === null ? null : ramoDoDiretorio(diretorio)
     if (ramo === null) return { decisao: 'ask', motivo: 'Não foi possível descobrir o ramo atual para um push sem destino explícito: confirme.' }
