@@ -50,7 +50,14 @@ function problemasDoDestino(catalogo: CatalogoDeCampos, porChave: ReadonlyMap<st
     { papel: 'whatsapp', existe: intencao.whatsapp !== undefined, confere: (valor) => textoDoValor(valor) === intencao.whatsapp, erro: 'difere do WhatsApp da intenção; copie sem alterar' },
     { papel: 'utm', existe: utm !== undefined, confere: (valor) => utm !== undefined && utmConfere(valor, utm), erro: 'UTM difere da gerada pelo sistema; copie sem alterar' },
   ];
+  const semDestino = objetivo !== undefined && (catalogo.objetivosSemDestino ?? []).includes(objetivo);
   for (const { papel, existe, confere, erro } of conferencias) {
+    if (semDestino && (papel === 'url_destino' || papel === 'utm')) {
+      for (const campo of catalogo.campos.filter((candidato) => candidato.papel === papel && porChave.has(candidato.chave))) {
+        problemas.push(`${local(campo.chave)} (o objetivo ${objetivo} não carrega URL nem UTM; não preencha)`);
+      }
+      continue;
+    }
     const campos = catalogo.campos.filter((campo) => campo.papel === papel && campoAplicavel(campo, objetivo));
     const exigido = papel !== 'whatsapp' || catalogo.campos.some((campo) => campo.papel === papel);
     if (existe && exigido && campos.length === 0) {
