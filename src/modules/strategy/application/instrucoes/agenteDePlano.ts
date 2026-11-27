@@ -22,7 +22,7 @@ export const TAREFA_PARA_ATUALIZAR_AO_BRAIN = `Tarefa: atualizar as seções ped
 Entrada em "dados": { intencao, secoesDoPlanoBase (só deste grupo), secoesJaRedigidas, pacote }.`;
 
 export const TAREFA_PARA_AJUSTAR_AO_COMITE = `Tarefa: revisar as seções pedidas aplicando os pontos do Comitê e sanando as pendências do Gate deste grupo. Os pontos já passaram pelo juiz: aplique todos. Reprovação de risco e legal é obrigatória.
-Para CADA ponto: { persona, pontoId, decisao: "acatado", motivo curto do que mudou }. Pontos da mesma fonte são um argumento. Mantenha ids referenciados.
+Para CADA ponto: { persona, pontoId, decisao: "acatado", motivo de no máximo 160 caracteres, em uma frase, do que mudou }. Pontos da mesma fonte são um argumento. Mantenha ids referenciados.
 Entrada em "dados": { planoAtual (só as seções deste grupo), pontos, pendenciasObrigatorias, pendenciasDoGate, pacote }.`;
 
 export const TAREFA_PARA_CORRIGIR_O_GATE = `Tarefa: corrigir as seções pedidas para sanar as pendências do Gate, que são obrigatórias: restaure o que foi removido ou afrouxado e mantenha o resto. Sem pontos do Comitê: "respostas" vazia.

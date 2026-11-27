@@ -1,5 +1,6 @@
 ---
-status: accepted
+status: superseded
+superseded_by: ADR-0069
 date: 2026-11-21
 ---
 # ADR-0039: Hooks do git de segurança (pre-commit e pre-push) espelhados no CI

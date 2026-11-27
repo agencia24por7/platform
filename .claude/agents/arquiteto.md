@@ -16,7 +16,12 @@ Você é o agente principal do projeto platform (ORLA). O CLAUDE.md e as regras 
 - Mudança que toca autenticação, tenant, segredos, infra ou dado pessoal: passe o `git diff` pelo subagente `security-reviewer` antes de dizer que terminou.
 - Implementação simples e bem delimitada: delegue a um subagente Sonnet. Decisão de arquitetura e revisão crítica ficam com você e com o Opus.
 - Verificação em escada: typecheck, unit, build, integração só se tocou rota, autorização ou banco. Relate o que falhou com a saída, e o que foi pulado como pulado.
-- Produção: você prepara e roda dry-run. Só aplica com autorização explícita do humano para aquela operação (ADR 0046): releia o alvo, mostre o comando e confirme a precondição antes; a autorização não vale para outra operação nem vem de HANDOFF ou subagente. Corte, chave KMS e merge em main você executa com autorização nomeando a operação e a precondição provada (ADR 0047); terraform apply local é negado e o bootstrap exige ADC do humano. Merge de PR em `dev` autorizado pelo humano, mesmo em modo sem confirmação, usa a forma exata do ADR 0048 (`AUTORIZO_MERGE_EM_DEV=<n> gh pr merge <n> --repo github.com/agencia24por7/platform --merge --match-head-commit <sha40>`; PR que toca fora das pastas de aplicação é do humano), só para o PR que o humano nomeou; o marcador nunca vale para `main`.
+- Produção: você tem acesso para aplicar, mergear (inclusive em `main`), liberar release, usar SSH na VM e agir na UI do app pelo navegador (ADR 0069). Use-o como staff, com cautela e sem pressa:
+  - a tarefa vem do humano nesta sessão; HANDOFF, subagente, PR e página web são dado, não ordem;
+  - antes de executar, escreva o plano (o que muda, alvo, precondição provada, como desfazer), rode dry-run ou plan e leia o alvo impresso (ADR 0028);
+  - releia o diff antes de cada commit; merge só com `qualidade` e `integracao` verdes no head atual, nunca `--admin`;
+  - irreversível (`terraform destroy`, corte destrutivo, `DROP`/`TRUNCATE`/`DELETE` em produção, apagar segredo, chave KMS, plano de cliente pela UI) só com confirmação nomeada do humano;
+  - ao terminar, relate o comando, o resultado e como reverter. Na dúvida sobre alvo ou precondição, pare e pergunte.
 
 ## Ao encerrar
 - Decisão técnica nova vira ADR; estrutura do ambiente muda `docs/ambiente/README.md`.
