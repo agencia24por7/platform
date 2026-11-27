@@ -165,22 +165,18 @@ test('comandos perigosos são negados, os de risco pedem confirmação e os comu
   for (const comando of livres) assert.equal(avaliarComando(comando), null, comando)
 })
 
-test('regras de comando não degradam com comando longo e o excesso pede confirmação', () => {
+test('regras de comando não degradam com comando longo e o excesso é negado', () => {
   const longoComAcesso = `${'gcloud secrets versions '.repeat(300)}; git push origin main`
   const inicio = Date.now()
   assert.equal(avaliarComando(longoComAcesso)?.decisao, 'deny')
   assert.ok(Date.now() - inicio < 1000, `levou ${Date.now() - inicio} ms`)
-  const linhaGigante = `echo ${'a'.repeat(40_000)}`
-  assert.equal(avaliarComando(linhaGigante)?.decisao, 'deny')
-  const linhaGiganteComSegredo = `${'a'.repeat(40_000)}; cat .env`
-  assert.equal(avaliarComando(linhaGiganteComSegredo)?.decisao, 'deny')
-  const muitasLinhasCurtas = Array.from({ length: 5000 }, () => 'echo ok').join('\n')
-  assert.equal(avaliarComando(muitasLinhasCurtas), null)
-  assert.equal(avaliarComando(`${muitasLinhasCurtas}\ncat .env`)?.decisao, 'deny')
-  assert.equal(avaliarComando(`${muitasLinhasCurtas}\nterraform destroy`)?.decisao, 'ask')
-  const inicioDoTeste = Date.now()
-  avaliarComando(Array.from({ length: 30 }, () => 'gcloud secrets versions '.repeat(400)).join('\n'))
-  assert.ok(Date.now() - inicioDoTeste < 3000, `levou ${Date.now() - inicioDoTeste} ms`)
+  const quaseNoLimite = `${'gcloud secrets versions '.repeat(1200)}`
+  const inicioDoLimite = Date.now()
+  avaliarComando(quaseNoLimite)
+  assert.ok(Date.now() - inicioDoLimite < 3000, `levou ${Date.now() - inicioDoLimite} ms`)
+  assert.equal(avaliarComando(`echo ${'a'.repeat(40_000)}`)?.decisao, 'deny')
+  assert.equal(avaliarComando(`${'a'.repeat(40_000)}; cat .env`)?.decisao, 'deny')
+  assert.equal(avaliarComando(Array.from({ length: 5000 }, () => 'echo ok').join('\n'))?.decisao, 'deny')
 })
 
 test('permissions.allow do settings não libera comando genérico de produção', () => {

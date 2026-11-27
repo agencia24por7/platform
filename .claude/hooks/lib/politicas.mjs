@@ -173,9 +173,7 @@ export function avaliarEscrita({ caminho, conteudo, existeVersionado }) {
   return null
 }
 
-const LIMITE_DO_COMANDO_AVALIADO_INTEIRO = 30_000
-const LIMITE_DE_LINHA_NO_COMANDO_LONGO = 10_000
-const LIMITE_TOTAL_DO_COMANDO = 200_000
+const COMPRIMENTO_MAXIMO_DO_COMANDO = 30_000
 
 const REGRAS_DE_COMANDO = [
   { padrao: /\bcurl\b[^|;&]*\|\s*(sudo\s+)?(ba|z)?sh\b|\bwget\b[^|;&]*\|\s*(sudo\s+)?(ba|z)?sh\b/, decisao: 'deny', motivo: 'Baixar e executar script direto no shell é proibido. Baixe, leia e só então execute.' },
@@ -230,19 +228,10 @@ function avaliarTrecho(texto) {
 
 export function avaliarComando(comando) {
   const original = String(comando ?? '')
-  if (original.length <= LIMITE_DO_COMANDO_AVALIADO_INTEIRO) return avaliarTrecho(original)
-  const linhas = original.split('\n')
-  if (original.length > LIMITE_TOTAL_DO_COMANDO || linhas.some((linha) => linha.length > LIMITE_DE_LINHA_NO_COMANDO_LONGO)) {
-    return { decisao: 'deny', motivo: 'Comando grande demais para a guarda avaliar com segurança. Grave o conteúdo com a ferramenta de escrita e rode um comando curto.' }
+  if (original.length > COMPRIMENTO_MAXIMO_DO_COMANDO) {
+    return { decisao: 'deny', motivo: `Comando com mais de ${COMPRIMENTO_MAXIMO_DO_COMANDO} caracteres não pode ser avaliado com segurança pela guarda. Grave o conteúdo com a ferramenta de escrita e rode um comando curto.` }
   }
-  let pergunta = null
-  for (const linha of linhas) {
-    const resultado = avaliarTrecho(linha)
-    if (!resultado) continue
-    if (resultado.decisao === 'deny') return resultado
-    pergunta ??= resultado
-  }
-  return pergunta
+  return avaliarTrecho(original)
 }
 
 export function linhasComSegredo(texto) {
