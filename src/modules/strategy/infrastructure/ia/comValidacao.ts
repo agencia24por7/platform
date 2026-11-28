@@ -42,8 +42,9 @@ export function comValidacao(executor: ExecutorDeIA): ExecutorDeIA {
         if (corrida.tipo === 'tempo') return err(TEMPO_ESGOTADO);
         if (!corrida.resultado.ok) return err(corrida.resultado.error);
         const lida = pedido.esquema.safeParse(corrida.resultado.value.saida);
-        if (!lida.success) return err({ ...SAIDA_INVALIDA, mensagem: `${SAIDA_INVALIDA.mensagem} [${caminhosDoEsquema(lida.error)}]` });
-        return ok({ saida: lida.data, uso: corrida.resultado.value.uso });
+        if (!lida.success) return err({ ...SAIDA_INVALIDA, mensagem: `${SAIDA_INVALIDA.mensagem} [${caminhosDoEsquema(lida.error)}]`, ...(corrida.resultado.value.telemetria === undefined ? {} : { telemetria: corrida.resultado.value.telemetria }) });
+        const { telemetria } = corrida.resultado.value;
+        return ok({ saida: lida.data, uso: corrida.resultado.value.uso, ...(telemetria === undefined ? {} : { telemetria }) });
       } catch {
         return err(FALHA_INESPERADA);
       } finally {

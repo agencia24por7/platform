@@ -287,7 +287,15 @@ export type RepositorioDeEstrategia = {
 
 export type CodigoDeErroDeIA = 'nao_configurada' | 'limite_atingido' | 'saida_invalida' | 'falha_do_fornecedor' | 'tempo_esgotado';
 
-export type ErroDeIA = { readonly codigo: CodigoDeErroDeIA; readonly mensagem: string };
+export type TelemetriaDeIA = {
+  readonly caminho: string;
+  readonly finishReason: string;
+  readonly tokensDeSaida: number;
+  readonly tetoDeSaida: number;
+  readonly recusaDoEsquema?: string;
+};
+
+export type ErroDeIA = { readonly codigo: CodigoDeErroDeIA; readonly mensagem: string; readonly telemetria?: TelemetriaDeIA };
 
 export type TarefaDeIA = 'strategy_plan' | 'comite' | 'juiz' | 'gate';
 
@@ -296,7 +304,7 @@ export type PedidoDeIA<T> = {
   readonly instrucoes: string;
   readonly dados: unknown;
   readonly esquema: z.ZodType<T>;
-  readonly orcamento: { readonly tokensMaximos: number; readonly tempoMaximoMs: number };
+  readonly orcamento: { readonly tokensMaximos: number; readonly tempoMaximoMs: number; readonly elastico?: boolean };
   readonly organizacaoId: string;
   readonly clienteId: string;
   readonly execucaoId: string;
@@ -306,7 +314,7 @@ export type PedidoDeIA<T> = {
 
 export type UsoDeIA = { readonly tokensDeEntrada: number; readonly tokensDeSaida: number; readonly modelo?: string };
 
-export type RespostaDeIA<T> = { readonly saida: T; readonly uso: UsoDeIA };
+export type RespostaDeIA<T> = { readonly saida: T; readonly uso: UsoDeIA; readonly telemetria?: TelemetriaDeIA };
 
 export type ExecutorDeIA = {
   executar<T>(pedido: PedidoDeIA<T>): Promise<Result<RespostaDeIA<T>, ErroDeIA>>;

@@ -23,7 +23,7 @@ Object.assign(process.env, {
 });
 
 const { codigosDoPacote } = await import('../domain/codigosCurtos.ts');
-const { createMotorDoPlano, MAXIMO_DE_RODADAS, MAXIMO_DE_REPETICOES_POR_ETAPA, MAXIMO_DE_FALHAS_TRANSITORIAS, motivoDaIntegridade, corrigirDaChamada, problemaParaCorrigir, estadoDaEtapaNaAuditoria } = await import('./motorDoPlano.ts');
+const { createMotorDoPlano, MAXIMO_DE_RODADAS, MAXIMO_DE_REPETICOES_POR_ETAPA, MAXIMO_DE_FALHAS_TRANSITORIAS, motivoDaIntegridade, corrigirDaChamada, problemaParaCorrigir, estadoDaEtapaNaAuditoria, MENSAGEM_DE_TRUNCAMENTO, FATOR_ELASTICO_DE_SAIDA } = await import('./motorDoPlano.ts');
 const { criarRepositorioEmMemoria } = await import('../infrastructure/repositorioEmMemoria.ts');
 const { criarIaFalsa, aceitaTodos } = await import('../infrastructure/ia/iaFalsa.ts');
 const { criarIaNaoConfigurada } = await import('../infrastructure/ia/iaNaoConfigurada.ts');
@@ -1151,7 +1151,7 @@ describe('motor do plano: corrigir só da tentativa imediatamente anterior', () 
       linha('ajustar', 'rodando', 1, { proximaEtapa: 'gates' }),
       linha('gates', 'rodando', 1, { proximaEtapa: 'ajustar' }),
     ];
-    assert.deepEqual(estadoDaEtapaNaAuditoria(linhas, 'ajustar', 2), { repeticoes: 0, problemas: [] });
+    assert.deepEqual(estadoDaEtapaNaAuditoria(linhas, 'ajustar', 2), { repeticoes: 0, problemas: [], truncada: false });
     assert.equal(estadoDaEtapaNaAuditoria(linhas, 'ajustar', 1).repeticoes, 2);
     assert.deepEqual(estadoDaEtapaNaAuditoria(linhas, 'ajustar', 1).problemas, []);
   });
@@ -1161,5 +1161,51 @@ describe('motor do plano: corrigir só da tentativa imediatamente anterior', () 
     assert.deepEqual(estadoDaEtapaNaAuditoria(linhas, 'redigir', 0).problemas.map((p) => p.texto), ['campo_b (regra)']);
     assert.deepEqual(estadoDaEtapaNaAuditoria(linhas, 'redigir', 1).problemas, []);
     assert.deepEqual(estadoDaEtapaNaAuditoria(linhas, 'comite', 0).problemas, []);
+  });
+});
+
+describe('motor do plano: truncamento, teto elástico e telemetria', () => {
+  function roteiroQueFalhaUmaVez(erro: Record<string, unknown>): Roteiro {
+    const base = roteiroPadrao();
+    let falhou = false;
+    return (pedido) => {
+      if (pedido.tarefa === 'strategy_plan' && !falhou) {
+        falhou = true;
+        return erro as never;
+      }
+      return base(pedido);
+    };
+  }
+
+  it('após saída truncada a repetição usa o teto elástico e o corrigir pede concisão', async () => {
+    const m = await montar({ roteiro: roteiroQueFalhaUmaVez({ codigo: 'saida_invalida', mensagem: 'O modelo devolveu uma resposta fora do formato esperado. [saida:truncada]' }) });
+    const final = await ate(m);
+    assert.equal(final.status, 'concluida');
+    const chamadas = m.ia.pedidos.filter((p) => p.tarefa === 'strategy_plan');
+    assert.equal(chamadas[0]!.orcamento.elastico, undefined);
+    assert.equal(chamadas[0]!.orcamento.tokensMaximos, 6_500);
+    assert.equal(chamadas[1]!.orcamento.elastico, true);
+    assert.equal(chamadas[1]!.orcamento.tokensMaximos, Math.ceil(6_500 * FATOR_ELASTICO_DE_SAIDA));
+    assert.deepEqual((chamadas[1]!.dados as { corrigir?: string[] }).corrigir, [MENSAGEM_DE_TRUNCAMENTO]);
+    const adiada = m.auditorias.find((a) => a.metadata?.status === 'adiada')!;
+    assert.equal(adiada.metadata?.truncada, true);
+    assert.equal(adiada.metadata?.motivo, 'ia:saida_invalida:saida:truncada');
+    const comitê = m.ia.pedidos.filter((p) => p.tarefa === 'comite');
+    assert.ok(comitê.every((p) => p.orcamento.elastico === undefined));
+  });
+
+  it('sem truncamento o teto não muda', async () => {
+    const m = await montar({ roteiro: roteiroQueFalhaUmaVez({ codigo: 'saida_invalida', mensagem: 'x [esquema:a.b:custom]' }) });
+    await ate(m);
+    assert.ok(m.ia.pedidos.filter((p) => p.tarefa === 'strategy_plan').every((p) => p.orcamento.elastico === undefined));
+  });
+
+  it('a auditoria do passo leva a telemetria de cada chamada, sem conteúdo nem mensagem do fornecedor', async () => {
+    const telemetria = { caminho: 'json_livre', finishReason: 'stop', tokensDeSaida: 321, tetoDeSaida: 6500, recusaDoEsquema: 'too many states' };
+    const m = await montar({ roteiro: roteiroQueFalhaUmaVez({ codigo: 'saida_invalida', mensagem: 'O modelo devolveu uma resposta fora do formato esperado. [esquema:json_invalido]', telemetria }) });
+    await ate(m);
+    const adiada = m.auditorias.find((a) => a.metadata?.status === 'adiada')!;
+    assert.deepEqual(adiada.metadata?.ia, [{ tarefa: 'strategy_plan', ...telemetria }]);
+    assert.ok(!JSON.stringify(adiada.metadata).includes('devolveu'));
   });
 });
