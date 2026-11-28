@@ -108,7 +108,7 @@ export function PedirAoCliente({ rotulo, tipo, clienteId, clienteNome, organizac
 
   return (
     <>
-      <button type="button" className="btn btn--primary" onClick={abrir}>
+      <button type="button" className="btn" onClick={abrir}>
         {rotulo}
       </button>
       <dialog ref={dialogo} className="painel-lateral" aria-labelledby={`${idBase}-t`} onClose={() => resultado?.ok && router.refresh()}>

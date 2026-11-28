@@ -1,4 +1,4 @@
-export const ABAS_DO_CLIENTE = ['conexoes', 'contexto', 'regras', 'estrategia'] as const;
+export const ABAS_DO_CLIENTE = ['conexoes', 'contexto', 'regras', 'estrategia', 'atividade'] as const;
 export type AbaDoCliente = (typeof ABAS_DO_CLIENTE)[number];
 
 export const ROTULO_DA_ABA: Record<AbaDoCliente, string> = {
@@ -6,31 +6,47 @@ export const ROTULO_DA_ABA: Record<AbaDoCliente, string> = {
   contexto: 'Contexto',
   regras: 'Regras',
   estrategia: 'Estratégia',
+  atividade: 'Atividade',
 };
 
-export const SECOES_DE_CONEXOES = ['fontes', 'pedir'] as const;
-export type SecaoDeConexoes = (typeof SECOES_DE_CONEXOES)[number];
-
-export const ROTULO_DA_SECAO_DE_CONEXOES: Record<SecaoDeConexoes, string> = {
-  fontes: 'Fontes',
-  pedir: 'Pedir ao cliente',
-};
-
-export const SECOES_DE_CONTEXTO = ['perfil', 'brain', 'destino'] as const;
-export type SecaoDeContexto = (typeof SECOES_DE_CONTEXTO)[number];
-
-export const ROTULO_DA_SECAO_DE_CONTEXTO: Record<SecaoDeContexto, string> = {
-  perfil: 'Mapa de contexto',
-  brain: 'Brain',
-  destino: 'Destino',
-};
-
-export function secaoDeConexoes(bruto: string | null | undefined): SecaoDeConexoes {
-  return (SECOES_DE_CONEXOES as readonly string[]).includes(bruto ?? '') ? (bruto as SecaoDeConexoes) : 'fontes';
+export function abaDoSegmento(segmento: string | null): AbaDoCliente {
+  return (ABAS_DO_CLIENTE as readonly string[]).includes(segmento ?? '') ? (segmento as AbaDoCliente) : 'conexoes';
 }
 
-export function secaoDeContexto(bruto: string | null | undefined): SecaoDeContexto {
-  return bruto === 'brain' || bruto === 'destino' ? bruto : 'perfil';
+export function abaComAcaoNoCabecalho(segmento: string | null, ehConexao: boolean): boolean {
+  if (segmento === 'contexto') return true;
+  if (segmento === null || segmento === 'conexoes') return !ehConexao;
+  return false;
+}
+
+export const SECOES_DE_ATIVIDADE = ['pedidos', 'contexto', 'regras'] as const;
+export type SecaoDeAtividade = (typeof SECOES_DE_ATIVIDADE)[number];
+
+export const ROTULO_DA_SECAO_DE_ATIVIDADE: Record<SecaoDeAtividade, string> = {
+  pedidos: 'Pedidos ao cliente',
+  contexto: 'Histórico do contexto',
+  regras: 'Linha do tempo de Regras',
+};
+
+export function ancoraDaAtividade(secao: SecaoDeAtividade): string {
+  return `atividade-${secao}`;
+}
+
+export function rotaDaAtividade(clienteId: string, secao: SecaoDeAtividade, busca: Readonly<Record<string, string | null | undefined>> = {}): string {
+  return `${rotaDoCliente(clienteId, 'atividade', busca)}#${ancoraDaAtividade(secao)}`;
+}
+
+const SECOES_ANTIGAS_DO_CONTEXTO = new Set(['perfil', 'brain']);
+
+export const ANCORA_DO_MAPA = 'mapa-de-contexto';
+
+export function rotaDoMapaDeContexto(clienteId: string, secao = 'empresa', campo: string | null = null): string {
+  return `${rotaDoCliente(clienteId, 'contexto', { secao, campo })}#${ANCORA_DO_MAPA}`;
+}
+
+export function secaoInicialDoMapa(bruto: string | null | undefined): string | null {
+  if (!bruto || SECOES_ANTIGAS_DO_CONTEXTO.has(bruto) || !/^[a-z_]{1,40}$/.test(bruto)) return null;
+  return bruto;
 }
 
 export const SECOES_DE_ESTRATEGIA = ['plano', 'comite', 'gates', 'historico'] as const;
@@ -52,10 +68,10 @@ export type SegmentoLegado = (typeof SEGMENTOS_LEGADOS)[number];
 
 const DESTINO_DO_LEGADO: Record<SegmentoLegado, { readonly aba: AbaDoCliente; readonly secao: string | null }> = {
   visao: { aba: 'conexoes', secao: null },
-  dados: { aba: 'conexoes', secao: 'fontes' },
-  acessos: { aba: 'conexoes', secao: 'pedir' },
+  dados: { aba: 'conexoes', secao: null },
+  acessos: { aba: 'atividade', secao: null },
   configuracoes: { aba: 'conexoes', secao: null },
-  brain: { aba: 'contexto', secao: 'brain' },
+  brain: { aba: 'contexto', secao: null },
 };
 
 export function destinoDaRotaLegada(
@@ -64,9 +80,10 @@ export function destinoDaRotaLegada(
   busca: Readonly<Record<string, string | readonly string[] | undefined>> = {},
 ): string {
   const pedeEnvio = [busca['enviar']].flat()[0] === 'contexto';
-  const { aba, secao } = pedeEnvio ? { aba: 'conexoes' as const, secao: 'pedir' } : DESTINO_DO_LEGADO[segmento];
+  const { aba, secao } = pedeEnvio ? { aba: 'conexoes' as const, secao: null } : DESTINO_DO_LEGADO[segmento];
   const preservada: Record<string, string> = {};
   for (const [chave, valor] of Object.entries(busca)) {
+    if (chave === 'secao') continue;
     const primeiro = Array.isArray(valor) ? valor[0] : valor;
     if (typeof primeiro === 'string' && primeiro) preservada[chave] = primeiro;
   }

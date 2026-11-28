@@ -350,7 +350,7 @@ describe('visão do plano: resumo executivo', () => {
     const url = planoCompleto().resumo_executivo.aposta_central.evidencias.map((e) => e.urn);
     if (url.includes(URN_DESEMPENHO)) {
       assert.ok(marcas.includes('Desempenho de anúncios'));
-      assert.ok(marcas.includes(`/clientes/${CLIENTE_ID}/contexto?secao=brain`));
+      assert.ok(marcas.includes(`/clientes/${CLIENTE_ID}/contexto`));
     }
     assert.ok(marcas.includes('"marcas"'));
   });

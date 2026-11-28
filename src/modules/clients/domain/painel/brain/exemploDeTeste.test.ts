@@ -44,7 +44,7 @@ describe('brain de exemplo', () => {
     const conexao = brain.entradas.find((e) => e.tipo === 'conexao');
     assert.equal(conexao?.titulo, 'Café Google');
     assert.equal(conexao?.frescor.status, 'parado');
-    assert.ok(brain.acoes.some((a) => a.href.includes('/conexoes?secao=fontes')));
+    assert.ok(brain.acoes.some((a) => a.href.endsWith('/conexoes')));
   });
 
   it('séries de 90 dias, receita de acesso filtrada pelo cliente e lacunas', () => {

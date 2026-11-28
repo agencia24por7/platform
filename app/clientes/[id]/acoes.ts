@@ -6,6 +6,7 @@ import {
   MOTIVO_DO_PEDIDO_DE_PARTNER,
   normalizarContaDeAnuncioMeta,
 } from '@/modules/connections/domain/metaPartner';
+import { comAviso, rotaDoCliente } from '@/modules/clients/domain/painel/enderecos';
 import { text } from '@/shared/http/actions';
 import { atorAtual } from '@/shared/http/ator';
 import { requireContext } from '@/shared/http/currentOrganization';
@@ -29,19 +30,17 @@ export async function revogarConviteDeIntegracao(formData: FormData): Promise<vo
   const ator = await atorAtual();
 
   if (!canAdminister(contexto.role)) {
-    redirect(
-      `/clientes/${clientId}/conexoes?secao=pedir&erro=${encodeURIComponent('Só quem administra a organização pode revogar um convite.')}`,
-    );
+    redirect(comAviso(rotaDoCliente(clientId, 'atividade'), 'erro', 'Só quem administra a organização pode revogar um convite.'));
   }
 
   if (!(await clienteDaOrganizacao(organization.id, clientId))) {
-    redirect(`/clientes/${clientId}/conexoes?secao=pedir&erro=${encodeURIComponent('Cliente não encontrado nesta organização.')}`);
+    redirect(comAviso(rotaDoCliente(clientId, 'atividade'), 'erro', 'Cliente não encontrado nesta organização.'));
   }
 
   const inviteId = text(formData, 'inviteId');
   const revogado = await modules().connectionInvites.revoke(organization.id, inviteId);
   if (!revogado) {
-    redirect(`/clientes/${clientId}/conexoes?secao=pedir&erro=${encodeURIComponent('Convite não encontrado ou já concluído.')}`);
+    redirect(comAviso(rotaDoCliente(clientId, 'atividade'), 'erro', 'Convite não encontrado ou já concluído.'));
   }
 
   await modules().audit.record({
@@ -56,7 +55,7 @@ export async function revogarConviteDeIntegracao(formData: FormData): Promise<vo
     metadata: { inviteId },
   });
 
-  redirect(`/clientes/${revogado.clientId}/conexoes?secao=pedir&feito=${encodeURIComponent('Convite revogado.')}`);
+  redirect(comAviso(rotaDoCliente(revogado.clientId, 'atividade'), 'feito', 'Convite revogado.'));
 }
 
 export async function pedirAcessoMetaPartner(formData: FormData): Promise<void> {
@@ -65,7 +64,7 @@ export async function pedirAcessoMetaPartner(formData: FormData): Promise<void> 
   const organization = contexto.organization;
   const ator = await atorAtual();
   const voltar = (aviso: string): never =>
-    redirect(`/clientes/${clientId}/conexoes?secao=pedir&erro=${encodeURIComponent(aviso)}`);
+    redirect(comAviso(rotaDoCliente(clientId, 'conexoes'), 'erro', aviso));
 
   if (!canAdminister(contexto.role)) {
     voltar('Só quem administra a organização pode pedir acesso parceiro no Meta.');
@@ -121,5 +120,5 @@ export async function pedirAcessoMetaPartner(formData: FormData): Promise<void> 
     metadata: { businessManagerId: organizacao.value.businessManagerId, contaDeAnuncio },
   });
 
-  redirect(`/clientes/${clientId}/conexoes?secao=pedir&feito=${encodeURIComponent('Pedido de acesso enviado para a fila.')}`);
+  redirect(comAviso(rotaDoCliente(clientId, 'conexoes'), 'feito', 'Pedido de acesso enviado para a fila. Acompanhe em Atividade.'));
 }

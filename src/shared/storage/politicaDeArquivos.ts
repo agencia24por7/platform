@@ -208,3 +208,24 @@ export function cabecalhosDeDownload(nome: string, contentTypeArmazenado: string
     'Cache-Control': 'private, no-store',
   };
 }
+
+export const IMAGENS_EM_LINHA: ReadonlySet<string> = new Set([TIPOS_PERMITIDOS.png.contentType, TIPOS_PERMITIDOS.jpeg.contentType, TIPOS_PERMITIDOS.webp.contentType, TIPOS_PERMITIDOS.gif.contentType]);
+const HASH_DO_CONTEUDO = /^[0-9a-f]{64}$/;
+
+export function cabecalhosDeRevalidacao(sha256: string): CabecalhosDeDownload | null {
+  if (!HASH_DO_CONTEUDO.test(sha256)) return null;
+  return { 'Cache-Control': 'private, no-cache', ETag: `"${sha256}"`, 'X-Content-Type-Options': 'nosniff' };
+}
+
+export function cabecalhosDeImagemEmLinha(contentTypeArmazenado: string, sha256: string): CabecalhosDeDownload | null {
+  const revalidacao = cabecalhosDeRevalidacao(sha256);
+  if (!IMAGENS_EM_LINHA.has(contentTypeArmazenado) || !revalidacao) return null;
+  return {
+    ...revalidacao,
+    'Content-Type': contentTypeArmazenado,
+    'Content-Disposition': 'inline; filename="imagem"',
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'none'; sandbox",
+    'Cross-Origin-Resource-Policy': 'same-origin',
+  };
+}

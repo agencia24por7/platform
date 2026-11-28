@@ -26,7 +26,8 @@ export default {
       { source: '/:path*', headers: securityHeaders },
       { source: '/contexto/:path*', headers: cabecalhosDoFormularioPublico },
       { source: '/convite/:path*', headers: cabecalhosDoFormularioPublico },
-      { source: '/api/contexto/:path*', headers: cabecalhosDoFormularioPublico },
+      { source: '/api/contexto/publico/:path*', headers: cabecalhosDoFormularioPublico },
+      { source: '/api/contexto/:clienteId/arquivos', headers: cabecalhosDoFormularioPublico },
     ];
   },
 };

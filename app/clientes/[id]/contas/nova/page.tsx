@@ -57,7 +57,7 @@ async function vincularConta(formData: FormData): Promise<void> {
       return;
     }
     const proximoPasso = fonteDe(escolhida.platform).ativaNoV1 ? ' Entra na próxima coleta.' : '';
-    redirect(`/clientes/${clientId}/conexoes?secao=fontes&feito=${encodeURIComponent(`${escolhida.name} vinculada.${proximoPasso}`)}`);
+    redirect(`/clientes/${clientId}/conexoes?feito=${encodeURIComponent(`${escolhida.name} vinculada.${proximoPasso}`)}`);
   }
 
   const vinculada = await modules().connections.linkAccount(
@@ -82,7 +82,7 @@ async function vincularConta(formData: FormData): Promise<void> {
   }
 
   await modules().discoveredAccounts.markLinked(organization.id, escolhida.id, vinculada.value.id);
-  redirect(`/clientes/${clientId}/conexoes?secao=fontes`);
+  redirect(`/clientes/${clientId}/conexoes`);
 }
 
 export default async function VincularConta({
@@ -180,7 +180,7 @@ export default async function VincularConta({
             ) : null}
 
             <div className="page__actions">
-              <Link className="btn btn--pill" href={`/clientes/${cliente.id}/conexoes?secao=fontes`}>
+              <Link className="btn btn--pill" href={`/clientes/${cliente.id}/conexoes`}>
                 Cancelar
               </Link>
               <button className="btn btn--primary btn--pill" type="submit">

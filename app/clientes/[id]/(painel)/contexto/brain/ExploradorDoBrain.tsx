@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useDeferredValue, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useDeferredValue, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { CopyButton } from '@/../app/_components/CopyButton';
 import { EstadoVazio } from '@/../app/clientes/[id]/_componentes/EstadoVazio';
 import { ALTURA_DO_MAPA, LARGURA_DO_MAPA, type Mapa, type NoDoMapa } from '@/modules/clients/domain/painel/brain/mapa';
@@ -22,6 +22,7 @@ type Props = {
   readonly clienteNome: string;
   readonly entradas: readonly EntradaDoBrain[];
   readonly mapa: Mapa;
+  readonly cabecalho: ReactNode;
 };
 
 const USO: Record<EntradaDoBrain['sensibilidade']['usoPorAgente'], string> = {
@@ -35,7 +36,7 @@ function dataCurta(iso: string | null): string {
   return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-export function ExploradorDoBrain({ clienteNome, entradas, mapa }: Props) {
+export function ExploradorDoBrain({ clienteNome, entradas, mapa, cabecalho }: Props) {
   const gaveta = useRef<HTMLDialogElement>(null);
   const [aberta, setAberta] = useState<EntradaDoBrain | null>(null);
   const [foco, setFoco] = useState<NoDoMapa | null>(null);
@@ -92,11 +93,14 @@ export function ExploradorDoBrain({ clienteNome, entradas, mapa }: Props) {
 
   return (
     <>
-      <details className="card mapa-vivo brain-recolhivel">
-        <summary className="card__head">
-          <h2 className="card__title" id="t-mapa">Mapa vivo</h2>
+      <section className="card mapa-vivo contexto-hero" aria-labelledby="t-contexto-hero">
+        {cabecalho}
+        <div className="contexto-hero__mapa-topo">
+          <h3 className="contexto-hero__mapa-titulo" id="t-mapa">
+            Mapa ao vivo
+          </h3>
           <span className="card__sub">Tamanho = cobertura · cor = frescor · tracejado = ligação que falta</span>
-        </summary>
+        </div>
         <div className="mapa-vivo__palco">
           <svg
             className="mapa-vivo__svg"
@@ -215,15 +219,15 @@ export function ExploradorDoBrain({ clienteNome, entradas, mapa }: Props) {
             ))}
           </div>
         </div>
-      </details>
+      </section>
 
-      <section className="card" aria-labelledby="t-catalogo">
-        <div className="card__head">
+      <details className="card brain-recolhivel">
+        <summary className="card__head">
           <h2 className="card__title" id="t-catalogo">Catálogo</h2>
           <span className="card__sub">
             {filtradas.length} de {base.length} entradas
           </span>
-        </div>
+        </summary>
         <div className="catalogo__barra">
           <div className="catalogo__busca">
             <input className="input" type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar tabela, coluna, tag…" aria-label="Buscar no catálogo" />
@@ -328,7 +332,7 @@ export function ExploradorDoBrain({ clienteNome, entradas, mapa }: Props) {
             ))}
           </ul>
         )}
-      </section>
+      </details>
 
       <dialog ref={gaveta} className="painel-lateral painel-lateral--largo" aria-labelledby="t-entrada" onClose={() => setAberta(null)}>
         {aberta ? (

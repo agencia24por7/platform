@@ -2,62 +2,29 @@ import Link from 'next/link';
 import { AvisoEfemero } from '@/../app/clientes/[id]/_componentes/AvisoEfemero';
 import { CabecalhoDeSecao } from '@/../app/clientes/[id]/_componentes/CabecalhoDeSecao';
 import { EstadoVazio } from '@/../app/clientes/[id]/_componentes/EstadoVazio';
-import { SubNavegacao } from '@/../app/clientes/[id]/_componentes/SubNavegacao';
 import { carregarPainel, primeiro } from '@/../app/clientes/[id]/_dados';
-import { FiltrosDaLinha } from '@/../app/clientes/[id]/(painel)/regras/FiltrosDaLinha';
-import { CartaoDeRegra } from '@/../app/clientes/[id]/(painel)/regras/CartaoDeRegra';
-import { FormularioDeRegra, type DefinicaoDoFormulario, type ValoresIniciais } from '@/../app/clientes/[id]/(painel)/regras/FormularioDeRegra';
+import { CartaoDeRegra, type ModoDoCartao } from '@/../app/clientes/[id]/(painel)/regras/CartaoDeRegra';
+import { carregarDefinicoes, definicaoDaDecisao, nomesDaEquipe, paraFormulario } from '@/../app/clientes/[id]/(painel)/regras/dados';
+import { FormularioDeRegra, type ValoresIniciais } from '@/../app/clientes/[id]/(painel)/regras/FormularioDeRegra';
 import { modules } from '@/composition';
-import { rotaDoCliente } from '@/modules/clients/domain/painel/enderecos';
+import { rotaDaAtividade, rotaDoCliente } from '@/modules/clients/domain/painel/enderecos';
 import {
-  ROTULO_DA_CATEGORIA,
-  ROTULO_DO_STATUS,
   agruparPorCategoria,
-  buscaDaLinha,
+  descricaoDaSecaoDeRegras,
   fimInclusivo,
   dataParaCampo,
-  lerFiltrosDaLinha,
   opcaoDeNatureza,
   podeEscreverEmRegras,
   podeRegistrarOuMexer,
   secaoDeRegras,
   valorParaCampo,
 } from '@/modules/clients/domain/painel/regras';
-import { CATEGORIAS, ORIGENS, STATUS, type Decisao } from '@/modules/clients/domain/regras/index';
-import type { DefinicaoDoBanco } from '@/modules/clients/infrastructure/regrasRepository';
+import type { Decisao } from '@/modules/clients/domain/regras/index';
 import { noVocabularioDe, vocabularioDe } from '@/modules/organizations/domain/vocabulario';
 
 export const dynamic = 'force-dynamic';
 
-const ITENS_POR_PAGINA = 20;
-
 type Busca = Record<string, string | string[] | undefined>;
-
-async function nomesDaEquipe(organizationId: string, decisoes: readonly Decisao[]): Promise<ReadonlyMap<string, string>> {
-  const ids = new Set(decisoes.map((d) => d.decididoPor).filter((id): id is string => id !== null));
-  if (ids.size === 0) return new Map();
-  try {
-    const { membros } = await modules().team.equipe(organizationId);
-    return new Map(membros.filter((m) => ids.has(m.userId)).map((m) => [m.userId, m.name]));
-  } catch {
-    return new Map();
-  }
-}
-
-function paraFormulario(d: DefinicaoDoBanco): DefinicaoDoFormulario {
-  return {
-    key: d.key,
-    nome: d.nome,
-    descricao: d.descricao,
-    categoria: d.categoria,
-    unidade: d.unidade,
-    periodo: d.periodo,
-    sentido: d.sentido,
-    faixaMin: d.faixaMin,
-    faixaMax: d.faixaMax,
-    tiposDeEscopo: d.tiposDeEscopo,
-  };
-}
 
 export default async function Regras({ params, searchParams }: { readonly params: Promise<{ id: string }>; readonly searchParams: Promise<Busca> }) {
   const [{ id }, busca] = await Promise.all([params, searchParams]);
@@ -71,28 +38,16 @@ export default async function Regras({ params, searchParams }: { readonly params
   const secao = secaoDeRegras(primeiro(busca['secao']));
   const texto = (chave: string) => primeiro(busca[chave]);
 
-  const [definicoes, prontidao] = await Promise.all([servico.listarDefinicoes(escopo), servico.prontidao(escopo)]);
-  const listaDeDefinicoes: readonly DefinicaoDoBanco[] = definicoes.ok ? definicoes.value : [];
+  const listaDeDefinicoes = await carregarDefinicoes(cliente.id);
   const definicaoPorChave = (chave: string | null) => (chave ? (listaDeDefinicoes.find((d) => d.key === chave) ?? null) : null);
-  const contagem = prontidao.ok ? prontidao.value : null;
   const aba = (s: string, extra: Record<string, string | null | undefined> = {}) => rotaDoCliente(cliente.id, 'regras', { secao: s, ...extra });
 
-  const itens = [
-    { chave: 'hoje', rotulo: 'O que vale hoje', href: aba('hoje') },
-    { chave: 'linha', rotulo: 'Linha do tempo', href: aba('linha') },
-    { chave: 'propostas', rotulo: 'Propostas de agentes', href: aba('propostas'), contador: contagem?.propostasPendentes ?? null },
-    { chave: 'revisar', rotulo: 'Revisar e converter', href: aba('revisar'), contador: contagem?.aRevisar ?? null },
-    ...(secao === 'registrar' ? [{ chave: 'registrar', rotulo: 'Registrar', href: aba('registrar') }] : []),
-    ...(secao === 'alterar' ? [{ chave: 'alterar', rotulo: 'Alterar', href: aba('alterar', { id: texto('id') }) }] : []),
-  ];
-  const ativaNaNavegacao: string = secao === 'historico' ? 'linha' : secao;
-
-  const cartao = (d: Decisao, modo: 'vigente' | 'linha' | 'proposta' | 'revisar' | 'historico', nomes: ReadonlyMap<string, string>, nivel: 'h3' | 'h4' = 'h3') => (
+  const cartao = (d: Decisao, modo: ModoDoCartao, nomes: ReadonlyMap<string, string>, nivel: 'h3' | 'h4' = 'h3') => (
     <CartaoDeRegra
       key={d.id}
       clienteId={cliente.id}
       decisao={d}
-      definicao={definicaoPorChave(d.natureza === 'limite' ? d.chave : null)}
+      definicao={definicaoDaDecisao(listaDeDefinicoes, d)}
       nomes={nomes}
       vocabulario={vocabulario}
       papel={papel}
@@ -106,141 +61,56 @@ export default async function Regras({ params, searchParams }: { readonly params
   let corpo: React.ReactNode;
 
   if (secao === 'hoje') {
-    const vigentes = await servico.listarVigentes(escopo);
-    if (!vigentes.ok) {
-      corpo = erroDoServico(vigentes.error.message);
-    } else {
-      const nomes = await nomesDaEquipe(escopo.organizationId, vigentes.value.decisoes);
-      const grupos = agruparPorCategoria(vigentes.value.decisoes);
-      corpo = (
-        <div className="pilha">
-          {vigentes.value.conflitos.length > 0 ? (
+    const [vigentes, propostas, fila] = await Promise.all([servico.listarVigentes(escopo), servico.listarPropostas(escopo), servico.filaDeRevisao(escopo)]);
+    const decisoesParaNomes = [...(vigentes.ok ? vigentes.value.decisoes : []), ...(propostas.ok ? propostas.value : []), ...(fila.ok ? fila.value : [])];
+    const nomes = await nomesDaEquipe(cliente.id, decisoesParaNomes);
+    const grupos = vigentes.ok ? agruparPorCategoria(vigentes.value.decisoes) : [];
+    corpo = (
+      <div className="regras-painel">
+        <div className="pilha regras-painel__principal">
+          {!vigentes.ok ? erroDoServico(vigentes.error.message) : null}
+          {vigentes.ok && vigentes.value.conflitos.length > 0 ? (
             <div className="alert alert--warn" role="status">
               Há decisões vigentes concorrentes para a mesma chave ({vigentes.value.conflitos.map((c) => `#${c.numero}`).join(', ')}). Vale a mais recente; revise.
             </div>
           ) : null}
-          {grupos.length === 0
-            ? vazio('Nada vigente ainda', 'Registre o primeiro limite, regra ou decisão do cliente.')
-            : grupos.map((g) => (
-                <section key={g.categoria} aria-labelledby={`grupo-${g.categoria}`} className="regras-grupo">
-                  <h3 id={`grupo-${g.categoria}`} className="regras-grupo__titulo">
-                    {g.rotulo} <span className="selo-contagem">{g.decisoes.length}</span>
-                  </h3>
-                  <div className="regras-lista">{g.decisoes.map((d) => cartao(d, 'vigente', nomes, 'h4'))}</div>
-                </section>
-              ))}
+          {vigentes.ok && grupos.length === 0 ? vazio('Nada vigente ainda', 'Registre o primeiro limite, regra ou decisão do cliente.') : null}
+          {grupos.map((g) => (
+            <section key={g.categoria} aria-labelledby={`grupo-${g.categoria}`} className="regras-grupo">
+              <h3 id={`grupo-${g.categoria}`} className="regras-grupo__titulo">
+                {g.rotulo} <span className="selo-contagem">{g.decisoes.length}</span>
+              </h3>
+              <div className="regras-lista regras-lista--grade">{g.decisoes.map((d) => cartao(d, 'vigente', nomes, 'h4'))}</div>
+            </section>
+          ))}
+          <Link className="quiet-link" href={rotaDaAtividade(cliente.id, 'regras')}>
+            Ver a linha do tempo em Atividade →
+          </Link>
         </div>
-      );
-    }
-  } else if (secao === 'linha') {
-    const filtros = lerFiltrosDaLinha({
-      categoria: texto('categoria'),
-      origem: texto('origem'),
-      status: texto('status'),
-      cursor: texto('cursor'),
-    });
-    const pagina = await servico.linhaDoTempo(escopo, { ...filtros, limite: ITENS_POR_PAGINA });
-    if (!pagina.ok) {
-      corpo = erroDoServico(pagina.error.message);
-    } else {
-      const nomes = await nomesDaEquipe(escopo.organizationId, pagina.value.itens);
-      const semCursor = { categoria: filtros.categoria, origem: filtros.origem, status: filtros.status };
-      corpo = (
-        <div className="pilha">
-          <FiltrosDaLinha action={rotaDoCliente(cliente.id, 'regras')} rotulo="Filtrar a linha do tempo">
-            <input type="hidden" name="secao" value="linha" />
-            <label className="field">
-              <span className="field__label">Categoria</span>
-              <select className="select" name="categoria" defaultValue={filtros.categoria ?? ''}>
-                <option value="">Todas</option>
-                {CATEGORIAS.map((c) => (
-                  <option key={c} value={c}>
-                    {ROTULO_DA_CATEGORIA[c]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span className="field__label">Origem</span>
-              <select className="select" name="origem" defaultValue={filtros.origem ?? ''}>
-                <option value="">Todas</option>
-                {ORIGENS.map((o) => (
-                  <option key={o} value={o}>
-                    {o === 'cliente' ? vocabulario.origemCliente : o === 'agencia' ? vocabulario.origemEquipe : 'Agente'}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span className="field__label">Status</span>
-              <select className="select" name="status" defaultValue={filtros.status ?? ''}>
-                <option value="">Todos</option>
-                {STATUS.map((s) => (
-                  <option key={s} value={s}>
-                    {ROTULO_DO_STATUS[s]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="row">
-              <noscript>
-                <button className="btn btn--primary" type="submit">
-                  Filtrar
-                </button>
-              </noscript>
-              <Link className="btn" href={aba('linha')}>
-                Limpar
-              </Link>
-            </div>
-          </FiltrosDaLinha>
-          {pagina.value.itens.length === 0 ? (
-            vazio('Nenhum registro', 'Nenhum registro com estes filtros.')
-          ) : (
-            <ol className="regras-lista regras-lista--linha" aria-label="Decisões, da mais recente para a mais antiga">
-              {pagina.value.itens.map((d) => (
-                <li key={d.id}>{cartao(d, 'linha', nomes)}</li>
-              ))}
-            </ol>
-          )}
-          <nav className="regras-paginas" aria-label="Paginação da linha do tempo">
-            {filtros.cursor !== null ? (
-              <Link className="btn" href={rotaDoCliente(cliente.id, 'regras', buscaDaLinha(semCursor, null))}>
-                Voltar ao início
-              </Link>
-            ) : null}
-            {pagina.value.proximoCursor !== null ? (
-              <Link className="btn" rel="next" href={rotaDoCliente(cliente.id, 'regras', buscaDaLinha(semCursor, pagina.value.proximoCursor))}>
-                Ver mais antigas
-              </Link>
-            ) : null}
-          </nav>
-        </div>
-      );
-    }
-  } else if (secao === 'propostas') {
-    const propostas = await servico.listarPropostas(escopo);
-    if (!propostas.ok) {
-      corpo = erroDoServico(propostas.error.message);
-    } else {
-      const nomes = await nomesDaEquipe(escopo.organizationId, propostas.value);
-      corpo = (
-        <div className="pilha">
-          {propostas.value.length === 0 ? vazio('Nenhuma proposta esperando decisão') : <div className="regras-lista">{propostas.value.map((d) => cartao(d, 'proposta', nomes))}</div>}
-        </div>
-      );
-    }
-  } else if (secao === 'revisar') {
-    const fila = await servico.filaDeRevisao(escopo);
-    if (!fila.ok) {
-      corpo = erroDoServico(fila.error.message);
-    } else {
-      const nomes = await nomesDaEquipe(escopo.organizationId, fila.value);
-      corpo = (
-        <div className="pilha">
-          {fila.value.length === 0 ? vazio('Nada para revisar') : <div className="regras-lista">{fila.value.map((d) => cartao(d, 'revisar', nomes))}</div>}
-        </div>
-      );
-    }
+        <aside className="pilha regras-painel__lateral" aria-label="Pendências de Regras">
+          <section className="regras-lateral" aria-labelledby="t-propostas">
+            <CabecalhoDeSecao
+              id="t-propostas"
+              titulo="Propostas de agentes"
+              descricao="Agentes propõem; só uma pessoa faz a proposta valer. Limite e regra propostos por agente nunca valem sozinhos."
+            />
+            {!propostas.ok
+              ? erroDoServico(propostas.error.message)
+              : propostas.value.length === 0
+                ? vazio('Nenhuma proposta esperando decisão')
+                : <div className="regras-lista">{propostas.value.map((d) => cartao(d, 'proposta', nomes))}</div>}
+          </section>
+          <section className="regras-lateral" aria-labelledby="t-revisar">
+            <CabecalhoDeSecao
+              id="t-revisar"
+              titulo="Revisar e converter"
+              descricao="Regras em texto livre que trazem número. Converta em limite para o sistema poder impor, ou mantenha como regra alterando-a."
+            />
+            {!fila.ok ? erroDoServico(fila.error.message) : fila.value.length === 0 ? vazio('Nada para revisar') : <div className="regras-lista">{fila.value.map((d) => cartao(d, 'revisar', nomes))}</div>}
+          </section>
+        </aside>
+      </div>
+    );
   } else if (secao === 'historico') {
     const chave = texto('chave') ?? '';
     const escopoDaChave = texto('escopo') ?? null;
@@ -249,7 +119,7 @@ export default async function Regras({ params, searchParams }: { readonly params
       corpo = erroDoServico(historico.error.message);
     } else {
       const cadeia = [...historico.value].sort((a, b) => b.decisao.numero - a.decisao.numero);
-      const nomes = await nomesDaEquipe(escopo.organizationId, cadeia.map((c) => c.decisao));
+      const nomes = await nomesDaEquipe(cliente.id, cadeia.map((c) => c.decisao));
       corpo = (
         <div className="pilha">
           {cadeia.length === 0 ? (
@@ -273,8 +143,8 @@ export default async function Regras({ params, searchParams }: { readonly params
               ))}
             </ol>
           )}
-          <Link className="btn" href={aba('linha')}>
-            Voltar à linha do tempo
+          <Link className="btn" href={aba('hoje')}>
+            Voltar às regras
           </Link>
         </div>
       );
@@ -330,7 +200,7 @@ export default async function Regras({ params, searchParams }: { readonly params
         forca: d.forca,
         ...(d.vigenciaFim ? { vigenciaFim: dataParaCampo(fimInclusivo(d.vigenciaFim)) } : {}),
       };
-      const nomes = await nomesDaEquipe(escopo.organizationId, [d]);
+      const nomes = await nomesDaEquipe(cliente.id, [d]);
       const definicaoDoLimite = d.natureza === 'limite' ? definicaoPorChave(d.chave) : null;
       corpo = (
         <div className="pilha">
@@ -353,18 +223,7 @@ export default async function Regras({ params, searchParams }: { readonly params
     }
   }
 
-  const descricaoDaSecao: React.ReactNode =
-    secao === 'propostas'
-      ? 'Agentes propõem; só uma pessoa faz a proposta valer. Limite e regra propostos por agente nunca valem sozinhos.'
-      : secao === 'revisar'
-        ? 'Regras em texto livre que trazem número. Converta em limite para o sistema poder impor, ou mantenha como regra alterando-a.'
-        : secao === 'historico'
-          ? `Versões de ${texto('chave') ?? ''}, da atual à primeira.`
-          : secao === 'registrar'
-            ? 'Registre um limite, uma regra ou uma decisão do cliente.'
-            : secao === 'alterar'
-              ? 'Alterar cria uma nova versão; a anterior fica no histórico.'
-              : 'Limites, regras e decisões vigentes, com histórico de cada mudança.';
+  const descricaoDaSecao = descricaoDaSecaoDeRegras(secao, texto('chave') ?? '');
 
   return (
     <div className="pilha regras">
@@ -380,7 +239,6 @@ export default async function Regras({ params, searchParams }: { readonly params
           ) : null
         }
       />
-      <SubNavegacao rotulo="Seções de Regras" ativa={ativaNaNavegacao} itens={itens} />
       {corpo}
     </div>
   );
