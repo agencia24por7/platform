@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { Execucao, PlanoDoCliente, VersaoResumo } from '../application/portas.ts';
-import { cardDoPlano, tituloDoPlano, TAMANHO_MAXIMO_DO_TITULO } from './cardsDePlano.ts';
+import { cardDoPlano, cardsNaTela, tituloDoPlano, TAMANHO_MAXIMO_DO_TITULO } from './cardsDePlano.ts';
 
 const AGORA = new Date('2026-11-25T12:00:00Z');
 
@@ -45,7 +45,7 @@ const versao = (status: VersaoResumo['status']): VersaoResumo => ({
 });
 
 const estado = (sobrescrita: Partial<PlanoDoCliente> = {}): PlanoDoCliente => ({
-  plano: { id: 'p1', organizationId: 'o', clientId: 'c', tipo: 'aquisicao', plataformas: ['meta'], whatsapp: '+5511912345678', landingPageId: 'l', criadoEm: AGORA },
+  plano: { id: 'p1', organizationId: 'o', clientId: 'c', tipo: 'aquisicao', plataformas: ['meta'], whatsapp: '+5511912345678', landingPageId: 'l', foco: null, criadoEm: AGORA },
   maisRecente: null,
   vigente: null,
   aberta: null,
@@ -91,5 +91,30 @@ describe('card do plano', () => {
     assert.equal(tituloDoPlano('  Gerar\n leads  ', 'marca'), 'Gerar leads');
     assert.equal(tituloDoPlano('a'.repeat(300), 'marca').length, TAMANHO_MAXIMO_DO_TITULO);
     assert.equal(tituloDoPlano(null, 'retencao'), 'Plano de Retenção');
+  });
+});
+
+describe('foco e apagar no card', () => {
+  const urn = (n: number) => `orla:o:c:contexto_produto:p${n}`;
+  const hash = 'a'.repeat(64);
+
+  it('card mostra o foco: marca, ou os rótulos com resumo acima de três', () => {
+    const base = estado();
+    assert.equal(cardDoPlano(base).foco, null);
+    assert.equal(cardDoPlano({ ...base, plano: { ...base.plano, foco: { tipo: 'marca' } } }).foco, 'Campanha de marca');
+    const produtos = [1, 2, 3, 4, 5].map((n) => ({ urn: urn(n), rotulo: `P${n}`, hash }));
+    assert.equal(cardDoPlano({ ...base, plano: { ...base.plano, foco: { tipo: 'produtos', produtos: produtos.slice(0, 2) } } }).foco, 'P1, P2');
+    assert.equal(cardDoPlano({ ...base, plano: { ...base.plano, foco: { tipo: 'produtos', produtos } } }).foco, 'P1, P2, P3 e mais 2');
+  });
+
+  it('só owner e admin veem Apagar; com execução ativa fica desabilitado com o motivo', () => {
+    const livre = cardDoPlano(estado());
+    const ativa = cardDoPlano(estado({ ultimaExecucao: execucao({ status: 'rodando' }) }));
+    for (const papel of ['owner', 'admin'] as const) {
+      assert.deepEqual(cardsNaTela([livre], 'c', papel)[0]?.apagar, { habilitado: true, motivo: null });
+      assert.deepEqual(cardsNaTela([ativa], 'c', papel)[0]?.apagar, { habilitado: false, motivo: 'Cancele a execução antes de apagar o plano.' });
+    }
+    for (const papel of ['operator', 'viewer'] as const) assert.equal(cardsNaTela([livre], 'c', papel)[0]?.apagar, null);
+    assert.equal(cardsNaTela([livre], 'c')[0]?.apagar, null);
   });
 });

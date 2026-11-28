@@ -92,12 +92,12 @@ const processar = async () => {
   return resumo.value;
 };
 
-const { plataformas: _p, whatsapp: _w, destino: _d, utm: _u, ...intencao } = planoBase.intencao;
+const { plataformas: _p, whatsapp: _w, destino: _d, utm: _u, foco: _f, ...intencao } = planoBase.intencao;
 como(c.operator);
 const landing = await destino.criarLandingPage({ organizationId: c.orgA, clientId: c.cliA, papelDeQuemAge: 'operator', url: planoBase.intencao.destino.url, rotulo: 'Oferta' }, ator(c.operator));
 assert.ok(landing.ok, JSON.stringify(landing));
 assert.ok((await destino.gravarWhatsapp({ organizationId: c.orgA, clientId: c.cliA, papelDeQuemAge: 'operator', whatsapp: planoBase.intencao.whatsapp }, ator(c.operator))).ok);
-const novoPedido = (tipoDePlano) => ({ clienteId: c.cliA, tipoDePlano, plataformas: ['google', 'meta'], landingPageId: landing.value.id, intencao });
+const novoPedido = (tipoDePlano) => ({ clienteId: c.cliA, tipoDePlano, plataformas: ['google', 'meta'], landingPageId: landing.value.id, foco: { tipo: 'marca' }, intencao });
 const pedirPlano = async (tipo) => {
   como(c.operator);
   const r = await servico.pedirPlano(comando('operator'), novoPedido(tipo), ator(c.operator));

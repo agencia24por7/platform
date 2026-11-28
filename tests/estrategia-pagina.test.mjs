@@ -331,7 +331,8 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
     assert.ok(botao(texto, 'Cancelar rascunho').length > 0);
     assert.match(texto, /Pedir mudança ao agente/);
     assert.match(texto, /Editar seção/);
-    assert.match(texto, /Edição avançada/);
+    assert.match(texto, /Toda mudança cria uma versão nova, que passa por revisão de novo\./);
+    assert.doesNotMatch(texto, /Edição avançada|name="json"/);
     assert.match(texto, /[0-9]+\/2000/);
     assert.ok(!TERMOS_INTERNOS.test(semAreaDeTexto(texto)), 'sem Comitê, Gates ou Histórico');
     for (const interno of TEXTOS_INTERNOS_SEMEADOS) assert.ok(!texto.includes(interno), interno);
@@ -502,7 +503,7 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
 
     const comandos = [
       { nome: 'pedir mudança', campo: 'instrucao', extra: { instrucao: 'Reduzir a verba de social' } },
-      { nome: 'editar seção', campo: 'json', extra: { secao: 'lacunas', json: '{"itens":[]}' } },
+      { nome: 'editar seção', campo: 'campo:objetivo', extra: { secao: 'resumo_executivo', 'campo:objetivo': 'Novo objetivo' } },
     ];
     for (const comando of comandos) {
       const ocultos = await ocultosDoFormulario(rotaPlano(clientes.pronto, ids.pronto.plano), ids.operador, comando.campo);
@@ -520,8 +521,8 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
     const ocultosDaMudanca = await ocultosDoFormulario(rotaPlano(clientes.pronto, ids.pronto.plano), ids.operador, 'instrucao');
     const mudanca = await postar(rotaPlano(clientes.pronto, ids.pronto.plano), ids.operador, ocultosDaMudanca, { clienteId: clientes.pronto, planoId: ids.pronto.plano, versaoId: ids.pronto.primeira, instrucao: 'Reduzir a verba de social' });
     assert.match(mudanca.texto, /O plano mudou enquanto você editava\. Recarregue a página\./);
-    const ocultosDaEdicao = await ocultosDoFormulario(rotaPlano(clientes.pronto, ids.pronto.plano), ids.operador, 'json');
-    const edicao = await postar(rotaPlano(clientes.pronto, ids.pronto.plano), ids.operador, ocultosDaEdicao, { clienteId: clientes.pronto, planoId: ids.pronto.plano, versaoId: ids.pronto.primeira, secao: 'lacunas', json: '{"itens":[]}' });
+    const ocultosDaEdicao = await ocultosDoFormulario(rotaPlano(clientes.pronto, ids.pronto.plano), ids.operador, 'campo:objetivo');
+    const edicao = await postar(rotaPlano(clientes.pronto, ids.pronto.plano), ids.operador, ocultosDaEdicao, { clienteId: clientes.pronto, planoId: ids.pronto.plano, versaoId: ids.pronto.primeira, secao: 'resumo_executivo', 'campo:objetivo': 'Novo objetivo' });
     assert.match(edicao.texto, /O plano mudou enquanto você editava\. Recarregue a página\./);
     assert.equal(semear.fotografia(), antes);
     const pagina2 = await pagina(rotaPlano(clientes.pronto, ids.pronto.plano));
@@ -594,12 +595,16 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
 
   it('o formulário de novo plano valida no servidor, mostra a prévia de UTM e cria a execução', async () => {
     const caminho = rota(clientes.semPlano, '?novo=1');
-    const campos = { clienteId: clientes.semPlano, acao: 'criar', tipoDePlano: 'aquisicao', plataformas: 'meta', landingPageId: ids.landing, objetivo: 'Gerar leads qualificados', inicio: '2026-12-01', fim: '2027-02-28', ousadia: 'moderado', retorno: '300 leads por mês', verba: '15.000,00' };
+    const campos = { clienteId: clientes.semPlano, acao: 'criar', tipoDePlano: 'aquisicao', plataformas: 'meta', landingPageId: ids.landing, focoMarca: '1', objetivo: 'Gerar leads qualificados', inicio: '2026-12-01', fim: '2027-02-28', ousadia: 'moderado', retorno: '300 leads por mês', verba: '15.000,00' };
     const invalido = await postarFormulario(caminho, ids.operador, 'objetivo', { ...campos, objetivo: 'a', fim: '2026-11-01', verba: 'abc' });
     assert.ok(invalido.status < 500, `status ${invalido.status}`);
     assert.match(invalido.texto, /Corrija os campos indicados/);
     assert.match(invalido.texto, /O fim não pode ser antes do início/);
     assert.match(invalido.texto, /Informe a verba em reais/);
+    assert.equal(Number(dono(`SELECT count(*) FROM core.strategy_plan_runs WHERE client_id = '${clientes.semPlano}'`)), 0);
+
+    const semFoco = await postarFormulario(caminho, ids.operador, 'objetivo', { ...campos, focoMarca: '' });
+    assert.match(semFoco.texto, /Escolha ao menos um produto ou marque campanha de marca/);
     assert.equal(Number(dono(`SELECT count(*) FROM core.strategy_plan_runs WHERE client_id = '${clientes.semPlano}'`)), 0);
 
     const semObjetivo = await postarFormulario(caminho, ids.operador, 'objetivo', { ...campos, acao: 'previa', objetivo: '' });
@@ -632,17 +637,18 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
     assert.equal(botao(comoLeitor.texto, 'Cadastrar landing page').length, 0);
   });
 
-  it('a edição avançada de seção explica o erro de JSON e de esquema em linguagem clara', async () => {
+  it('a edição por campos explica o erro de cada campo em linguagem clara e nunca aceita conteúdo bruto', async () => {
     const caminho = rotaPlano(clientes.pronto, ids.pronto.plano);
-    const base = { clienteId: clientes.pronto, planoId: ids.pronto.plano, versaoId: ids.pronto.versao, secao: 'lacunas' };
-    const semJson = await postarFormulario(caminho, ids.operador, 'json', { ...base, json: '{segredo: 1' });
-    assert.ok(semJson.status < 500);
-    assert.match(semJson.texto, /O texto não é um JSON válido/);
-    const mensagemDoErro = semJson.texto.match(/"erro":"[^"]*"/)?.[0] ?? '';
-    assert.ok(mensagemDoErro.length > 0 && !mensagemDoErro.includes('segredo'), 'o texto digitado não volta na mensagem');
-    const foraDoEsquema = await postarFormulario(caminho, ids.operador, 'json', { ...base, json: JSON.stringify({ itens: [{ id: 'x', tipo: 'limite_ausente', descricao: 'd', impacto: 'i' }] }) });
-    assert.ok(foraDoEsquema.status < 500);
-    assert.match(foraDoEsquema.texto, /Lacunas ›/);
+    const base = { clienteId: clientes.pronto, planoId: ids.pronto.plano, versaoId: ids.pronto.versao, secao: 'resumo_executivo' };
+    const vazio = await postarFormulario(caminho, ids.operador, 'campo:objetivo', { ...base, 'campo:objetivo': '   ' });
+    assert.ok(vazio.status < 500);
+    assert.match(vazio.texto, /Preencha este campo\./);
+    const verba = await postarFormulario(caminho, ids.operador, 'campo:objetivo', { ...base, 'campo:verba': 'abc' });
+    assert.match(verba.texto, /Informe a verba em reais/);
+    const bruto = await postarFormulario(caminho, ids.operador, 'campo:objetivo', { ...base, json: '{"objetivo":"x"}', 'campo:objetivo': 'ok' });
+    assert.match(bruto.texto, /não aceita conteúdo bruto/);
+    const fora = await postarFormulario(caminho, ids.operador, 'campo:objetivo', { ...base, 'aposta_central.evidencias': 'x', 'campo:aposta_central.evidencias.0.urn': 'orla:x' });
+    assert.match(fora.texto, /Este campo não pode ser editado/);
     assert.equal(dono(`SELECT count(*) FROM core.strategy_plan_versions WHERE plan_id = '${ids.pronto.plano}'`), '2');
   });
 
@@ -767,40 +773,37 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
       ], brain.edicao.plano);
     });
 
-    it('edição com dado pessoal é recusada apontando a seção, sem repetir o dado e sem gravar', async () => {
-      const base = { clienteId: brain.edicao.cli, planoId: brain.edicao.plano, versaoId: brain.edicao.versao, secao: 'posicionamento_e_mensagem' };
-      const secao = { ...brain.edicao.conteudo.posicionamento_e_mensagem, tom: 'Escreva para contato@doceria.example ou (81) 98888-7777' };
+    it('edição com dado pessoal é recusada apontando o campo, sem repetir o dado e sem gravar', async () => {
+      const base = { clienteId: brain.edicao.cli, planoId: brain.edicao.plano, versaoId: brain.edicao.versao, secao: 'resumo_executivo' };
       const antes = semear.fotografia();
-      const resposta = await postarFormulario(rotaPlano(brain.edicao.cli, brain.edicao.plano), ids.operador, 'json', { ...base, json: JSON.stringify(secao) });
+      const resposta = await postarFormulario(rotaPlano(brain.edicao.cli, brain.edicao.plano), ids.operador, 'campo:objetivo', { ...base, 'campo:objetivo': 'Escreva para contato@doceria.example ou (81) 98888-7777' });
       assert.ok(resposta.status < 500, `status ${resposta.status}`);
       assert.match(resposta.texto, /O plano não pode conter dado pessoal/);
-      assert.match(resposta.texto, /Posicionamento e mensagem › tom/);
+      assert.match(resposta.texto, /Dado pessoal/);
       const mensagens = resposta.texto.match(/"(?:erro|campos)":\{?"[^}]*\}?/g)?.join(' ') ?? '';
       assert.ok(mensagens.length > 0, 'mensagens de erro no estado do formulário');
       for (const dado of ['contato@doceria.example', '98888-7777']) assert.ok(!mensagens.includes(dado), `a mensagem repete ${dado}`);
       assert.equal(semear.fotografia(), antes, 'nenhuma escrita');
     });
 
-    it('JSON inválido aponta o problema e o texto digitado volta ao editor em vez de se perder', async () => {
-      const base = { clienteId: brain.edicao.cli, planoId: brain.edicao.plano, versaoId: brain.edicao.versao, secao: 'posicionamento_e_mensagem' };
-      const digitado = '{ "promessa": { "texto": "abc" ';
-      const resposta = await postarFormulario(rotaPlano(brain.edicao.cli, brain.edicao.plano), ids.operador, 'json', { ...base, json: digitado });
-      assert.match(resposta.texto, /O texto não é um JSON válido/);
+    it('valor acima do limite aponta o campo e o texto digitado volta ao formulário em vez de se perder', async () => {
+      const base = { clienteId: brain.edicao.cli, planoId: brain.edicao.plano, versaoId: brain.edicao.versao, secao: 'resumo_executivo' };
+      const digitado = 'x'.repeat(401);
+      const resposta = await postarFormulario(rotaPlano(brain.edicao.cli, brain.edicao.plano), ids.operador, 'campo:objetivo', { ...base, 'campo:objetivo': digitado });
+      assert.match(resposta.texto, /No máximo 400 caracteres/);
       assert.ok(resposta.texto.includes('"valores"'), 'o estado devolve o que foi digitado');
-      assert.ok(resposta.texto.includes('{ \\"promessa\\": { \\"texto\\": \\"abc\\" '), 'o texto digitado volta no estado');
+      assert.ok(resposta.texto.includes(digitado), 'o texto digitado volta no estado');
       assert.equal(versoes(brain.edicao.plano), 'rascunho');
     });
 
-    it('edição válida de seção de ponta a ponta: versão nova em rascunho, anterior cancelada, revisão pedida e Aplicar desabilitado', async () => {
-      const base = { clienteId: brain.edicao.cli, planoId: brain.edicao.plano, versaoId: brain.edicao.versao, secao: 'posicionamento_e_mensagem' };
-      const promessa = { ...brain.edicao.conteudo.posicionamento_e_mensagem.promessa, texto: 'Qualidade com entrega em até 48 horas.' };
-      const secao = { ...brain.edicao.conteudo.posicionamento_e_mensagem, promessa };
-      const feita = await postarFormulario(rotaPlano(brain.edicao.cli, brain.edicao.plano), ids.operador, 'json', { ...base, json: JSON.stringify(secao) });
+    it('edição válida por campos de ponta a ponta: versão nova em rascunho, anterior cancelada, revisão pedida e Aplicar desabilitado', async () => {
+      const base = { clienteId: brain.edicao.cli, planoId: brain.edicao.plano, versaoId: brain.edicao.versao, secao: 'resumo_executivo' };
+      const feita = await postarFormulario(rotaPlano(brain.edicao.cli, brain.edicao.plano), ids.operador, 'campo:objetivo', { ...base, 'campo:objetivo': 'Qualidade com entrega em até 48 horas.' });
       assert.match(feita.destino, /feito=Seção editada/);
       assert.equal(versoes(brain.edicao.plano), 'cancelado,rascunho');
       const nova = dono(`SELECT id FROM core.strategy_plan_versions WHERE plan_id = '${brain.edicao.plano}' AND status = 'rascunho'`);
       assert.equal(dono(`SELECT author_kind || ':' || author_user_id FROM core.strategy_plan_versions WHERE id = '${nova}'`), `usuario:${ids.operador}`);
-      assert.equal(dono(`SELECT content->'posicionamento_e_mensagem'->'promessa'->>'texto' FROM core.strategy_plan_versions WHERE id = '${nova}'`), 'Qualidade com entrega em até 48 horas.');
+      assert.equal(dono(`SELECT content->'resumo_executivo'->>'objetivo' FROM core.strategy_plan_versions WHERE id = '${nova}'`), 'Qualidade com entrega em até 48 horas.');
       assert.equal(dono(`SELECT count(*) FROM core.strategy_plan_refs WHERE version_id = '${nova}'`) > '0', true);
       assert.equal(
         dono(`SELECT actor_kind || ':' || (payload->>'motivo') FROM core.strategy_plan_events WHERE version_id = '${brain.edicao.versao}' AND kind = 'cancelada'`),
@@ -817,12 +820,13 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
       assert.ok(!TERMOS_INTERNOS.test(semAreaDeTexto(depois.texto)), 'sem Comitê, Gates ou Histórico');
     });
 
-    it('editar a seção Intenção com outra verba é aceito e é a única forma de mudar a intenção', async () => {
-      const base = { clienteId: brain.intencao.cli, planoId: brain.intencao.plano, versaoId: brain.intencao.versao, secao: 'intencao' };
-      const secao = { ...brain.intencao.conteudo.intencao, verba: { centavos: '1500000', moeda: 'BRL' } };
-      const feita = await postarFormulario(rotaPlano(brain.intencao.cli, brain.intencao.plano), ids.operador, 'json', { ...base, json: JSON.stringify(secao) });
-      assert.match(feita.destino, /feito=Seção editada/);
-      assert.equal(dono(`SELECT content->'intencao'->'verba'->>'centavos' FROM core.strategy_plan_versions WHERE plan_id = '${brain.intencao.plano}' AND status = 'rascunho'`), '1500000');
+    it('a intenção é fixa: não há campo nem caminho para editá-la pela tela', async () => {
+      const base = { clienteId: brain.intencao.cli, planoId: brain.intencao.plano, versaoId: brain.intencao.versao };
+      const antes = semear.fotografia();
+      const resposta = await postarFormulario(rotaPlano(brain.intencao.cli, brain.intencao.plano), ids.operador, 'campo:objetivo', { ...base, secao: 'intencao', 'campo:verba': '15.000,00' });
+      assert.ok(resposta.status < 500);
+      assert.match(resposta.texto, /Esta seção não pode ser editada/);
+      assert.equal(semear.fotografia(), antes, 'nenhuma escrita');
     });
 
     it('Brain mudado: o plano vigente aparece desatualizado, só quem opera vê Pedir revisão e pedir cria a execução sem tocar na vigente', async () => {

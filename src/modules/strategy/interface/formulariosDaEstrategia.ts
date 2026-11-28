@@ -1,15 +1,15 @@
 import { z } from 'zod';
 import { err, ok, type Result } from '../../../shared/result/result.ts';
 import { dataIsoValida } from '../domain/datas.ts';
-import { OUSADIAS, PLATAFORMAS, SECOES_DO_PLANO, TAMANHO_MAXIMO_DO_PLANO_BYTES, type Plataforma, type SecaoDoPlano } from '../domain/plano.ts';
+import { OUSADIAS, PLATAFORMAS, type Plataforma, type SecaoDoPlano } from '../domain/plano.ts';
 import { TIPOS_DE_PLANO, type TipoDePlano } from '../domain/tipoDePlano.ts';
+import { secaoEditavel, type SecaoEditavel } from './camposEditaveisDaSecao.ts';
 import { centavosDeReais } from './formatosDoPlano.ts';
 
 export type CamposBrutos = Readonly<Record<string, string | undefined>>;
 export type ErrosDeCampo = Readonly<Record<string, string>>;
 
 export const TAMANHO_MAXIMO_DA_INSTRUCAO_NA_TELA = 2000;
-export const TAMANHO_MAXIMO_DO_JSON_DA_SECAO = TAMANHO_MAXIMO_DO_PLANO_BYTES;
 
 const identificador = z.string().uuid('Identificador inválido.');
 
@@ -20,10 +20,13 @@ export function lerIdDoCampo(campos: CamposBrutos, chave: string): Result<string
   return lido.success ? ok(lido.data[chave] as string) : err({ [chave]: 'Identificador inválido.' });
 }
 
+export type FocoDoFormulario = { readonly tipo: 'marca' } | { readonly tipo: 'produtos'; readonly produtos: readonly string[] };
+
 export type IntencaoDoFormulario = {
   readonly tipoDePlano: TipoDePlano;
   readonly plataformas: readonly Plataforma[];
   readonly landingPageId: string;
+  readonly foco: FocoDoFormulario;
   readonly intencao: {
     readonly objetivo: string;
     readonly horizonte: { readonly inicio: string; readonly fim: string };
@@ -32,6 +35,18 @@ export type IntencaoDoFormulario = {
     readonly verba: { readonly centavos: string; readonly moeda: 'BRL' };
   };
 };
+
+const MAXIMO_DE_PRODUTOS_NO_FORMULARIO = 20;
+
+export function lerFocoDoFormulario(campos: CamposBrutos): Result<FocoDoFormulario, ErrosDeCampo> {
+  const marca = (campos['focoMarca'] ?? '').trim() === '1';
+  const produtos = [...new Set((campos['produtos'] ?? '').split(',').map((item) => item.trim()).filter((item) => item !== ''))];
+  if (marca && produtos.length > 0) return err({ foco: 'Escolha produtos ou campanha de marca, não os dois.' });
+  if (marca) return ok({ tipo: 'marca' });
+  if (produtos.length === 0) return err({ foco: 'Escolha ao menos um produto ou marque campanha de marca.' });
+  if (produtos.length > MAXIMO_DE_PRODUTOS_NO_FORMULARIO) return err({ foco: `Escolha no máximo ${MAXIMO_DE_PRODUTOS_NO_FORMULARIO} produtos.` });
+  return ok({ tipo: 'produtos', produtos });
+}
 
 const esquemaDaData = z.string().refine(dataIsoValida, 'Informe uma data válida.');
 
@@ -48,6 +63,9 @@ export function lerIntencaoDoFormulario(campos: CamposBrutos): Result<IntencaoDo
 
   const landingPage = identificador.safeParse(aparado('landingPageId'));
   if (!landingPage.success) erros['landingPageId'] = 'Escolha a landing page.';
+
+  const foco = lerFocoDoFormulario(campos);
+  if (!foco.ok) erros['foco'] = foco.error['foco'] ?? 'Defina o foco do plano.';
 
   const objetivo = aparado('objetivo');
   if (objetivo.length < 3) erros['objetivo'] = 'Descreva o objetivo (mínimo 3 caracteres).';
@@ -70,12 +88,13 @@ export function lerIntencaoDoFormulario(campos: CamposBrutos): Result<IntencaoDo
   if (centavos === null) erros['verba'] = 'Informe a verba em reais, por exemplo 15.000,00.';
   else if (BigInt(centavos) <= 0n) erros['verba'] = 'A verba precisa ser maior que zero.';
 
-  if (Object.keys(erros).length > 0 || !plataformasLidas.success || !landingPage.success || !tipo.success || !inicio.success || !fim.success || !ousadia.success || centavos === null) return err(erros);
+  if (Object.keys(erros).length > 0 || !plataformasLidas.success || !landingPage.success || !foco.ok || !tipo.success || !inicio.success || !fim.success || !ousadia.success || centavos === null) return err(erros);
 
   return ok({
     tipoDePlano: tipo.data,
     plataformas: plataformasLidas.data,
     landingPageId: landingPage.data,
+    foco: foco.value,
     intencao: {
       objetivo,
       horizonte: { inicio: inicio.data, fim: fim.data },
@@ -125,23 +144,38 @@ export function lerPedidoDeMudanca(campos: CamposBrutos): Result<{ readonly plan
   return err(erros);
 }
 
-export type EdicaoDeSecao = { readonly planoId: string; readonly versaoId: string; readonly secao: SecaoDoPlano; readonly valor: unknown };
+export const PREFIXO_DO_CAMPO_EDITAVEL = 'campo:';
+export const MAXIMO_DE_CAMPOS_ENVIADOS = 1000;
+export const MAXIMO_DO_VALOR_ENVIADO = 12_000;
+const MAXIMO_DO_CAMINHO_ENVIADO = 200;
 
-export function lerEdicaoDeSecao(campos: CamposBrutos): Result<EdicaoDeSecao, ErrosDeCampo> {
+export type EdicaoPorCampos = {
+  readonly planoId: string;
+  readonly versaoId: string;
+  readonly secao: SecaoEditavel;
+  readonly pares: Readonly<Record<string, string>>;
+};
+
+export function lerEdicaoPorCampos(campos: CamposBrutos): Result<EdicaoPorCampos, ErrosDeCampo> {
   const planoId = lerIdDoCampo(campos, 'planoId');
   if (!planoId.ok) return err({ planoId: 'Plano inválido.' });
   const versaoId = lerIdDoCampo(campos, 'versaoId');
   if (!versaoId.ok) return err({ versaoId: 'Versão inválida.' });
-  const secao = z.enum(SECOES_DO_PLANO).safeParse(campos['secao'] ?? '');
-  if (!secao.success) return err({ secao: 'Seção desconhecida.' });
-  const bruto = campos['json'] ?? '';
-  if (bruto.trim() === '') return err({ json: 'O conteúdo da seção não pode ficar vazio.' });
-  if (new TextEncoder().encode(bruto).length > TAMANHO_MAXIMO_DO_JSON_DA_SECAO) return err({ json: 'O conteúdo da seção é grande demais.' });
-  try {
-    return ok({ planoId: planoId.value, versaoId: versaoId.value, secao: secao.data, valor: JSON.parse(bruto) as unknown });
-  } catch {
-    return err({ json: 'O texto não é um JSON válido. Confira vírgulas, aspas e chaves.' });
+  const secao = campos['secao'] ?? '';
+  if (!secaoEditavel(secao)) return err({ secao: 'Esta seção não pode ser editada.' });
+  if (campos['json'] !== undefined) return err({ edicao: 'O envio da edição não aceita conteúdo bruto.' });
+  const pares: Record<string, string> = {};
+  for (const [chave, valor] of Object.entries(campos)) {
+    if (!chave.startsWith(PREFIXO_DO_CAMPO_EDITAVEL) || valor === undefined) continue;
+    const caminho = chave.slice(PREFIXO_DO_CAMPO_EDITAVEL.length);
+    if (caminho === '' || caminho.length > MAXIMO_DO_CAMINHO_ENVIADO) return err({ edicao: 'Campo inválido no envio.' });
+    if (valor.length > MAXIMO_DO_VALOR_ENVIADO) return err({ [caminho]: 'O valor é grande demais.' });
+    pares[caminho] = valor;
   }
+  const quantidade = Object.keys(pares).length;
+  if (quantidade === 0) return err({ edicao: 'Nenhum campo foi enviado.' });
+  if (quantidade > MAXIMO_DE_CAMPOS_ENVIADOS) return err({ edicao: 'Campos demais no envio.' });
+  return ok({ planoId: planoId.value, versaoId: versaoId.value, secao, pares });
 }
 
 export function trocarSecao(conteudo: unknown, secao: SecaoDoPlano, valor: unknown): Record<string, unknown> | null {

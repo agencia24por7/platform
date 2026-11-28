@@ -77,7 +77,7 @@ export default async function Estrategia({ params, searchParams }: { readonly pa
       ) : (
         <ul className="planos-lista" aria-label="Planos do cliente">
           {visao.cards.map((card) => (
-            <CartaoDePlano key={card.planoId} card={card} />
+            <CartaoDePlano key={card.planoId} card={card} clienteId={cliente.id} />
           ))}
         </ul>
       )}

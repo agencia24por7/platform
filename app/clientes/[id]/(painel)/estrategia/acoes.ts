@@ -6,7 +6,7 @@ import { escopoDoClienteNaOrganizacao } from '@/../app/clientes/[id]/_escopo';
 import { modules } from '@/composition';
 import { comAviso } from '@/modules/clients/domain/painel/enderecos';
 import {
-  lerEdicaoDeSecao,
+  lerEdicaoPorCampos,
   lerIdDoCampo,
   lerIntencaoDoFormulario,
   lerPedidoDeMudanca,
@@ -15,6 +15,8 @@ import {
   type CamposBrutos,
 } from '@/modules/strategy/interface/formulariosDaEstrategia';
 import { errosPorCampo, formularioDeNovoPlano, previaNaTela, type FormularioDeNovoPlano, type PreviaNaTela } from '@/modules/strategy/interface/formularioDeNovoPlano';
+import { aplicarCampos, errosPorCampoDaSecao, gruposEditaveis } from '@/modules/strategy/interface/camposEditaveisDaSecao';
+import { CATALOGOS_DISPONIVEIS } from '@/modules/strategy/domain/index';
 import { valorDaEdicao } from '@/modules/strategy/interface/edicaoDeSugestao';
 import { rotaDaListaDePlanos, rotaDoPlano } from '@/modules/strategy/interface/rotasDaEstrategia';
 import type { MemberRole } from '@/modules/identity/domain/user';
@@ -37,7 +39,7 @@ function camposDo(formData: FormData): CamposBrutos {
   const campos: Record<string, string> = {};
   for (const [chave, valor] of formData.entries()) {
     if (typeof valor !== 'string') continue;
-    campos[chave] = chave === 'plataformas' && campos[chave] !== undefined ? `${campos[chave]},${valor}` : valor;
+    campos[chave] = (chave === 'plataformas' || chave === 'produtos') && campos[chave] !== undefined ? `${campos[chave]},${valor}` : valor;
   }
   return campos;
 }
@@ -120,6 +122,7 @@ export async function novoPlanoAcao(_anterior: EstadoDoFormulario, formData: For
       tipoDePlano: entrada.value.tipoDePlano,
       plataformas: [...entrada.value.plataformas],
       landingPageId: entrada.value.landingPageId,
+      foco: entrada.value.foco.tipo === 'marca' ? { tipo: 'marca' } : { tipo: 'produtos', produtos: [...entrada.value.foco.produtos] },
       intencao: entrada.value.intencao,
       ...(CHAVE_VALIDA.test(campos['chaveDeIdempotencia'] ?? '') ? { chaveDeIdempotencia: campos['chaveDeIdempotencia'] } : {}),
     },
@@ -144,21 +147,32 @@ export async function pedirMudancaAcao(_anterior: EstadoDoFormulario, formData: 
   return resolver(escopo.cliente.id, entrada.value.planoId, resultado, 'Mudança pedida. O agente está ajustando o plano.', campos);
 }
 
+function secaoDoConteudo(conteudo: unknown, secao: string): unknown {
+  return typeof conteudo === 'object' && conteudo !== null && !Array.isArray(conteudo) ? (conteudo as Record<string, unknown>)[secao] : undefined;
+}
+
 export async function editarSecaoAcao(_anterior: EstadoDoFormulario, formData: FormData): Promise<EstadoDoFormulario> {
   const campos = camposDo(formData);
   const escopo = await escopoDoClienteNaOrganizacao(campos['clienteId']);
   if (!escopo) return NAO_ENCONTRADO;
-  const entrada = lerEdicaoDeSecao(campos);
-  if (!entrada.ok) return { erro: 'Corrija o conteúdo da seção.', campos: entrada.error, valores: campos };
+  const entrada = lerEdicaoPorCampos(campos);
+  if (!entrada.ok) return { erro: Object.values(entrada.error).join(' ').slice(0, LIMITE_DA_MENSAGEM), campos: entrada.error, valores: campos };
   const comando = { organizationId: escopo.comando.organizationId, papelDeQuemAge: escopo.comando.papelDeQuemAge };
   if (!(await planoDoCliente(comando, escopo.cliente.id, entrada.value.planoId))) return { erro: 'Plano não encontrado.', valores: campos };
   const vista = await modules().strategy.service.versaoVistaDoPlano(comando, { clienteId: escopo.cliente.id, planoId: entrada.value.planoId, comConteudo: true });
   if (!vista) return { erro: 'O plano ainda não tem versão para editar.', valores: campos };
   if (vista.id !== entrada.value.versaoId) return { ...PLANO_MUDOU, valores: campos };
-  const conteudo = trocarSecao(vista.conteudo, entrada.value.secao, entrada.value.valor);
+  const secaoAtual = secaoDoConteudo(vista.conteudo, entrada.value.secao);
+  const aplicada = aplicarCampos(entrada.value.secao, secaoAtual, entrada.value.pares, CATALOGOS_DISPONIVEIS);
+  if (!aplicada.ok) return { erro: 'Corrija os campos indicados.', campos: aplicada.error, valores: campos };
+  const conteudo = trocarSecao(vista.conteudo, entrada.value.secao, aplicada.value);
   if (!conteudo) return { erro: 'O plano guardado está num formato que não permite edição.', valores: campos };
   const resultado = await modules().strategy.service.editarManual(comando, { planoId: entrada.value.planoId, conteudo }, await atorAtual());
-  return resolver(escopo.cliente.id, entrada.value.planoId, resultado, 'Seção editada. O plano será revisado de novo.', campos);
+  if (resultado.ok) return concluir(escopo.cliente.id, entrada.value.planoId, 'Seção editada. O plano será revisado de novo.');
+  const porCampo = errosPorCampoDaSecao(entrada.value.secao, resultado.error.details, gruposEditaveis(entrada.value.secao, secaoAtual, CATALOGOS_DISPONIVEIS));
+  const soltos = Object.entries(resultado.error.details ?? {}).filter(([chave]) => chave !== 'codigo').map(([, mensagem]) => mensagem);
+  const erro = `${resultado.error.message}${Object.keys(porCampo).length === 0 && soltos.length > 0 ? ` ${soltos.join(' ')}` : ''}`.slice(0, LIMITE_DA_MENSAGEM);
+  return { erro, campos: porCampo, valores: campos };
 }
 
 type CasoDeVersao = 'aplicar' | 'autorizar' | 'rejeitar' | 'revogar' | 'cancelarVersao';
@@ -235,6 +249,17 @@ export async function cancelarExecucaoAcao(formData: FormData): Promise<void> {
   const resultado = await modules().strategy.service.cancelarExecucao(comando, { execucaoId: execucaoId.value }, await atorAtual());
   if (!resultado.ok) falhar(escopo.cliente.id, planoId, textoDaFalha(resultado.error));
   concluir(escopo.cliente.id, planoId, 'Execução cancelada.');
+}
+
+export async function apagarPlanoAcao(formData: FormData): Promise<void> {
+  const campos = camposDo(formData);
+  const escopo = await escopoDoClienteNaOrganizacao(campos['clienteId']);
+  if (!escopo) redirect('/clientes');
+  const planoId = await planoDaTela(escopo.comando, escopo.cliente.id, campos);
+  if (planoId === null) falhar(escopo.cliente.id, null, 'Plano não encontrado.');
+  const resultado = await modules().strategy.service.removerPlano(escopo.comando, { clienteId: escopo.cliente.id, planoId }, await atorAtual());
+  if (!resultado.ok) falhar(escopo.cliente.id, resultado.error.code === 'not_found' ? null : planoId, textoDaFalha(resultado.error));
+  concluir(escopo.cliente.id, null, 'Plano apagado.');
 }
 
 export async function corrigirFalhaDoGateAcao(formData: FormData): Promise<void> {

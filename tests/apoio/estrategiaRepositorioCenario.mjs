@@ -55,14 +55,15 @@ const service = createEstrategiaService({
 const ator = (userId) => ({ userId, requestId: `req-${Math.random().toString(16).slice(2)}`, sourceIp: '10.0.0.1' });
 const comando = (papelDeQuemAge, organizationId = c.orgA) => ({ organizationId, papelDeQuemAge });
 const codigoDe = (r) => (r.ok ? 'ok' : (r.error.details?.codigo ?? r.error.code));
-const { plataformas: _p, whatsapp: _w, destino: _d, utm: _u, ...intencao } = plano.intencao;
+const { plataformas: _p, whatsapp: _w, destino: _d, utm: _u, foco: _f, ...intencao } = plano.intencao;
+const focoDeMarca = { tipo: 'marca' };
 const escopoA = { organizationId: c.orgA, clientId: c.cliA };
 let paginaDeSemente = null;
 const criarPlano = async (escopo, tipo, requestId) => {
   paginaDeSemente ??= (await destino.listarLandingPages(escopo)).value[0].id;
   const criado = await repo.criarPlanoComExecucao(
     escopo,
-    { tipo, plataformas: ['meta'], whatsapp: '+5511912345678', landingPageId: paginaDeSemente },
+    { tipo, plataformas: ['meta'], whatsapp: '+5511912345678', landingPageId: paginaDeSemente, foco: focoDeMarca },
     { pedido: { tipo: 'criar', intencao: plano.intencao }, versaoBaseId: null, agentRunId: `run-semente-${requestId}`, solicitadoPor: c.operator, requestId },
   );
   if (!criado.ok) return criado;
@@ -77,13 +78,13 @@ const landingA = await umaPagina(c.cliA, 'https://exemplo.com.br/oferta');
 assert.ok(landingA.ok, JSON.stringify(landingA));
 const landingA2 = await umaPagina(c.cliA2, 'https://exemplo.com.br/outra');
 assert.ok(landingA2.ok, JSON.stringify(landingA2));
-const semZap = await service.pedirPlano(comando('operator'), { clienteId: c.cliA, tipoDePlano: 'aquisicao', plataformas: ['meta'], landingPageId: landingA.value.id, intencao }, ator(c.operator));
+const semZap = await service.pedirPlano(comando('operator'), { clienteId: c.cliA, tipoDePlano: 'aquisicao', plataformas: ['meta'], landingPageId: landingA.value.id, foco: focoDeMarca, intencao }, ator(c.operator));
 assert.equal(codigoDe(semZap), 'whatsapp_do_cliente_ausente');
 assert.equal((await service.listarPlanos(comando('operator'), { clienteId: c.cliA })).value.cards.length, 0, 'nada gravado sem WhatsApp');
 assert.ok((await destino.gravarWhatsapp({ organizationId: c.orgA, clientId: c.cliA, papelDeQuemAge: 'operator', whatsapp: '(11) 91234-5678' }, ator(c.operator))).ok);
-const deOutroCliente = await service.pedirPlano(comando('operator'), { clienteId: c.cliA, tipoDePlano: 'aquisicao', plataformas: ['meta'], landingPageId: landingA2.value.id, intencao }, ator(c.operator));
+const deOutroCliente = await service.pedirPlano(comando('operator'), { clienteId: c.cliA, tipoDePlano: 'aquisicao', plataformas: ['meta'], landingPageId: landingA2.value.id, foco: focoDeMarca, intencao }, ator(c.operator));
 assert.equal(deOutroCliente.ok, false, 'landing page de outro cliente da mesma organização é recusada');
-const pedidoBase = { tipoDePlano: 'aquisicao', plataformas: ['meta'], landingPageId: landingA.value.id, intencao };
+const pedidoBase = { tipoDePlano: 'aquisicao', plataformas: ['meta'], landingPageId: landingA.value.id, foco: focoDeMarca, intencao };
 const pedido = await service.pedirPlano(comando('operator'), { clienteId: c.cliA, ...pedidoBase }, ator(c.operator));
 assert.ok(pedido.ok, JSON.stringify(pedido));
 const planoId = pedido.value.plano.id;
@@ -95,6 +96,8 @@ assert.match(execucao.agentRunId, /^run-/);
 
 assert.equal(pedido.value.plano.whatsapp, '+5511912345678');
 assert.deepEqual(pedido.value.plano.plataformas, ['meta']);
+assert.deepEqual(pedido.value.plano.foco, focoDeMarca);
+assert.deepEqual(execucao.pedido.foco, focoDeMarca);
 assert.equal(pedido.value.plano.landingPageId, landingA.value.id);
 assert.equal(execucao.pedido.destino.url, 'https://exemplo.com.br/oferta');
 assert.equal(execucao.pedido.utm.meta.utm_medium, 'paid_social');
@@ -398,6 +401,38 @@ assert.equal(versoesDaCorrida.filter((v) => v.status === 'rascunho').length, 1);
 assert.equal(versoesDaCorrida.find((v) => v.status === 'rascunho').id, vencedoras[0].r.value.versao.id, 'a vencedora continua rascunho, não foi cancelada pelas perdedoras');
 assert.equal(versoesDaCorrida.length, 2, 'só a versão aberta anterior e a da vencedora');
 assert.equal(vencedoras[0].r.value.execucao.versaoBaseId, vencedoras[0].r.value.versao.id);
+
+como(c.operator);
+const paraApagar = await criarPlano(escopoA, 'para_apagar', 'r-apagar');
+assert.ok(paraApagar.ok);
+const idApagar = paraApagar.value.id;
+como(c.operator);
+assert.equal(codigoDe(await service.removerPlano(comando('operator'), { clienteId: c.cliA, planoId: idApagar }, ator(c.operator))), 'forbidden');
+como(c.viewer);
+assert.equal(codigoDe(await service.removerPlano(comando('viewer'), { clienteId: c.cliA, planoId: idApagar }, ator(c.viewer))), 'forbidden');
+como(c.donoB);
+assert.equal(codigoDe(await service.removerPlano(comando('owner', c.orgB), { clienteId: c.cliA, planoId: idApagar }, ator(c.donoB))), 'not_found', 'outra organização não encontra o plano');
+como(c.owner);
+const ativoParaApagar = await service.pedirPlano(comando('operator'), { clienteId: c.cliA, ...pedidoBase }, ator(c.owner));
+assert.ok(ativoParaApagar.ok, JSON.stringify(ativoParaApagar));
+const recusaComExecucao = await service.removerPlano(comando('owner'), { clienteId: c.cliA, planoId: ativoParaApagar.value.plano.id }, ator(c.owner));
+assert.equal(codigoDe(recusaComExecucao), 'execucao_ativa');
+assert.match(recusaComExecucao.error.message, /Cancele a execução antes/);
+assert.ok((await service.cancelarExecucao(comando('owner'), { execucaoId: ativoParaApagar.value.execucao.id }, ator(c.owner))).ok);
+const antes = (await service.listarPlanos(comando('owner'), { clienteId: c.cliA })).value.cards.length;
+const removido = await service.removerPlano(comando('owner'), { clienteId: c.cliA, planoId: idApagar }, ator(c.owner));
+assert.ok(removido.ok, JSON.stringify(removido));
+assert.equal((await service.listarPlanos(comando('owner'), { clienteId: c.cliA })).value.cards.length, antes - 1);
+const painelApos = await service.painelDoPlano(comando('owner'), { clienteId: c.cliA, planoId: idApagar });
+assert.ok(painelApos.ok && painelApos.value.planos.length === 0 && !painelApos.value.resumos.some((r) => r.planoId === idApagar));
+assert.equal(await service.clienteDoPlano(comando('owner'), idApagar), null);
+assert.equal(await repo.buscarPlanoPorId(c.orgA, idApagar), null);
+assert.equal(codigoDe(await service.removerPlano(comando('owner'), { clienteId: c.cliA, planoId: idApagar }, ator(c.owner))), 'not_found', 'já removido');
+assert.equal(codigoDe(await service.pedirMudanca(comando('owner'), { planoId: idApagar, instrucao: 'mude algo aqui' }, ator(c.owner))), 'not_found');
+assert.equal((await repo.criarExecucao(c.orgA, c.cliA, { planoId: idApagar, pedido: { tipo: 'revisar', motivo: 'brain_mudou' }, versaoBaseId: null, agentRunId: 'run-removido', solicitadoPor: c.owner, requestId: 'r' })).ok, false, 'não nasce execução de plano removido');
+const auditoriaDaRemocao = auditorias.filter((a) => a.action === 'strategy.plan.removed');
+assert.equal(auditoriaDaRemocao.length, 1);
+assert.deepEqual(Object.keys(auditoriaDaRemocao[0].metadata).sort(), ['clientId', 'tipoDePlano']);
 
 void err;
 void comoWorker;

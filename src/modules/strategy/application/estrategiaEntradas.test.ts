@@ -9,8 +9,8 @@ const CLIENTE = '22222222-2222-4222-8222-222222222222';
 
 describe('entradas do módulo de estratégia', () => {
   it('PedirPlano aceita a intenção do domínio e tipo de lista fechada', () => {
-    const { plataformas: _p, whatsapp: _w, destino: _d, utm: _u, ...intencaoBase } = planoCompleto().intencao;
-    const entrada = { clienteId: CLIENTE, tipoDePlano: 'aquisicao', plataformas: ['meta'], landingPageId: CLIENTE, intencao: intencaoBase };
+    const { plataformas: _p, whatsapp: _w, destino: _d, utm: _u, foco: _f, ...intencaoBase } = planoCompleto().intencao;
+    const entrada = { clienteId: CLIENTE, tipoDePlano: 'aquisicao', plataformas: ['meta'], landingPageId: CLIENTE, foco: { tipo: 'marca' }, intencao: intencaoBase };
     assert.ok(PedirPlanoSchema.safeParse(entrada).success);
     assert.equal(PedirPlanoSchema.safeParse({ ...entrada, tipoDePlano: 'outro' }).success, false);
     assert.equal(PedirPlanoSchema.safeParse({ ...entrada, extra: 1 }).success, false);
@@ -22,8 +22,23 @@ describe('entradas do módulo de estratégia', () => {
   });
 
   it('PedirPlano recusa intenção fora do esquema', () => {
-    const entrada = { clienteId: CLIENTE, tipoDePlano: 'marca', plataformas: ['meta'], landingPageId: CLIENTE, intencao: { objetivo: 'x' } };
+    const entrada = { clienteId: CLIENTE, tipoDePlano: 'marca', plataformas: ['meta'], landingPageId: CLIENTE, foco: { tipo: 'marca' }, intencao: { objetivo: 'x' } };
     assert.equal(PedirPlanoSchema.safeParse(entrada).success, false);
+  });
+
+  it('PedirPlano exige foco: marca ou 1 a 20 produtos distintos, nunca os dois', () => {
+    const { plataformas: _p, whatsapp: _w, destino: _d, utm: _u, foco: _f, ...intencaoBase } = planoCompleto().intencao;
+    const base = { clienteId: CLIENTE, tipoDePlano: 'aquisicao', plataformas: ['meta'], landingPageId: CLIENTE, intencao: intencaoBase };
+    const urn = (n: number) => `orla:${CLIENTE}:${CLIENTE}:contexto_produto:p${n}`;
+    assert.equal(PedirPlanoSchema.safeParse(base).success, false);
+    assert.ok(PedirPlanoSchema.safeParse({ ...base, foco: { tipo: 'marca' } }).success);
+    assert.ok(PedirPlanoSchema.safeParse({ ...base, foco: { tipo: 'produtos', produtos: [urn(1), urn(2)] } }).success);
+    assert.equal(PedirPlanoSchema.safeParse({ ...base, foco: { tipo: 'produtos', produtos: [] } }).success, false);
+    assert.equal(PedirPlanoSchema.safeParse({ ...base, foco: { tipo: 'produtos', produtos: [urn(1), urn(1)] } }).success, false);
+    assert.equal(PedirPlanoSchema.safeParse({ ...base, foco: { tipo: 'produtos', produtos: Array.from({ length: 21 }, (_, i) => urn(i)) } }).success, false);
+    assert.ok(PedirPlanoSchema.safeParse({ ...base, foco: { tipo: 'produtos', produtos: Array.from({ length: 20 }, (_, i) => urn(i)) } }).success);
+    assert.equal(PedirPlanoSchema.safeParse({ ...base, foco: { tipo: 'marca', produtos: [urn(1)] } }).success, false);
+    assert.equal(PedirPlanoSchema.safeParse({ ...base, foco: { tipo: 'produtos', produtos: ['texto livre'] } }).success, false);
   });
 
   it('PedirMudanca apara, exige 3 caracteres e limita a 2000', () => {

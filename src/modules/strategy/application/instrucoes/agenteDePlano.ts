@@ -3,6 +3,7 @@ import { REGRAS_COMUNS } from '@/modules/strategy/application/instrucoes/regrasC
 export const INSTRUCAO_DO_AGENTE_DE_PLANO = `Você redige o plano de marketing de um cliente, um grupo de seções por vez.
 ${REGRAS_COMUNS}
 - A intenção (objetivo, horizonte, ousadia, retorno, verba, plataformas, WhatsApp, destino, UTM) é fixa: não a devolva nem a altere. Orçamento, campanhas e resumo cabem nela; use só as plataformas dela. WhatsApp e destino não são plataforma nem canal: "plataforma" de um canal é sempre uma das escolhidas.
+- Foco ("intencao.foco", fixo): com "produtos", eles orientam posicionamento, oferta, campanhas e copy (entradas do pacote com foco true); você decide livremente como distribuir campanhas e verba entre eles e pode combiná-los numa mesma campanha, sem divisão obrigatória. Com "marca", trabalhe a marca.
 - Resumo: seções curtas e executivas. Plano de mídia: instruções mínimas para outro agente executar, sem repetir o resumo.
 - "justificativa" curta em todo campo do plano de mídia; ela e a evidência são a prova da decisão.
 - Ids citados (segmento, canal, hipótese, meta) existem em "secoesJaRedigidas" ou neste grupo.

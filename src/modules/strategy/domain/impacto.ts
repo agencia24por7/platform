@@ -1,4 +1,6 @@
+import { lerUrn } from '../../brain/domain/urn.ts';
 import { venceu } from './datas.ts';
+import { TIPO_DA_ENTRADA_DE_PRODUTO } from './pacote.ts';
 import type { PapelDaEvidencia } from './plano.ts';
 
 export const TIPOS_DE_ENTRADA_QUE_SAO_LIMITE_OU_REGRA: readonly string[] = ['limite', 'regra', 'decisao'];
@@ -54,6 +56,7 @@ function itensDasCitadas(entrada: EntradaDeImpacto): ItemDeImpacto[] {
     const chave = `${referencia.urn}|${referencia.hash}`;
     if (vistas.has(chave)) continue;
     vistas.add(chave);
+    if (lerUrn(referencia.urn)?.tipo === TIPO_DA_ENTRADA_DE_PRODUTO) continue;
     const atual = entrada.catalogoAtual.get(referencia.urn);
     if (atual === undefined) {
       itens.push({ urn: referencia.urn, motivo: 'entrada_removida', impacto: 'material', tipo: null });

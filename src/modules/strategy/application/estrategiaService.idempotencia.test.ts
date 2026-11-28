@@ -19,7 +19,7 @@ const { ok } = await import('../../../shared/result/result.ts');
 const ator = { userId: '99999999-9999-4999-8999-999999999999', requestId: 'req-1', sourceIp: '10.0.0.1' };
 const como = (papelDeQuemAge: MemberRole) => ({ organizationId: ORGANIZACAO_ID, papelDeQuemAge });
 const LANDING_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
-const { plataformas: _p, whatsapp: _w, destino: _d, utm: _u, ...INTENCAO_BASE } = planoCompleto().intencao;
+const { plataformas: _p, whatsapp: _w, destino: _d, utm: _u, foco: _f, ...INTENCAO_BASE } = planoCompleto().intencao;
 const CHAVE = '12345678-1234-4234-8234-123456789abc';
 
 function montar() {
@@ -45,6 +45,7 @@ const pedido = (extra: Record<string, unknown> = {}) => ({
   tipoDePlano: 'aquisicao' as const,
   plataformas: ['meta' as const],
   landingPageId: LANDING_ID,
+  foco: { tipo: 'marca' as const },
   intencao: INTENCAO_BASE,
   ...extra,
 });
