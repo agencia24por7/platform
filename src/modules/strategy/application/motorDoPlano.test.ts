@@ -23,7 +23,7 @@ Object.assign(process.env, {
 });
 
 const { codigosDoPacote } = await import('../domain/codigosCurtos.ts');
-const { createMotorDoPlano, MAXIMO_DE_RODADAS, MAXIMO_DE_REPETICOES_POR_ETAPA, MAXIMO_DE_FALHAS_TRANSITORIAS, motivoDaIntegridade } = await import('./motorDoPlano.ts');
+const { createMotorDoPlano, MAXIMO_DE_RODADAS, MAXIMO_DE_REPETICOES_POR_ETAPA, MAXIMO_DE_FALHAS_TRANSITORIAS, motivoDaIntegridade, corrigirDaChamada, problemaParaCorrigir, estadoDaEtapaNaAuditoria } = await import('./motorDoPlano.ts');
 const { criarRepositorioEmMemoria } = await import('../infrastructure/repositorioEmMemoria.ts');
 const { criarIaFalsa, aceitaTodos } = await import('../infrastructure/ia/iaFalsa.ts');
 const { criarIaNaoConfigurada } = await import('../infrastructure/ia/iaNaoConfigurada.ts');
@@ -1048,12 +1048,118 @@ describe('motor do plano: repetição por etapa e teto total de falhas transitó
 });
 
 describe('motivo da integridade', () => {
-  it('mantém o problema (a parte útil) quando o caminho do campo é longo e não repete o prefixo', () => {
-    const motivo = motivoDaIntegridade([
-      { caminho: 'plano_de_midia', mensagem: 'plano_de_midia/google/campaign_contains_eu_political_advertising (valor fora das opções)' },
-    ]);
-    assert.match(motivo, /campaign_contains_eu_political_advertising \(valor fora das opções\)$/);
+  const REGRA_DA_VERBA = 'micros da moeda da conta, maior que zero e múltiplo de 10000';
+  const REGRA_DA_DATA = 'data e hora reais no formato yyyy-MM-dd HH:mm:ss';
+  const problemas = [
+    { caminho: 'plano_de_midia', mensagem: `plano_de_midia/google/budget_amount_micros (${REGRA_DA_VERBA})` },
+    { caminho: 'plano_de_midia', mensagem: `plano_de_midia/google/campaign_start_date_time (${REGRA_DA_DATA})` },
+    { caminho: 'plano_de_midia', mensagem: `plano_de_midia/google/campaign_end_date_time (${REGRA_DA_DATA})` },
+  ];
+
+  it('mantém a regra completa de cada problema e não repete o prefixo', () => {
+    const { motivo, problemas: textos } = motivoDaIntegridade(problemas);
+    assert.ok(motivo.includes(REGRA_DA_VERBA));
+    assert.ok(motivo.includes(`campaign_start_date_time (${REGRA_DA_DATA})`));
     assert.ok(!motivo.includes('plano_de_midia=plano_de_midia'));
-    assert.ok(motivo.length <= 260);
+    assert.ok(motivo.length <= 480);
+    assert.equal(textos.length, 3);
+    assert.ok(textos[0]!.endsWith(`(${REGRA_DA_VERBA})`));
+  });
+
+  it('com problema demais, descarta itens inteiros em vez de cortar a regra no meio', () => {
+    const longos = Array.from({ length: 3 }, (_, i) => ({ caminho: 'plano_de_midia', mensagem: `plano_de_midia/google/campo_${i} (${'regra '.repeat(30).trim()})` }));
+    const { motivo } = motivoDaIntegridade(longos);
+    assert.ok(motivo.length <= 480);
+    assert.ok(motivo.endsWith(')'));
+  });
+});
+
+describe('motor do plano: reparo guiado', () => {
+  const secaoDoGrupo0 = GRUPOS_DE_REDACAO[0]![0]!;
+  const MODELO_ESCREVEU = 'TEXTO-ESCRITO-PELO-MODELO-123';
+
+  function roteiroQueFalhaUmaVez(mensagem: string): Roteiro {
+    const base = roteiroPadrao();
+    let falhou = false;
+    return (pedido) => {
+      if (pedido.tarefa === 'strategy_plan' && !falhou) {
+        falhou = true;
+        return { codigo: 'saida_invalida', mensagem } as never;
+      }
+      return base(pedido);
+    };
+  }
+
+  it('a 2ª tentativa recebe "corrigir" com os problemas da 1ª, sem nada do conteúdo do modelo', async () => {
+    const m = await montar({ roteiro: roteiroQueFalhaUmaVez(`O modelo devolveu uma resposta fora do formato esperado. [esquema:${secaoDoGrupo0}.itens.1.valor:custom]`) });
+    const final = await ate(m);
+    assert.equal(final.status, 'concluida');
+    const chamadas = m.ia.pedidos.filter((p) => p.tarefa === 'strategy_plan');
+    assert.equal((chamadas[0]!.dados as { corrigir?: unknown }).corrigir, undefined);
+    const corrigir = (chamadas[1]!.dados as { corrigir?: string[] }).corrigir;
+    assert.deepEqual(corrigir, [`${secaoDoGrupo0}.itens.1.valor (viola uma regra do esquema)`]);
+    assert.ok(!JSON.stringify(chamadas.map((c) => c.dados)).includes(MODELO_ESCREVEU));
+  });
+
+  it('sem falha anterior nenhuma chamada recebe "corrigir"', async () => {
+    const m = await montar();
+    await ate(m);
+    assert.ok(m.ia.pedidos.every((p) => (p.dados as { corrigir?: unknown }).corrigir === undefined));
+  });
+
+  it('o corrigir da mídia vai só à chamada da plataforma a que o problema pertence e respeita o teto', () => {
+    const midia = GRUPOS_DE_REDACAO.findIndex((g) => g.includes('plano_de_midia'));
+    const textos = ['plano_de_midia/google/budget_amount_micros (regra A)', 'plano_de_midia/meta/adset_x (regra B)', 'geral_sem_secao_conhecida (regra C)'].map(problemaParaCorrigir);
+    assert.deepEqual(corrigirDaChamada(textos, `x:redigir:0:g${midia}:google`), ['plano_de_midia/google/budget_amount_micros (regra A)', 'geral_sem_secao_conhecida (regra C)']);
+    assert.deepEqual(corrigirDaChamada(textos, `x:redigir:0:g${midia}:meta`), ['plano_de_midia/meta/adset_x (regra B)', 'geral_sem_secao_conhecida (regra C)']);
+    const muitos = Array.from({ length: 20 }, (_, i) => problemaParaCorrigir(`campo_${i} (regra)`));
+    assert.ok(corrigirDaChamada(muitos, 'x:redigir:0:g0').length <= 8);
+  });
+});
+
+describe('texto do modelo nos problemas', () => {
+  it('um objetivo inválido e longo (com telefone e nome) não aparece em problemas, motivo nem corrigir', async () => {
+    const { checarCoberturaDoPlanoDeMidia } = await import('../domain/gate/coberturaDoPlanoDeMidia.ts');
+    const { contextoDeTeste } = await import('../domain/fixturesDeTeste.ts');
+    const { catalogoGoogle } = await import('../domain/catalogo/google.ts');
+    const contexto = contextoDeTeste();
+    const google = contexto.plano.plano_de_midia.plataformas.find((p) => p.plataforma === 'google')!;
+    const objetivoDoModelo = `Ligar para Maria Souza no +5511999998888 e ${'blá '.repeat(70)}`.slice(0, 300);
+    for (const secao of google.secoes) for (const campo of secao.campos) if (campo.campo === catalogoGoogle.campoDoObjetivo) campo.valor = objetivoDoModelo;
+    const r = checarCoberturaDoPlanoDeMidia(contexto);
+    const problemas = r.onde.map((mensagem) => ({ caminho: 'plano_de_midia', mensagem }));
+    const { motivo, problemas: textos } = motivoDaIntegridade(problemas);
+    const corrigir = corrigirDaChamada(textos.map(problemaParaCorrigir), 'x:redigir:0:g0');
+    const tudo = JSON.stringify([r.onde, motivo, textos, corrigir]);
+    for (const trecho of ['Maria', '5511999998888', 'blá']) assert.ok(!tudo.includes(trecho), trecho);
+  });
+
+  it('mensagem fora do charset seguro é omitida do motivo e do corrigir', () => {
+    const { motivo, problemas } = motivoDaIntegridade([{ caminho: 'x', mensagem: 'campo <script>"alerta"</script> (regra)' }]);
+    assert.ok(!motivo.includes('script'));
+    assert.ok(!problemas.join('').includes('script'));
+  });
+});
+
+describe('motor do plano: corrigir só da tentativa imediatamente anterior', () => {
+  const linha = (etapa: string, status: string, rodada: number, extra: Record<string, unknown> = {}) => ({ metadata: { etapa, status, rodada, ...extra } });
+
+  it('ajustar adiada na rodada 1, repetição com sucesso, gate reprova: a rodada 2 do ajustar chega sem corrigir e com a cota cheia', () => {
+    const linhas = [
+      linha('ajustar', 'adiada', 1, { problemas: ['campo_a (regra)'] }),
+      linha('ajustar', 'adiada', 1, { problemas: ['campo_b (regra)'] }),
+      linha('ajustar', 'rodando', 1, { proximaEtapa: 'gates' }),
+      linha('gates', 'rodando', 1, { proximaEtapa: 'ajustar' }),
+    ];
+    assert.deepEqual(estadoDaEtapaNaAuditoria(linhas, 'ajustar', 2), { repeticoes: 0, problemas: [] });
+    assert.equal(estadoDaEtapaNaAuditoria(linhas, 'ajustar', 1).repeticoes, 2);
+    assert.deepEqual(estadoDaEtapaNaAuditoria(linhas, 'ajustar', 1).problemas, []);
+  });
+
+  it('só a linha mais recente, adiada da mesma etapa e rodada, entrega os problemas', () => {
+    const linhas = [linha('redigir', 'adiada', 0, { problemas: ['campo_a (regra)'] }), linha('redigir', 'adiada', 0, { problemas: ['campo_b (regra)'] })];
+    assert.deepEqual(estadoDaEtapaNaAuditoria(linhas, 'redigir', 0).problemas.map((p) => p.texto), ['campo_b (regra)']);
+    assert.deepEqual(estadoDaEtapaNaAuditoria(linhas, 'redigir', 1).problemas, []);
+    assert.deepEqual(estadoDaEtapaNaAuditoria(linhas, 'comite', 0).problemas, []);
   });
 });

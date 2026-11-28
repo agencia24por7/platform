@@ -69,3 +69,6 @@ Migração nova, a 0151, aditiva e fora do `db/corte-gate.txt`: colunas `foco`, 
 - Plano antigo continua legível, sem foco e sem gate novo. Mudança em produto depois da criação do plano não o marca como desatualizado.
 - Reversão: voltar a imagem basta para o código; as colunas ficam ignoradas. A imagem anterior não tem o gatilho novo, então ela volta a negar a remoção, e os planos já removidos continuam removidos (nenhum caminho antigo os esconde: voltar a imagem os mostraria de novo, pois o filtro é do repositório novo). Desfazer a migração exige o backup do pre-flight (ADR 0034 §6).
 
+## Adendo: reparo guiado da repetição (24K-132, ADR 0069)
+
+Depois de um plano Meta+Google que falhou três vezes na redação, cada uma com um erro diferente: a repetição por etapa agora entrega à IA os problemas da tentativa anterior (bloco `corrigir`, só caminho e regra, nunca conteúdo gerado), o motivo da falha traz a regra completa e as instruções do Google (micros, datas `yyyy-MM-dd HH:mm:ss`, omitir opcional incerto) e das lacunas (valor só com evidência) ficaram mais explícitas. Sem migração, sem mudança de infra, de BigQuery, de segredo ou de variável. Depois do deploy, num plano que falhou e foi repetido, conferir em `strategy.run.step` o campo `problemas` das linhas `adiada`. Reversão: voltar a imagem.

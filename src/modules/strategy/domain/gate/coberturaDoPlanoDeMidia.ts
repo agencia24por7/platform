@@ -87,8 +87,10 @@ export function analisarPlataforma(entrada: MidiaDaPlataforma | undefined, catal
   const pendencias: string[] = [];
   const local = (chave: string) => `plano_de_midia/${plataforma}/${chave}`;
   const declarado = porChave.get(catalogo.campoDoObjetivo)?.campo.valor;
-  const objetivo = objetivoDoValor(declarado);
-  if (objetivo === undefined || !catalogo.objetivos.includes(objetivo)) {
+  const secoesDoCatalogo = new Set(catalogo.campos.map((campo) => campo.secao));
+  const declaradoNoCatalogo = objetivoDoValor(declarado);
+  const objetivo = declaradoNoCatalogo !== undefined && catalogo.objetivos.includes(declaradoNoCatalogo) ? declaradoNoCatalogo : undefined;
+  if (objetivo === undefined) {
     problemas.push(`${local(catalogo.campoDoObjetivo)} (objetivo ausente ou fora do catálogo; não dá para conferir o que se aplica)`);
   }
   for (const campo of catalogo.campos) {
@@ -97,7 +99,7 @@ export function analisarPlataforma(entrada: MidiaDaPlataforma | undefined, catal
       if (campo.chave !== catalogo.campoDoObjetivo && campo.obrigatorio && campoAplicavel(campo, objetivo)) problemas.push(`${local(campo.chave)} (campo obrigatório ausente)`);
       continue;
     }
-    if (achado.secao !== campo.secao) problemas.push(`${local(campo.chave)} (na seção ${achado.secao}; o catálogo pede ${campo.secao})`);
+    if (achado.secao !== campo.secao) problemas.push(`${local(campo.chave)} (na seção ${secoesDoCatalogo.has(achado.secao) ? achado.secao : 'fora do catálogo'}; o catálogo pede ${campo.secao})`);
     if (achado.campo.justificativa.trim().length === 0) problemas.push(`${local(campo.chave)} (sem justificativa)`);
     if (ehAConfirmar(campo, achado.campo.valor)) {
       pendencias.push(`${local(campo.chave)} (a confirmar; a API não verifica este campo)`);
