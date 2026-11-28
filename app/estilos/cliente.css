@@ -313,3 +313,21 @@
 .aviso-efemero__fechar { flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: var(--radius-sm); background: transparent; color: inherit; cursor: pointer; }
 .aviso-efemero__fechar:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
 .aviso-efemero__fechar:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.marcador { display: inline-flex; align-items: center; gap: 6px; color: var(--fg); font-size: var(--fs-sm); font-weight: 500; white-space: nowrap; }
+.marcador__ponto { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-subtle); flex: none; }
+.marcador--ok .icone-estado { color: var(--c-ok); }
+.marcador--ok .marcador__ponto { background: var(--c-ok); }
+.marcador--atencao .marcador__ponto { background: var(--c-warn); }
+.marcador--atencao .icone-estado { color: var(--c-warn); }
+.marcador--critico .marcador__ponto { background: var(--c-danger); }
+.marcador--critico .icone-estado { color: var(--c-danger); }
+.marcador--neutro .icone-estado { color: var(--fg-subtle); }
+
+.lista-clientes__barra { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--border); }
+.lista-clientes__titulo { font-size: var(--fs-xs); font-weight: 650; color: var(--fg-muted); text-transform: uppercase; letter-spacing: .07em; }
+.botao-icone { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px; border-radius: var(--radius-sm); border: 1px solid transparent; color: var(--fg-muted); font-size: var(--fs-xs); font-weight: 600; text-decoration: none; }
+.botao-icone:hover { background: var(--bg-hover); color: var(--fg); }
+.botao-icone:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.botao-icone--ativo { border-color: var(--border-strong); color: var(--fg); background: var(--bg-sunken); }
+.botao-icone__contador { font-variant-numeric: tabular-nums; }
