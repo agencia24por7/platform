@@ -214,7 +214,7 @@ const HASH_DO_CONTEUDO = /^[0-9a-f]{64}$/;
 
 export function cabecalhosDeRevalidacao(sha256: string): CabecalhosDeDownload | null {
   if (!HASH_DO_CONTEUDO.test(sha256)) return null;
-  return { 'Cache-Control': 'private, max-age=300, must-revalidate', ETag: `"${sha256}"`, 'X-Content-Type-Options': 'nosniff' };
+  return { 'Cache-Control': 'private, no-cache', ETag: `"${sha256}"`, 'X-Content-Type-Options': 'nosniff' };
 }
 
 export function cabecalhosDeImagemEmLinha(contentTypeArmazenado: string, sha256: string): CabecalhosDeDownload | null {

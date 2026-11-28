@@ -34,7 +34,8 @@ Cada aba tinha a própria subnavegação, e o histórico estava espalhado: pende
   - sessão e escopo do cliente (`clienteNoEscopo`) e a mesma visão por papel do contexto: quem só vê recebe a logo apenas se a equipe a compartilhou (ADR 0062);
   - só png, jpeg, webp ou gif (tipo decidido pelos bytes no envio), do campo `logo`, fora de item de lista, até 5 MB (conferido no registro e de novo no objeto lido);
   - caminho conferido no prefixo do cliente antes de ler o bucket;
-  - `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`, `Cross-Origin-Resource-Policy: same-origin`, `Cache-Control: private, max-age=300, must-revalidate` e `ETag` do sha256; com `If-None-Match` igual, 304 sem ler o bucket.
+  - `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`, `Cross-Origin-Resource-Policy: same-origin`, `Cache-Control: private, no-cache` e `ETag` do sha256: o navegador revalida a cada uso (deixar de compartilhar vale na hora) e, com `If-None-Match` igual, recebe 304 sem leitura do bucket.
+  - a rota fica fora do `matcher` do `proxy.ts` e fora do `no-store` do `next.config.mjs`, como as de upload, para valerem os cabeçalhos dela; sessão e escopo são conferidos na própria rota.
 - Todo outro arquivo continua só como `attachment`.
 
 ## Consequências e cuidados
