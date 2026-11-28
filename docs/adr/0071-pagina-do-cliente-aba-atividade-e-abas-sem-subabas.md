@@ -40,7 +40,7 @@ Cada aba tinha a própria subnavegação, e o histórico estava espalhado: pende
 
 ## Consequências e cuidados
 - Nenhuma migração e nenhuma mudança de RLS. Rotas novas: `/clientes/[id]/atividade` e `/api/contexto/[clienteId]/logo`.
-- O layout passa a carregar o contexto em toda aba (para a logo). A leitura é cacheada por request e já era feita na aba Contexto.
+- A logo é lida por uma consulta estreita (só os arquivos do campo `logo`, no tenant) com o mesmo recorte por papel do contexto (`versaoDaLogo` no layout, `abrirLogo` na rota); nem o layout nem a rota carregam o contexto inteiro. Falha nessa leitura não derruba a página: o cabeçalho cai no monograma.
 - Os componentes só renderizam: filtro, classificação, rótulos, passos, verba e cabeçalho vivem no domínio ou em `interface/`, com teste de unidade. Os carregadores em `app/` derivam a organização da sessão (`carregarPainel`), como exige a fronteira do ADR 0028.
 - Testes de integração que dependiam das subabas foram atualizados no mesmo PR. O teste de que quem só vê não recebe valor interno passou a cobrir `/atividade`.
 

@@ -13,6 +13,7 @@ import {
   ROTULO_DO_PERIODO,
   ROTULO_DO_SENTIDO,
   ROTULO_DO_STATUS,
+  VOLTAR_PARA_ATIVIDADE,
   dataCurta,
   fimInclusivo,
   podeRegistrarOuMexer,
@@ -186,6 +187,7 @@ export function CartaoDeRegra({ clienteId, decisao, definicao, nomes, vocabulari
               >
                 <input type="hidden" name="clienteId" value={clienteId} />
                 <input type="hidden" name="decisaoId" value={decisao.id} />
+                {modo === 'linha' ? <input type="hidden" name="voltar" value={VOLTAR_PARA_ATIVIDADE} /> : null}
                 <label className="field" htmlFor={idDoMotivo}>
                   <span className="field__label">Motivo da revogação</span>
                   <textarea id={idDoMotivo} className="input textarea" name="motivo" required minLength={3} maxLength={500} />
@@ -214,6 +216,7 @@ export function CartaoDeRegra({ clienteId, decisao, definicao, nomes, vocabulari
               <form className={decisao.natureza === 'limite' ? 'regra__form' : 'regra__aceitar'} action={aceitarPropostaAcao}>
                 <input type="hidden" name="clienteId" value={clienteId} />
                 <input type="hidden" name="decisaoId" value={decisao.id} />
+                {modo === 'linha' ? <input type="hidden" name="voltar" value={VOLTAR_PARA_ATIVIDADE} /> : null}
                 {decisao.natureza === 'limite' ? (
                   <label className="field">
                     <span className="field__label">Motivo da aceitação (opcional)</span>
@@ -236,6 +239,7 @@ export function CartaoDeRegra({ clienteId, decisao, definicao, nomes, vocabulari
               >
                 <input type="hidden" name="clienteId" value={clienteId} />
                 <input type="hidden" name="decisaoId" value={decisao.id} />
+                {modo === 'linha' ? <input type="hidden" name="voltar" value={VOLTAR_PARA_ATIVIDADE} /> : null}
                 <label className="field" htmlFor={idDoMotivo}>
                   <span className="field__label">Motivo da rejeição</span>
                   <textarea id={idDoMotivo} className="input textarea" name="motivo" required minLength={3} maxLength={500} />

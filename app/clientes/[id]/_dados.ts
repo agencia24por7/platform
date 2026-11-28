@@ -35,8 +35,22 @@ export const carregarPainel = cache(async (id: string) => {
 });
 
 export const carregarContexto = cache(async (organizationId: string, clientId: string, papelDeQuemLe: MemberRole) => {
-  const resultado = await modules().contexto.carregar({ organizationId, clientId, papelDeQuemLe });
-  return resultado.ok ? resultado.value : null;
+  try {
+    const resultado = await modules().contexto.carregar({ organizationId, clientId, papelDeQuemLe });
+    return resultado.ok ? resultado.value : null;
+  } catch (erro) {
+    console.error(JSON.stringify({ evento: 'cliente.contexto_indisponivel', clientId, erro: erro instanceof Error ? erro.name : 'erro' }));
+    return null;
+  }
+});
+
+export const carregarVersaoDaLogo = cache(async (organizationId: string, clientId: string, papelDeQuemLe: MemberRole): Promise<string | null> => {
+  try {
+    return await modules().contexto.versaoDaLogo({ organizationId, clientId, papelDeQuemLe });
+  } catch (erro) {
+    console.error(JSON.stringify({ evento: 'cliente.logo_indisponivel', clientId, erro: erro instanceof Error ? erro.name : 'erro' }));
+    return null;
+  }
 });
 
 export const carregarContas = cache(async (organizationId: string, clientId: string) =>

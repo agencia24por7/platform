@@ -11,6 +11,7 @@ import { separarPorPreenchimento } from '@/modules/clients/domain/painel/brain/p
 import { montarMapa } from '@/modules/clients/domain/painel/brain/mapa';
 import { ROTULO_DO_FRESCOR, type Capacidade } from '@/modules/clients/domain/painel/brain/tipos';
 import { rotaDoMapaDeContexto } from '@/modules/clients/domain/painel/enderecos';
+import { tomDoPreenchimento } from '@/modules/clients/domain/painel/indicadores';
 import { tempoRelativo } from '@/modules/clients/domain/painel/resumo';
 
 const ESTADO: Record<Capacidade['estado'], { readonly rotulo: string; readonly classe: string }> = {
@@ -97,7 +98,7 @@ export async function BrainView({ clienteId }: { readonly clienteId: string }) {
 
   const cabecalho = (
     <div className="contexto-hero__topo">
-      <Anel valor={geral} rotulo="Mapa de contexto preenchido" tamanho={72} espessura={7} tom={geral >= 70 ? 'ok' : geral >= 40 ? 'acento' : 'alerta'} />
+      <Anel valor={geral} rotulo="Mapa de contexto preenchido" tamanho={72} espessura={7} tom={tomDoPreenchimento(geral)} />
       <div className="contexto-hero__textos">
         <h2 className="contexto-hero__titulo" id="t-contexto-hero">
           {geral}% do contexto preenchido

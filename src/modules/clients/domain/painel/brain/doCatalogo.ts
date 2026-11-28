@@ -121,7 +121,7 @@ export function acaoDaVisao(acao: AcaoRecomendada, clienteId: string): ProximaAc
       return { ...base, href: `/clientes/${clienteId}/contas/nova`, rotulo: 'Vincular' };
     case 'investigar_coleta':
     case 'recuperar_lacuna':
-      return { ...base, href: rotaDoCliente(clienteId, 'conexoes', { secao: 'fontes' }), rotulo: 'Ver dados' };
+      return { ...base, href: rotaDoCliente(clienteId, 'conexoes'), rotulo: 'Ver dados' };
     case 'preencher_contexto':
     case 'confirmar_sugestoes':
       return { ...base, href: rotaDoCliente(clienteId, 'contexto', { secao: depoisDoPrefixo(acao.id) }), rotulo: 'Abrir' };

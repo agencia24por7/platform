@@ -1,7 +1,7 @@
 import { ROTULO_DA_SITUACAO, type Situacao } from '../ciclo.ts';
 import { CAMPO_DA_LOGO, SECAO_DA_LOGO } from '../contexto/logo.ts';
 import { rotaDoCliente, rotaDoMapaDeContexto } from './enderecos.ts';
-import type { IconeDoVeredito, TomDoIndicador } from './listaDeClientes.ts';
+import { ICONE_DO_VEREDITO, TOM_DA_SITUACAO, TOM_DO_VEREDITO, rotuloDoModelo, type IconeDoVeredito, type TomDoIndicador } from './indicadores.ts';
 import { ROTULO_DO_VEREDITO, type LacunaDaProntidao, type Veredito } from './prontidao.ts';
 
 export type ClienteDoCabecalho = {
@@ -34,10 +34,6 @@ export type VisaoDoCabecalho = {
   readonly prontidao: ProntidaoDoCabecalho | null;
 };
 
-const TOM_DA_SITUACAO: Record<Situacao, TomDoIndicador> = { active: 'ok', paused: 'atencao', archived: 'neutro' };
-const TOM_DO_VEREDITO: Record<Veredito, TomDoIndicador> = { sim: 'ok', parcial: 'atencao', nao: 'critico' };
-const ICONE_DO_VEREDITO: Record<Veredito, IconeDoVeredito> = { sim: 'ok', parcial: 'parcial', nao: 'nao' };
-const MODELO: Readonly<Record<string, string>> = { ecommerce: 'E-commerce', leads: 'Geração de leads' };
 
 function vereditoCombinado(veredito: Veredito | null, faltamRegras: boolean): Veredito | null {
   if (veredito === null) return faltamRegras ? 'parcial' : null;
@@ -65,7 +61,7 @@ export function visaoDoCabecalho(entrada: {
     inicial: cliente.name.trim().charAt(0).toLocaleUpperCase('pt-BR') || '?',
     logo: entrada.hashDaLogo ? rotaDaLogo(cliente.id, entrada.hashDaLogo) : null,
     pedirLogo: !entrada.hashDaLogo && entrada.podeEditar ? rotaDoMapaDeContexto(cliente.id, SECAO_DA_LOGO, CAMPO_DA_LOGO) : null,
-    fatos: [MODELO[cliente.businessModel] ?? MODELO['leads']!, cliente.segment ?? 'Sem segmento', ...(cliente.parentClientId ? ['Unidade de uma rede'] : [])],
+    fatos: [rotuloDoModelo(cliente.businessModel), cliente.segment ?? 'Sem segmento', ...(cliente.parentClientId ? ['Unidade de uma rede'] : [])],
     situacao: { rotulo: ROTULO_DA_SITUACAO[cliente.status], tom: TOM_DA_SITUACAO[cliente.status] },
     prontidao: veredito
       ? {

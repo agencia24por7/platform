@@ -1,3 +1,4 @@
+import { rotaDoCliente } from './enderecos.ts';
 import { canAdminister, canOperate, type MemberRole } from '../../../identity/domain/user.ts';
 import type { Vocabulario } from '../../../organizations/domain/vocabulario.ts';
 import {
@@ -89,6 +90,12 @@ const DESCRICAO_DA_SECAO: Record<SecaoDeRegras, string> = {
 
 export function descricaoDaSecaoDeRegras(secao: SecaoDeRegras, chave: string): string {
   return secao === 'historico' && chave ? `Versões de ${chave}, da atual à primeira.` : DESCRICAO_DA_SECAO[secao];
+}
+
+export const VOLTAR_PARA_ATIVIDADE = 'atividade';
+
+export function retornoDaAcaoDeRegras(clienteId: string, voltar: string | undefined): string {
+  return voltar === VOLTAR_PARA_ATIVIDADE ? rotaDoCliente(clienteId, 'atividade') : rotaDoCliente(clienteId, 'regras', { secao: 'hoje' });
 }
 
 export const PLATAFORMAS_DE_ESCOPO: Readonly<Record<string, string>> = { google: 'Google Ads', meta: 'Meta Ads' };

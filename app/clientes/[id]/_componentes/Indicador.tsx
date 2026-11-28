@@ -1,5 +1,5 @@
 import { Icone, type NomeDoIcone } from '@/../app/clientes/[id]/_componentes/Icones';
-import type { TomDoIndicador } from '@/modules/clients/domain/painel/listaDeClientes';
+import type { TomDoIndicador } from '@/modules/clients/domain/painel/indicadores';
 
 type Props = {
   readonly tom: TomDoIndicador;

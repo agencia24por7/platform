@@ -48,7 +48,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
       }),
     );
   }
-  const visao = visaoDaListaDeClientes(todosClientes, filtro, vereditos, substantivo);
+  const visao = visaoDaListaDeClientes(todosClientes, filtro, vereditos, substantivo, noun);
 
   return (
     <Shell title={noun} organization={organization} active="/clientes">
@@ -109,14 +109,14 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
       <div className="card">
         {visao.temCadastro ? (
           <div className="lista-clientes__barra">
-            <span className="lista-clientes__titulo">{filtro.arquivados ? 'Arquivados' : 'Em operação'}</span>
+            <span className="lista-clientes__titulo">{visao.tituloDaLista}</span>
             {visao.arquivados.total > 0 || visao.arquivados.ativo ? (
               <Link
                 className={`botao-icone${visao.arquivados.ativo ? ' botao-icone--ativo' : ''}`}
                 href={visao.arquivados.href}
                 aria-current={visao.arquivados.ativo ? 'page' : undefined}
-                aria-label={visao.arquivados.ativo ? 'Voltar aos clientes em operação' : `Ver arquivados (${visao.arquivados.total})`}
-                title={visao.arquivados.ativo ? 'Voltar aos clientes em operação' : `Arquivados (${visao.arquivados.total})`}
+                aria-label={visao.arquivados.rotulo}
+                title={visao.arquivados.rotulo}
               >
                 <Icone nome="arquivo" tamanho={16} />
                 <span className="botao-icone__contador">{visao.arquivados.total}</span>

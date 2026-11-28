@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { hashDaLogo, logoDoCliente, TAMANHO_MAXIMO_DA_LOGO_BYTES } from './logo.ts';
+import { logoDoCliente, TAMANHO_MAXIMO_DA_LOGO_BYTES } from './logo.ts';
 import type { ArquivoDeContexto } from './tipos.ts';
 
 const SHA = 'a'.repeat(64);
@@ -30,6 +30,7 @@ describe('logo do cliente', () => {
   it('ignora outro campo, item de lista, tipo fora da lista, arquivo grande e hash ausente', () => {
     const recusadas = [
       arquivo('outro-campo', { fieldKey: 'referencias_visuais' }),
+      arquivo('outra-secao', { secao: 'empresa' }),
       arquivo('de-item', { itemId: 'item-1' }),
       arquivo('pdf', { mime: 'application/pdf' }),
       arquivo('svg', { mime: 'image/svg+xml' }),
@@ -38,13 +39,5 @@ describe('logo do cliente', () => {
       arquivo('sem-hash', { sha256: '' }),
     ];
     assert.equal(logoDoCliente(recusadas), null);
-  });
-});
-
-describe('hash da logo para o cabeçalho', () => {
-  it('sem armazenamento não aponta para uma imagem que não vai abrir', () => {
-    assert.equal(hashDaLogo([arquivo('a')], false), null);
-    assert.equal(hashDaLogo([arquivo('a')], true), SHA);
-    assert.equal(hashDaLogo([], true), null);
   });
 });

@@ -29,10 +29,11 @@ describe('lista de clientes', () => {
 
   it('o atalho de arquivados alterna entre as duas listas e conta só os arquivados', () => {
     const principal = visaoDaListaDeClientes(TODOS, lerFiltroDaLista({}), new Map(), 'cliente');
-    assert.deepEqual(principal.arquivados, { total: 2, href: '/clientes?lista=arquivados', ativo: false });
+    assert.deepEqual(principal.arquivados, { total: 2, href: '/clientes?lista=arquivados', ativo: false, rotulo: 'Ver clientes arquivados (2)' });
     assert.equal(principal.chips.find((c) => c.chave === 'todas')?.total, 2);
     const arquivados = visaoDaListaDeClientes(TODOS, lerFiltroDaLista({ lista: 'arquivados' }), new Map(), 'cliente');
-    assert.deepEqual(arquivados.arquivados, { total: 2, href: '/clientes', ativo: true });
+    assert.deepEqual(arquivados.arquivados, { total: 2, href: '/clientes', ativo: true, rotulo: 'Voltar aos clientes em operação' });
+    assert.equal(visaoDaListaDeClientes(TODOS, lerFiltroDaLista({}), new Map(), 'negócio', 'Negócios').arquivados.rotulo, 'Ver negócios arquivados (2)');
     assert.ok(arquivados.chips.every((c) => !c.ativo));
   });
 
@@ -41,6 +42,7 @@ describe('lista de clientes', () => {
     assert.deepEqual(visao.linhas[0]?.situacao, { rotulo: 'Ativo', tom: 'ok' });
     assert.deepEqual(visao.linhas[0]?.prontidao, { rotulo: 'Parcial', icone: 'parcial', tom: 'atencao' });
     assert.equal(visao.linhas[0]?.modelo, 'E-commerce');
+    assert.equal(visaoDaListaDeClientes([cliente('b', 'active')], lerFiltroDaLista({}), new Map(), 'cliente').linhas[0]?.modelo, 'Geração de leads');
   });
 
   it('estado vazio distingue sem cadastro, sem resultado e sem arquivados', () => {

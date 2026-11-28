@@ -1,5 +1,7 @@
 import { ROTULO_DA_PLATAFORMA, type Platform } from '../../../connections/domain/connection.ts';
-import type { TomDoIndicador } from './listaDeClientes.ts';
+import type { Campo, CampoSimples } from '../contexto/catalogo.ts';
+import { textoDoValor } from '../contexto/leitura.ts';
+import type { TomDoIndicador } from './indicadores.ts';
 import { tempoRelativo } from './resumo.ts';
 
 export type ConviteDaAtividade = {
@@ -62,6 +64,7 @@ export type VisaoDosPedidos = {
   readonly linksAtivos: readonly LinkAtivo[];
   readonly historico: readonly ItemDoHistorico[];
   readonly totalPendente: number;
+  readonly descricao: string;
 };
 
 const ROTULO_DO_CONVITE: Readonly<Record<string, string>> = { pending: 'Pendente', completed: 'Concluído', expired: 'Expirado', revoked: 'Revogado' };
@@ -153,6 +156,7 @@ export function visaoDosPedidos(
     })),
     historico: historico.sort((a, b) => b.em - a.em).map(({ item }) => item),
     totalPendente: pendentes.length + linksAtivos.length,
+    descricao: pendentes.length + linksAtivos.length > 0 ? `${pendentes.length + linksAtivos.length} esperando resposta.` : 'Nada esperando resposta.',
   };
 }
 
@@ -170,7 +174,7 @@ export type RevisaoDaAtividade = {
   readonly diferencas: readonly { readonly chave: string; readonly antes: unknown; readonly depois: unknown }[];
 };
 
-export type SecaoParaRotulo = { readonly key: string; readonly letra: string; readonly titulo: string; readonly campos: readonly { readonly key: string; readonly rotulo: string }[] };
+export type SecaoParaRotulo = { readonly key: string; readonly letra: string; readonly titulo: string; readonly campos: readonly Campo[] };
 
 export type RevisaoNaTela = {
   readonly id: string;
@@ -188,26 +192,42 @@ const ROTULO_DA_OPERACAO: Record<RevisaoDaAtividade['operacao'], string> = { cri
 const LIMITE_DO_VALOR = 80;
 const LIMITE_DE_DIFERENCAS = 6;
 
-function valorLegivel(valor: unknown): string {
-  if (valor === null || valor === undefined || valor === '') return '∅';
-  const texto = typeof valor === 'string' ? valor : JSON.stringify(valor);
+function cortar(texto: string): string {
   return texto.length > LIMITE_DO_VALOR ? `${texto.slice(0, LIMITE_DO_VALOR - 1)}…` : texto;
+}
+
+function valorLegivel(campo: CampoSimples | null, valor: unknown): string {
+  if (valor === null || valor === undefined || valor === '') return '∅';
+  const legivel = campo ? textoDoValor(campo, valor) : null;
+  return cortar(legivel ?? (typeof valor === 'string' ? valor : JSON.stringify(valor)));
+}
+
+function campoDaDiferenca(campo: Campo | undefined, chave: string): { readonly rotulo: string; readonly campo: CampoSimples | null } {
+  if (!campo) return { rotulo: chave, campo: null };
+  if (campo.tipo === 'lista') {
+    const sub = campo.item.find((item) => item.key === chave);
+    return sub ? { rotulo: sub.rotulo, campo: sub } : { rotulo: chave, campo: null };
+  }
+  return chave === 'valor' ? { rotulo: 'valor', campo } : { rotulo: chave, campo: null };
 }
 
 export function visaoDasRevisoes(revisoes: readonly RevisaoDaAtividade[], secoes: readonly SecaoParaRotulo[], agora: Date): readonly RevisaoNaTela[] {
   const porSecao = new Map(secoes.map((secao) => [secao.key, secao]));
   return revisoes.map((revisao) => {
     const secao = porSecao.get(revisao.secao);
-    const campo = secao?.campos.find((c) => c.key === revisao.chave)?.rotulo ?? revisao.chave;
+    const definicao = secao?.campos.find((c) => c.key === revisao.chave);
     return {
       id: revisao.id,
       secao: secao ? `${secao.letra} · ${secao.titulo}` : revisao.secao,
-      campo,
+      campo: definicao?.rotulo ?? revisao.chave,
       origem: revisao.viaLink ? 'cliente' : 'equipe',
       operacao: ROTULO_DA_OPERACAO[revisao.operacao],
       quando: tempoRelativo(revisao.em, agora),
       emIso: revisao.em.toISOString(),
-      diferencas: revisao.diferencas.slice(0, LIMITE_DE_DIFERENCAS).map((d) => ({ chave: d.chave, antes: valorLegivel(d.antes), depois: valorLegivel(d.depois) })),
+      diferencas: revisao.diferencas.slice(0, LIMITE_DE_DIFERENCAS).map((d) => {
+        const alvo = campoDaDiferenca(definicao, d.chave);
+        return { chave: alvo.rotulo, antes: valorLegivel(alvo.campo, d.antes), depois: valorLegivel(alvo.campo, d.depois) };
+      }),
       diferencasOcultas: Math.max(0, revisao.diferencas.length - LIMITE_DE_DIFERENCAS),
     };
   });

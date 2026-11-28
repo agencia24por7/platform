@@ -209,7 +209,7 @@ export function cabecalhosDeDownload(nome: string, contentTypeArmazenado: string
   };
 }
 
-const IMAGENS_EM_LINHA: ReadonlySet<string> = new Set([TIPOS_PERMITIDOS.png.contentType, TIPOS_PERMITIDOS.jpeg.contentType, TIPOS_PERMITIDOS.webp.contentType, TIPOS_PERMITIDOS.gif.contentType]);
+export const IMAGENS_EM_LINHA: ReadonlySet<string> = new Set([TIPOS_PERMITIDOS.png.contentType, TIPOS_PERMITIDOS.jpeg.contentType, TIPOS_PERMITIDOS.webp.contentType, TIPOS_PERMITIDOS.gif.contentType]);
 const HASH_DO_CONTEUDO = /^[0-9a-f]{64}$/;
 
 export function cabecalhosDeRevalidacao(sha256: string): CabecalhosDeDownload | null {

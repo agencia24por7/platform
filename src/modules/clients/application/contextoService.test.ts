@@ -71,6 +71,9 @@ function montar(opcoes: OpcoesDoMontar = {}) {
     async carregar() {
       return { nome: 'Padaria', cadastro: { nome: 'Padaria', segmento: null, modeloDeOperacao: 'leads' as const, temRede: true, redeNome: 'Rede Pão', criadoEm: new Date(0) }, contexto: { campos: [...entradas.values()], itens: [...itens.values()], arquivos: [...(opcoes.arquivos ?? [])] } };
     },
+    async arquivosDoCampo(_o: string, _c: string, secao: string, fieldKey: string) {
+      return (opcoes.arquivos ?? []).filter((a) => a.secao === secao && a.fieldKey === fieldKey && a.itemId === null);
+    },
     async lerEntrada(_o: string, _c: string, chave: string) {
       return entradas.get(chave) ?? null;
     },
@@ -1040,6 +1043,16 @@ describe('logo do cliente', () => {
     const r = await servico.abrirLogo({ ...leitura, papelDeQuemLe: 'viewer' });
     assert.ok(r.ok && r.value.tipo === 'ausente');
     assert.deepEqual(lidos, []);
+  });
+
+  it('versão da logo para o cabeçalho segue o mesmo recorte por papel e o armazenamento', async () => {
+    const caminho = `orgs/${ORG}/clientes/${CLIENTE}/arquivos/33333333-3333-4333-8333-333333333333-logo.png`;
+    const { servico } = montar({ armazenamento: comObjeto(), arquivos: [logo(caminho)] });
+    assert.equal(await servico.versaoDaLogo(leitura), SHA);
+    assert.equal(await servico.versaoDaLogo({ ...leitura, papelDeQuemLe: 'viewer' }), null);
+    const compartilhada = montar({ armazenamento: comObjeto(), arquivos: [{ ...logo(caminho), compartilhavel: true }] });
+    assert.equal(await compartilhada.servico.versaoDaLogo({ ...leitura, papelDeQuemLe: 'viewer' }), SHA);
+    assert.equal(await montar({ arquivos: [logo(caminho)] }).servico.versaoDaLogo(leitura), null);
   });
 
   it('sem armazenamento configurado não há logo', async () => {

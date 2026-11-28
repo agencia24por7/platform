@@ -5,7 +5,7 @@ type Props = { readonly revisao: Modelo; readonly aoEditar: (passo: number) => v
 
 export function RevisaoDoNovoPlano({ revisao, aoEditar }: Props) {
   return (
-    <div className="revisao">
+    <div className="plano-revisao">
       {revisao.pendencias > 0 ? (
         <p className="alert alert--warn" role="status">
           <Icone nome="atencao" />
@@ -17,25 +17,25 @@ export function RevisaoDoNovoPlano({ revisao, aoEditar }: Props) {
           <Icone nome="atencao" />
           <span>
             {revisao.bloqueio.texto}{' '}
-            <button type="button" className="revisao__editar" onClick={() => aoEditar(revisao.bloqueio?.passo ?? 0)}>
+            <button type="button" className="plano-revisao__editar" onClick={() => aoEditar(revisao.bloqueio?.passo ?? 0)}>
               Ver avisos
             </button>
           </span>
         </p>
       ) : null}
       {revisao.grupos.map((grupo) => (
-        <section key={grupo.chave} className="revisao__grupo" aria-label={grupo.titulo}>
-          <div className="revisao__topo">
-            <h4 className="revisao__titulo">{grupo.titulo}</h4>
-            <button type="button" className="revisao__editar" onClick={() => aoEditar(grupo.passo)}>
+        <section key={grupo.chave} className="plano-revisao__grupo" aria-label={grupo.titulo}>
+          <div className="plano-revisao__topo">
+            <h4 className="plano-revisao__titulo">{grupo.titulo}</h4>
+            <button type="button" className="plano-revisao__editar" onClick={() => aoEditar(grupo.passo)}>
               Editar<span className="sr-only"> {grupo.titulo}</span>
             </button>
           </div>
-          <dl className="revisao__itens">
+          <dl className="plano-revisao__itens">
             {grupo.itens.map((item) => (
-              <div key={item.rotulo} className="revisao__item">
+              <div key={item.rotulo} className="plano-revisao__item">
                 <dt>{item.rotulo}</dt>
-                <dd className={item.vazio ? 'revisao__valor revisao__valor--vazio' : 'revisao__valor'}>
+                <dd className={item.vazio ? 'plano-revisao__valor plano-revisao__valor--vazio' : 'plano-revisao__valor'}>
                   {item.vazio ? <Icone nome="atencao" tamanho={14} /> : null} {item.valor}
                   {item.nota ? <span className="field__hint">{item.nota}</span> : null}
                 </dd>

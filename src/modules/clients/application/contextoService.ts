@@ -33,7 +33,7 @@ import { VERSAO_DO_BRAIN, construirBrain } from '@/modules/clients/domain/contex
 import { calcularCompletude, proximosCampos, type CampoFaltando, type Completude } from '@/modules/clients/domain/contexto/completude';
 import { diferencasDeDados, type DiferencaDeChave } from '@/modules/clients/domain/contexto/diff';
 import type { ModeloDeOperacao } from '@/modules/clients/domain/contexto/heranca';
-import { TAMANHO_MAXIMO_DA_LOGO_BYTES, logoDoCliente } from '@/modules/clients/domain/contexto/logo';
+import { CAMPO_DA_LOGO, SECAO_DA_LOGO, TAMANHO_MAXIMO_DA_LOGO_BYTES, logoDoCliente, type LogoDoCliente } from '@/modules/clients/domain/contexto/logo';
 import type { Readable } from 'node:stream';
 import {
   MOTIVO_DO_LINK,
@@ -250,6 +250,7 @@ export type ResultadoDaLogo = { readonly tipo: 'aberta'; readonly logo: LogoAber
 
 export type ContextoService = {
   carregar(leitura: Leitura): Promise<Result<ContextoCompleto, Failure>>;
+  versaoDaLogo(leitura: Leitura): Promise<string | null>;
   abrirLogo(leitura: Leitura, hashConhecido?: string | null): Promise<Result<ResultadoDaLogo, Failure>>;
   carregarNaVisao(escopo: Escopo, visao: VisaoDoContexto): Promise<Result<ContextoCompleto, Failure>>;
   salvarCampo(
@@ -378,6 +379,7 @@ const MAX_REVISOES = 200;
 const LIMITE_DA_VARREDURA = 200;
 const IDADE_DO_ORFAO_MS = 60 * 60 * 1000;
 const PREFIXO_DOS_ARQUIVOS = 'arquivos/';
+const CANDIDATAS_A_LOGO = 20;
 const CONVITE_COM_LINK_VIVO = 'convite_com_link_vivo';
 const CONVITE_JA_TEM_LINK = failure('conflict', 'Este convite já tem um link de contexto válido. Revogue-o antes de criar outro.');
 
@@ -890,16 +892,25 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
     }
   }
 
+  async function logoNaVisao(leitura: Leitura): Promise<LogoDoCliente | null> {
+    const arquivos = await repositorio.arquivosDoCampo(leitura.organizationId, leitura.clientId, SECAO_DA_LOGO, CAMPO_DA_LOGO, CANDIDATAS_A_LOGO);
+    const visiveis = visaoDoPapel(leitura.papelDeQuemLe) === 'equipe' ? arquivos : recortarParaOCliente({ campos: [], itens: [], arquivos }).arquivos;
+    return logoDoCliente(visiveis);
+  }
+
   const servico: ContextoService = {
     carregar(leitura) {
       return servico.carregarNaVisao({ organizationId: leitura.organizationId, clientId: leitura.clientId }, visaoDoPapel(leitura.papelDeQuemLe));
     },
 
+    async versaoDaLogo(leitura) {
+      if (!armazenamento.configurado) return null;
+      return (await logoNaVisao(leitura))?.sha256 ?? null;
+    },
+
     async abrirLogo(leitura, hashConhecido = null) {
       if (!armazenamento.configurado) return ok({ tipo: 'ausente' });
-      const carregado = await servico.carregar(leitura);
-      if (!carregado.ok) return carregado;
-      const logo = logoDoCliente(carregado.value.arquivos);
+      const logo = await logoNaVisao(leitura);
       if (!logo) return ok({ tipo: 'ausente' });
       const prefixo = `${prefixoDoCliente(leitura.organizationId, leitura.clientId)}${PREFIXO_DOS_ARQUIVOS}`;
       if (!logo.caminho.startsWith(prefixo)) return err(failure('forbidden', 'Arquivo fora do cliente.'));

@@ -1,8 +1,8 @@
 import { ROTULO_DA_SITUACAO, type Situacao } from '../ciclo.ts';
+import { ICONE_DO_VEREDITO, TOM_DA_SITUACAO, TOM_DO_VEREDITO, rotuloDoModelo, type IconeDoVeredito, type TomDoIndicador } from './indicadores.ts';
 import { ROTULO_DO_VEREDITO, type Veredito } from './prontidao.ts';
 
-export type TomDoIndicador = 'ok' | 'atencao' | 'critico' | 'neutro';
-export type IconeDoVeredito = 'ok' | 'parcial' | 'nao';
+export type { IconeDoVeredito, TomDoIndicador } from './indicadores.ts';
 
 export type FiltroDaLista = {
   readonly situacao: Exclude<Situacao, 'archived'> | null;
@@ -39,7 +39,8 @@ export type ChipDaLista = { readonly chave: string; readonly rotulo: string; rea
 export type VisaoDaListaDeClientes = {
   readonly linhas: readonly LinhaDaLista[];
   readonly chips: readonly ChipDaLista[];
-  readonly arquivados: { readonly total: number; readonly href: string; readonly ativo: boolean };
+  readonly arquivados: { readonly total: number; readonly href: string; readonly ativo: boolean; readonly rotulo: string };
+  readonly tituloDaLista: string;
   readonly limpar: string | null;
   readonly vazio: string | null;
   readonly temCadastro: boolean;
@@ -47,10 +48,6 @@ export type VisaoDaListaDeClientes = {
 
 export const ROTA_DA_LISTA = '/clientes';
 const SITUACOES_DA_LISTA = ['active', 'paused'] as const;
-const TOM_DA_SITUACAO: Record<Situacao, TomDoIndicador> = { active: 'ok', paused: 'atencao', archived: 'neutro' };
-const TOM_DO_VEREDITO: Record<Veredito, TomDoIndicador> = { sim: 'ok', parcial: 'atencao', nao: 'critico' };
-const ICONE_DO_VEREDITO: Record<Veredito, IconeDoVeredito> = { sim: 'ok', parcial: 'parcial', nao: 'nao' };
-const ROTULO_DO_MODELO: Record<string, string> = { ecommerce: 'E-commerce', leads: 'Leads' };
 
 function primeiro(valor: ValorBruto): string | undefined {
   return Array.isArray(valor) ? valor[0] : (valor as string | undefined);
@@ -91,6 +88,7 @@ export function visaoDaListaDeClientes(
   filtro: FiltroDaLista,
   vereditos: ReadonlyMap<string, Veredito>,
   substantivo: string,
+  plural: string = `${substantivo}s`,
 ): VisaoDaListaDeClientes {
   const operacao = clientes.filter((cliente) => cliente.status !== 'archived');
   const totalArquivados = clientes.length - operacao.length;
@@ -113,7 +111,7 @@ export function visaoDaListaDeClientes(
       href: `${ROTA_DA_LISTA}/${encodeURIComponent(cliente.id)}`,
       filial: cliente.parentClientId !== null,
       segmento: cliente.segment ?? '—',
-      modelo: ROTULO_DO_MODELO[cliente.businessModel] ?? ROTULO_DO_MODELO['leads']!,
+      modelo: rotuloDoModelo(cliente.businessModel),
       contas: cliente.accountCount,
       situacao: { rotulo: ROTULO_DA_SITUACAO[cliente.status], tom: TOM_DA_SITUACAO[cliente.status] },
       prontidao: veredito ? { rotulo: ROTULO_DO_VEREDITO[veredito], icone: ICONE_DO_VEREDITO[veredito], tom: TOM_DO_VEREDITO[veredito] } : null,
@@ -123,7 +121,13 @@ export function visaoDaListaDeClientes(
   return {
     linhas,
     chips,
-    arquivados: { total: totalArquivados, href: hrefDaLista(filtro.arquivados ? { situacao: null, busca: '', arquivados: false } : { situacao: null, busca: filtro.busca, arquivados: true }), ativo: filtro.arquivados },
+    arquivados: {
+      total: totalArquivados,
+      href: hrefDaLista(filtro.arquivados ? { situacao: null, busca: '', arquivados: false } : { situacao: null, busca: filtro.busca, arquivados: true }),
+      ativo: filtro.arquivados,
+      rotulo: filtro.arquivados ? `Voltar aos ${plural.toLocaleLowerCase('pt-BR')} em operação` : `Ver ${plural.toLocaleLowerCase('pt-BR')} arquivados (${totalArquivados})`,
+    },
+    tituloDaLista: filtro.arquivados ? 'Arquivados' : 'Em operação',
     limpar: filtrando ? ROTA_DA_LISTA : null,
     vazio:
       clientes.length === 0

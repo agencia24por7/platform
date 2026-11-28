@@ -11,6 +11,7 @@ import { revogarLinkDeContexto } from '@/../app/clientes/[id]/(painel)/conexoes/
 import { RegenerarLink } from '@/../app/clientes/[id]/(painel)/conexoes/pedir/RegenerarLink';
 import { modules } from '@/composition';
 import { CATALOGO } from '@/modules/clients/domain/contexto/catalogo';
+import { traduzirCatalogo } from '@/modules/clients/domain/contexto/vocabulario';
 import { visaoDosPedidos } from '@/modules/clients/domain/painel/atividade';
 import { ancoraDaAtividade, enderecoDoConvite, ROTULO_DA_SECAO_DE_ATIVIDADE } from '@/modules/clients/domain/painel/enderecos';
 import { podeVerConviteDeIntegracao } from '@/modules/connections/domain/visibilidadeDoConvite';
@@ -24,7 +25,7 @@ export async function PedidosAoCliente({ clienteId }: { readonly clienteId: stri
     organizacaoInteira ? modules().tasks.listByClient(escopo.organizationId, cliente.id) : Promise.resolve([]),
     modules().contexto.listarLinks(escopo),
   ]);
-  const nomeDaSecao = new Map<string, string>(CATALOGO.map((s) => [s.key, `${s.letra} · ${s.titulo}`]));
+  const nomeDaSecao = new Map<string, string>(traduzirCatalogo(CATALOGO, ctx.organization.type).map((s) => [s.key, `${s.letra} · ${s.titulo}`]));
   const visao = visaoDosPedidos(
     { convites, links: links.ok ? links.value : [], pedidosDeParceiro, nomeDaSecao: (chave) => nomeDaSecao.get(chave) ?? chave },
     new Date(),
@@ -38,7 +39,7 @@ export async function PedidosAoCliente({ clienteId }: { readonly clienteId: stri
       <CabecalhoDeSecao
         id={`${ancora}-titulo`}
         titulo={ROTULO_DA_SECAO_DE_ATIVIDADE.pedidos}
-        descricao={visao.totalPendente > 0 ? `${visao.totalPendente} esperando resposta.` : 'Nada esperando resposta.'}
+        descricao={visao.descricao}
       />
       {!links.ok ? <div className="alert alert--error">Não foi possível carregar os links de contexto agora.</div> : null}
 

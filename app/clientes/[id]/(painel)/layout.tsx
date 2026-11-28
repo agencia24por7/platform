@@ -8,10 +8,9 @@ import { ConfirmarAcao } from '@/../app/clientes/[id]/_componentes/ConfirmarAcao
 import { CabecalhoDoCliente } from '@/../app/clientes/[id]/_componentes/CabecalhoDoCliente';
 import { MenuMais } from '@/../app/clientes/[id]/_componentes/MenuMais';
 import { modules } from '@/composition';
-import { carregarContexto, carregarPainel, carregarProntidao } from '@/../app/clientes/[id]/_dados';
+import { carregarPainel, carregarProntidao, carregarVersaoDaLogo } from '@/../app/clientes/[id]/_dados';
 import { mudarSituacao } from '@/../app/clientes/[id]/(painel)/conexoes/acoes';
 import { EFEITO_DA_SITUACAO, ROTULO_DA_SITUACAO, SITUACOES, mudancaPermitida } from '@/modules/clients/domain/ciclo';
-import { hashDaLogo } from '@/modules/clients/domain/contexto/logo';
 import { visaoDoCabecalho } from '@/modules/clients/domain/painel/cabecalho';
 import { acaoPrincipal } from '@/modules/clients/domain/painel/prontidao';
 import { podeCadastrarCliente } from '@/modules/clients/domain/painel/permissoes';
@@ -39,10 +38,10 @@ export default async function LayoutDoCliente({
 }) {
   const { id } = await params;
   const { ctx, cliente, podeEditar, organizacaoInteira } = await carregarPainel(id);
-  const [prontidao, regras, contexto] = await Promise.all([
+  const [prontidao, regras, versaoDaLogo] = await Promise.all([
     carregarProntidao(ctx.organization.id, cliente.id, ctx.role),
     carregarProntidaoDeRegras(ctx.organization.id, cliente.id),
-    carregarContexto(ctx.organization.id, cliente.id, ctx.role),
+    carregarVersaoDaLogo(ctx.organization.id, cliente.id, ctx.role),
   ]);
   const blocoDeRegras = regras ? estadoDoBlocoDeRegras(regras) : null;
   const principal = prontidao ? acaoPrincipal(prontidao.acoes, cliente.id, { podeEditar, organizacaoInteira, tipo: ctx.organization.type }) : null;
@@ -57,7 +56,7 @@ export default async function LayoutDoCliente({
     lacunasDeRegras: regras?.essenciaisFaltando ?? [],
     podeDefinirLimite: podeRegistrarOuMexer(ctx.role, 'limite'),
     podeEditar,
-    hashDaLogo: contexto ? hashDaLogo(contexto.arquivos, contexto.brain.armazenamentoConfigurado) : null,
+    hashDaLogo: versaoDaLogo,
   });
 
   return (

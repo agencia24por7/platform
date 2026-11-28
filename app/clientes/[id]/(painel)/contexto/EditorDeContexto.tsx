@@ -142,6 +142,7 @@ export function EditorDeContexto({ tipo, clienteId, dados, visao, podeEditar, se
   const [geracao, setGeracao] = useState(0);
   const [editando, setEditando] = useState<ReadonlySet<string>>(() => new Set(campoInicial ? [campoInicial] : []));
   const fecharAoSalvar = useRef(new Set<string>());
+  const navegou = useRef(false);
   const topoDaSecao = useRef<HTMLHeadingElement>(null);
 
   const completude = useMemo(
@@ -178,6 +179,7 @@ export function EditorDeContexto({ tipo, clienteId, dados, visao, podeEditar, se
   );
 
   function editar(chave: string) {
+    navegou.current = true;
     fecharAoSalvar.current.delete(chave);
     setEditando((atual) => new Set(atual).add(chave));
     setRealce(chave);
@@ -193,6 +195,7 @@ export function EditorDeContexto({ tipo, clienteId, dados, visao, podeEditar, se
   }
 
   useEffect(() => {
+    if (!navegou.current) return;
     const url = new URL(window.location.href);
     url.searchParams.set('secao', ativa);
     if (realce) url.searchParams.set('campo', realce);
@@ -220,6 +223,7 @@ export function EditorDeContexto({ tipo, clienteId, dados, visao, podeEditar, se
           : 'As mudanças salvam sozinhas.';
 
   function irPara(chave: string, campo: string | null = null) {
+    navegou.current = true;
     setAtiva(chave);
     setRealce(campo);
     if (!campo) requestAnimationFrame(() => topoDaSecao.current?.focus());
