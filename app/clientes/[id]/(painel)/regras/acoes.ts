@@ -93,13 +93,13 @@ async function decidirProposta(formData: FormData, aceitar: boolean): Promise<vo
   const escopo = await escopoDoClienteNaOrganizacao(campos['clienteId']);
   if (!escopo) redirect('/clientes');
   const entrada = lerDecisaoDeProposta(campos, !aceitar);
-  if (!entrada.ok) falhar(escopo.cliente.id, 'propostas', Object.values(entrada.error)[0] ?? 'Dados inválidos.');
+  if (!entrada.ok) falhar(escopo.cliente.id, 'hoje', Object.values(entrada.error)[0] ?? 'Dados inválidos.');
   const ator = await atorAtual();
   const resultado = aceitar
     ? await modules().regras.efetivarProposta(escopo.comando, entrada.value, ator)
     : await modules().regras.rejeitarProposta(escopo.comando, entrada.value, ator);
-  if (!resultado.ok) falhar(escopo.cliente.id, 'propostas', resultado.error.message);
-  concluir(escopo.cliente.id, 'propostas', aceitar ? 'Proposta aceita: passou a valer.' : 'Proposta rejeitada.');
+  if (!resultado.ok) falhar(escopo.cliente.id, 'hoje', resultado.error.message);
+  concluir(escopo.cliente.id, 'hoje', aceitar ? 'Proposta aceita: passou a valer.' : 'Proposta rejeitada.');
 }
 
 export async function aceitarPropostaAcao(formData: FormData): Promise<void> {

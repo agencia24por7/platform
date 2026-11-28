@@ -331,3 +331,7 @@
 .botao-icone:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .botao-icone--ativo { border-color: var(--border-strong); color: var(--fg); background: var(--bg-sunken); }
 .botao-icone__contador { font-variant-numeric: tabular-nums; }
+
+.atividade { gap: 32px; }
+.atividade-secao { scroll-margin-top: 16px; }
+.atividade-secao + .atividade-secao { padding-top: 24px; border-top: 1px solid var(--border); }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { ABAS_DO_CLIENTE, ROTULO_DA_ABA, ROTULO_DA_SECAO_DE_CONTEXTO, SECOES_DE_CONTEXTO, comAviso, destinoSeguro, enderecoDoFormulario, idValido, rotaDoCliente, secaoDeContexto } from './enderecos.ts';
+import { ABAS_DO_CLIENTE, ROTULO_DA_ABA, abaComAcaoNoCabecalho, abaDoSegmento, rotaDaAtividade, ROTULO_DA_SECAO_DE_CONTEXTO, SECOES_DE_CONTEXTO, comAviso, destinoSeguro, enderecoDoFormulario, idValido, rotaDoCliente, secaoDeContexto } from './enderecos.ts';
 import { formatarCentavos, mascararDinheiro, normalizarArrobaDigitado, numeroDeTexto, tamanhoLegivel } from './formato.ts';
 import { mensagemProntaDoLink, minutosEstimados, secoesDoPreset } from './mensagem.ts';
 import { barrasDaSecao, resumirCompletude, saudeDosDados, tempoRelativo } from './resumo.ts';
@@ -10,16 +10,33 @@ const ID = '95ec64b4-c5b9-43ff-909d-d258d91e8b7c';
 describe('endereços do painel do cliente', () => {
   it('monta a rota de cada aba com busca opcional', () => {
     assert.equal(rotaDoCliente(ID), `/clientes/${ID}/conexoes`);
-    assert.equal(rotaDoCliente(ID, 'conexoes', { secao: 'pedir', enviar: 'contexto' }), `/clientes/${ID}/conexoes?secao=pedir&enviar=contexto`);
+    assert.equal(rotaDoCliente(ID, 'conexoes', { enviar: 'contexto' }), `/clientes/${ID}/conexoes?enviar=contexto`);
+    assert.equal(rotaDaAtividade(ID, 'regras', { categoria: 'publico' }), `/clientes/${ID}/atividade?categoria=publico#atividade-regras`);
     assert.equal(rotaDoCliente(ID, 'contexto', { secao: 'publico', vazio: '' }), `/clientes/${ID}/contexto?secao=publico`);
     assert.equal(comAviso(`/clientes/${ID}/conexoes`, 'feito', 'Conta movida.'), `/clientes/${ID}/conexoes?feito=Conta%20movida.`);
     assert.equal(comAviso(`/x?a=1`, 'erro', 'e'), '/x?a=1&erro=e');
   });
 
-  it('enumera as quatro abas na ordem e monta a rota da Estratégia', () => {
-    assert.deepEqual([...ABAS_DO_CLIENTE], ['conexoes', 'contexto', 'regras', 'estrategia']);
-    assert.deepEqual(ABAS_DO_CLIENTE.map((aba) => ROTULO_DA_ABA[aba]), ['Conexões', 'Contexto', 'Regras', 'Estratégia']);
+  it('enumera as cinco abas na ordem e monta a rota da Estratégia', () => {
+    assert.deepEqual([...ABAS_DO_CLIENTE], ['conexoes', 'contexto', 'regras', 'estrategia', 'atividade']);
+    assert.deepEqual(ABAS_DO_CLIENTE.map((aba) => ROTULO_DA_ABA[aba]), ['Conexões', 'Contexto', 'Regras', 'Estratégia', 'Atividade']);
     assert.equal(rotaDoCliente(ID, 'estrategia', { novo: '1' }), `/clientes/${ID}/estrategia?novo=1`);
+  });
+
+  it('a ação de conexão sai do cabeçalho em Conexões e fica ao lado do pedido', () => {
+    assert.equal(abaComAcaoNoCabecalho('conexoes', true), false);
+    assert.equal(abaComAcaoNoCabecalho(null, true), false);
+    assert.equal(abaComAcaoNoCabecalho('conexoes', false), true);
+    assert.equal(abaComAcaoNoCabecalho('contexto', true), true);
+    assert.equal(abaComAcaoNoCabecalho('regras', false), false);
+    assert.equal(abaComAcaoNoCabecalho('atividade', false), false);
+  });
+
+  it('o segmento da rota define a aba ativa, com Conexões como padrão', () => {
+    assert.equal(abaDoSegmento('atividade'), 'atividade');
+    assert.equal(abaDoSegmento('estrategia'), 'estrategia');
+    assert.equal(abaDoSegmento(null), 'conexoes');
+    assert.equal(abaDoSegmento('contas'), 'conexoes');
   });
 
   it('seções do Contexto: Mapa de contexto é o padrão e o Destino é uma seção própria', () => {
@@ -31,7 +48,7 @@ describe('endereços do painel do cliente', () => {
   });
 
   it('só aceita destino dentro do próprio cliente', () => {
-    assert.equal(destinoSeguro(`/clientes/${ID}/conexoes?secao=pedir`, ID), `/clientes/${ID}/conexoes?secao=pedir`);
+    assert.equal(destinoSeguro(`/clientes/${ID}/atividade?categoria=publico`, ID), `/clientes/${ID}/atividade?categoria=publico`);
     assert.equal(destinoSeguro('https://evil.example', ID), `/clientes/${ID}/conexoes`);
     assert.equal(destinoSeguro(`/clientes/${ID}//evil.example`, ID), `/clientes/${ID}/conexoes`);
     assert.equal(destinoSeguro(`/clientes/${ID}x`, ID), `/clientes/${ID}/conexoes`);

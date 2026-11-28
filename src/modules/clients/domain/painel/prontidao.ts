@@ -43,11 +43,6 @@ export type OpcoesDaAcaoPrincipal = {
 
 const TIPOS_DE_CONTEXTO_DA_ACAO: readonly TipoDeAcao[] = ['preencher_contexto', 'confirmar_sugestoes', 'resolver_contradicao'];
 
-function rotuloDeVincular(titulo: string): string {
-  const plataforma = /recurso de (.+) a este cliente/.exec(titulo)?.[1];
-  return plataforma ? `Vincular ${plataforma}` : 'Vincular recurso';
-}
-
 export function acaoPrincipal(acoes: readonly AcaoRecomendada[], clienteId: string, opcoes: OpcoesDaAcaoPrincipal): AcaoPrincipal | null {
   if (!opcoes.podeEditar) return null;
   const elegiveis = opcoes.organizacaoInteira ? acoes : acoes.filter((a) => TIPOS_DE_CONTEXTO_DA_ACAO.includes(a.tipo));
@@ -56,7 +51,7 @@ export function acaoPrincipal(acoes: readonly AcaoRecomendada[], clienteId: stri
   const vocabulario = vocabularioDe(opcoes.tipo ?? 'agency');
   const visao = acaoDaVisao(primeira, clienteId);
   if (primeira.tipo === 'preencher_contexto') {
-    const href = vocabulario.enviarMapaNoPerfil && opcoes.organizacaoInteira ? rotaDoCliente(clienteId, 'conexoes', { secao: 'pedir', enviar: 'contexto' }) : visao.href;
+    const href = vocabulario.enviarMapaNoPerfil && opcoes.organizacaoInteira ? rotaDoCliente(clienteId, 'conexoes', { enviar: 'contexto' }) : visao.href;
     const rotulo = opcoes.organizacaoInteira ? vocabulario.rotuloDaAcaoDeContexto : 'Preencher contexto';
     return { id: primeira.id, titulo: primeira.titulo, rotulo, href, ehConexao: false };
   }
@@ -66,7 +61,7 @@ export function acaoPrincipal(acoes: readonly AcaoRecomendada[], clienteId: stri
     return { id: primeira.id, titulo: visao.titulo, rotulo: visao.titulo, href, ehConexao: false };
   }
   if (ehConexao) {
-    const especifico = primeira.tipo === 'conectar' ? visao.titulo : rotuloDeVincular(visao.titulo);
+    const especifico = primeira.tipo === 'conectar' ? visao.titulo : 'Vincular';
     const rotulo = vocabulario.enviarMapaNoPerfil ? especifico : vocabulario.rotuloDaAcaoDeConexao;
     return { id: primeira.id, titulo: visao.titulo, rotulo, href: visao.href, ehConexao: true };
   }

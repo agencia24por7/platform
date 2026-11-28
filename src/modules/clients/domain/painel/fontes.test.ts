@@ -43,18 +43,19 @@ describe('rotas antigas do cliente', () => {
   const ID = '95ec64b4-c5b9-43ff-909d-d258d91e8b7c';
   it('cada tela antiga tem destino na tabela do ADR 0036', () => {
     assert.equal(destinoDaRotaLegada(ID, 'visao'), `/clientes/${ID}/conexoes`);
-    assert.equal(destinoDaRotaLegada(ID, 'dados'), `/clientes/${ID}/conexoes?secao=fontes`);
-    assert.equal(destinoDaRotaLegada(ID, 'acessos'), `/clientes/${ID}/conexoes?secao=pedir`);
+    assert.equal(destinoDaRotaLegada(ID, 'dados'), `/clientes/${ID}/conexoes`);
+    assert.equal(destinoDaRotaLegada(ID, 'acessos'), `/clientes/${ID}/atividade`);
     assert.equal(destinoDaRotaLegada(ID, 'brain'), `/clientes/${ID}/contexto?secao=brain`);
     assert.equal(destinoDaRotaLegada(ID, 'configuracoes'), `/clientes/${ID}/conexoes`);
   });
-  it('enviar=contexto vai para Pedir em qualquer rota antiga', () => {
+  it('enviar=contexto abre o pedido em Conexões em qualquer rota antiga', () => {
     for (const segmento of ['visao', 'dados', 'brain', 'configuracoes'] as const) {
-      assert.equal(destinoDaRotaLegada(ID, segmento, { enviar: 'contexto' }), `/clientes/${ID}/conexoes?enviar=contexto&secao=pedir`);
+      assert.equal(destinoDaRotaLegada(ID, segmento, { enviar: 'contexto' }), `/clientes/${ID}/conexoes?enviar=contexto`);
     }
   });
   it('preserva a busca, inclusive enviar=contexto e os avisos', () => {
-    assert.equal(destinoDaRotaLegada(ID, 'acessos', { enviar: 'contexto' }), `/clientes/${ID}/conexoes?enviar=contexto&secao=pedir`);
-    assert.equal(destinoDaRotaLegada(ID, 'dados', { feito: 'Conta movida.', vazio: '' }), `/clientes/${ID}/conexoes?feito=Conta+movida.&secao=fontes`);
+    assert.equal(destinoDaRotaLegada(ID, 'acessos', { enviar: 'contexto' }), `/clientes/${ID}/conexoes?enviar=contexto`);
+    assert.equal(destinoDaRotaLegada(ID, 'dados', { feito: 'Conta movida.', vazio: '' }), `/clientes/${ID}/conexoes?feito=Conta+movida.`);
+    assert.equal(destinoDaRotaLegada(ID, 'dados', { secao: 'pedir' }), `/clientes/${ID}/conexoes`);
   });
 });

@@ -137,7 +137,7 @@ export default async function LayoutDoCliente({
             </div>
           </div>
           <div className="cliente-topo__direita">
-            {principal ? <AcaoPrincipalDoCabecalho href={principal.href} rotulo={principal.rotulo} titulo={principal.titulo} /> : null}
+            {principal ? <AcaoPrincipalDoCabecalho href={principal.href} rotulo={principal.rotulo} titulo={principal.titulo} ehConexao={principal.ehConexao} /> : null}
             <MenuMais rotulo="Situação">
               {ctx.organization.type === 'advertiser' && organizacaoInteira && podeCadastrarCliente(ctx.organization.type, ctx.role) ? (
                 <div className="menu-mais__bloco">
@@ -192,7 +192,7 @@ export default async function LayoutDoCliente({
         ) : null}
         <FaixaDeProntidao prontidao={prontidao} regras={regras} clienteId={cliente.id} podeDefinir={podeRegistrarOuMexer(ctx.role, 'limite')} />
       </header>
-      <AbasDoCliente clienteId={cliente.id} blocos={{ conexoes: prontidao?.conexoes ?? null, contexto: prontidao?.contexto ?? null, regras: blocoDeRegras, estrategia: null }} contadores={{ regras: contadorDeRegras }} abasOcultas={podeVerAEstrategia(ctx.role) ? [] : ['estrategia']} />
+      <AbasDoCliente clienteId={cliente.id} blocos={{ conexoes: prontidao?.conexoes ?? null, contexto: prontidao?.contexto ?? null, regras: blocoDeRegras, estrategia: null, atividade: null }} contadores={{ regras: contadorDeRegras }} abasOcultas={podeVerAEstrategia(ctx.role) ? [] : ['estrategia']} />
       <div className="cliente-aba">{children}</div>
     </Shell>
   );

@@ -135,13 +135,13 @@ describe('anunciante direto: vocabulário, atalho e tipo da organização', { co
 
   it('anunciante não vê "Enviar mapa" nem "Pedir ao cliente"; vê "Convidar"', async () => {
     signIn(pessoas.dono);
-    for (const rota of ['/conexoes', '/conexoes?secao=pedir', '/contexto']) {
+    for (const rota of ['/conexoes', '/contexto', '/atividade']) {
       const { status, texto } = await html(`/clientes/${orgs.negocio}${rota}`);
       assert.equal(status, 200, rota);
       assert.ok(!texto.includes('Enviar mapa'), `Enviar mapa em ${rota}`);
       assert.ok(!texto.includes('Pedir ao cliente'), `Pedir ao cliente em ${rota}`);
     }
-    const pedir = await html(`/clientes/${orgs.negocio}/conexoes?secao=pedir`);
+    const pedir = await html(`/clientes/${orgs.negocio}/conexoes`);
     assert.ok(pedir.texto.includes('Convidar'));
   });
 
@@ -153,7 +153,7 @@ describe('anunciante direto: vocabulário, atalho e tipo da organização', { co
 
   it('agência continua vendo o texto de agência', async () => {
     signIn(pessoas.agencia);
-    const { texto } = await html(`/clientes/${orgs.cliente}/conexoes?secao=pedir`);
+    const { texto } = await html(`/clientes/${orgs.cliente}/conexoes`);
     assert.ok(texto.includes('Pedir ao cliente'));
     assert.ok(texto.includes('href="/integracoes"'));
   });

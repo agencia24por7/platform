@@ -131,7 +131,7 @@ describe('agrupamento, filtros e papéis', () => {
     assert.equal(lerFiltrosDaLinha({ cursor: '0' }).cursor, null);
   });
   it('monta a busca da paginação preservando filtros', () => {
-    assert.deepEqual(buscaDaLinha({ categoria: 'publico', origem: null, status: null }, 12), { secao: 'linha', categoria: 'publico', cursor: '12' });
+    assert.deepEqual(buscaDaLinha({ categoria: 'publico', origem: null, status: null }, 12), { categoria: 'publico', cursor: '12' });
   });
   it('limite é só de admin; regra e decisão, de operador', () => {
     assert.equal(podeRegistrarOuMexer('operator', 'limite'), false);

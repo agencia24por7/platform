@@ -104,13 +104,13 @@ describe('ação principal do cabeçalho', () => {
   it('sem reautorização, contexto vazio vira enviar mapa', () => {
     const principal = acaoPrincipal([acao('preencher:empresa', 'preencher_contexto', 38)], CLIENTE, INTEIRA);
     assert.equal(principal?.rotulo, 'Enviar mapa');
-    assert.equal(principal?.href, `/clientes/${CLIENTE}/conexoes?secao=pedir&enviar=contexto`);
+    assert.equal(principal?.href, `/clientes/${CLIENTE}/conexoes?enviar=contexto`);
   });
   it('anunciante: contexto vira preencher e conectar vira conectar conta, reautorizar segue específico', () => {
     const anunciante = { ...INTEIRA, tipo: 'advertiser' as const };
     const contexto = acaoPrincipal([acao('preencher:empresa', 'preencher_contexto', 38)], CLIENTE, anunciante);
     assert.equal(contexto?.rotulo, 'Preencher contexto');
-    assert.ok(!contexto?.href.includes('pedir'));
+    assert.ok(!contexto?.href.includes('enviar'));
     assert.equal(acaoPrincipal([acao('conectar:meta', 'conectar', 60, 'Conectar Meta Ads')], CLIENTE, anunciante)?.rotulo, 'Conectar conta');
     const reauth = acaoPrincipal([acao('reautorizar:google', 'reautorizar', 100, 'Reautorizar Google Ads', 'g1'), acao('conectar:meta', 'conectar', 60)], CLIENTE, anunciante);
     assert.equal(reauth?.rotulo, 'Reautorizar Google Ads');
@@ -128,6 +128,12 @@ describe('ação principal do cabeçalho', () => {
     assert.equal(conectar?.ehConexao, true);
     const reauth = acaoPrincipal([acao('reautorizar:meta', 'reautorizar', 100, 'Reautorizar Meta Ads')], CLIENTE, INTEIRA);
     assert.equal(reauth?.ehConexao, false);
+  });
+  it('vincular recurso tem rótulo curto e mantém a plataforma no título', () => {
+    const vincular = acaoPrincipal([acao('vincular:google', 'vincular_recurso', 70, 'Vincular um recurso de Google Ads a este cliente')], CLIENTE, INTEIRA);
+    assert.equal(vincular?.rotulo, 'Vincular');
+    assert.equal(vincular?.ehConexao, true);
+    assert.match(vincular?.titulo ?? '', /Google Ads/);
   });
   it('sem pendência não há botão, e quem só consulta não recebe ação', () => {
     assert.equal(acaoPrincipal([], CLIENTE, INTEIRA), null);

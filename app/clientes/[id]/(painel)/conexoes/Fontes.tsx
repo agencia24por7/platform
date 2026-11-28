@@ -4,6 +4,7 @@ import { ConfirmarAcao } from '@/../app/clientes/[id]/_componentes/ConfirmarAcao
 import { EstadoVazio } from '@/../app/clientes/[id]/_componentes/EstadoVazio';
 import { MenuMais } from '@/../app/clientes/[id]/_componentes/MenuMais';
 import { BuscaDeFontes } from '@/../app/clientes/[id]/(painel)/conexoes/BuscaDeFontes';
+import { Pedir } from '@/../app/clientes/[id]/(painel)/conexoes/pedir/Pedir';
 import { Marca } from '@/../app/_components/Marca';
 import { Icone, type NomeDoIcone } from '@/../app/clientes/[id]/_componentes/Icones';
 import { carregarConexoes, carregarContas, carregarPainel, carregarProntidao } from '@/../app/clientes/[id]/_dados';
@@ -88,7 +89,7 @@ function conexaoPrecisaReautorizar(conexao: Connection | undefined): boolean {
   return conexao ? conexao.status !== 'revoked' && precisaReautorizar(conexao) : false;
 }
 
-export async function Fontes({ clienteId }: { readonly clienteId: string }) {
+export async function Fontes({ clienteId, abrirPedido }: { readonly clienteId: string; readonly abrirPedido: boolean }) {
   const { ctx, cliente, podeEditar, organizacaoInteira } = await carregarPainel(clienteId);
   const [[contas, fontes], irmaos, conexoes] = await Promise.all([
     carregarContas(ctx.organization.id, cliente.id),
@@ -97,7 +98,7 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
   ]);
   const prontidao = await carregarProntidao(ctx.organization.id, cliente.id, ctx.role);
   const principal = prontidao ? acaoPrincipal(prontidao.acoes, cliente.id, { podeEditar, organizacaoInteira, tipo: ctx.organization.type }) : null;
-  const cabecalhoTemConexao = principal?.ehConexao === true;
+  const acaoDeConexao = principal?.ehConexao ? principal : null;
   const agora = new Date();
   const destinos = irmaos.filter((item) => item.id !== cliente.id);
   const destinosAtivos = destinos.filter((item) => item.status === 'active');
@@ -155,10 +156,19 @@ export async function Fontes({ clienteId }: { readonly clienteId: string }) {
         titulo="Fontes"
         descricao={ordenadas.length === 0 ? 'Nada conectado ainda.' : pedemAcao > 0 ? `${pedemAcao} de ${ordenadas.length} pedem ação.` : `${ordenadas.length} em dia.`}
         acao={
-          podeEditar && !cabecalhoTemConexao ? (
-            <Link className="btn btn--primary" href={`/clientes/${cliente.id}/contas/nova`}>
-              Conectar conta
-            </Link>
+          podeEditar ? (
+            <>
+              <Pedir clienteId={cliente.id} abrirMapa={abrirPedido} />
+              {acaoDeConexao ? (
+                <Link className="btn btn--primary" href={acaoDeConexao.href} title={acaoDeConexao.titulo}>
+                  {acaoDeConexao.rotulo}
+                </Link>
+              ) : (
+                <Link className="btn btn--primary" href={`/clientes/${cliente.id}/contas/nova`}>
+                  Conectar conta
+                </Link>
+              )}
+            </>
           ) : null
         }
       />

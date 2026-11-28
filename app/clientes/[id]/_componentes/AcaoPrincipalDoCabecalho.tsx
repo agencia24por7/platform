@@ -2,14 +2,13 @@
 
 import Link from 'next/link';
 import { useSelectedLayoutSegment } from 'next/navigation';
+import { abaComAcaoNoCabecalho } from '@/modules/clients/domain/painel/enderecos';
 
-type Props = { readonly href: string; readonly rotulo: string; readonly titulo: string };
+type Props = { readonly href: string; readonly rotulo: string; readonly titulo: string; readonly ehConexao: boolean };
 
-const ABAS_COM_ACAO = new Set<string | null>([null, 'conexoes', 'contexto']);
-
-export function AcaoPrincipalDoCabecalho({ href, rotulo, titulo }: Props) {
+export function AcaoPrincipalDoCabecalho({ href, rotulo, titulo, ehConexao }: Props) {
   const segmento = useSelectedLayoutSegment();
-  if (!ABAS_COM_ACAO.has(segmento)) return null;
+  if (!abaComAcaoNoCabecalho(segmento, ehConexao)) return null;
   return (
     <Link className="btn btn--primary" href={href} title={titulo}>
       {rotulo}
