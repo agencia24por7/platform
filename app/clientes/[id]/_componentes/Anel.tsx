@@ -5,9 +5,10 @@ type Props = {
   readonly espessura?: number;
   readonly tom?: 'acento' | 'ok' | 'alerta';
   readonly detalhe?: string;
+  readonly rotuloVisivel?: boolean;
 };
 
-export function Anel({ valor, rotulo, tamanho = 64, espessura = 7, tom = 'acento', detalhe }: Props) {
+export function Anel({ valor, rotulo, tamanho = 64, espessura = 7, tom = 'acento', detalhe, rotuloVisivel = true }: Props) {
   const seguro = Math.min(Math.max(Math.round(valor), 0), 100);
   const raio = (tamanho - espessura) / 2;
   const circunferencia = 2 * Math.PI * raio;
@@ -35,7 +36,7 @@ export function Anel({ valor, rotulo, tamanho = 64, espessura = 7, tom = 'acento
           <tspan className="anel__pct">%</tspan>
         </text>
       </svg>
-      <figcaption className="anel__rotulo">
+      <figcaption className={rotuloVisivel ? 'anel__rotulo' : 'visualmente-oculto'}>
         {rotulo}
         {detalhe ? <span className="anel__detalhe">{detalhe}</span> : null}
       </figcaption>

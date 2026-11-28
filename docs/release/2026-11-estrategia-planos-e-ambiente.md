@@ -77,6 +77,21 @@ Depois de um plano Meta+Google que falhou três vezes na redação, cada uma com
 
 O recuo para JSON livre agora pede JSON nativo ao fornecedor, lê o objeto mesmo com prosa ou cercas em volta e separa o corte por tamanho (`[saida:truncada]`) do JSON inválido; a repetição após corte usa 1,6× o teto de saída (até 12.000) e pede resposta mais concisa. As linhas `strategy.run.step` ganham o campo `ia` (caminho, `finishReason`, tokens de saída, teto, classe da recusa do esquema). Sem migração, sem mudança de infra, de segredo ou de variável. Depois do deploy, conferir no `ia` das linhas `adiada` e de sucesso quais tarefas usam `json_livre` e se algum `finishReason` é `length`. Reversão: voltar a imagem.
 
-## Adendo: ajustes de UI/UX da página do cliente (PR 205, 24K-135) junto com o PR 206
+## Adendo: UI/UX da página de clientes (24K-135, ADR 0071)
 
-O mesmo release leva o PR 205 (ADR 0071): lista de clientes com arquivados à parte, cabeçalho do cliente com logo, aba Atividade, Conexões e Contexto sem subabas, Regras numa tela só e novo plano em passos com verba por mês ou período. Sem migração e sem mudança de infra. Depois do deploy, conferir à mão: a página de um cliente abre com as abas novas para owner, admin e operator; o leitor continua sem Estratégia; o formulário de novo plano em passos cria o plano com foco, landing page e UTM. Reversão: voltar a imagem.
+PRs 205 e 208, no mesmo release do PR 206. Lista de clientes sem preenchimento colorido e com arquivados à parte; cabeçalho do cliente com logo; abas sem subabas (Conexões, Contexto com mapa ao vivo e Mapa de contexto recolhido, Regras com propostas ao lado); aba nova Atividade (pedidos ao cliente, histórico do contexto e linha do tempo de Regras); novo plano em assistente de cinco passos com verba por mês ou pelo período (convertida no servidor, sem gravar o modo).
+
+- Sem migração, sem mudança em `infra/terraform`, de BigQuery, de segredo ou de variável de ambiente. `db/corte-gate.txt` igual: o deploy não tem migração pendente a aplicar.
+- Rota nova `GET /api/contexto/[clienteId]/logo`, que serve a logo em linha (exceção ao ADR 0027, limites no ADR 0071). Ela fica fora do `matcher` do `proxy.ts` e do `no-store` do `next.config.mjs`, como as rotas de upload; as rotas `publico/*` e `[clienteId]/arquivos` continuam com os cabeçalhos do formulário público. Usa o `CONTEXT_BUCKET` que já existe.
+- Validado antes do release: CI verde nos PRs 205 e 208 (`qualidade`, `integracao`, `smoke`, 6 fatias); suíte de integração inteira num Postgres descartável (885 de 886, 0 falha, 1 ignorado pelo próprio teste); navegador em ambiente local: lista e arquivados, cabeçalho, Conexões com o pedido ao cliente, Contexto (lápis, Concluir, Destino com gravação do WhatsApp), Regras (registro de limite), Atividade e o assistente até a revisão com a verba mensal convertida (R$ 10.000,00 por mês em 90 dias = R$ 30.000,00), e largura de celular sem rolagem lateral.
+
+Depois do deploy, conferir:
+
+1. Smoke do `deploy.yml` verde e `/api/health` 200.
+2. Num cliente de teste: a lista em `/clientes` sem pill colorida e o atalho de arquivados; as cinco abas sem subnavegação; Atividade com as três seções. As abas abrem para owner, admin e operator; o leitor continua sem Estratégia.
+3. Logo: enviar uma imagem no campo Logo (Contexto › Marca) e conferir que ela aparece no cabeçalho; `curl -I` autenticado em `/api/contexto/<id>/logo` traz `Content-Type` de imagem, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`, `Cache-Control: private, no-cache` e `ETag`; repetir com `If-None-Match` e receber 304. Sem sessão, 401; cliente de outra organização, 404.
+4. Novo plano: percorrer os passos com verba "Por mês" e conferir o total do horizonte na revisão; criar um plano de teste e conferir foco, landing page e UTM gravados.
+
+Reversão: voltar a imagem basta; não há esquema novo. A logo some do cabeçalho (o arquivo continua no Contexto).
+
+Não verificado antes deste release: a logo servida pelo bucket real (no ambiente local o armazenamento é nulo e o cabeçalho mostra o monograma).

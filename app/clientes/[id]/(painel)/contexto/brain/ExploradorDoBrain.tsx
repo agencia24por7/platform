@@ -23,6 +23,7 @@ type Props = {
   readonly entradas: readonly EntradaDoBrain[];
   readonly mapa: Mapa;
   readonly cabecalho: ReactNode;
+  readonly depoisDoMapa: ReactNode;
 };
 
 const USO: Record<EntradaDoBrain['sensibilidade']['usoPorAgente'], string> = {
@@ -36,7 +37,7 @@ function dataCurta(iso: string | null): string {
   return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-export function ExploradorDoBrain({ clienteNome, entradas, mapa, cabecalho }: Props) {
+export function ExploradorDoBrain({ clienteNome, entradas, mapa, cabecalho, depoisDoMapa }: Props) {
   const gaveta = useRef<HTMLDialogElement>(null);
   const [aberta, setAberta] = useState<EntradaDoBrain | null>(null);
   const [foco, setFoco] = useState<NoDoMapa | null>(null);
@@ -220,6 +221,8 @@ export function ExploradorDoBrain({ clienteNome, entradas, mapa, cabecalho }: Pr
           </div>
         </div>
       </section>
+
+      {depoisDoMapa}
 
       <details className="card brain-recolhivel">
         <summary className="card__head">

@@ -1,5 +1,5 @@
 import { ROTULO_DA_PLATAFORMA, type Platform } from '../../../connections/domain/connection.ts';
-import type { Campo, CampoSimples } from '../contexto/catalogo.ts';
+import { ROTULO_EPISTEMICO, ROTULO_FONTE, type Campo, type CampoSimples, type Epistemico, type Fonte } from '../contexto/catalogo.ts';
 import { textoDoValor } from '../contexto/leitura.ts';
 import type { TomDoIndicador } from './indicadores.ts';
 import { tempoRelativo } from './resumo.ts';
@@ -202,13 +202,40 @@ function valorLegivel(campo: CampoSimples | null, valor: unknown): string {
   return cortar(legivel ?? (typeof valor === 'string' ? valor : JSON.stringify(valor)));
 }
 
+type Metadado = { readonly rotulo: string; readonly texto: (valor: unknown) => string };
+
+const ROTULO_DA_REVISAO: Readonly<Record<string, string>> = { confirmado: 'Confirmado', sugerido: 'Sugerido' };
+
+const METADADOS: Readonly<Record<string, Metadado>> = {
+  epistemic: { rotulo: 'Natureza', texto: (valor) => ROTULO_EPISTEMICO[valor as Epistemico] ?? String(valor) },
+  review: { rotulo: 'Revisão', texto: (valor) => ROTULO_DA_REVISAO[String(valor)] ?? String(valor) },
+  source: { rotulo: 'Fonte', texto: (valor) => ROTULO_FONTE[valor as Fonte] ?? String(valor) },
+  shareable: { rotulo: 'Visível ao cliente', texto: (valor) => (valor === true ? 'Sim' : valor === false ? 'Não' : String(valor)) },
+};
+
+function ausente(valor: unknown): boolean {
+  return valor === null || valor === undefined || valor === '';
+}
+
 function campoDaDiferenca(campo: Campo | undefined, chave: string): { readonly rotulo: string; readonly campo: CampoSimples | null } {
   if (!campo) return { rotulo: chave, campo: null };
   if (campo.tipo === 'lista') {
     const sub = campo.item.find((item) => item.key === chave);
     return sub ? { rotulo: sub.rotulo, campo: sub } : { rotulo: chave, campo: null };
   }
-  return chave === 'valor' ? { rotulo: 'valor', campo } : { rotulo: chave, campo: null };
+  return chave === 'valor' ? { rotulo: 'Valor', campo } : { rotulo: chave, campo: null };
+}
+
+type DiferencaNaTela = RevisaoNaTela['diferencas'][number];
+
+function diferencaNaTela(definicao: Campo | undefined, d: RevisaoDaAtividade['diferencas'][number]): DiferencaNaTela | null {
+  const metadado = METADADOS[d.chave];
+  if (metadado) {
+    if (ausente(d.antes)) return null;
+    return { chave: metadado.rotulo, antes: metadado.texto(d.antes), depois: ausente(d.depois) ? '∅' : metadado.texto(d.depois) };
+  }
+  const alvo = campoDaDiferenca(definicao, d.chave);
+  return { chave: alvo.rotulo, antes: valorLegivel(alvo.campo, d.antes), depois: valorLegivel(alvo.campo, d.depois) };
 }
 
 export function visaoDasRevisoes(revisoes: readonly RevisaoDaAtividade[], secoes: readonly SecaoParaRotulo[], agora: Date): readonly RevisaoNaTela[] {
@@ -216,6 +243,10 @@ export function visaoDasRevisoes(revisoes: readonly RevisaoDaAtividade[], secoes
   return revisoes.map((revisao) => {
     const secao = porSecao.get(revisao.secao);
     const definicao = secao?.campos.find((c) => c.key === revisao.chave);
+    const visiveis = [...revisao.diferencas]
+      .sort((a, b) => Number(METADADOS[a.chave] !== undefined) - Number(METADADOS[b.chave] !== undefined))
+      .map((d) => diferencaNaTela(definicao, d))
+      .filter((d): d is DiferencaNaTela => d !== null);
     return {
       id: revisao.id,
       secao: secao ? `${secao.letra} · ${secao.titulo}` : revisao.secao,
@@ -224,11 +255,8 @@ export function visaoDasRevisoes(revisoes: readonly RevisaoDaAtividade[], secoes
       operacao: ROTULO_DA_OPERACAO[revisao.operacao],
       quando: tempoRelativo(revisao.em, agora),
       emIso: revisao.em.toISOString(),
-      diferencas: revisao.diferencas.slice(0, LIMITE_DE_DIFERENCAS).map((d) => {
-        const alvo = campoDaDiferenca(definicao, d.chave);
-        return { chave: alvo.rotulo, antes: valorLegivel(alvo.campo, d.antes), depois: valorLegivel(alvo.campo, d.depois) };
-      }),
-      diferencasOcultas: Math.max(0, revisao.diferencas.length - LIMITE_DE_DIFERENCAS),
+      diferencas: visiveis.slice(0, LIMITE_DE_DIFERENCAS),
+      diferencasOcultas: Math.max(0, visiveis.length - LIMITE_DE_DIFERENCAS),
     };
   });
 }
