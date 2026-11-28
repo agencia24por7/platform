@@ -2,7 +2,8 @@ import type { z } from 'zod';
 import { failure, type Failure } from '@/shared/result/failure';
 import { err, type Result } from '@/shared/result/result';
 import { executarFerramenta, type EscopoDoAgente, type RegistroDeFerramentas } from '../domain/ferramenta.ts';
-import { dadosDelimitados, instrucaoDoSistema, type Fornecedor, type Orcamento, type Raciocinio, type Tarefa } from '../domain/tarefa.ts';
+import { createHash } from 'node:crypto';
+import { entradaDoUsuario, instrucaoDoSistema, prefixoEstavelDaEntrada, type Fornecedor, type Orcamento, type Raciocinio, type Tarefa } from '../domain/tarefa.ts';
 
 export type ModeloResolvido = {
   readonly fornecedor: Fornecedor;
@@ -20,6 +21,7 @@ export type ResolvedorDeModelo = (organizationId: string, tarefa: string) => Pro
 
 export type Uso = {
   readonly tokensDeEntrada: number;
+  readonly tokensDeEntradaEmCache: number;
   readonly tokensDeSaida: number;
   readonly passos: number;
 };
@@ -39,6 +41,8 @@ export type PedidoAoModelo<S> = {
   readonly orcamento: Orcamento;
   readonly ferramentas: readonly FerramentaDoPedido[];
   readonly raciocinio?: Raciocinio;
+  readonly prefixoEstavel?: number;
+  readonly chaveDeCache?: string;
 };
 
 export type TelemetriaDaChamada = {
@@ -81,6 +85,8 @@ export type PedidoDeExecucao<S> = {
   readonly dados: unknown;
   readonly requestId: string;
   readonly agente?: EscopoDoAgente;
+  readonly instrucaoFinal?: string;
+  readonly prefixoEstavelDosDados?: number;
 };
 
 export type DependenciasDaExecucao = {
@@ -97,7 +103,7 @@ export type Executor = {
   executar<S>(pedido: PedidoDeExecucao<S>): Promise<Result<RespostaDoModelo<S>, Failure>>;
 };
 
-const SEM_USO: Uso = { tokensDeEntrada: 0, tokensDeSaida: 0, passos: 0 };
+const SEM_USO: Uso = { tokensDeEntrada: 0, tokensDeEntradaEmCache: 0, tokensDeSaida: 0, passos: 0 };
 const FORNECEDOR_DESLIGADO = failure('forbidden', 'O fornecedor de modelo desta tarefa não está habilitado na plataforma.');
 const CHAVE_NAO_ABRIU = failure('unavailable', 'A chave do fornecedor não pôde ser aberta agora.');
 const ESCOPO_DE_OUTRA_ORGANIZACAO = failure('forbidden', 'O escopo do agente não pertence a esta organização.');
@@ -110,6 +116,10 @@ export const SEM_MODELO_CONFIGURADO = failure(
 export const FALHA_GENERICA_DE_FERRAMENTA = { erro: 'A ferramenta não pôde ser executada agora.' } as const;
 
 type Aviso = NonNullable<DependenciasDaExecucao['avisar']>;
+
+export function chaveDeCacheDoPedido(organizationId: string, sistema: string): string {
+  return createHash('sha256').update(`${organizationId}|${sistema}`).digest('hex').slice(0, 32);
+}
 
 export function tokensReservados(orcamento: Orcamento): number {
   return orcamento.tokensDeSaida * orcamento.passos;
@@ -192,10 +202,14 @@ export function createExecutor(deps: DependenciasDaExecucao): Executor {
         return chave;
       }
 
+      const sistema = instrucaoDoSistema(pedido.tarefa);
+      const dados = entradaDoUsuario(pedido.dados, pedido.instrucaoFinal);
+      const prefixoEstavel = prefixoEstavelDaEntrada(dados, pedido.prefixoEstavelDosDados);
       const resposta = await deps.porta.gerar<S>({
         modelo: { fornecedor, modelo, chave: chave.value },
-        sistema: instrucaoDoSistema(pedido.tarefa),
-        dados: dadosDelimitados(pedido.dados),
+        sistema,
+        dados,
+        ...(prefixoEstavel === 0 ? {} : { prefixoEstavel, chaveDeCache: chaveDeCacheDoPedido(pedido.organizationId, sistema) }),
         saida: pedido.tarefa.saida,
         orcamento: pedido.tarefa.orcamento,
         raciocinio: pedido.tarefa.raciocinio,

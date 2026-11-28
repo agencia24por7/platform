@@ -126,6 +126,23 @@ export function pacoteParaEntrada(pacote: PacoteDeLeitura, maximoDeBytes: number
   };
 }
 
+export function pacotesComPrefixoComum(pacote: PacoteDeLeitura, maximoDeBytes: number, pedidos: readonly OpcoesDoPacoteParaEntrada[]): PacoteDeLeitura[] {
+  const recortes = pedidos.map((opcoes) => pacoteParaEntrada(pacote, maximoDeBytes, opcoes));
+  const urnsDeCadaRecorte = recortes.map((recorte) => new Set(recorte.entradas.map((entrada) => entrada.urn)));
+  const emTodos = pacote.entradas.filter((entrada) => urnsDeCadaRecorte.every((urns) => urns.has(entrada.urn)));
+  const ordemComum = [...emTodos.filter((entrada) => entrada.foco === true), ...emTodos.filter((entrada) => entrada.foco !== true)].map((entrada) => entrada.urn);
+  const posicaoComum = new Map<string, number>();
+  for (const urn of ordemComum) if (!posicaoComum.has(urn)) posicaoComum.set(urn, posicaoComum.size);
+  return recortes.map((recorte) => {
+    const comuns = recorte.entradas.filter((entrada) => posicaoComum.has(entrada.urn));
+    const proprias = recorte.entradas.filter((entrada) => !posicaoComum.has(entrada.urn));
+    return {
+      ...recorte,
+      entradas: [...comuns.sort((a, b) => posicaoComum.get(a.urn)! - posicaoComum.get(b.urn)!), ...proprias],
+    };
+  });
+}
+
 function catalogoDentroDoLimite(catalogo: readonly ItemDoCatalogo[], urnsMantidas: ReadonlySet<string>, codigoDaUrn: ReadonlyMap<string, string>): ItemDoCatalogo[] {
   const itens: ItemDoCatalogo[] = [];
   let bytes = 0;

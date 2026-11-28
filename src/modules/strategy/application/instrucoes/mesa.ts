@@ -1,11 +1,22 @@
-import { instrucaoDaPersona } from '@/modules/strategy/application/instrucoes/comite';
+import { INSTRUCAO_BASE_DO_COMITE, instrucaoDaPersona, instrucaoEspecificaDaPersona } from '@/modules/strategy/application/instrucoes/comite';
 import { REGRAS_COMUNS } from '@/modules/strategy/application/instrucoes/regrasComuns';
 import type { Comite, MembroDoComite } from '@/modules/strategy/domain/index';
 
+function assentoNoComite(comite: Comite, membro: MembroDoComite): string {
+  return `Comitê: ${comite.nome} (chave ${comite.chave}). Propósito: ${comite.proposito}
+Parecer independente: não suponha o dos outros membros; "persona" é a sua chave (${membro.chave}).`;
+}
+
 export function instrucaoDoMembro(comite: Comite, membro: MembroDoComite): string {
   return `${instrucaoDaPersona(membro)}
-Comitê: ${comite.nome} (chave ${comite.chave}). Propósito: ${comite.proposito}
-Parecer independente: não suponha o dos outros membros; "persona" é a sua chave (${membro.chave}).`;
+${assentoNoComite(comite, membro)}`;
+}
+
+export const INSTRUCAO_COMUM_DOS_MEMBROS = INSTRUCAO_BASE_DO_COMITE;
+
+export function instrucaoFinalDoMembro(comite: Comite, membro: MembroDoComite): string {
+  return `${instrucaoEspecificaDaPersona(membro)}
+${assentoNoComite(comite, membro)}`;
 }
 
 const INSTRUCAO_BASE_DA_MESA = `Você conduz a mesa de um comitê que revisa o plano de marketing de um cliente.

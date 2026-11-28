@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { SEM_MODELO_CONFIGURADO, type Executor } from '@/modules/ia/application/execucao';
 import { MENSAGEM_DO_BLOQUEIO } from '@/modules/ia/domain/modelos';
-import { TETO_DO_ORCAMENTO, TETO_ELASTICO_DE_SAIDA, type Orcamento, type Tarefa } from '@/modules/ia/domain/tarefa';
+import { TETO_DO_ORCAMENTO, TETO_ELASTICO_DE_SAIDA, prefixoEstavelDosDados, type Orcamento, type Tarefa } from '@/modules/ia/domain/tarefa';
 import { COMITE_DA_ESTRATEGIA, DIRETOR_DE_PRODUCAO, GATE_DA_ESTRATEGIA, JUIZ_DA_ESTRATEGIA, PLANO_DE_ESTRATEGIA, TAREFAS_DOS_COMITES } from '@/modules/ia/domain/tarefasInternas';
 import type { Failure } from '@/shared/result/failure';
 import { err, ok, type Result } from '@/shared/result/result';
@@ -74,6 +74,7 @@ export function telemetriaDosDetalhes(detalhes: Readonly<Record<string, string>>
 
 export function criarIaDaCamada(executor: Executor): ExecutorDeIA {
   return {
+    prefixoEstavel: prefixoEstavelDosDados,
     async executar<T>(pedido: PedidoDeIA<T>): Promise<Result<RespostaDeIA<T>, ErroDeIA>> {
       const registrada = TAREFAS_REGISTRADAS.get(pedido.tarefa);
       if (registrada === undefined) return err(TAREFA_NAO_REGISTRADA);
@@ -96,6 +97,8 @@ export function criarIaDaCamada(executor: Executor): ExecutorDeIA {
         tarefa: { ...registrada, saida: pedido.esquema, instrucao: pedido.instrucoes, orcamento: orcamentoDaCamada(pedido.orcamento, registrada.orcamento) } as Tarefa<T>,
         dados: pedido.dados,
         requestId,
+        ...(pedido.instrucaoFinal === undefined ? {} : { instrucaoFinal: pedido.instrucaoFinal }),
+        ...(pedido.prefixoEstavelDosDados === undefined ? {} : { prefixoEstavelDosDados: pedido.prefixoEstavelDosDados }),
       });
       if (!resposta.ok) {
         const codigo = codigoDeIaDaFalha(resposta.error);
@@ -104,7 +107,7 @@ export function criarIaDaCamada(executor: Executor): ExecutorDeIA {
       }
       return ok({
         saida: resposta.value.saida,
-        uso: { tokensDeEntrada: resposta.value.uso.tokensDeEntrada, tokensDeSaida: resposta.value.uso.tokensDeSaida },
+        uso: { tokensDeEntrada: resposta.value.uso.tokensDeEntrada, tokensDeEntradaEmCache: resposta.value.uso.tokensDeEntradaEmCache, tokensDeSaida: resposta.value.uso.tokensDeSaida },
         ...(resposta.value.telemetria === undefined ? {} : { telemetria: resposta.value.telemetria }),
       });
     },

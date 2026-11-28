@@ -344,7 +344,9 @@ export type LeitorDosComites = Pick<RepositorioDosComites, 'listar'>;
 export type PedidoDeIA<T> = {
   readonly tarefa: TarefaDeIA;
   readonly instrucoes: string;
+  readonly instrucaoFinal?: string;
   readonly dados: unknown;
+  readonly prefixoEstavelDosDados?: number;
   readonly esquema: z.ZodType<T>;
   readonly orcamento: { readonly tokensMaximos: number; readonly tempoMaximoMs: number; readonly elastico?: boolean };
   readonly organizacaoId: string;
@@ -354,12 +356,13 @@ export type PedidoDeIA<T> = {
   readonly sinal?: AbortSignal;
 };
 
-export type UsoDeIA = { readonly tokensDeEntrada: number; readonly tokensDeSaida: number; readonly modelo?: string };
+export type UsoDeIA = { readonly tokensDeEntrada: number; readonly tokensDeEntradaEmCache?: number; readonly tokensDeSaida: number; readonly modelo?: string };
 
 export type RespostaDeIA<T> = { readonly saida: T; readonly uso: UsoDeIA; readonly telemetria?: TelemetriaDeIA };
 
 export type ExecutorDeIA = {
   executar<T>(pedido: PedidoDeIA<T>): Promise<Result<RespostaDeIA<T>, ErroDeIA>>;
+  prefixoEstavel?(dadosDaCoorte: readonly unknown[]): number;
 };
 
 export type ErroDoBrain = { readonly codigo: 'brain_indisponivel' | 'cliente_inexistente'; readonly mensagem: string };
