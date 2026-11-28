@@ -14,6 +14,7 @@ import {
   rotuloDoEscopo,
   valorDoCampo,
   valorParaCampo,
+  retornoDaAcaoDeRegras,
 } from './regras.ts';
 import { formatarValor } from '../regras/index.ts';
 import { decisao } from '../regras/fixturesDeTeste.ts';
@@ -131,7 +132,7 @@ describe('agrupamento, filtros e papéis', () => {
     assert.equal(lerFiltrosDaLinha({ cursor: '0' }).cursor, null);
   });
   it('monta a busca da paginação preservando filtros', () => {
-    assert.deepEqual(buscaDaLinha({ categoria: 'publico', origem: null, status: null }, 12), { secao: 'linha', categoria: 'publico', cursor: '12' });
+    assert.deepEqual(buscaDaLinha({ categoria: 'publico', origem: null, status: null }, 12), { categoria: 'publico', cursor: '12' });
   });
   it('limite é só de admin; regra e decisão, de operador', () => {
     assert.equal(podeRegistrarOuMexer('operator', 'limite'), false);
@@ -161,5 +162,13 @@ describe('estadoDoBlocoDeRegras', () => {
   });
   it('completo quando nada falta', () => {
     assert.equal(estadoDoBlocoDeRegras(base).tom, 'ok');
+  });
+});
+
+describe('retorno das ações de Regras', () => {
+  const ID = '95ec64b4-c5b9-43ff-909d-d258d91e8b7c';
+  it('volta para Atividade só com o valor fechado; qualquer outro valor volta para Regras', () => {
+    assert.equal(retornoDaAcaoDeRegras(ID, 'atividade'), `/clientes/${ID}/atividade`);
+    for (const outro of [undefined, '', 'https://evil.example', '/clientes/outro/atividade']) assert.equal(retornoDaAcaoDeRegras(ID, outro), `/clientes/${ID}/regras?secao=hoje`);
   });
 });

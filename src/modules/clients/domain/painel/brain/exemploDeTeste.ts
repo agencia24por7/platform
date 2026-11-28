@@ -406,7 +406,7 @@ function acoes(entrada: EntradaDoExemplo, plataformas: ReadonlySet<string>, entr
       titulo: `Destravar a coleta de ${parado.titulo}`,
       porque: 'Dado atrasado deixa toda resposta sobre investimento desatualizada.',
       impacto: 3,
-      href: rotaDoCliente(id, 'conexoes', { secao: 'fontes' }),
+      href: rotaDoCliente(id, 'conexoes'),
       rotulo: 'Ver dados',
     });
   }

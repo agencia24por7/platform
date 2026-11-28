@@ -246,7 +246,7 @@ type Contexto = {
 };
 
 function marcasDe(evidencias: readonly Evidencia[], contexto: Contexto): Marca[] {
-  const href = rotaDoCliente(contexto.clienteId, 'contexto', { secao: 'brain' });
+  const href = rotaDoCliente(contexto.clienteId, 'contexto');
   return evidencias.map((evidencia) => {
     const conhecida = contexto.entradas.get(evidencia.urn);
     const tipoNaUrn = evidencia.urn.split(':')[3] ?? 'entrada';

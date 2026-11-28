@@ -41,7 +41,15 @@ export type PedidoAoModelo<S> = {
   readonly raciocinio?: Raciocinio;
 };
 
-export type RespostaDoModelo<S> = { readonly saida: S; readonly uso: Uso };
+export type TelemetriaDaChamada = {
+  readonly caminho: 'estruturado' | 'estruturado_relaxado' | 'json_livre';
+  readonly finishReason: string;
+  readonly tokensDeSaida: number;
+  readonly tetoDeSaida: number;
+  readonly recusaDoEsquema?: 'schema' | 'constraint' | 'too many states';
+};
+
+export type RespostaDoModelo<S> = { readonly saida: S; readonly uso: Uso; readonly telemetria?: TelemetriaDaChamada };
 
 export type PortaDeModelo = {
   gerar<S>(pedido: PedidoAoModelo<S>): Promise<Result<RespostaDoModelo<S>, Failure>>;

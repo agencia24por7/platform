@@ -109,6 +109,25 @@ describe('erros do servidor junto do campo', () => {
   });
 });
 
+describe('modo da verba no formulário', () => {
+  it('começa em total do período e oferece período e mensal', () => {
+    const vm = formularioDeNovoPlano(modelo(), {}, CLIENTE);
+    assert.deepEqual(vm.modosDaVerba.map((m) => [m.valor, m.rotulo, m.marcada]), [['periodo', 'Total do período', true], ['mensal', 'Por mês', false]]);
+    assert.equal(vm.valores.modoDaVerba, 'periodo');
+  });
+
+  it('mantém o modo escolhido quando o formulário volta e ignora modo inválido', () => {
+    const mensal = formularioDeNovoPlano(modelo(), { modoDaVerba: 'mensal', verba: '1.000,00' }, CLIENTE);
+    assert.deepEqual(mensal.modosDaVerba.map((m) => m.marcada), [false, true]);
+    assert.equal(mensal.valores.modoDaVerba, 'mensal');
+    assert.equal(formularioDeNovoPlano(modelo(), { modoDaVerba: 'x' }, CLIENTE).valores.modoDaVerba, 'periodo');
+  });
+
+  it('erro de verba continua mapeado para o campo verba', () => {
+    assert.deepEqual(errosPorCampo({ verba: 'A verba precisa ser maior que zero.' }), { verba: 'A verba precisa ser maior que zero.' });
+  });
+});
+
 describe('foco do plano no formulário', () => {
   it('lista os produtos do cliente e mantém a escolha depois de Ver links', () => {
     const vm = formularioDeNovoPlano(modelo(), { produtos: 'orla:p2' }, CLIENTE);

@@ -1,4 +1,4 @@
-export type NomeDoIcone = 'ok' | 'atencao' | 'reautorizar' | 'vazio' | 'pausada' | 'erro' | 'parcial' | 'nao' | 'bloqueia' | 'orienta' | 'pessoa' | 'agente' | 'cliente';
+export type NomeDoIcone = 'ok' | 'atencao' | 'reautorizar' | 'vazio' | 'pausada' | 'erro' | 'parcial' | 'nao' | 'bloqueia' | 'orienta' | 'pessoa' | 'agente' | 'cliente' | 'arquivo' | 'editar';
 
 const TRACOS: Record<NomeDoIcone, ReactNodeLike> = {
   ok: (
@@ -72,6 +72,18 @@ const TRACOS: Record<NomeDoIcone, ReactNodeLike> = {
     <>
       <path d="M3.4 9L10 3.6 16.6 9" />
       <path d="M5 8.4v8h10v-8" />
+    </>
+  ),
+  arquivo: (
+    <>
+      <rect x="3" y="3.8" width="14" height="3.6" rx="1" />
+      <path d="M4.4 7.4v7.8a1 1 0 0 0 1 1h9.2a1 1 0 0 0 1-1V7.4M8.2 10.6h3.6" />
+    </>
+  ),
+  editar: (
+    <>
+      <path d="M12.6 4.2l3.2 3.2-8.6 8.6H4v-3.2l8.6-8.6z" />
+      <path d="M11 5.8l3.2 3.2" />
     </>
   ),
 };

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import '../../../shared/testing/registrarAlias.mjs';
-import { lerEdicaoPorCampos, lerFocoDoFormulario, lerIntencaoDoFormulario, lerPedidoDeMudanca, trocarSecao } from './formulariosDaEstrategia.ts';
+import { camposBrutosDasEntradas, lerEdicaoPorCampos, listaSeparadaPorVirgula, lerFocoDoFormulario, lerIntencaoDoFormulario, lerPedidoDeMudanca, trocarSecao } from './formulariosDaEstrategia.ts';
 import { centavosDeReais, dataBr, periodoBr, reais } from './formatosDoPlano.ts';
 
 const { PedirPlanoSchema } = await import('../application/estrategiaEntradas.ts');
@@ -44,6 +44,65 @@ describe('intenção do formulário', () => {
     assert.ok(!zero.ok && zero.error['verba']);
     const data = lerIntencaoDoFormulario({ ...VALIDO, inicio: '2026-02-31' });
     assert.ok(!data.ok && data.error['inicio']);
+  });
+});
+
+describe('verba por mês ou pelo período na intenção', () => {
+  it('sem modo, ou com modo período, a verba digitada é o total do horizonte', () => {
+    const padrao = lerIntencaoDoFormulario(VALIDO);
+    const periodo = lerIntencaoDoFormulario({ ...VALIDO, modoDaVerba: 'periodo' });
+    assert.ok(padrao.ok && periodo.ok);
+    assert.equal(padrao.value.intencao.verba.centavos, '1500000');
+    assert.equal(periodo.value.intencao.verba.centavos, '1500000');
+  });
+
+  it('no modo mensal converte para o total dos dias do horizonte (90 dias = 3 meses)', () => {
+    const lida = lerIntencaoDoFormulario({ ...VALIDO, modoDaVerba: 'mensal', verba: '1.000,00' });
+    assert.ok(lida.ok);
+    assert.equal(lida.value.intencao.verba.centavos, '300000');
+    assert.ok(PedirPlanoSchema.safeParse({ clienteId: CLIENTE, tipoDePlano: lida.value.tipoDePlano, plataformas: [...lida.value.plataformas], landingPageId: lida.value.landingPageId, foco: { tipo: 'marca' }, intencao: lida.value.intencao }).success);
+  });
+
+  it('modo mensal com datas inválidas erra em inicio e fim, não em verba', () => {
+    const lida = lerIntencaoDoFormulario({ ...VALIDO, modoDaVerba: 'mensal', inicio: '', fim: '2027-02-31' });
+    assert.ok(!lida.ok);
+    assert.ok(lida.error['inicio'] && lida.error['fim']);
+    assert.equal(lida.error['verba'], undefined);
+  });
+
+  it('modo mensal com fim antes do início erra só no fim', () => {
+    const lida = lerIntencaoDoFormulario({ ...VALIDO, modoDaVerba: 'mensal', inicio: '2027-02-28', fim: '2026-12-01' });
+    assert.ok(!lida.ok);
+    assert.ok(lida.error['fim']);
+    assert.equal(lida.error['verba'], undefined);
+  });
+
+  it('modo desconhecido, verba ilegível e total zero erram em verba', () => {
+    const desconhecido = lerIntencaoDoFormulario({ ...VALIDO, modoDaVerba: 'anual' });
+    assert.ok(!desconhecido.ok && desconhecido.error['verba']);
+    const ilegivel = lerIntencaoDoFormulario({ ...VALIDO, modoDaVerba: 'mensal', verba: 'abc' });
+    assert.ok(!ilegivel.ok && ilegivel.error['verba']);
+    const zero = lerIntencaoDoFormulario({ ...VALIDO, modoDaVerba: 'mensal', verba: '0,00' });
+    assert.ok(!zero.ok && zero.error['verba']);
+  });
+});
+
+describe('campos brutos das entradas do formulário', () => {
+  it('junta plataformas e produtos repetidos por vírgula e ignora arquivos', () => {
+    const campos = camposBrutosDasEntradas([
+      ['plataformas', 'meta'],
+      ['plataformas', 'google'],
+      ['produtos', 'orla:p1'],
+      ['produtos', 'orla:p2'],
+      ['objetivo', 'A'],
+      ['anexo', new Uint8Array(1)],
+    ]);
+    assert.deepEqual(campos, { plataformas: 'meta,google', produtos: 'orla:p1,orla:p2', objetivo: 'A' });
+  });
+
+  it('lista separada por vírgula descarta vazios e espaços', () => {
+    assert.deepEqual(listaSeparadaPorVirgula(' a, ,b ,'), ['a', 'b']);
+    assert.deepEqual(listaSeparadaPorVirgula(undefined), []);
   });
 });
 

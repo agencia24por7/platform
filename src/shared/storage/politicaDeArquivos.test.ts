@@ -6,6 +6,8 @@ import {
   avaliarArquivo,
   cabeNaCota,
   cabecalhosDeDownload,
+  cabecalhosDeImagemEmLinha,
+  cabecalhosDeRevalidacao,
   pareceExecutavel,
 } from './politicaDeArquivos.ts';
 
@@ -147,3 +149,25 @@ describe('cabecalhosDeDownload', () => {
     assert.doesNotMatch(cabecalhos['Content-Disposition'] ?? '', /Set-Cookie: /);
   });
 });
+
+describe('cabecalhosDeImagemEmLinha', () => {
+  const SHA = 'b'.repeat(64);
+  it('só serve imagem raster, em linha, sem sniffing, em sandbox, com cache privado e ETag do conteúdo', () => {
+    const cabecalhos = cabecalhosDeImagemEmLinha('image/png', SHA);
+    assert.equal(cabecalhos?.['Content-Type'], 'image/png');
+    assert.equal(cabecalhos?.['Content-Disposition'], 'inline; filename="imagem"');
+    assert.equal(cabecalhos?.['X-Content-Type-Options'], 'nosniff');
+    assert.equal(cabecalhos?.['Content-Security-Policy'], "default-src 'none'; sandbox");
+    assert.equal(cabecalhos?.['Cross-Origin-Resource-Policy'], 'same-origin');
+    assert.match(cabecalhos?.['Cache-Control'] ?? '', /^private, /);
+    assert.equal(cabecalhos?.ETag, `"${SHA}"`);
+  });
+
+  it('recusa svg, html, pdf, tipo desconhecido e hash fora do formato', () => {
+    for (const tipo of ['image/svg+xml', 'text/html', 'application/pdf', 'application/octet-stream']) assert.equal(cabecalhosDeImagemEmLinha(tipo, SHA), null, tipo);
+    assert.equal(cabecalhosDeImagemEmLinha('image/png', 'x"\r\nSet-Cookie: a'), null);
+    assert.equal(cabecalhosDeRevalidacao('x"\r\nSet-Cookie: a'), null);
+    assert.equal(cabecalhosDeRevalidacao(SHA)?.ETag, `"${SHA}"`);
+  });
+});
+

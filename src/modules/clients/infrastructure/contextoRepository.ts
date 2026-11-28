@@ -193,6 +193,7 @@ export type ContextoRepository = {
     filtro: { readonly limite: number; readonly chave: string | null },
   ): Promise<readonly RevisaoRegistrada[]>;
   usoDeArquivos(organizationId: string, clientId: string): Promise<number>;
+  arquivosDoCampo(organizationId: string, clientId: string, secao: SecaoKey, fieldKey: string, limite: number): Promise<readonly ArquivoDeContexto[]>;
   reservarArquivo(
     organizationId: string,
     input: { readonly clientId: string; readonly id: string; readonly caminho: string; readonly tamanhoBytes: number; readonly cotaBytes: number },
@@ -667,6 +668,19 @@ export function createContextoRepository(): ContextoRepository {
           linkId: row.via_link_id,
           em: row.occurred_at,
         }));
+      });
+    },
+
+    async arquivosDoCampo(organizationId, clientId, secao, fieldKey, limite) {
+      return withTenant(organizationId, async (tx) => {
+        const rows = (await tx`
+          SELECT f.* FROM core.client_context_files f
+          JOIN core.clients c ON c.id = f.client_id
+          WHERE f.client_id = ${clientId} AND f.section = ${secao} AND f.field_key = ${fieldKey}
+            AND f.item_id IS NULL AND f.deleted_at IS NULL
+          ORDER BY f.created_at DESC, f.id
+          LIMIT ${limite}`) as unknown as ArquivoRow[];
+        return rows.map(paraArquivo);
       });
     },
 

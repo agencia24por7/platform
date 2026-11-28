@@ -190,7 +190,7 @@ describe('ações de Conexões respeitam o recorte, o papel e o cliente informad
 
   it('revogar link: cliente de outra organização, excluído e fora do recorte são recusados', async () => {
     signIn(pessoas.owner);
-    const tela = `/clientes/${ids.a}/conexoes?secao=pedir`;
+    const tela = `/clientes/${ids.a}/atividade`;
     const revogar = await acaoDoBotao(tela, 'Revogar', 'linkId');
     signIn(pessoas.recortado);
     for (const alvo of [ids.b, ids.alheio, ids.excluido]) {
@@ -211,7 +211,7 @@ describe('ações de Conexões respeitam o recorte, o papel e o cliente informad
        VALUES ('${convite}', '${ids.org}', 'meta')`,
     );
     signIn(pessoas.owner);
-    const tela = `/clientes/${ids.a}/conexoes?secao=pedir`;
+    const tela = `/clientes/${ids.a}/atividade`;
     const revogar = await acaoDoBotao(tela, 'Revogar', 'inviteId');
     const status = () => dono(`SELECT status FROM integrations.connection_invites WHERE id = '${convite}'`);
     signIn(pessoas.recortado);

@@ -50,26 +50,28 @@ describe('página do cliente: abas, papéis e formulário público', { concurren
 
   it('cada bloco e seção responde para quem administra', async () => {
     signIn(pessoas.owner);
-    for (const rota of ['/conexoes', '/conexoes?secao=fontes', '/conexoes?secao=pedir', '/contexto', '/contexto?secao=brain']) {
+    for (const rota of ['/conexoes', '/conexoes?secao=pedir', '/contexto', '/contexto?secao=brain', '/regras', '/atividade']) {
       const { status, texto } = await html(`/clientes/${cliente}${rota}`);
       assert.equal(status, 200, `rota ${rota}`);
       assert.ok(texto.includes(`Café ${sufixo}`));
     }
-    const { texto } = await html(`/clientes/${cliente}/conexoes?secao=pedir`);
+    const { texto } = await html(`/clientes/${cliente}/conexoes`);
     assert.ok(texto.includes('Pedir ao cliente'));
     assert.ok(texto.includes('Pronto para planejar'));
+    const atividade = await html(`/clientes/${cliente}/atividade`);
+    for (const secao of ['Pedidos ao cliente', 'Histórico do contexto', 'Linha do tempo de Regras']) assert.ok(atividade.texto.includes(secao), secao);
   });
 
   it('rotas antigas redirecionam para o destino da tabela do ADR 0036', async () => {
     signIn(pessoas.owner);
     const casos = [
       ['', '/conexoes'],
-      ['/dados', '/conexoes?secao=fontes'],
-      ['/acessos', '/conexoes?secao=pedir'],
-      ['/acessos?enviar=contexto', '/conexoes?enviar=contexto&secao=pedir'],
-      ['/brain', '/contexto?secao=brain'],
+      ['/dados', '/conexoes'],
+      ['/acessos', '/atividade'],
+      ['/acessos?enviar=contexto', '/conexoes?enviar=contexto'],
+      ['/brain', '/contexto'],
       ['/configuracoes', '/conexoes'],
-      ['/dados?feito=Ok', '/conexoes?feito=Ok&secao=fontes'],
+      ['/dados?feito=Ok', '/conexoes?feito=Ok'],
     ];
     for (const [antiga, nova] of casos) {
       const resposta = await browse(`/clientes/${cliente}${antiga}`);
@@ -84,22 +86,21 @@ describe('página do cliente: abas, papéis e formulário público', { concurren
     const excluido = dono(`INSERT INTO core.clients (organization_id, name, business_model, excluido_em, excluido_por) VALUES ('${org}', 'Excluído ${sufixo}', 'ecommerce', now(), '${pessoas.owner}') RETURNING id`);
     signIn(pessoas.owner);
     for (const id of [alheio, excluido]) {
-      for (const rota of ['', '/conexoes', '/conexoes?secao=pedir', '/contexto', '/contexto?secao=brain', '/regras', '/regras?secao=linha', '/dados', '/acessos', '/brain', '/configuracoes']) {
+      for (const rota of ['', '/conexoes', '/contexto', '/regras', '/atividade', '/estrategia', '/dados', '/acessos', '/brain', '/configuracoes']) {
         assert.equal((await browse(`/clientes/${id}${rota}`)).status, 404, `${id}${rota}`);
       }
     }
   });
 
-  it('existe um único ponto de entrada para conectar na página de conexões', async () => {
+  it('existe um único ponto de entrada para conectar, ao lado do pedido ao cliente', async () => {
     signIn(pessoas.owner);
-    for (const rota of ['/conexoes', '/conexoes?secao=fontes']) {
+    for (const rota of ['/conexoes']) {
       const resposta = await browse(`/clientes/${cliente}${rota}`);
       const corpo = (await resposta.text()).replaceAll('<!-- -->', '').replace(/<script[\s\S]*?<\/script>/g, '');
       assert.ok(corpo.includes('Pronto para planejar'), `a prontidão precisa carregar em ${rota}`);
       const entradas = [...corpo.matchAll(/<a [^>]*>((?:Conectar|Vincular)[^<]*)<\/a>/g)];
       assert.equal(entradas.length, 1, rota);
-      const noCabecalho = entradas[0].index < corpo.indexOf('id="t-fontes"');
-      assert.equal(noCabecalho, entradas[0][1] !== 'Conectar conta', 'ação de conexão no cabeçalho esconde o botão de Fontes; sem ela, o botão é o de Fontes');
+      assert.ok(entradas[0].index > corpo.indexOf('id="t-fontes"'), 'a ação de conexão fica em Fontes, não no cabeçalho');
     }
   });
 
@@ -128,33 +129,35 @@ describe('página do cliente: abas, papéis e formulário público', { concurren
 
   it('quem opera edita o contexto e envia o mapa, mas não cria convite de integração', async () => {
     signIn(pessoas.operator);
-    const { texto } = await html(`/clientes/${cliente}/conexoes?secao=pedir`);
+    const { texto } = await html(`/clientes/${cliente}/conexoes`);
     assert.ok(texto.includes('Pedir ao cliente'));
     assert.ok(!texto.includes('Conectar contas'), 'plataformas do convite são só de quem administra');
   });
 
   it('quem só vê não recebe ações de edição', async () => {
     signIn(pessoas.viewer);
-    const acessos = await html(`/clientes/${cliente}/conexoes?secao=pedir`);
-    assert.equal(acessos.status, 200);
-    assert.ok(!acessos.texto.includes('Gerar link'));
-    assert.ok(!acessos.texto.includes('>Pedir ao cliente<</button>'));
-    const dados = await html(`/clientes/${cliente}/conexoes?secao=fontes`);
+    const dados = await html(`/clientes/${cliente}/conexoes`);
+    assert.equal(dados.status, 200);
+    assert.ok(!dados.texto.includes('Gerar link'));
+    assert.ok(!dados.texto.includes('>Pedir ao cliente</button>'));
     assert.ok(!dados.texto.includes('>Conectar conta<'));
+    const atividade = await html(`/clientes/${cliente}/atividade`);
+    assert.equal(atividade.status, 200);
+    assert.ok(!atividade.texto.includes('>Revogar<'));
   });
 
   it('revogar link: quem só vê é recusado, quem opera revoga', async () => {
     const { id } = linkAtivo();
     signIn(pessoas.owner);
-    const acao = await acaoComCampo(`/clientes/${cliente}/conexoes?secao=pedir`, 'linkId');
+    const acao = await acaoComCampo(`/clientes/${cliente}/atividade`, 'linkId');
 
     signIn(pessoas.viewer);
-    const recusado = await submitAction(`/clientes/${cliente}/conexoes?secao=pedir`, acao, { clientId: cliente, linkId: id });
+    const recusado = await submitAction(`/clientes/${cliente}/atividade`, acao, { clientId: cliente, linkId: id });
     assert.match(decodeURIComponent(recusado.location ?? recusado.redirectedTo ?? ''), /erro=/);
     assert.equal(dono(`SELECT revoked_at IS NULL FROM core.client_context_links WHERE id = '${id}'`), 't');
 
     signIn(pessoas.operator);
-    const aceito = await submitAction(`/clientes/${cliente}/conexoes?secao=pedir`, acao, { clientId: cliente, linkId: id });
+    const aceito = await submitAction(`/clientes/${cliente}/atividade`, acao, { clientId: cliente, linkId: id });
     assert.match(decodeURIComponent(aceito.location ?? aceito.redirectedTo ?? ''), /feito=/);
     assert.equal(dono(`SELECT revoked_at IS NOT NULL FROM core.client_context_links WHERE id = '${id}'`), 't');
   });
@@ -169,6 +172,21 @@ describe('página do cliente: abas, papéis e formulário público', { concurren
       body: 'x',
     });
     assert.equal(semSessao.status, 401);
+  });
+
+  it('logo do cliente: sem sessão 401, cliente de outra organização 404, sem logo 404 sem cache', async () => {
+    signOut();
+    assert.equal((await fetch(`${BASE}/api/contexto/${cliente}/logo`)).status, 401);
+    const outraOrg = dono(`INSERT INTO core.organizations (name, slug, type) VALUES ('Logo ${sufixo}', 'logo-${sufixo}', 'agency') RETURNING id`);
+    const alheio = dono(`INSERT INTO core.clients (organization_id, name, business_model) VALUES ('${outraOrg}', 'Alheio logo ${sufixo}', 'leads') RETURNING id`);
+    signIn(pessoas.owner);
+    assert.equal((await browse(`/api/contexto/${alheio}/logo`)).status, 404);
+    assert.equal((await browse('/api/contexto/nao-e-uuid/logo')).status, 404);
+    const semLogo = await browse(`/api/contexto/${cliente}/logo`);
+    assert.equal(semLogo.status, 404);
+    assert.match(semLogo.headers.get('cache-control') ?? '', /no-store/);
+    const pagina = await browse(`/clientes/${cliente}/conexoes`);
+    assert.ok(!(await pagina.text()).includes('/logo?v='), 'sem logo, o cabeçalho mostra o monograma');
   });
 
   it('formulário público: link válido abre sem sessão, sem cache e sem indexação; link ruim mostra estado amigável', async () => {
@@ -217,7 +235,7 @@ describe('página do cliente: abas, papéis e formulário público', { concurren
     const internos = [`NOTA-${sufixo}`, `HIPOTESE-${sufixo}`, `SUGESTAO-${sufixo}`, `INTERNO-${sufixo}`, `ANTIGO-INTERNO-${sufixo}`];
 
     signIn(pessoas.viewer);
-    for (const rota of ['/contexto', '/contexto?secao=brain', '/conexoes']) {
+    for (const rota of ['/contexto', '/contexto?secao=marca', '/conexoes', '/atividade']) {
       const { status, texto } = await html(`/clientes/${cliente}${rota}`);
       assert.equal(status, 200, rota);
       for (const interno of internos) assert.ok(!texto.includes(interno), `${interno} vazou para quem só vê em ${rota}`);

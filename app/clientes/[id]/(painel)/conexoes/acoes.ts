@@ -14,8 +14,8 @@ type Contexto = Awaited<ReturnType<typeof requireContext>>;
 
 const NAO_ENCONTRADO = failure('not_found', 'Não encontrado neste cliente.');
 
-function concluir(clientId: string, resultado: Result<unknown, Failure>, sucesso: string, secao: 'fontes' | null = 'fontes'): never {
-  const destino = rotaDoCliente(clientId, 'conexoes', secao ? { secao } : {});
+function concluir(clientId: string, resultado: Result<unknown, Failure>, sucesso: string): never {
+  const destino = rotaDoCliente(clientId, 'conexoes');
   if (!resultado.ok) redirect(comAviso(destino, 'erro', toActionState(resultado.error).error ?? 'Não foi possível concluir.'));
   redirect(comAviso(destino, 'feito', sucesso));
 }
@@ -39,12 +39,12 @@ async function fonteDoCliente(ctx: Contexto, clientId: string, recursoId: string
 export async function mudarSituacao(formData: FormData): Promise<void> {
   const ctx = await requireContext();
   const clientId = text(formData, 'clientId');
-  if (!(await clienteVisivel(ctx, clientId))) concluir(clientId, err(NAO_ENCONTRADO), '', null);
+  if (!(await clienteVisivel(ctx, clientId))) concluir(clientId, err(NAO_ENCONTRADO), '');
   const resultado = await modules().clients.mudarSituacao(
     { organizationId: ctx.organization.id, papelDeQuemAge: ctx.role, clientId, situacao: text(formData, 'situacao') },
     await atorAtual(),
   );
-  concluir(clientId, resultado, 'Situação atualizada.', null);
+  concluir(clientId, resultado, 'Situação atualizada.');
 }
 
 export async function moverConta(formData: FormData): Promise<void> {

@@ -11,6 +11,7 @@ import {
   type CamposBrutos,
 } from '@/modules/clients/application/regrasFormulario';
 import { comAviso, rotaDoCliente } from '@/modules/clients/domain/painel/enderecos';
+import { retornoDaAcaoDeRegras } from '@/modules/clients/domain/painel/regras';
 import { atorAtual } from '@/shared/http/ator';
 import type { Failure } from '@/shared/result/failure';
 import type { Result } from '@/shared/result/result';
@@ -38,8 +39,8 @@ function concluir(clienteId: string, secao: string, mensagem: string): never {
   redirect(comAviso(rotaDoCliente(clienteId, 'regras', { secao }), 'feito', mensagem));
 }
 
-function falhar(clienteId: string, secao: string, mensagem: string): never {
-  redirect(comAviso(rotaDoCliente(clienteId, 'regras', { secao }), 'erro', mensagem));
+function voltarCom(destino: string, tipo: 'feito' | 'erro', mensagem: string): never {
+  redirect(comAviso(destino, tipo, mensagem));
 }
 
 async function resolver<T>(
@@ -81,25 +82,27 @@ export async function revogarAcao(formData: FormData): Promise<void> {
   const campos = camposDo(formData);
   const escopo = await escopoDoClienteNaOrganizacao(campos['clienteId']);
   if (!escopo) redirect('/clientes');
+  const destino = retornoDaAcaoDeRegras(escopo.cliente.id, campos['voltar']);
   const entrada = lerRevogacao(campos);
-  if (!entrada.ok) falhar(escopo.cliente.id, 'hoje', Object.values(entrada.error)[0] ?? 'Dados inválidos.');
+  if (!entrada.ok) voltarCom(destino, 'erro', Object.values(entrada.error)[0] ?? 'Dados inválidos.');
   const resultado = await modules().regras.revogar(escopo.comando, entrada.value, await atorAtual());
-  if (!resultado.ok) falhar(escopo.cliente.id, 'hoje', resultado.error.message);
-  concluir(escopo.cliente.id, 'hoje', 'Revogado.');
+  if (!resultado.ok) voltarCom(destino, 'erro', resultado.error.message);
+  voltarCom(destino, 'feito', 'Revogado.');
 }
 
 async function decidirProposta(formData: FormData, aceitar: boolean): Promise<void> {
   const campos = camposDo(formData);
   const escopo = await escopoDoClienteNaOrganizacao(campos['clienteId']);
   if (!escopo) redirect('/clientes');
+  const destino = retornoDaAcaoDeRegras(escopo.cliente.id, campos['voltar']);
   const entrada = lerDecisaoDeProposta(campos, !aceitar);
-  if (!entrada.ok) falhar(escopo.cliente.id, 'propostas', Object.values(entrada.error)[0] ?? 'Dados inválidos.');
+  if (!entrada.ok) voltarCom(destino, 'erro', Object.values(entrada.error)[0] ?? 'Dados inválidos.');
   const ator = await atorAtual();
   const resultado = aceitar
     ? await modules().regras.efetivarProposta(escopo.comando, entrada.value, ator)
     : await modules().regras.rejeitarProposta(escopo.comando, entrada.value, ator);
-  if (!resultado.ok) falhar(escopo.cliente.id, 'propostas', resultado.error.message);
-  concluir(escopo.cliente.id, 'propostas', aceitar ? 'Proposta aceita: passou a valer.' : 'Proposta rejeitada.');
+  if (!resultado.ok) voltarCom(destino, 'erro', resultado.error.message);
+  voltarCom(destino, 'feito', aceitar ? 'Proposta aceita: passou a valer.' : 'Proposta rejeitada.');
 }
 
 export async function aceitarPropostaAcao(formData: FormData): Promise<void> {

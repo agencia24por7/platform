@@ -1,37 +1,26 @@
-import { carregarPainel } from '@/../app/clientes/[id]/_dados';
 import { BotaoDeEnvio } from '@/../app/_components/BotaoDeEnvio';
-import { CabecalhoDeSecao } from '@/../app/clientes/[id]/_componentes/CabecalhoDeSecao';
 import { ConfirmarAcao } from '@/../app/clientes/[id]/_componentes/ConfirmarAcao';
 import { EstadoVazio } from '@/../app/clientes/[id]/_componentes/EstadoVazio';
 import { arquivarLandingPageAcao, criarLandingPageAcao, gravarWhatsappAcao } from '@/../app/clientes/[id]/(painel)/contexto/destino/acoes';
-import { modules } from '@/composition';
-import { visaoDoDestino } from '@/modules/clients/domain/painel/visaoDoDestino';
+import type { VisaoDoDestino } from '@/modules/clients/domain/painel/visaoDoDestino';
 
-export async function Destino({ clienteId }: { readonly clienteId: string }) {
-  const { ctx, cliente, podeEditar } = await carregarPainel(clienteId);
-  const escopo = { organizationId: ctx.organization.id, clientId: cliente.id };
-  const [paginas, whatsapp] = await Promise.all([modules().destino.listarLandingPages(escopo), modules().destino.lerWhatsapp(escopo)]);
-  if (!paginas.ok || !whatsapp.ok) {
+export function Destino({ clienteId, visao }: { readonly clienteId: string; readonly visao: VisaoDoDestino | null }) {
+  if (!visao) {
     return (
       <div className="alert alert--error" role="alert">
         Não foi possível carregar o destino deste cliente. Tente de novo.
       </div>
     );
   }
-  const visao = visaoDoDestino({ whatsapp: whatsapp.value, paginas: paginas.value, podeEditar });
   const campoCliente = <input type="hidden" name="clienteId" value={clienteId} />;
 
   return (
     <div className="pilha">
-      <CabecalhoDeSecao titulo="Destino" descricao="WhatsApp e landing pages que os planos de Estratégia usam nos links." />
-
-      <section className="card" aria-labelledby="destino-whatsapp">
-        <div className="card__head">
-          <h3 className="card__title" id="destino-whatsapp">
-            WhatsApp
-          </h3>
-        </div>
-        <div className="card__body">
+      <section className="destino-bloco" aria-labelledby="destino-whatsapp">
+        <h3 className="nivel__titulo" id="destino-whatsapp">
+          WhatsApp
+        </h3>
+        <div className="pilha">
           <p className="field__hint">{visao.whatsapp.situacao}</p>
           {visao.podeEditar ? (
             <form className="destino-form" action={gravarWhatsappAcao}>
@@ -52,13 +41,11 @@ export async function Destino({ clienteId }: { readonly clienteId: string }) {
         </div>
       </section>
 
-      <section className="card" aria-labelledby="destino-paginas">
-        <div className="card__head">
-          <h3 className="card__title" id="destino-paginas">
-            Landing pages
-          </h3>
-        </div>
-        <div className="card__body">
+      <section className="destino-bloco" aria-labelledby="destino-paginas">
+        <h3 className="nivel__titulo" id="destino-paginas">
+          Landing pages
+        </h3>
+        <div className="pilha">
           {visao.paginas.length === 0 ? (
             <EstadoVazio titulo="Nenhuma landing page" texto={visao.semPaginas} />
           ) : (

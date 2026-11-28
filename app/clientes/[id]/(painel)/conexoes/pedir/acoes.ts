@@ -164,7 +164,7 @@ export async function regenerarLinkDeContexto(clientId: string, linkId: string):
 
 export async function revogarLinkDeContexto(formData: FormData): Promise<void> {
   const clientId = text(formData, 'clientId');
-  const destino = rotaDoCliente(clientId, 'conexoes', { secao: 'pedir' });
+  const destino = rotaDoCliente(clientId, 'atividade');
   const escopo = await escopoDoCliente(clientId);
   const linkId = text(formData, 'linkId');
   if (!escopo || !idValido(linkId)) redirect(comAviso(destino, 'erro', 'Link não encontrado.'));
