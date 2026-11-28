@@ -225,6 +225,21 @@ describe('Estratégia: foco do plano e remoção lógica (0151)', { concurrency:
       assert.equal(pendentes(execucaoAtiva), '1');
     });
 
+    it('apagar o usuário que removeu o plano (LGPD) funciona: removido_por vira NULL e removido_em fica', () => {
+      const quem = usuario('efemero');
+      membro(ids.orgA, quem, 'admin');
+      const plano = novoPlano(ids.orgA, ids.cliA, ids.operador, { tipo: 'marca' });
+      apagar(ids.orgA, quem, plano);
+      const antes = dono(`SELECT removido_em FROM core.strategy_plans WHERE id = '${plano}'`);
+      assert.equal(dono(`SELECT removido_por FROM core.strategy_plans WHERE id = '${plano}'`), quem);
+      dono(`DELETE FROM core.members WHERE user_id = '${quem}'`);
+      dono(`DELETE FROM core.users WHERE id = '${quem}'`);
+      assert.equal(dono(`SELECT coalesce(removido_por::text, 'nulo') FROM core.strategy_plans WHERE id = '${plano}'`), 'nulo');
+      assert.equal(dono(`SELECT removido_em FROM core.strategy_plans WHERE id = '${plano}'`), antes);
+      assert.match(recusa(() => dono(`UPDATE core.strategy_plans SET removido_por = '${ids.dono}' WHERE id = '${plano}'`)) ?? '', /imutável/);
+      assert.match(recusa(() => dono(`UPDATE core.strategy_plans SET removido_em = NULL, removido_por = NULL WHERE id = '${plano}'`)) ?? '', /imutável/);
+    });
+
     it('a redação LGPD continua funcionando num plano já removido', () => {
       const plano = comoApp(
         ids.orgA,

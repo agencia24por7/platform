@@ -92,6 +92,12 @@ DECLARE
   v_usuario uuid;
 BEGIN
   IF NOT core.decisao_chamador_e_app()
+     AND OLD.removido_por IS NOT NULL AND NEW.removido_por IS NULL
+     AND (to_jsonb(NEW) - 'removido_por') = (to_jsonb(OLD) - 'removido_por') THEN
+    RETURN NEW;
+  END IF;
+
+  IF NOT core.decisao_chamador_e_app()
      AND current_setting('orla.redigindo_plano', true) = OLD.id::text
      AND NEW.whatsapp IS NULL
      AND (NEW.id, NEW.organization_id, NEW.client_id, NEW.plan_type_key, NEW.created_at, NEW.plataformas, NEW.landing_page_id, NEW.idempotency_key, NEW.foco, NEW.removido_em, NEW.removido_por)
@@ -124,7 +130,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION core.strategy_plan_plano_imutavel IS
-  'BEFORE UPDATE de core.strategy_plans: nega sempre, com duas excecoes. (1) Anular whatsapp dentro de core.redigir_plano (marca orla.redigindo_plano com o id do plano, local a transacao; qualquer outra coluna diferente e negada). (2) Remocao logica pelo app: removido_em de NULL para um valor, uma vez, nunca o inverso, so com app.user_id de owner ou admin da organizacao da sessao (core.memberships_of) e sem mudar nenhuma outra coluna; o gatilho fixa removido_em em now() e removido_por no usuario da sessao.';
+  'BEFORE UPDATE de core.strategy_plans: nega sempre, com tres excecoes. (0) O SET NULL de removido_por quando o usuario e apagado (LGPD): so a transicao de preenchido para NULL, fora do app, com todo o resto igual (molde da excecao de author_user_id nas versoes). (1) Anular whatsapp dentro de core.redigir_plano (marca orla.redigindo_plano com o id do plano, local a transacao; qualquer outra coluna diferente e negada). (2) Remocao logica pelo app: removido_em de NULL para um valor, uma vez, nunca o inverso, so com app.user_id de owner ou admin da organizacao da sessao (core.memberships_of) e sem mudar nenhuma outra coluna; o gatilho fixa removido_em em now() e removido_por no usuario da sessao.';
 
 ALTER TABLE core.strategy_plan_runs DROP CONSTRAINT IF EXISTS strategy_plan_runs_pedido_check;
 ALTER TABLE core.strategy_plan_runs ADD CONSTRAINT strategy_plan_runs_pedido_check

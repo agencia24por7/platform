@@ -1,7 +1,6 @@
 import { CHAVE_COMITE_COMPLETO, checarComiteCompleto } from './comiteCompleto.ts';
 import { CHAVE_COBERTURA_DO_PLANO_DE_MIDIA, checarCoberturaDoPlanoDeMidia } from './coberturaDoPlanoDeMidia.ts';
 import { CHAVE_EVIDENCIA_VIGENTE, checarEvidenciaVigente } from './evidenciaVigente.ts';
-import { CHAVE_ALINHAMENTO_AO_FOCO, CHAVE_VERBA_POR_PRODUTO, checarAlinhamentoAoFoco, checarVerbaPorProduto } from './focoDoPlano.ts';
 import { CHAVE_LIMITES_DO_CLIENTE, checarLimitesDoCliente } from './limitesDoCliente.ts';
 import { CHAVE_META_SEM_NOTA_D, checarMetaSemNotaD } from './metaSemNotaD.ts';
 import { CHAVE_NAO_FAREMOS, checarNaoFaremos } from './naoFaremos.ts';
@@ -24,8 +23,6 @@ export const CHECAGENS_EM_CODIGO: readonly Checagem[] = [
   { chave: CHAVE_REGRA_LEGAL_PRESENTE, executar: checarRegraLegalPresente },
   { chave: CHAVE_SECOES_OBRIGATORIAS, executar: checarSecoesObrigatorias },
   { chave: CHAVE_ORCAMENTO_FECHA, executar: checarOrcamentoFecha },
-  { chave: CHAVE_VERBA_POR_PRODUTO, executar: checarVerbaPorProduto },
-  { chave: CHAVE_ALINHAMENTO_AO_FOCO, executar: checarAlinhamentoAoFoco },
   { chave: CHAVE_OBJETIVO_COM_METRICA, executar: checarObjetivoComMetrica },
   { chave: CHAVE_COBERTURA_DO_PLANO_DE_MIDIA, executar: checarCoberturaDoPlanoDeMidia },
   { chave: CHAVE_SUGESTOES_DE_LACUNAS, executar: checarSugestoesDeLacunas },

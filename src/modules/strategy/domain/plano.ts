@@ -328,7 +328,6 @@ const esquemaCampanha = z.strictObject({
   canal: z.enum(CANAIS),
   plataforma: z.enum(PLATAFORMAS).optional(),
   segmento_id: esquemaId,
-  produto: esquemaUrn.optional(),
   oferta: texto(300),
   formato: z.enum(FORMATOS),
   verba: esquemaDinheiro,
@@ -342,10 +341,6 @@ const esquemaOrcamento = z.strictObject({
   total: esquemaDinheiro,
   verba_de_teste: esquemaDinheiro,
   por_canal: lista(z.strictObject({ canal_id: esquemaId, valor: esquemaDinheiro }), 12),
-  por_produto: lista(
-    z.strictObject({ produto: esquemaUrn, valor: esquemaDinheiro, justificativa: texto(300).optional(), evidencias }),
-    MAXIMO_DE_PRODUTOS_NO_FOCO,
-  ).optional(),
 });
 
 const esquemaMeta = z

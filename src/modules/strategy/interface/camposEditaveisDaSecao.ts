@@ -41,6 +41,7 @@ const MAXIMO_DE_ITENS_DA_LISTA = 50;
 const MAXIMO_DO_ITEM_DA_LISTA = 200;
 const LIMITE_DO_TEXTO_CURTO = 120;
 const PADRAO_DE_NUMERO = /^-?\d+(\.\d+)?$/;
+const PADRAO_DE_DESTINO_OU_IDENTIFICADOR = /(^|_)(url|urls|link|domain|pixel|id|ids|phone|whatsapp)(_|$)/;
 const MENSAGEM_DE_CAMPO_FIXO = 'Este campo não pode ser editado.';
 const ROTULO_DE_A_CONFIRMAR = 'A confirmar';
 
@@ -188,7 +189,7 @@ function descritoresDaMidia(secao: unknown, catalogos: readonly CatalogoDeCampos
         const chave = texto(campoDoPlano?.['campo']);
         if (campoDoPlano === null || chave === null) return;
         const doCatalogo = catalogo.campos.find((candidato) => candidato.chave === chave);
-        if (doCatalogo === undefined || doCatalogo.papel !== undefined) return;
+        if (doCatalogo === undefined || doCatalogo.papel !== undefined || PADRAO_DE_DESTINO_OU_IDENTIFICADOR.test(chave)) return;
         const prefixo = `plataformas.${i}.secoes.${j}.campos.${k}`;
         const rotulo = nomeDoCampo(chave);
         const valor = descritorDoValor(`${prefixo}.valor`, rotulo, campoDoPlano['valor'], doCatalogo, grupo, ['plataformas', i, 'secoes', j, 'campos', k, 'valor']);

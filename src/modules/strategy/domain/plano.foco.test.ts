@@ -29,14 +29,15 @@ describe('foco do plano no esquema da intenção', () => {
     assert.deepEqual(urnsDoFoco(undefined), []);
   });
 
-  it('plano com foco, campanha com produto e verba por produto é lido; sem eles continua lido', () => {
+  it('plano com foco é lido, e o foco não amarra campanha nem orçamento a produto', () => {
     const bruto = planoMinimoBruto() as unknown as Record<string, unknown> & { intencao: Record<string, unknown>; campanhas: { campanhas: Record<string, unknown>[] }; orcamento: Record<string, unknown> };
     assert.ok(lerPlano(bruto).ok);
-    bruto.intencao.foco = { tipo: 'produtos', produtos: [produto(1)] };
-    bruto.campanhas.campanhas[0]!.produto = produto(1).urn;
-    bruto.orcamento.por_produto = [{ produto: produto(1).urn, valor: { centavos: '1000000', moeda: 'BRL' }, evidencias: [] }];
+    bruto.intencao.foco = { tipo: 'produtos', produtos: [produto(1), produto(2)] };
     assert.ok(lerPlano(bruto).ok);
-    bruto.campanhas.campanhas[0]!.produto = 'texto livre';
-    assert.equal(lerPlano(bruto).ok, false);
+    bruto.campanhas.campanhas[0]!.produto = produto(1).urn;
+    assert.equal(lerPlano(bruto).ok, false, 'campanha não tem campo de produto');
+    delete bruto.campanhas.campanhas[0]!.produto;
+    bruto.orcamento.por_produto = [];
+    assert.equal(lerPlano(bruto).ok, false, 'orçamento não tem divisão por produto');
   });
 });

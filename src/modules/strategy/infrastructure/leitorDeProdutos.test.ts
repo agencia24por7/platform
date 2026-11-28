@@ -28,12 +28,12 @@ const item = (id: string, dados: Record<string, unknown>, revisao: 'confirmado' 
   compartilhavel: true,
 });
 
-function leitorCom(itens: readonly ItemDoContexto[], visoes: string[] = []) {
+function leitorCom(itens: readonly ItemDoContexto[], visoes: string[] = [], avisoDeDadoPessoal: string | null = null) {
   const carregador: CarregadorDeContexto = {
     disponivel: true,
     async carregar(_escopo, visao) {
       visoes.push(visao);
-      return { listas: { produtos: itens } } as unknown as ContextoParaCatalogo;
+      return { listas: { produtos: itens }, catalogo: [{ key: 'produtos', campos: [{ key: 'produtos', tipo: 'lista', avisoDeDadoPessoal }] }] } as unknown as ContextoParaCatalogo;
     },
   };
   return criarLeitorDoBrain({ brain: { async montarNaOrganizacao() { throw new Error('não usado'); } }, carregadorDeContexto: carregador });
@@ -58,6 +58,17 @@ describe('produtos do Contexto como foco do plano', () => {
     }
     assert.match(lidos.value[0]!.entrada.resumo, /Preço: R\$ 49\.90/);
     assert.match(lidos.value[1]!.entrada.resumo, /Descrição: Corrida/);
+  });
+
+  it('lista de produtos marcada com dado pessoal: só título e hash, como entrada restrita', async () => {
+    const leitor = leitorCom([item('a1', { nome: 'Tênis', descricao: 'Corrida', preco: 4990 })], [], 'Pode conter dado pessoal.');
+    const lidos = await leitor.produtosDoContexto!(ORGANIZACAO_ID, CLIENTE_ID);
+    assert.ok(lidos.ok);
+    assert.equal(lidos.value[0]?.rotulo, 'Tênis');
+    assert.match(lidos.value[0]!.hash, /^[0-9a-f]{64}$/);
+    assert.equal(lidos.value[0]?.entrada.resumo, '');
+    assert.equal(lidos.value[0]?.entrada.somenteMetadados, true);
+    assert.ok(!JSON.stringify(lidos.value[0]?.entrada).includes('Corrida'));
   });
 
   it('a URN e o hash são estáveis e o hash muda quando o conteúdo muda', () => {

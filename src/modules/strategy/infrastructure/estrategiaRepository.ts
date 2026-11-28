@@ -296,7 +296,15 @@ async function inserirEvento(tx: Tx, organizationId: string, novo: NovoEvento): 
   return paraEvento(rows[0]);
 }
 
+async function travarPlanoAtivo(tx: Tx, organizationId: string, planoId: string): Promise<void> {
+  const rows = (await tx`
+    SELECT 1 AS ok FROM core.strategy_plans WHERE id = ${planoId}::uuid AND organization_id = ${organizationId}::uuid AND removido_em IS NULL FOR SHARE
+  `) as unknown as unknown[];
+  if (rows.length === 0) throw new NaoEncontrado();
+}
+
 async function inserirVersao(tx: Tx, organizationId: string, nova: NovaVersao): Promise<Versao> {
+  await travarPlanoAtivo(tx, organizationId, nova.planoId);
   await definirFicha(tx, nova.autoria);
   const agente = nova.autoria.tipo === 'agente' ? nova.autoria : null;
   const usuario = nova.autoria.tipo === 'pessoa' ? nova.autoria.userId : null;
@@ -333,6 +341,7 @@ async function inserirVersao(tx: Tx, organizationId: string, nova: NovaVersao): 
 }
 
 async function inserirExecucao(tx: Tx, organizationId: string, clientId: string, nova: NovaExecucao): Promise<Execucao> {
+  await travarPlanoAtivo(tx, organizationId, nova.planoId);
   const rows = (await tx`
     INSERT INTO core.strategy_plan_runs
       (organization_id, client_id, plan_id, kind, pedido, base_version_id, agent_run_id, requested_by, requested_kind)

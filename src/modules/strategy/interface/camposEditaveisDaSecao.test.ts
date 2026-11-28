@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { CATALOGOS_DISPONIVEIS } from '../domain/catalogo/disponiveis.ts';
 import { CATALOGOS_DE_TESTE, planoCompleto } from '../domain/fixturesDeTeste.ts';
 import { lerPlano } from '../domain/plano.ts';
 import { aplicarCampos, errosPorCampoDaSecao, gruposEditaveis, secaoEditavel, type CampoEditavel } from './camposEditaveisDaSecao.ts';
@@ -118,6 +119,22 @@ describe('campos editáveis: plano de mídia', () => {
     assert.ok(!campos.some((c) => /destino|whatsapp|parametros|desconhecida/.test(c.rotulo)));
     assert.ok(!campos.some((c) => c.caminho.startsWith('plataformas.0.secoes.2.')));
     assert.doesNotMatch(JSON.stringify(campos), /orla:|urn|evidencias|"plataforma"/);
+  });
+
+  it('URL e identificador de destino sem papel no catálogo também ficam fora (loja, pixel, página, link, domínio)', () => {
+    const meta = { plataforma: 'meta', secoes: [{ secao: 'adset', campos: [
+      { campo: 'adset_po_store_url', valor: 'https://loja.example/app', justificativa: 'j', evidencias: [] },
+      { campo: 'adset_po_pixel_id', valor: '123456', justificativa: 'j', evidencias: [] },
+      { campo: 'adset_po_page_id', valor: '99', justificativa: 'j', evidencias: [] },
+      { campo: 'ad_conversion_domain', valor: 'exemplo.com.br', justificativa: 'j', evidencias: [] },
+      { campo: 'adset_daily_budget', valor: 5000, justificativa: 'j', evidencias: [] },
+    ] }] };
+    const campos = todos(gruposEditaveis('plano_de_midia', { plataformas: [meta] }, CATALOGOS_DISPONIVEIS));
+    assert.ok(!campos.some((c) => /store_url|pixel_id|page_id|conversion_domain|store url|pixel id|page id|conversion domain/.test(c.rotulo)), JSON.stringify(campos.map((c) => c.rotulo)));
+    assert.ok(campos.every((c) => !/campos\.[0-3]\./.test(c.caminho)));
+    assert.ok(campos.some((c) => c.caminho === 'plataformas.0.secoes.0.campos.4.valor'));
+    const r = aplicarCampos('plano_de_midia', { plataformas: [meta] }, { 'plataformas.0.secoes.0.campos.0.valor': 'https://outro.example', 'plataformas.0.secoes.0.campos.1.valor': '1' }, CATALOGOS_DISPONIVEIS);
+    assert.ok(!r.ok);
   });
 
   it('plataforma sem catálogo não gera campo', () => {

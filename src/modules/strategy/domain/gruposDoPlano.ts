@@ -73,8 +73,6 @@ export const SECOES_DA_CHECAGEM: Readonly<Record<string, readonly SecaoRedigida[
   regra_legal_presente: ['riscos_e_regras'],
   secoes_obrigatorias: ['resumo_executivo'],
   orcamento_fecha: ['orcamento'],
-  foco_verba_por_produto: ['orcamento'],
-  foco_alinhamento: ['campanhas'],
   cobertura_do_plano_de_midia: ['plano_de_midia'],
   objetivo_com_metrica: ['metas_e_metricas', 'medicao'],
   sugestoes_de_lacunas: ['lacunas'],

@@ -152,7 +152,7 @@ function dinheiroDoValor(valor: unknown): string | null {
   return typeof centavos === 'number' && Number.isFinite(centavos) ? `R$ ${(centavos / 100).toFixed(2)}` : null;
 }
 
-export function produtoDoItem(organizacaoId: string, clienteId: string, item: ItemDoContexto): ProdutoDoContexto | null {
+export function produtoDoItem(organizacaoId: string, clienteId: string, item: ItemDoContexto, somenteMetadados = false): ProdutoDoContexto | null {
   const nome = typeof item.dados['nome'] === 'string' ? textoSeguro(item.dados['nome']).slice(0, TAMANHO_DO_ROTULO_DO_PRODUTO) : '';
   if (nome === '' || nome === TEXTO_OMITIDO) return null;
   let urn: string;
@@ -174,8 +174,8 @@ export function produtoDoItem(organizacaoId: string, clienteId: string, item: It
     hash,
     tipo: TIPO_DA_ENTRADA_DE_PRODUTO,
     titulo: nome,
-    resumo: textoSeguro(partes.join('; ')).slice(0, TAMANHO_DO_RESUMO),
-    somenteMetadados: false,
+    resumo: somenteMetadados ? '' : textoSeguro(partes.join('; ')).slice(0, TAMANHO_DO_RESUMO),
+    somenteMetadados,
   });
   return entrada.success ? { urn, rotulo: nome, hash, entrada: entrada.data } : null;
 }
@@ -216,9 +216,11 @@ export function criarLeitorDoBrain(dependencias: DependenciasDoLeitorDoBrain): L
         const contexto = await carregador.carregar({ organizationId: organizacaoId, clientId: clienteId }, 'equipe');
         if (contexto === null) return err({ codigo: 'brain_indisponivel', mensagem: 'O Contexto do cliente não respondeu.' });
         const itens = contexto.listas[CHAVE_DA_LISTA_DE_PRODUTOS] ?? [];
+        const campoDaLista = contexto.catalogo.flatMap((secao) => secao.campos).find((campo) => campo.tipo === 'lista' && campo.key === CHAVE_DA_LISTA_DE_PRODUTOS);
+        const somenteMetadados = Boolean(campoDaLista?.avisoDeDadoPessoal);
         const produtos = itens
           .filter((item) => item.revisao === 'confirmado' && item.secao === CHAVE_DA_LISTA_DE_PRODUTOS)
-          .map((item) => produtoDoItem(organizacaoId, clienteId, item))
+          .map((item) => produtoDoItem(organizacaoId, clienteId, item, somenteMetadados))
           .filter((produto): produto is ProdutoDoContexto => produto !== null)
           .sort((a, b) => a.rotulo.localeCompare(b.rotulo, 'pt-BR') || a.urn.localeCompare(b.urn));
         return ok(produtos);

@@ -3,7 +3,7 @@ import type { PacoteDeLeitura } from './pacote.ts';
 
 export const PADRAO_DO_CODIGO_CURTO = /^e[1-9][0-9]{0,4}$/;
 
-const CHAVES_COM_URN = new Set(['urn', 'produto']);
+const CHAVES_COM_URN = new Set(['urn']);
 const CHAVES_COM_LISTA_DE_URN = new Set(['fontes', 'prova']);
 const PROFUNDIDADE_MAXIMA = 24;
 
