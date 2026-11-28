@@ -21,6 +21,7 @@ A fase 2a trouxe o domínio: 17 comitês com 35 membros (`domain/comite/comites.
 - Retomada: ao entrar, o motor lê as deliberações da versão e só chama o que falta. A mesa é conferida antes de gravar, então mesa inválida não fica gravada e a repetição refaz só ela.
 - Paralelismo: no máximo `PARALELISMO_DO_COMITE` (3) chamadas ao modelo ao mesmo tempo na etapa inteira (semáforo), com até 3 comitês em andamento.
 - Etapa longa (69 chamadas com os 17 ligados): o motor para de iniciar comitês quando o orçamento de tempo do passo não comporta mais uma chamada (`tempoMaximoMs` do comitê) e devolve a etapa `comite` de novo; o processador libera a execução como pendente e a próxima reserva continua. O lease é renovado antes de cada comitê e antes e depois de cada chamada.
+- Superado em parte pelo ADR 0076 §2 e §3: paralelismo de 6 chamadas com 3 comitês em andamento, regra de parada pela duração observada e membros com prefixo estável para o cache do fornecedor.
 - Falha: a primeira falha de um comitê para a fila; o motivo gravado na auditoria é `comite:<chave>:<motivo compacto>` (código e caminho, nunca texto do modelo). Saída inválida segue repetível pelas regras do ADR 0069; falta de configuração e teto não.
 - Convocação: na rodada 1 todos os ligados; na execução `corrigir_gate` (a única que reconvoca o Comitê depois de um ajuste) só os comitês com seção alterada entre a base e a versão corrigida. `risco_legal` é sempre convocado. Comitê que já tem deliberação na versão é sempre terminado, mesmo que tenha sido desligado no meio.
 

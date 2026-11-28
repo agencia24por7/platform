@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 await import('../../brain/testes/ganchos.ts');
 const { createExecutor, SEM_MODELO_CONFIGURADO, LIMITE_DE_CHAMADAS_DE_FERRAMENTA_POR_PEDIDO } = await import('./execucao.ts');
-const { definirTarefa, dadosDelimitados, fornecedoresHabilitados, TETO_DO_ORCAMENTO } = await import('../domain/tarefa.ts');
+const { definirTarefa, dadosDelimitados, fornecedoresHabilitados, prefixoEstavelDosDados, textoDosDados, MINIMO_DO_PREFIXO_ESTAVEL, TETO_DO_ORCAMENTO } = await import('../domain/tarefa.ts');
 const { criarRegistro, definirFerramenta } = await import('../domain/ferramenta.ts');
 const { ok, err } = await import('../../../shared/result/result.ts');
 const { failure } = await import('../../../shared/result/failure.ts');
@@ -50,7 +50,7 @@ function montar(opcoes: { resolver?: unknown; fornecedores?: readonly string[]; 
       async gerar(pedido: Record<string, unknown>) {
         pedidos.push(pedido);
         if (opcoes.falhaDaPorta) return err(opcoes.falhaDaPorta);
-        return ok({ saida: { resumo: 'feito' }, uso: { tokensDeEntrada: 10, tokensDeSaida: 4, passos: 1 } });
+        return ok({ saida: { resumo: 'feito' }, uso: { tokensDeEntrada: 10, tokensDeEntradaEmCache: 6, tokensDeSaida: 4, passos: 1 } });
       },
     } as never,
     registro,
@@ -113,7 +113,7 @@ describe('execução de tarefa de IA (ADR 0063 §1, §7 e §8)', () => {
     const { executor, usos, reservas } = montar();
     await executor.executar({ organizationId: ORG, tarefa: tarefa(), dados: { segredoDoCliente: 'faturamento confidencial' }, requestId: 'req-1' });
     assert.deepEqual(reservas[0], { organizationId: ORG, tarefa: 'resumo_de_teste', fornecedor: 'google', modelo: 'modelo-x', tokensReservados: 600, requestId: 'req-1' });
-    assert.deepEqual(usos[0], { organizationId: ORG, reservaId: 'reserva-1', resultado: 'ok', uso: { tokensDeEntrada: 10, tokensDeSaida: 4, passos: 1 }, duracaoMs: 0 });
+    assert.deepEqual(usos[0], { organizationId: ORG, reservaId: 'reserva-1', resultado: 'ok', uso: { tokensDeEntrada: 10, tokensDeEntradaEmCache: 6, tokensDeSaida: 4, passos: 1 }, duracaoMs: 0 });
     const texto = JSON.stringify([usos, reservas]);
     for (const proibido of [CHAVE_DO_FORNECEDOR, 'faturamento confidencial', 'feito']) assert.equal(texto.includes(proibido), false);
   });
@@ -228,5 +228,47 @@ describe('execução de tarefa de IA (ADR 0063 §1, §7 e §8)', () => {
     assert.throws(() => tarefa({ orcamento: { ...orcamento, tempoMs: 600_000 } }), /orçamento/);
     assert.throws(() => tarefa({ chave: 'Chave Ruim' }), /padrão/);
     assert.throws(() => tarefa({ instrucao: '  ' }), /instrução/);
+  });
+
+  describe('prefixo estável da coorte (ADR 0076)', () => {
+    const entradas = Array.from({ length: 80 }, (_, i) => ({ ref: `e${i}`, texto: `evidência ${i} `.repeat(6) }));
+    const doMembro = (chave: string, extras: readonly unknown[] = []) => ({ pacote: { entradas: [...entradas, ...extras] }, persona: { chave }, plano: { resumo: chave } });
+
+    it('o prefixo é o começo comum dos dados, cortado no fim de um item, e não depende da ordem das chamadas', () => {
+      const coorte = [doMembro('cetica'), doMembro('juridica', [{ ref: 'x1', texto: 'só dela' }]), doMembro('midia')];
+      const prefixo = prefixoEstavelDosDados(coorte);
+      const textos = coorte.map(textoDosDados);
+      assert.ok(prefixo >= MINIMO_DO_PREFIXO_ESTAVEL);
+      for (const texto of textos) assert.equal(texto.slice(0, prefixo), textos[0]!.slice(0, prefixo));
+      assert.equal(textos[0]!.slice(prefixo - 2, prefixo), '},');
+      assert.equal(prefixoEstavelDosDados([...coorte].reverse()), prefixo);
+    });
+
+    it('coorte de uma chamada, começo diferente ou começo comum curto não têm prefixo', () => {
+      assert.equal(prefixoEstavelDosDados([doMembro('cetica')]), 0);
+      assert.equal(prefixoEstavelDosDados([{ membro: 'a', ...doMembro('a') }, { membro: 'b', ...doMembro('b') }]), 0);
+      assert.equal(prefixoEstavelDosDados([{ pacote: { entradas: [{ ref: 'e1' }] }, persona: 'a' }, { pacote: { entradas: [{ ref: 'e1' }] }, persona: 'b' }]), 0);
+    });
+
+    it('o executor manda a instrução final depois dos dados, o prefixo dentro dos dados e a chave de cache sem dado do cliente', async () => {
+      const coorte = [doMembro('cetica'), doMembro('juridica')];
+      const prefixo = prefixoEstavelDosDados(coorte);
+      const { executor, pedidos } = montar();
+      await executor.executar({ organizationId: ORG, tarefa: tarefa(), dados: coorte[0], requestId: 'req-p', instrucaoFinal: 'Persona: cética.', prefixoEstavelDosDados: prefixo });
+      const enviado = pedidos[0] as { sistema: string; dados: string; prefixoEstavel: number; chaveDeCache: string };
+      assert.equal(enviado.dados, `${dadosDelimitados(coorte[0])}\n\nPersona: cética.`);
+      assert.equal(enviado.dados.slice(0, enviado.prefixoEstavel), `<dados>\n${textoDosDados(coorte[0]).slice(0, prefixo)}`);
+      assert.match(enviado.chaveDeCache, /^[0-9a-f]{32}$/);
+      assert.equal(enviado.sistema.includes('Persona'), false);
+    });
+
+    it('prefixo inválido (fracionário, negativo, curto ou maior que os dados) é ignorado e o pedido sai sem cache', async () => {
+      for (const invalido of [1.5, -1, 10, 10_000_000]) {
+        const { executor, pedidos } = montar();
+        await executor.executar({ organizationId: ORG, tarefa: tarefa(), dados: doMembro('cetica'), requestId: 'req-i', prefixoEstavelDosDados: invalido });
+        assert.equal('prefixoEstavel' in pedidos[0]!, false);
+        assert.equal('chaveDeCache' in pedidos[0]!, false);
+      }
+    });
   });
 });

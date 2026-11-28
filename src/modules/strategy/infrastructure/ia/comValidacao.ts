@@ -14,6 +14,7 @@ type Corrida<T> = { readonly tipo: 'resposta'; readonly resultado: Result<Respos
 
 export function comValidacao(executor: ExecutorDeIA): ExecutorDeIA {
   return {
+    ...(executor.prefixoEstavel === undefined ? {} : { prefixoEstavel: (dadosDaCoorte: readonly unknown[]) => executor.prefixoEstavel!(dadosDaCoorte) }),
     async executar<T>(pedido: PedidoDeIA<T>): Promise<Result<RespostaDeIA<T>, ErroDeIA>> {
       const tempoMaximoMs = pedido.orcamento.tempoMaximoMs;
       if (!Number.isFinite(tempoMaximoMs) || tempoMaximoMs <= 0) return err(TEMPO_ESGOTADO);

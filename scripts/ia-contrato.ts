@@ -13,7 +13,7 @@ await import('../src/modules/brain/testes/ganchos.ts');
 const { createExecutor } = await import('../src/modules/ia/application/execucao.ts');
 const { criarPortaAiSdk } = await import('../src/modules/ia/infrastructure/portaAiSdk.ts');
 const { criarRegistro, definirFerramenta } = await import('../src/modules/ia/domain/ferramenta.ts');
-const { definirTarefa, FORNECEDORES } = await import('../src/modules/ia/domain/tarefa.ts');
+const { definirTarefa, prefixoEstavelDosDados, FORNECEDORES } = await import('../src/modules/ia/domain/tarefa.ts');
 const { ok } = await import('../src/shared/result/result.ts');
 
 type Fornecedor = (typeof FORNECEDORES)[number];
@@ -37,7 +37,7 @@ const registro = criarRegistro([
   }),
 ]);
 
-type UsoRegistrado = { resultado: string; uso: { tokensDeEntrada: number; tokensDeSaida: number; passos: number }; duracaoMs: number };
+type UsoRegistrado = { resultado: string; uso: { tokensDeEntrada: number; tokensDeEntradaEmCache: number; tokensDeSaida: number; passos: number }; duracaoMs: number };
 const usos: UsoRegistrado[] = [];
 const executor = createExecutor({
   resolver: async () => ok({ fornecedor, modelo: modeloPedido, abrirChave: async () => ok(chave) }),
@@ -120,5 +120,31 @@ for (const caso of casos) {
     `${passou ? 'ok   ' : 'FALHA'} ${caso.nome} | ${detalhe} | tokens ${uso?.uso.tokensDeEntrada}/${uso?.uso.tokensDeSaida} | passos ${uso?.uso.passos} | ${uso?.duracaoMs} ms`,
   );
 }
-console.log(`${fornecedor} ${modeloPedido}: ${casos.length - falhas} de ${casos.length} casos passaram.`);
+
+const CACHE_GARANTIDO: readonly Fornecedor[] = ['anthropic'];
+const catalogoFicticio = Array.from({ length: 220 }, (_, i) => ({ ref: `e${i}`, titulo: `Produto fictício ${i}`, texto: `O produto fictício ${i} custa ${i + 10} unidades e fica na prateleira ${i % 17}. `.repeat(2) }));
+const coorte = ['e3', 'e150'].map((ref) => ({ pacote: { entradas: catalogoFicticio }, pergunta: { ref } }));
+const tarefaDoPrefixo = definirTarefa({
+  chave: 'contrato_prefixo',
+  classe: 'rapido_e_barato',
+  instrucao: 'Responda com o título do item do pacote cujo ref está em pergunta.',
+  saida: z.object({ titulo: z.string() }),
+  orcamento,
+});
+const prefixoEstavelDosDadosDaCoorte = prefixoEstavelDosDados(coorte);
+const emCache: number[] = [];
+let respostasDoPrefixo = 0;
+for (const [indice, dados] of coorte.entries()) {
+  const resultado = await executor.executar({ organizationId: ORGANIZACAO, requestId: `contrato-prefixo-${indice}`, tarefa: tarefaDoPrefixo, dados, instrucaoFinal: 'Devolva só o título pedido.', prefixoEstavelDosDados: prefixoEstavelDosDadosDaCoorte } as never);
+  if (resultado.ok && (resultado.value.saida as { titulo?: string }).titulo === catalogoFicticio[indice === 0 ? 3 : 150]!.titulo) respostasDoPrefixo += 1;
+  emCache.push(usos.at(-1)?.uso.tokensDeEntradaEmCache ?? 0);
+}
+const leuDoCache = (emCache[1] ?? 0) > 0;
+const prefixoPassou = respostasDoPrefixo === coorte.length && (leuDoCache || !CACHE_GARANTIDO.includes(fornecedor));
+if (!prefixoPassou) falhas += 1;
+console.log(
+  `${prefixoPassou ? 'ok   ' : 'FALHA'} prefixo estável (ADR 0076) | respostas certas ${respostasDoPrefixo}/${coorte.length} | prefixo ${prefixoEstavelDosDadosDaCoorte} caracteres | tokens em cache ${emCache.join(' e ')}${leuDoCache ? '' : ' (o cache implícito do fornecedor não acertou nesta rodada)'}`,
+);
+const totalDeCasos = casos.length + 1;
+console.log(`${fornecedor} ${modeloPedido}: ${totalDeCasos - falhas} de ${totalDeCasos} casos passaram.`);
 process.exit(falhas === 0 ? 0 : 1);

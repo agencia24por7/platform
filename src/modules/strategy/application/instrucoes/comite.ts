@@ -6,10 +6,14 @@ ${REGRAS_COMUNS}
 Parecer: { persona (sua chave), veredito (aprova|aprova_com_ajuste|reprova), motivo curto, pontos }. Se não aprovar, 1 a 5 pontos { id, trecho (seção ou seção/id), problema, ajustePedido, fontes (refs do pacote) }. Não reescreva o plano.
 Entrada em "dados": { plano, pacote, persona }.`;
 
-export function instrucaoDaPersona(persona: Persona): string {
+export function instrucaoEspecificaDaPersona(persona: Persona): string {
   const olha = persona.olha.length > 0 ? ` Olhe: ${persona.olha.join(', ')}.` : '';
+  return `Persona: ${persona.nome} (chave ${persona.chave}). Foco: ${persona.foco}${olha}
+${persona.instrucao}`;
+}
+
+export function instrucaoDaPersona(persona: Persona): string {
   return `${INSTRUCAO_BASE_DO_COMITE}
 
-Persona: ${persona.nome} (chave ${persona.chave}). Foco: ${persona.foco}${olha}
-${persona.instrucao}`;
+${instrucaoEspecificaDaPersona(persona)}`;
 }

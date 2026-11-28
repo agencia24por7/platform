@@ -1,5 +1,6 @@
 import { err, ok, type Result } from '@/shared/result/result';
 import type { ErroDeIA, ExecutorDeIA, PedidoDeIA, RespostaDeIA, UsoDeIA } from '@/modules/strategy/application/portas';
+import { prefixoEstavelDosDados } from '@/modules/ia/domain/tarefa';
 import { TAREFAS_REGISTRADAS } from '@/modules/strategy/infrastructure/ia/iaDaCamada';
 
 export type RoteiroDaIaFalsa = (pedido: PedidoDeIA<unknown>) => unknown | Promise<unknown>;
@@ -35,6 +36,7 @@ export function criarIaFalsa(roteiro: RoteiroDaIaFalsa, uso: UsoDeIA = USO_PADRA
   const pedidos: PedidoDeIA<unknown>[] = [];
   return {
     pedidos,
+    prefixoEstavel: prefixoEstavelDosDados,
     limpar() {
       pedidos.length = 0;
     },

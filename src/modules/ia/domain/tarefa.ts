@@ -61,7 +61,45 @@ export function instrucaoDoSistema(tarefa: Pick<Tarefa<unknown>, 'instrucao'>): 
   return `${tarefa.instrucao.trim()}\n\n${AVISO_DE_DADO_NAO_CONFIAVEL}`;
 }
 
+const ABERTURA_DOS_DADOS = '<dados>\n';
+const FECHAMENTO_DOS_DADOS = '\n</dados>';
+const FIM_DE_ITEM_DO_JSON = '},';
+
+export const MINIMO_DO_PREFIXO_ESTAVEL = 4_000;
+
+export function textoDosDados(dados: unknown): string {
+  return JSON.stringify(dados ?? null).replaceAll('<', '\\u003c').replaceAll('>', '\\u003e');
+}
+
 export function dadosDelimitados(dados: unknown): string {
-  const texto = JSON.stringify(dados ?? null).replaceAll('<', '\\u003c').replaceAll('>', '\\u003e');
-  return `<dados>\n${texto}\n</dados>`;
+  return `${ABERTURA_DOS_DADOS}${textoDosDados(dados)}${FECHAMENTO_DOS_DADOS}`;
+}
+
+export function entradaDoUsuario(dados: unknown, instrucaoFinal?: string): string {
+  const final = instrucaoFinal?.trim() ?? '';
+  return final.length === 0 ? dadosDelimitados(dados) : `${dadosDelimitados(dados)}\n\n${final}`;
+}
+
+function tamanhoDoComeco(a: string, b: string, limite: number): number {
+  const maximo = Math.min(a.length, b.length, limite);
+  let i = 0;
+  while (i < maximo && a.charCodeAt(i) === b.charCodeAt(i)) i += 1;
+  return i;
+}
+
+export function prefixoEstavelDosDados(dados: readonly unknown[]): number {
+  if (dados.length < 2) return 0;
+  const textos = dados.map(textoDosDados);
+  const primeiro = textos[0]!;
+  let comum = primeiro.length;
+  for (const texto of textos.slice(1)) comum = tamanhoDoComeco(primeiro, texto, comum);
+  const corte = primeiro.lastIndexOf(FIM_DE_ITEM_DO_JSON, comum - FIM_DE_ITEM_DO_JSON.length);
+  const tamanho = corte < 0 ? 0 : corte + FIM_DE_ITEM_DO_JSON.length;
+  return tamanho >= MINIMO_DO_PREFIXO_ESTAVEL ? tamanho : 0;
+}
+
+export function prefixoEstavelDaEntrada(entrada: string, prefixoDosDados: number | undefined): number {
+  if (prefixoDosDados === undefined || !Number.isInteger(prefixoDosDados) || prefixoDosDados < MINIMO_DO_PREFIXO_ESTAVEL) return 0;
+  const tamanho = ABERTURA_DOS_DADOS.length + prefixoDosDados;
+  return tamanho < entrada.length ? tamanho : 0;
 }

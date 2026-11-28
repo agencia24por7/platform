@@ -1,11 +1,22 @@
-import { instrucaoDaPersona } from '@/modules/strategy/application/instrucoes/comite';
+import { INSTRUCAO_BASE_DO_COMITE, instrucaoDaPersona, instrucaoEspecificaDaPersona } from '@/modules/strategy/application/instrucoes/comite';
 import { REGRAS_COMUNS } from '@/modules/strategy/application/instrucoes/regrasComuns';
 import type { Comite, MembroDoComite } from '@/modules/strategy/domain/index';
 
+function assentoNoComite(comite: Comite, membro: MembroDoComite): string {
+  return `Comitê: ${comite.nome} (chave ${comite.chave}). Propósito: ${comite.proposito}
+Parecer independente: não suponha o dos outros membros; "persona" é a sua chave (${membro.chave}).`;
+}
+
 export function instrucaoDoMembro(comite: Comite, membro: MembroDoComite): string {
   return `${instrucaoDaPersona(membro)}
-Comitê: ${comite.nome} (chave ${comite.chave}). Propósito: ${comite.proposito}
-Parecer independente: não suponha o dos outros membros; "persona" é a sua chave (${membro.chave}).`;
+${assentoNoComite(comite, membro)}`;
+}
+
+export const INSTRUCAO_COMUM_DOS_MEMBROS = INSTRUCAO_BASE_DO_COMITE;
+
+export function instrucaoFinalDoMembro(comite: Comite, membro: MembroDoComite): string {
+  return `${instrucaoEspecificaDaPersona(membro)}
+${assentoNoComite(comite, membro)}`;
 }
 
 const INSTRUCAO_BASE_DA_MESA = `Você conduz a mesa de um comitê que revisa o plano de marketing de um cliente.
@@ -19,16 +30,27 @@ function cabecalhoDoComite(comite: Comite): string {
   return `Comitê: ${comite.nome} (chave ${comite.chave}). Propósito: ${comite.proposito}${obriga}`;
 }
 
-export function instrucaoDaMesa1(comite: Comite): string {
+export function instrucaoComumDaMesa(comite: Comite): string {
   return `${INSTRUCAO_BASE_DA_MESA}
-${cabecalhoDoComite(comite)}
-Rodada 1, confrontar: cada membro reage ao parecer mais divergente do seu e diz o que muda na própria posição e por quê; mudouDeOpiniao true só se mudou. Não feche consenso ainda: liste as divergências abertas.
+${cabecalhoDoComite(comite)}`;
+}
+
+const RODADA_1_DA_MESA = `Rodada 1, confrontar: cada membro reage ao parecer mais divergente do seu e diz o que muda na própria posição e por quê; mudouDeOpiniao true só se mudou. Não feche consenso ainda: liste as divergências abertas.
 Entrada em "dados": { comite, membros, pareceres, plano, pacote }.`;
+
+const RODADA_2_DA_MESA = `Rodada 2, fechar: cada membro dá a posição final; mudouDeOpiniao true para quem retira ou troca o próprio ponto. Registre consensos e toda divergência que restou, com o pontoId em disputa. O parecer final sai desta rodada por regra: veredito mais severo dos membros e pontos de quem manteve posição. Não escreva parecer.
+Entrada em "dados": { comite, membros, pareceres, plano, pacote, mesa1 }.`;
+
+export function instrucaoFinalDaMesa(rodada: 1 | 2): string {
+  return rodada === 1 ? RODADA_1_DA_MESA : RODADA_2_DA_MESA;
+}
+
+export function instrucaoDaMesa1(comite: Comite): string {
+  return `${instrucaoComumDaMesa(comite)}
+${instrucaoFinalDaMesa(1)}`;
 }
 
 export function instrucaoDaMesa2(comite: Comite): string {
-  return `${INSTRUCAO_BASE_DA_MESA}
-${cabecalhoDoComite(comite)}
-Rodada 2, fechar: cada membro dá a posição final; mudouDeOpiniao true para quem retira ou troca o próprio ponto. Registre consensos e toda divergência que restou, com o pontoId em disputa. O parecer final sai desta rodada por regra: veredito mais severo dos membros e pontos de quem manteve posição. Não escreva parecer.
-Entrada em "dados": { comite, membros, pareceres, mesa1, plano, pacote }.`;
+  return `${instrucaoComumDaMesa(comite)}
+${instrucaoFinalDaMesa(2)}`;
 }
