@@ -32,3 +32,10 @@ describe('texto do valor em modo leitura', () => {
     }
   });
 });
+
+describe('texto do valor com dado inesperado', () => {
+  it('objeto num campo de texto vira JSON legível, não [object Object]', () => {
+    const texto = CATALOGO.flatMap((secao) => secao.campos).find((campo): campo is CampoSimples => campo.tipo === 'texto')!;
+    assert.equal(textoDoValor(texto, { a: 1 }), '{"a":1}');
+  });
+});

@@ -35,6 +35,6 @@ export function textoDoValor(campo: CampoSimples, valor: unknown): string | null
     case 'arquivo':
       return null;
     default:
-      return typeof valor === 'string' ? valor : String(valor);
+      return typeof valor === 'string' ? valor : JSON.stringify(valor);
   }
 }
