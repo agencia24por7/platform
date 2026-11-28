@@ -121,3 +121,22 @@ npm run n8n:sincronizar -- --conexoes conexoes.json --aplicar  # grava
   mandava rodar `npm run n8n:sincronizar`, o que não vale para eles.
 - Simulação manual, sem gravar: `scripts/tunel.sh n8n` e
   `N8N_API_URL=http://localhost:15678 N8N_API_KEY=… node scripts/n8n-aplicar-clientes.mjs n8n/workflows`.
+
+## Adendo (2026-11-28): sincronização da plataforma por script, sem chave na linha de comando
+
+- A guarda do ambiente (ADR 0069 §2) nega ler o segredo direto no comando, o que travava o `export N8N_API_KEY=…`
+  descrito acima. O caminho passa a ser `scripts/n8n-sincronizar-producao.sh`, que o ADR 0069 §1 prevê: script do
+  projeto que lê o segredo sem eco.
+- O script não tem alvo padrão (ADR 0028): exige `--projeto` e `--vm`, imprime o alvo e, sem `--aplicar`, só simula.
+  Abre o túnel IAP, lê `<vm sem -vm>-n8n-api-key` para dentro do processo, passa a chave só ao `n8n:sincronizar` e
+  fecha o túnel ao sair.
+- O túnel escuta só em `127.0.0.1`, com `ExitOnForwardFailure`; o script recusa se a porta 15678 já estiver em uso
+  (`lsof`), para a chave não ir a outro processo, e derruba o grupo de processos do túnel ao sair.
+- `--ativar <id>` roda `scripts/n8n-ativar.mjs`, que aplica a mesma regra da sincronização (`avaliarAlvo`): recusa
+  com código 3, sem mostrar nome nem credenciais, o que tiver `credaz`/`agencia` (ADR 0053) ou não tiver a tag
+  `platform` nem nota de origem; com `--aplicar`, ativa só esse workflow.
+- Continua manual: o deploy não sincroniza os fluxos da plataforma. Levar isso ao `deploy.yml` fica para decisão
+  própria (raio de impacto em todo merge, ordem depois do smoke, política de ativação).
+- Uso: `scripts/n8n-sincronizar-producao.sh --projeto tria-platform --vm tria-producao-vm --criar --aplicar`, duas
+  vezes. Provas: `tests/scripts-sem-alvo-padrao.test.mjs` (sem alvo, opção inválida, sem chamar o gcloud) e
+  `tests/n8n-ativar.test.mjs` (recusa de terceiros sem mostrar conteúdo e a chave nunca na saída).

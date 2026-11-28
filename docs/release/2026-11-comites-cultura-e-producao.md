@@ -35,7 +35,7 @@ Sem mudança em `infra/terraform` e sem DDL no BigQuery. Sem segredo novo e sem 
    - as três migrações estão no livro-razão (`public.schema_migrations`);
    - a Config da IA mostra a seção "Comitês do planejador", com `risco_legal` travado ligado.
 2. **Fluxo n8n, só agora:**
-   - rodar `npm run n8n:sincronizar -- --criar --aplicar` duas vezes, pelo túnel (ADR 0009);
+   - rodar `scripts/n8n-sincronizar-producao.sh --projeto tria-platform --vm tria-producao-vm --criar --aplicar` duas vezes (ADR 0009, adendo de 2026-11-28);
    - confirmar que o fluxo novo ganhou a tag `platform` e a credencial "ORLA · worker token";
    - ativar `ORLA · strategy · avançar planos de produção`.
 3. **Custo:** com os 17 comitês ligados, cada rodada do Comitê faz 69 chamadas. O teto padrão de 200 chamadas por dia comporta cerca de 2 planos. Antes de pedir plano, decidir na Config da IA quais comitês ficam ligados ou subir o teto.
