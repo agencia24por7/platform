@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 await import('../../testes/ganchos.ts');
-const { AGORA, CLIENTE, ORG, OUTRO_CLIENTE, conhecimento, contexto, inventario, regras } = await import('../../testes/fixtures.ts');
+const { AGORA, CLIENTE, ORG, OUTRO_CLIENTE, conhecimento, contexto, inventario, regras, sinaisDeCultura } = await import('../../testes/fixtures.ts');
 const { PROVEDORES } = await import('./index.ts');
 const { provedorDeExemplo } = await import('./exemplo.ts');
 const { contextoDeDescoberta } = await import('../../domain/provedor.ts');
@@ -23,6 +23,7 @@ function ctx(comContexto = true, entradasPrimarias: readonly Entrada[] = []) {
     contexto: comContexto ? contexto() : null,
     regras: comContexto ? regras() : null,
     conhecimento: conhecimento(),
+    cultura: sinaisDeCultura(),
     entradasPrimarias,
   });
 }

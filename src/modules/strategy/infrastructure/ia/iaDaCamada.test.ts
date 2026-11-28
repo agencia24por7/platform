@@ -103,6 +103,27 @@ describe('iaDaCamada', () => {
     assert.equal(JUIZ_DA_ESTRATEGIA.ferramentas.length, 0);
   });
 
+  it('cada comitê tem a tarefa comite_<chave>, registrada na camada com a classe e o orçamento do comitê (24K-134)', async () => {
+    const { COMITES } = await import('../../domain/comite/comites.ts');
+    const { TAREFAS_DOS_COMITES, TAREFAS_CONFIGURAVEIS } = await import('../../../ia/domain/tarefasInternas.ts');
+    const { TAREFAS_REGISTRADAS } = await import('./iaDaCamada.ts');
+    assert.equal(TAREFAS_DOS_COMITES.length, COMITES.length);
+    const fortes = ['risco_legal', 'marca', 'sparring_criativo', 'cultura', 'producao', 'memoria_e_decisoes'];
+    for (const comite of COMITES) {
+      const tarefa = TAREFAS_DOS_COMITES.find((t) => t.chave === `comite_${comite.chave}`)!;
+      assert.ok(tarefa, comite.chave);
+      assert.equal(tarefa.classe, fortes.includes(comite.chave) ? 'raciocinio_forte' : 'rapido_e_barato', comite.chave);
+      assert.equal(tarefa.raciocinio, 'low');
+      assert.deepEqual([tarefa.orcamento.tokensDeSaida, tarefa.orcamento.tempoMs], [5_000, 90_000]);
+      assert.ok(tarefa.titulo.startsWith('Comitê'));
+      assert.ok(TAREFAS_REGISTRADAS.has(tarefa.chave as never));
+      assert.deepEqual(ORCAMENTO_DA_IA[tarefa.chave as never], { tokensMaximos: 5_000, tempoMaximoMs: 90_000 });
+      assert.equal(TAREFAS_CONFIGURAVEIS.find((t) => t.chave === tarefa.chave)?.herdaDe, 'comite');
+    }
+    const naoRegistrada = await criarIaDaCamada(falso(ok({ saida: { a: 'x' }, uso: { tokensDeEntrada: 1, tokensDeSaida: 1, passos: 1 } })).executor).executar(pedido({ tarefa: 'comite_inexistente' }));
+    assert.ok(!naoRegistrada.ok && naoRegistrada.error.codigo === 'nao_configurada');
+  });
+
   it('orçamento sempre dentro do teto da camada', () => {
     const o = orcamentoDaCamada({ tokensMaximos: 60_000, tempoMaximoMs: 900_000 });
     assert.deepEqual(o, { passos: TETO_DO_ORCAMENTO.passos, tokensDeSaida: TETO_DO_ORCAMENTO.tokensDeSaida, tempoMs: TETO_DO_ORCAMENTO.tempoMs });
@@ -154,7 +175,7 @@ describe('iaDaCamada', () => {
   it('os orçamentos do motor e os das tarefas registradas na camada não divergem', () => {
     const registradas = { strategy_plan: PLANO_DE_ESTRATEGIA, comite: COMITE_DA_ESTRATEGIA, gate: GATE_DA_ESTRATEGIA } as const;
     for (const [chave, tarefa] of Object.entries(registradas)) {
-      const doMotor = ORCAMENTO_DA_IA[chave as keyof typeof ORCAMENTO_DA_IA];
+      const doMotor = ORCAMENTO_DA_IA[chave as keyof typeof ORCAMENTO_DA_IA]!;
       assert.equal(tarefa.orcamento.tokensDeSaida, doMotor.tokensMaximos, chave);
       assert.equal(tarefa.orcamento.tempoMs, doMotor.tempoMaximoMs, chave);
       assert.equal(tarefa.orcamento.passos, chave === 'strategy_plan' ? 3 : 1, chave);

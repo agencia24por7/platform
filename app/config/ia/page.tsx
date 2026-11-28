@@ -7,13 +7,14 @@ import { MensagemDaUrl } from '@/../app/_components/MensagemDaUrl';
 import { Shell } from '@/../app/_components/Shell';
 import { ConfirmarAcao } from '@/../app/clientes/[id]/_componentes/ConfirmarAcao';
 import { TesteDeModelo } from '@/../app/config/ia/TesteDeModelo';
-import { atualizarModelos, definirTetos, escolherModelo, guardarChave, ligarOuDesligar, removerChave } from '@/../app/config/ia/acoes';
+import { atualizarModelos, definirTetos, escolherModelo, escolherModeloDoComite, guardarChave, ligarOuDesligar, ligarOuDesligarComite, removerChave } from '@/../app/config/ia/acoes';
 import { modules } from '@/composition';
 import { ROTULO_DO_FORNECEDOR } from '@/modules/ia/domain/modelos';
 import { TESTE_DE_MODELO } from '@/modules/ia/domain/tarefasInternas';
 import type { ClasseDeCapacidade } from '@/modules/ia/domain/tarefa';
 import { apresentarChaveDoFornecedor, apresentarEstadoDaTarefa, apresentarLigada } from '@/modules/ia/interface/apresentacao';
 import { canAdminister } from '@/modules/identity/domain/user';
+import { VALOR_DO_MODELO_PADRAO, tarefasForaDosComites, visaoDosComites } from '@/modules/strategy/interface/comitesNaConfiguracao';
 import { requireContext } from '@/shared/http/currentOrganization';
 
 export const dynamic = 'force-dynamic';
@@ -40,7 +41,11 @@ export default async function InteligenciaArtificialPage({
   const organization = ctx.organization;
   const painel = await modules().ia.modelos.painel({ organizationId: organization.id, papelDeQuemAge: ctx.role });
   if (!painel.ok) redirect('/config');
-  const { configuracao, usoDeHoje, fornecedores, tarefas, chavesDeFornecedorDesligado } = painel.value;
+  const comites = await modules().strategy.comites.listar({ organizationId: organization.id, papelDeQuemAge: ctx.role });
+  if (!comites.ok) redirect('/config');
+  const { configuracao, usoDeHoje, fornecedores, chavesDeFornecedorDesligado } = painel.value;
+  const tarefas = tarefasForaDosComites(painel.value.tarefas);
+  const visaoComites = visaoDosComites(comites.value, painel.value.tarefas);
   const comChave = fornecedores.filter((item) => item.chave !== null);
   const testeConfigurado = tarefas.some((tarefa) => tarefa.chave === TESTE_DE_MODELO.chave && tarefa.escolha !== null);
   const estadoLigada = apresentarLigada(configuracao.ligada);
@@ -251,6 +256,70 @@ export default async function InteligenciaArtificialPage({
               );
             })
           )}
+        </section>
+
+        <section className="card" aria-labelledby="t-comites">
+          <h2 className="card__head card__title" id="t-comites">
+            Comitês do planejador
+          </h2>
+          <div className="card__body">
+            <p className="card__ajuda">
+              Cada comitê revisa o plano com seus membros e duas mesas de debate. Sem modelo próprio, o comitê usa o modelo da tarefa do Comitê escolhido acima.
+            </p>
+            <p className="card__ajuda" role="note">
+              {visaoComites.aviso}
+            </p>
+          </div>
+          {visaoComites.cartoes.map((cartao) => (
+            <section key={cartao.chave} className="config-bloco" aria-labelledby={`t-comite-${cartao.chave}`}>
+              <div className="bloco__topo">
+                <h3 className="bloco__nome" id={`t-comite-${cartao.chave}`}>
+                  {cartao.nome}
+                </h3>
+                <EstadoComIcone estado={cartao.estado} />
+              </div>
+              <p className="card__ajuda">{cartao.proposito}</p>
+              <p className="card__ajuda">Membros: {cartao.membros}. {cartao.custo}</p>
+              {cartao.acao ? (
+                <form action={ligarOuDesligarComite}>
+                  <input type="hidden" name="comite" value={cartao.chave} />
+                  <input type="hidden" name="ligado" value={cartao.acao.ligado} />
+                  <BotaoDeEnvio className="btn btn--compacto" pendente={cartao.acao.pendente}>
+                    {cartao.acao.rotulo}
+                  </BotaoDeEnvio>
+                </form>
+              ) : (
+                <p className="field__hint">{cartao.explicacaoDaTrava}</p>
+              )}
+              {comChave.length > 0 ? (
+                <form className="form--acoes" action={escolherModeloDoComite}>
+                  <input type="hidden" name="tarefa" value={cartao.tarefa} />
+                  <label className="field">
+                    <span className="field__label">Modelo do {cartao.nome}</span>
+                    <select className="select" name="escolha" defaultValue={cartao.modelo.valor}>
+                      <option value={VALOR_DO_MODELO_PADRAO}>{cartao.modelo.rotuloDoPadrao}</option>
+                      {comChave.map(({ fornecedor, chave }) => (
+                        <optgroup key={fornecedor} label={ROTULO_DO_FORNECEDOR[fornecedor]}>
+                          {(chave?.modelos ?? []).map((modelo) => (
+                            <option key={modelo} value={`${fornecedor}|${modelo}`}>
+                              {modelo}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </label>
+                  <BotaoDeEnvio className="btn" pendente="Salvando…" ariaLabel={cartao.modelo.rotuloDoSalvar}>
+                    Salvar
+                  </BotaoDeEnvio>
+                </form>
+              ) : null}
+              <div className="row">
+                <EstadoComIcone estado={cartao.modelo.estado} />
+                {cartao.modelo.estado.explicacao ? <span className="field__hint">{cartao.modelo.estado.explicacao}</span> : null}
+              </div>
+            </section>
+          ))}
         </section>
 
         <section className="card" aria-labelledby="t-teste">

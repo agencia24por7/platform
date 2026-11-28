@@ -100,6 +100,12 @@ export function createModelosRepository(): ModelosRepository {
           provider = EXCLUDED.provider, model = EXCLUDED.model, updated_by = EXCLUDED.updated_by, updated_at = now()`);
     },
 
+    async removerEscolha(organizationId, tarefa) {
+      const rows = (await withTenant(organizationId, (tx) => tx`
+        DELETE FROM core.ai_task_models WHERE organization_id = ${organizationId} AND task = ${tarefa} RETURNING task`)) as unknown as unknown[];
+      return rows.length === 1;
+    },
+
     async configuracao(organizationId) {
       const rows = (await withTenant(organizationId, (tx) => tx`
         SELECT enabled, daily_calls, daily_tokens FROM core.ai_settings WHERE organization_id = ${organizationId}`)) as unknown as ConfiguracaoRow[];

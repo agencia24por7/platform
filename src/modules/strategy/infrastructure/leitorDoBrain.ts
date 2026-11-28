@@ -37,8 +37,9 @@ export function prioridadeDaEntrada(entrada: Pick<EntradaDoCatalogo, 'tipo' | 'p
   if (TIPOS_DE_REGRA.includes(entrada.tipo)) return 0;
   if (entrada.tipo.startsWith('contexto')) return 1;
   if (entrada.provedor === 'desempenho') return 2;
-  if (entrada.provedor === 'conhecimento' || entrada.evidencia !== undefined) return 3;
-  return 4;
+  if (entrada.provedor === 'culture') return 3;
+  if (entrada.provedor === 'conhecimento' || entrada.evidencia !== undefined) return 4;
+  return 5;
 }
 
 export function paraEntradaDoPacote(entrada: EntradaDoCatalogo): EntradaDoPacote {

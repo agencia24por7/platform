@@ -8,6 +8,7 @@ const RESTRICOES_DE_IDEMPOTENCIA: readonly string[] = [
   'strategy_plan_events_um_ajuste',
   'strategy_plan_events_parecer_persona',
   'strategy_plan_events_um_veredito',
+  'strategy_plan_deliberations_unica',
   'strategy_plan_versions_pkey',
   'strategy_plan_runs_agent_run_id_key',
   'strategy_plans_tipo_unico',

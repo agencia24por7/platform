@@ -102,6 +102,14 @@ Provedores de agora:
   maiores campanhas e 8 maiores fatias por recorte nos 3 últimos meses fechados (`periodo` = primeiro mês da
   janela), sempre com filtro de organização e de `cliente_atual_id`. Cliente sem linhas: nenhuma entrada e
   provedor `ok`.
+- `culture` (ADR 0075, 24K-134): sinais de cultura e referências criativas do cliente, lidos de
+  `core.client_culture_signals`, nos tipos `culture_tendencia`, `culture_meme`, `culture_conversa`,
+  `culture_comunidade`, `culture_referencia` e `culture_anti_referencia`. Id é o uuid do sinal. Todos levam
+  `evidencia` com categoria `benchmark`, nota A a D, fonte (nome e domínio, nunca o link), validade e data
+  observada, `conteudoNaoConfiavel` e `valorResumido` com o resumo. Sinal vencido (`valido_ate` anterior a
+  hoje em São Paulo) sai do catálogo; sem nenhum vigente o provedor segue `ok` com o motivo "Radar sem sinal
+  vigente". Falha de leitura deixa o provedor `indisponivel`. Na leitura da Estratégia a prioridade fica
+  entre desempenho e conhecimento (`prioridadeDaEntrada`).
 - `capacidades`: derivado, ver 3.
 
 **Contexto sem bloquear o PR do contexto.** O contexto entra por uma porta pequena,
@@ -197,6 +205,7 @@ publicado tem o prefixo `brain/` apagado e o estado fechado (`core.brain_marcar_
 - `GET /api/v0/brain/clientes/{clienteId}/diagnostico`
 - `GET /api/v0/brain/clientes/{clienteId}/manifest`
 - `POST /api/v0/brain/publicar-pendentes` e `POST /api/v0/brain/cobertura/medir` (worker)
+- `POST /api/v0/brain/clientes/{clienteId}/sinais` (worker, ingestão de sinais de cultura pelo coletor, ADR 0075 §5)
 
 Autenticação de worker (`workerQueryRoute`, o mesmo `TRIA_WORKER_TOKEN`), limite próprio de 60 leituras
 por minuto por credencial, contratos zod em `src/shared/config/contracts.ts`. A organização sai do
@@ -221,6 +230,8 @@ sensibilidade e tipos permitidos); a política passa a receber esse escopo em ve
 - **Uma pergunta nova que os dados respondem**: uma entrada em `dados/capacidades.ts`.
 - **Um tipo novo de contexto** (seção ou lista no catálogo do formulário): sai sozinho pelo provedor de
   contexto.
+- **Sinal de cultura ou referência criativa**: pela tela (Contexto, Sinais de cultura) ou pelo coletor em
+  `POST /api/v0/brain/clientes/{clienteId}/sinais`; é linha em `core.client_culture_signals`, nenhum código muda.
 - **Conhecimento global novo** (lente, prática, regra legal, benchmark): `INSERT` em
   `core.knowledge_entries` por migração (versão nova é linha nova); regra legal só é `obrigatoria` com
   `verificado_em` preenchido. Nada no código muda.

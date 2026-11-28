@@ -160,6 +160,39 @@ describe('IA: chave do fornecedor, modelo por tarefa, uso e teto (ADR 0064)', { 
       signOut();
     });
 
+    it('comitês do planejador: desliga e religa com auditoria, risco e legal travado, modelo próprio e volta ao padrão do Comitê (24K-134)', async () => {
+      signIn(a.dono);
+      const pagina = await (await browse(PAGINA)).text();
+      assert.match(pagina, /<h2[^>]*id="t-comites"[^>]*>Comitês do planejador<\/h2>/);
+      assert.match(pagina, /17 comitês ligados, cada rodada do Comitê faz cerca de 69 chamadas/);
+      assert.match(pagina, /Sempre ligado: a reprovação deste comitê obriga ajuste/);
+      assert.equal(pagina.includes('Desligar Comitê de risco e legal'), false);
+      const base = Number(query(`select coalesce(max(id), 0) from audit.audit_log`));
+      await enviar('Desligar Comitê de cultura', { comite: 'cultura', ligado: 'nao' });
+      assert.equal(query(`select ligado::text from core.strategy_committee_settings where organization_id = '${a.org}' and comite = 'cultura'`), 'false');
+      await submitAction(PAGINA, await acaoDoBotao('Ligar Comitê de cultura'), { comite: 'risco_legal', ligado: 'nao' });
+      assert.equal(query(`select count(*) from core.strategy_committee_settings where organization_id = '${a.org}' and comite = 'risco_legal'`), '0');
+      const depois = await (await browse(PAGINA)).text();
+      assert.match(depois, /16 comitês ligados, cada rodada do Comitê faz cerca de 65 chamadas/);
+      await enviar('Ligar Comitê de cultura', { comite: 'cultura', ligado: 'sim' });
+      assert.equal(query(`select ligado::text from core.strategy_committee_settings where organization_id = '${a.org}' and comite = 'cultura'`), 'true');
+      const acoes = query(`select string_agg(action || ':' || (metadata->>'comite'), ',' order by id) from audit.audit_log where id > ${base} and organization_id = '${a.org}' and action like 'strategy.comite.%'`);
+      assert.equal(acoes, 'strategy.comite.desligado:cultura,strategy.comite.ligado:cultura');
+
+      const salvarDoComite = await acaoDoBotao('Salvar modelo do Comitê de marca');
+      await submitAction(PAGINA, salvarDoComite, { tarefa: 'comite_marca', escolha: 'google|modelo-de-teste-b' });
+      assert.equal(query(`select provider || '|' || model from core.ai_task_models where organization_id = '${a.org}' and task = 'comite_marca'`), 'google|modelo-de-teste-b');
+      await submitAction(PAGINA, salvarDoComite, { tarefa: 'comite_marca', escolha: 'padrao' });
+      assert.equal(query(`select count(*) from core.ai_task_models where organization_id = '${a.org}' and task = 'comite_marca'`), '0');
+      signOut();
+
+      signIn(b.dono);
+      assert.equal(query(`select count(*) from core.strategy_committee_settings where organization_id = '${b.org}'`), '0');
+      const deB = await (await browse(PAGINA)).text();
+      assert.match(deB, /17 comitês ligados/);
+      signOut();
+    });
+
     it('testar modelo chama pelo executor e registra uma linha de uso só com contagens', async () => {
       const cookie = signIn(a.dono);
       const antes = usos(a.org);

@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation';
 import { modules } from '@/composition';
 import { TESTE_DE_MODELO } from '@/modules/ia/domain/tarefasInternas';
+import { VALOR_DO_MODELO_PADRAO } from '@/modules/strategy/interface/comitesNaConfiguracao';
 import { requestId, text } from '@/shared/http/actions';
 import { atorAtual } from '@/shared/http/ator';
 import { requireContext } from '@/shared/http/currentOrganization';
@@ -83,4 +84,22 @@ export async function testarModelo(_anterior: EstadoDoTeste, _formData: FormData
       tokensDeSaida: resposta.value.uso.tokensDeSaida,
     },
   };
+}
+
+export async function ligarOuDesligarComite(formData: FormData): Promise<void> {
+  const quem = await quemConfigura();
+  const ligado = text(formData, 'ligado') === 'sim';
+  const resultado = await modules().strategy.comites.definirLigado(quem, text(formData, 'comite'), ligado, await atorAtual());
+  voltar(resultado, ligado ? 'Comitê ligado.' : 'Comitê desligado.');
+}
+
+export async function escolherModeloDoComite(formData: FormData): Promise<void> {
+  const quem = await quemConfigura();
+  const tarefa = text(formData, 'tarefa');
+  const escolha = text(formData, 'escolha');
+  if (escolha === VALOR_DO_MODELO_PADRAO) {
+    voltar(await modules().ia.modelos.usarModeloPadrao(quem, tarefa, await atorAtual()), 'O comitê usa o modelo padrão do Comitê.');
+  }
+  const [fornecedor = '', ...resto] = escolha.split('|');
+  voltar(await modules().ia.modelos.escolherModelo(quem, tarefa, fornecedor, resto.join('|'), await atorAtual()), 'Modelo definido para o comitê.');
 }

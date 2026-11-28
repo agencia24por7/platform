@@ -4,6 +4,7 @@ import '../../../shared/testing/registrarAlias.mjs';
 import type { AuditEvent } from '@/modules/audit/domain/auditEvent';
 import type { AvaliadorDeLimites, Execucao, LeitorDoBrain, PedidoDeIA } from '@/modules/strategy/application/portas';
 import { parecer, ponto } from '../domain/comite/fixturesDeParecer.ts';
+import { ehPedidoDeComite, respostaDoComite } from '../domain/comite/fixturesDoComite.ts';
 import { CLIENTE_ID, ORGANIZACAO_ID, URN_BENCHMARK_B, CATALOGOS_DE_TESTE, pacoteDeTeste, planoCompleto, secoesDoGrupoDaChave } from '../domain/fixturesDeTeste.ts';
 import type { Plano } from '../domain/plano.ts';
 
@@ -49,10 +50,7 @@ function roteiroPadrao(sobrescrita: Sobrescrita = {}): Roteiro {
       }
       return secoesDoGrupoDaChave(pedido.chaveDeIdempotencia, (sobrescrita.plano ? sobrescrita.plano() : planoCompleto()) as Plano);
     }
-    if (pedido.tarefa === 'comite') {
-      const chave = (pedido.dados as { persona: { chave: string } }).persona.chave;
-      return sobrescrita.comite ? sobrescrita.comite(chave) : parecer(chave, 'aprova');
-    }
+    if (ehPedidoDeComite(pedido)) return respostaDoComite(pedido, (chave) => sobrescrita.comite ? sobrescrita.comite(chave) : parecer(chave, 'aprova'));
     if (pedido.tarefa === 'juiz') return aceitaTodos(pedido.dados);
     chamadasDoGate += 1;
     return sobrescrita.gate ? sobrescrita.gate(chamadasDoGate) : { resultado: 'aprovado', problemas: [] };

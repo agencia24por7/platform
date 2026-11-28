@@ -26,6 +26,7 @@ const { comValidacao } = await import('@/modules/strategy/infrastructure/ia/comV
 const { ok, err } = await import('@/shared/result/result.ts');
 const fixtures = await import('@/modules/strategy/domain/fixturesDeTeste.ts');
 const { parecer, ponto } = await import('@/modules/strategy/domain/comite/fixturesDeParecer.ts');
+const { PARECERES_DOS_COMITES, ehPedidoDeComite, respostaDoComite } = await import('@/modules/strategy/domain/comite/fixturesDoComite.ts');
 
 const trocarIds = (valor) => JSON.parse(JSON.stringify(valor).replaceAll(fixtures.ORGANIZACAO_ID, c.orgA).replaceAll(fixtures.CLIENTE_ID, c.cliA));
 const plano = trocarIds(fixtures.planoCompleto());
@@ -57,9 +58,8 @@ const roteiroBase = (pedido) => {
     }
     return fixtures.secoesDoGrupoDaChave(pedido.chaveDeIdempotencia, plano);
   }
-  if (pedido.tarefa === 'comite') {
-    const chave = pedido.dados.persona.chave;
-    return chave === 'redator' ? parecer(chave, 'aprova_com_ajuste', [ponto('p1', 'estrategia', [urnDoBeneficio])]) : parecer(chave, 'aprova');
+  if (ehPedidoDeComite(pedido)) {
+    return respostaDoComite(pedido, (chave) => (chave === 'redator' ? parecer(chave, 'aprova_com_ajuste', [ponto('p1', 'estrategia', [urnDoBeneficio])]) : parecer(chave, 'aprova')));
   }
   return { resultado: 'aprovado', problemas: [] };
 };
@@ -102,7 +102,7 @@ assert.equal(v2.status, 'rascunho');
 assert.equal(v2.autorTipo, 'agente');
 const eventosV1 = await repo.eventosDaVersao(c.orgA, v1.id);
 const eventosV2 = await repo.eventosDaVersao(c.orgA, v2.id);
-assert.equal(eventosV1.filter((e) => e.tipo === 'parecer').length, 9);
+assert.equal(eventosV1.filter((e) => e.tipo === 'parecer').length, PARECERES_DOS_COMITES);
 assert.deepEqual(eventosV1.map((e) => e.tipo).filter((t) => t !== 'parecer'), ['veredito_juiz', 'cancelada']);
 assert.deepEqual(eventosV2.map((e) => e.tipo), ['ajuste', 'gate']);
 assert.equal(eventosV2[0].payload.responde_a, v1.id);

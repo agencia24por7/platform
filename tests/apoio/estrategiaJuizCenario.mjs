@@ -29,6 +29,8 @@ const { comValidacao } = await import('@/modules/strategy/infrastructure/ia/comV
 const { ok, err } = await import('@/shared/result/result.ts');
 const fixtures = await import('@/modules/strategy/domain/fixturesDeTeste.ts');
 const { parecer, ponto } = await import('@/modules/strategy/domain/comite/fixturesDeParecer.ts');
+const { ehPedidoDeComite, respostaDoComite } = await import('@/modules/strategy/domain/comite/fixturesDoComite.ts');
+const { COMITES, chamadasPorRodadaDoComite, comitesConvocados } = await import('@/modules/strategy/domain/comite/comites.ts');
 
 const trocarIds = (valor) => JSON.parse(JSON.stringify(valor).replaceAll(fixtures.ORGANIZACAO_ID, c.orgA).replaceAll(fixtures.CLIENTE_ID, c.cliA));
 const planoBase = trocarIds(fixtures.planoCompleto());
@@ -74,11 +76,11 @@ const roteiro = (pedido) => {
     if (pedido.chaveDeIdempotencia.includes(':corrigir:')) return { secoes, respostas: [] };
     return secoes;
   }
-  if (pedido.tarefa === 'comite') {
-    const chave = pedido.dados.persona.chave;
-    return estado.comite === 'ajuste' && chave === 'redator'
-      ? parecer(chave, 'aprova_com_ajuste', [ponto('p1', 'estrategia', [urnB]), ponto('p2', 'campanhas')])
-      : parecer(chave, 'aprova');
+  if (ehPedidoDeComite(pedido)) {
+    return respostaDoComite(pedido, (chave) =>
+      estado.comite === 'ajuste' && chave === 'redator'
+        ? parecer(chave, 'aprova_com_ajuste', [ponto('p1', 'estrategia', [urnB]), ponto('p2', 'campanhas')])
+        : parecer(chave, 'aprova'));
   }
   if (pedido.tarefa === 'juiz') return estado.juiz ? estado.juiz(pedido.dados) : { vereditos: [] };
   return estado.gateDoModelo === 'aprovado' ? { resultado: 'aprovado', problemas: [] } : { resultado: 'reprovado', problemas: [{ trecho: 'campanhas', problema: 'Segue incoerente.' }] };
@@ -200,7 +202,11 @@ await processar();
 const feita = await repo.lerExecucao(c.orgA, correcao.value.execucao.id);
 assert.equal(feita.status, 'concluida', JSON.stringify(feita));
 assert.equal(iaFalsa.pedidos.filter((p) => p.tarefa === 'strategy_plan').length, 0, 'os 4 itens foram restaurados no servidor, sem pedir ao modelo');
-assert.equal(iaFalsa.pedidos.filter((p) => p.tarefa === 'comite').length, 9, 'a nova execução convoca o Comitê (exigência do banco)');
+assert.equal(
+  iaFalsa.pedidos.filter((p) => ehPedidoDeComite(p)).length,
+  comitesConvocados(COMITES, { secoesTocadas: ['estrategia'] }).reduce((soma, comite) => soma + chamadasPorRodadaDoComite(comite), 0),
+  'a nova execução convoca os comitês da seção tocada e o de risco e legal (exigência do banco)',
+);
 const [vNova, vRuimDepois] = await versoesDe(p2.plano.id);
 assert.equal(vRuimDepois.id, vRuim.id);
 assert.equal(vRuimDepois.status, 'cancelado');

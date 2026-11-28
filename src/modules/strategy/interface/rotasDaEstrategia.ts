@@ -7,3 +7,7 @@ export function rotaDaListaDePlanos(clienteId: string, busca: Readonly<Record<st
 export function rotaDoPlano(clienteId: string, planoId: string): string {
   return `${rotaDoCliente(clienteId, 'estrategia')}/${encodeURIComponent(planoId)}`;
 }
+
+export function rotaDaMemoriaDoPlano(clienteId: string, planoId: string): string {
+  return `${rotaDoPlano(clienteId, planoId)}/memoria`;
+}

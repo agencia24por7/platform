@@ -3,3 +3,5 @@ export * from '@/modules/strategy/application/instrucoes/comite';
 export * from '@/modules/strategy/application/instrucoes/gate';
 export * from '@/modules/strategy/application/instrucoes/regrasComuns';
 export * from '@/modules/strategy/application/instrucoes/juiz';
+export * from '@/modules/strategy/application/instrucoes/mesa';
+export * from '@/modules/strategy/application/instrucoes/diretorDeProducao';

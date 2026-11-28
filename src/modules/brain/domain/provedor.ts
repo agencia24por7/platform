@@ -1,5 +1,6 @@
 import type { EntradaDeConhecimento } from './conhecimento.ts';
 import type { ContextoParaCatalogo } from './contexto.ts';
+import type { SinalDeCultura } from './cultura.ts';
 import type { DesempenhoMedido } from './desempenho.ts';
 import type { EntradaDoCatalogo, EntradaSemSelo } from './entrada.ts';
 import type { InventarioDoCliente } from './inventario.ts';
@@ -18,6 +19,7 @@ export type ContextoDeDescoberta = {
   readonly entradasPrimarias: readonly EntradaDoCatalogo[];
   readonly conhecimento: readonly EntradaDeConhecimento[] | null;
   readonly desempenho: readonly DesempenhoMedido[];
+  readonly cultura: readonly SinalDeCultura[] | null;
   urn(tipo: string, id: string): string;
 };
 
@@ -43,11 +45,12 @@ export type ProvedorDeCatalogo = {
 export const SAUDE_OK: SaudeDoProvedor = { status: 'ok', motivo: null };
 
 export function contextoDeDescoberta(
-  base: Omit<ContextoDeDescoberta, 'urn' | 'entradasPrimarias' | 'regras' | 'conhecimento' | 'desempenho'> & {
+  base: Omit<ContextoDeDescoberta, 'urn' | 'entradasPrimarias' | 'regras' | 'conhecimento' | 'desempenho' | 'cultura'> & {
     readonly entradasPrimarias?: readonly EntradaDoCatalogo[];
     readonly regras?: RegrasParaCatalogo | null;
     readonly conhecimento?: readonly EntradaDeConhecimento[] | null;
     readonly desempenho?: readonly DesempenhoMedido[];
+    readonly cultura?: readonly SinalDeCultura[] | null;
   },
 ): ContextoDeDescoberta {
   return {
@@ -56,6 +59,7 @@ export function contextoDeDescoberta(
     regras: base.regras ?? null,
     conhecimento: base.conhecimento ?? null,
     desempenho: base.desempenho ?? base.inventario.desempenho ?? [],
+    cultura: base.cultura ?? null,
     urn: (tipo, id) => criarUrn(base.organizationId, base.clienteId, tipo, id),
   };
 }

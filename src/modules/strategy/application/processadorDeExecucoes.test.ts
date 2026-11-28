@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import '../../../shared/testing/registrarAlias.mjs';
 import { CLIENTE_ID, ORGANIZACAO_ID, CATALOGOS_DE_TESTE, pacoteDeTeste, planoCompleto, secoesDoGrupoDaChave } from '../domain/fixturesDeTeste.ts';
 import { parecer } from '../domain/comite/fixturesDeParecer.ts';
+import { ehPedidoDeComite, respostaDoComite } from '../domain/comite/fixturesDoComite.ts';
 
 Object.assign(process.env, {
   DATABASE_URL: 'postgres://teste:teste@localhost:5432/teste',
@@ -23,7 +24,7 @@ async function montar(executor: 'falsa' | 'nao_configurada', quantidade: number)
   const repositorio = criarRepositorioEmMemoria();
   const ia = criarIaFalsa((p) => {
     if (p.tarefa === 'strategy_plan') return secoesDoGrupoDaChave(p.chaveDeIdempotencia);
-    if (p.tarefa === 'comite') return parecer((p.dados as { persona: { chave: string } }).persona.chave, 'aprova');
+    if (ehPedidoDeComite(p)) return respostaDoComite(p);
     if (p.tarefa === 'juiz') return aceitaTodos(p.dados);
     return { resultado: 'aprovado', problemas: [] };
   });
@@ -90,7 +91,7 @@ describe('processadorDeExecucoes', () => {
       repositorio: { ...repositorio, reservarExecucao: async (org, id, opcoes) => { if ((chamadas += 1) === 1) throw new Error('banco caiu'); return original(org, id, opcoes); } },
       motor: createMotorDoPlano({ catalogos: CATALOGOS_DE_TESTE,
         repositorio,
-        executorDeIA: criarIaFalsa((p) => (p.tarefa === 'strategy_plan' ? secoesDoGrupoDaChave(p.chaveDeIdempotencia) : p.tarefa === 'comite' ? parecer((p.dados as { persona: { chave: string } }).persona.chave, 'aprova') : { resultado: 'aprovado', problemas: [] })),
+        executorDeIA: criarIaFalsa((p) => (p.tarefa === 'strategy_plan' ? secoesDoGrupoDaChave(p.chaveDeIdempotencia) : ehPedidoDeComite(p) ? respostaDoComite(p) : { resultado: 'aprovado', problemas: [] })),
         leitorDoBrain: { async lerPacote() { return ok(pacoteDeTeste()); } },
         avaliadorDeLimites: { async avaliador() { return ok(Object.assign(() => 'ok' as const, { medidasComLimite: [] as const })); } },
         audit: { async record() {}, async list() { return []; }, async search() { return []; } },
