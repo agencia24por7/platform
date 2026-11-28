@@ -577,7 +577,7 @@ function problemasDeIntegridade(plano: SecoesParciaisDoPlano): Problema[] {
   ];
   for (const [caminho, itens] of colecoes) {
     if (itens === undefined) continue;
-    for (const repetido of idsRepetidos(itens.map((item) => item.id))) registrar(caminho, `Id repetido: ${repetido}.`);
+    for (const repetido of idsRepetidos(itens.map((item) => item.id))) registrar(caminho, `Id repetido: ${ecoSeguro(repetido)}.`);
   }
 
   const segmentos = plano.publico_alvo ? new Set(plano.publico_alvo.segmentos.map((s) => s.id)) : null;
@@ -586,44 +586,44 @@ function problemasDeIntegridade(plano: SecoesParciaisDoPlano): Problema[] {
 
   plano.comunidades_alvo?.comunidades.forEach((c, i) => {
     if (segmentos && c.segmento_id !== undefined && !segmentos.has(c.segmento_id)) {
-      registrar(['comunidades_alvo', 'comunidades', i, 'segmento_id'], `Segmento inexistente: ${c.segmento_id}.`);
+      registrar(['comunidades_alvo', 'comunidades', i, 'segmento_id'], `Segmento inexistente: ${ecoSeguro(c.segmento_id)}.`);
     }
   });
   plano.estrategia?.nao_faremos.forEach((n, i) => {
     if (segmentos && n.teste?.tipo === 'publico_proibido' && !segmentos.has(n.teste.valor)) {
-      registrar(['estrategia', 'nao_faremos', i, 'teste', 'valor'], `Segmento inexistente: ${n.teste.valor}.`);
+      registrar(['estrategia', 'nao_faremos', i, 'teste', 'valor'], `Segmento inexistente: ${ecoSeguro(n.teste.valor)}.`);
     }
   });
   plano.campanhas?.campanhas.forEach((c, i) => {
-    if (segmentos && !segmentos.has(c.segmento_id)) registrar(['campanhas', 'campanhas', i, 'segmento_id'], `Segmento inexistente: ${c.segmento_id}.`);
-    if (metas && !metas.has(c.meta_id)) registrar(['campanhas', 'campanhas', i, 'meta_id'], `Meta inexistente: ${c.meta_id}.`);
+    if (segmentos && !segmentos.has(c.segmento_id)) registrar(['campanhas', 'campanhas', i, 'segmento_id'], `Segmento inexistente: ${ecoSeguro(c.segmento_id)}.`);
+    if (metas && !metas.has(c.meta_id)) registrar(['campanhas', 'campanhas', i, 'meta_id'], `Meta inexistente: ${ecoSeguro(c.meta_id)}.`);
   });
   plano.orcamento?.por_canal.forEach((p, i) => {
-    if (canais && !canais.has(p.canal_id)) registrar(['orcamento', 'por_canal', i, 'canal_id'], `Canal inexistente: ${p.canal_id}.`);
+    if (canais && !canais.has(p.canal_id)) registrar(['orcamento', 'por_canal', i, 'canal_id'], `Canal inexistente: ${ecoSeguro(p.canal_id)}.`);
   });
   const escolhidas = plano.intencao?.plataformas === undefined ? null : new Set<string>(plano.intencao.plataformas);
   if (escolhidas) {
     plano.canais_e_plataformas?.canais.forEach((c, i) => {
       if (c.plataforma !== undefined && !escolhidas.has(c.plataforma)) {
-        registrar(['canais_e_plataformas', 'canais', i, 'plataforma'], `Plataforma não escolhida: ${c.plataforma}.`);
+        registrar(['canais_e_plataformas', 'canais', i, 'plataforma'], `Plataforma não escolhida: ${ecoSeguro(c.plataforma)}.`);
       }
     });
     plano.campanhas?.campanhas.forEach((c, i) => {
       if (c.plataforma !== undefined && !escolhidas.has(c.plataforma)) {
-        registrar(['campanhas', 'campanhas', i, 'plataforma'], `Plataforma não escolhida: ${c.plataforma}.`);
+        registrar(['campanhas', 'campanhas', i, 'plataforma'], `Plataforma não escolhida: ${ecoSeguro(c.plataforma)}.`);
       }
     });
   }
   const midia = plano.plano_de_midia?.plataformas ?? [];
   midia.forEach((entrada, i) => {
     if (escolhidas && !escolhidas.has(entrada.plataforma)) {
-      registrar(['plano_de_midia', 'plataformas', i, 'plataforma'], `Plataforma não escolhida: ${entrada.plataforma}.`);
+      registrar(['plano_de_midia', 'plataformas', i, 'plataforma'], `Plataforma não escolhida: ${ecoSeguro(entrada.plataforma)}.`);
     }
     const chaves = entrada.secoes.flatMap((secao) => secao.campos.map((campo) => campo.campo));
-    for (const repetido of idsRepetidos(chaves)) registrar(['plano_de_midia', 'plataformas', i, 'secoes'], `Campo repetido: ${repetido}.`);
+    for (const repetido of idsRepetidos(chaves)) registrar(['plano_de_midia', 'plataformas', i, 'secoes'], `Campo repetido: ${ecoSeguro(repetido)}.`);
   });
   for (const repetida of idsRepetidos(midia.map((entrada) => entrada.plataforma))) {
-    registrar(['plano_de_midia', 'plataformas'], `Plataforma repetida: ${repetida}.`);
+    registrar(['plano_de_midia', 'plataformas'], `Plataforma repetida: ${ecoSeguro(repetida)}.`);
   }
   const totalDeCampos = midia.reduce((total, entrada) => total + entrada.secoes.reduce((soma, secao) => soma + secao.campos.length, 0), 0);
   if (totalDeCampos > MAXIMO_DE_CAMPOS_DO_PLANO_DE_MIDIA) {
@@ -638,9 +638,15 @@ function problemasDeIntegridade(plano: SecoesParciaisDoPlano): Problema[] {
     }
   });
   plano.medicao?.itens.forEach((item, i) => {
-    if (metas && !metas.has(item.meta_id)) registrar(['medicao', 'itens', i, 'meta_id'], `Meta inexistente: ${item.meta_id}.`);
+    if (metas && !metas.has(item.meta_id)) registrar(['medicao', 'itens', i, 'meta_id'], `Meta inexistente: ${ecoSeguro(item.meta_id)}.`);
   });
   return problemas;
+}
+
+const ID_ECOAVEL = /^[a-z][a-z0-9_]{0,63}$/;
+
+function ecoSeguro(valor: unknown): string {
+  return typeof valor === 'string' && ID_ECOAVEL.test(valor) ? valor : '(valor fora do formato de id)';
 }
 
 export function problemasDeIntegridadeParcial(secoes: SecoesParciaisDoPlano): readonly { readonly caminho: string; readonly mensagem: string }[] {

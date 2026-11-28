@@ -251,9 +251,11 @@ class FalhaDaEtapa extends Error {
   readonly transitoria: boolean;
   readonly perdida: boolean;
   readonly motivo: string | null;
+  readonly problemas: readonly string[];
 
-  constructor(codigo: CodigoDeErroDaExecucao, transitoria: boolean, perdida = false, motivo: string | null = null) {
+  constructor(codigo: CodigoDeErroDaExecucao, transitoria: boolean, perdida = false, motivo: string | null = null, problemas: readonly string[] = []) {
     super(codigo);
+    this.problemas = problemas;
     this.codigo = codigo;
     this.transitoria = transitoria;
     this.perdida = perdida;
@@ -261,53 +263,154 @@ class FalhaDaEtapa extends Error {
   }
 }
 
-type Contexto = { pacote?: PacoteDeLeitura; foco?: FocoDoPlano | null; readonly ficha: number };
+type Contexto = { pacote?: PacoteDeLeitura; foco?: FocoDoPlano | null; corrigir?: readonly ProblemaParaCorrigir[]; readonly ficha: number };
 
 type Efeito = {
   readonly proximo: Partial<MudancaDaExecucao>;
   readonly contagens?: Readonly<Record<string, number | string>>;
 };
 
-function falhaDeIA(codigo: CodigoDeErroDeIA, motivo: string | null = null): FalhaDaEtapa {
-  return new FalhaDaEtapa(CODIGO_DA_FALHA_DE_IA[codigo], codigo !== 'nao_configurada' && codigo !== 'limite_atingido', false, motivo);
+type MotivoDaFalha = { readonly motivo: string; readonly problemas: readonly string[] };
+
+function falhaDeIA(codigo: CodigoDeErroDeIA, motivo: string | MotivoDaFalha | null = null): FalhaDaEtapa {
+  const texto = typeof motivo === 'string' || motivo === null ? motivo : motivo.motivo;
+  const problemas = typeof motivo === 'object' && motivo !== null ? motivo.problemas : [];
+  return new FalhaDaEtapa(CODIGO_DA_FALHA_DE_IA[codigo], codigo !== 'nao_configurada' && codigo !== 'limite_atingido', false, texto, problemas);
 }
 
 const MAXIMO_DE_PROBLEMAS_DEVOLVIDOS = 10;
 const AVISO_DE_CORRECAO_DE_INTEGRIDADE =
   'A entrada traz "problemasDeIntegridade": a versão anterior deste grupo ficou inconsistente com as seções já redigidas ou com ela mesma. Devolva o grupo corrigido, citando só ids que existem em "secoesJaRedigidas" ou neste grupo.';
 
-const LIMITE_DO_ITEM_DO_MOTIVO = 68;
-const LIMITE_DO_PORQUE_NO_MOTIVO = 36;
-const MINIMO_DO_ONDE_NO_MOTIVO = 12;
+const TETO_DO_MOTIVO = 480;
+const MAXIMO_DE_ITENS_NO_MOTIVO = 3;
+const LIMITE_DO_ONDE_NO_MOTIVO = 48;
+const LIMITE_DO_PORQUE_NO_MOTIVO = 200;
+export const MAXIMO_DE_PROBLEMAS_PARA_CORRIGIR = 8;
+export const LIMITE_DE_CARACTERES_DO_CORRIGIR = 800;
+const LIMITE_DO_PROBLEMA = 220;
 
-function itemDoMotivo(problema: { readonly caminho: string; readonly mensagem: string }): string {
+type ProblemaBruto = { readonly caminho: string; readonly mensagem: string };
+
+function partesDoProblema(problema: ProblemaBruto): { readonly caminho: string; readonly repetido: boolean; readonly onde: string; readonly porque: string } {
   const caminho = problema.caminho.replace(/[^a-z0-9_.]/gi, '').slice(0, 60);
-  const repetido = problema.mensagem.startsWith(`${caminho}/`);
-  const texto = (repetido ? problema.mensagem.slice(caminho.length + 1) : problema.mensagem).replace(/\s+/g, ' ').trim();
+  const segura = mensagemSegura(problema.mensagem);
+  const repetido = segura.startsWith(`${caminho}/`);
+  const texto = repetido ? segura.slice(caminho.length + 1) : segura;
   const corte = texto.indexOf(' (');
   const onde = corte < 0 ? texto : texto.slice(0, corte);
-  const porque = corte < 0 ? '' : texto.slice(corte).slice(0, LIMITE_DO_PORQUE_NO_MOTIVO);
-  const orcamentoDoOnde = Math.max(MINIMO_DO_ONDE_NO_MOTIVO, LIMITE_DO_ITEM_DO_MOTIVO - porque.length);
-  const ondeCurto = onde.length > orcamentoDoOnde ? onde.slice(onde.length - orcamentoDoOnde) : onde;
-  return repetido ? `${ondeCurto}${porque}` : `${caminho}=${ondeCurto}${porque}`;
+  const porque = corte < 0 ? '' : texto.slice(corte);
+  return { caminho, repetido, onde, porque };
 }
 
-function motivoDoPlano(rotulo: string, problemas: readonly { readonly caminho: string; readonly mensagem: string }[]): string {
-  return `${rotulo}:${problemas.slice(0, 3).map(itemDoMotivo).join(';')}`.slice(0, 260);
+function itemDoMotivo(problema: ProblemaBruto): string {
+  const { caminho, repetido, onde, porque } = partesDoProblema(problema);
+  const ondeCurto = onde.length > LIMITE_DO_ONDE_NO_MOTIVO ? onde.slice(onde.length - LIMITE_DO_ONDE_NO_MOTIVO) : onde;
+  const porqueCurto = porque.length > LIMITE_DO_PORQUE_NO_MOTIVO ? `${porque.slice(0, LIMITE_DO_PORQUE_NO_MOTIVO - 2)}…)` : porque;
+  return repetido ? `${ondeCurto}${porqueCurto}` : `${caminho}=${ondeCurto}${porqueCurto}`;
 }
 
-export function motivoDaIntegridade(problemas: readonly { readonly caminho: string; readonly mensagem: string }[]): string {
+const TEXTO_DE_FONTE_FIXA = /^[\p{L}\p{N}_./ ():,;=+×-]+$/u;
+const MENSAGEM_DE_PROBLEMA_OMITIDA = '(detalhe omitido: fora do formato seguro)';
+
+function mensagemSegura(mensagem: string): string {
+  const normalizada = mensagem.replace(/\s+/g, ' ').trim();
+  return normalizada.length <= LIMITE_DO_PROBLEMA && TEXTO_DE_FONTE_FIXA.test(normalizada) ? normalizada : MENSAGEM_DE_PROBLEMA_OMITIDA;
+}
+
+function textoDoProblema(problema: ProblemaBruto): string {
+  const caminho = problema.caminho.replace(/[^a-z0-9_.]/gi, '').slice(0, 60);
+  const mensagem = mensagemSegura(problema.mensagem);
+  const texto = mensagem.startsWith(`${caminho}/`) || mensagem.startsWith(caminho) ? mensagem : `${caminho}: ${mensagem}`;
+  return texto.slice(0, LIMITE_DO_PROBLEMA);
+}
+
+function motivoDoPlano(rotulo: string, problemas: readonly ProblemaBruto[]): MotivoDaFalha {
+  const prefixo = `${rotulo}:`;
+  const itens: string[] = [];
+  for (const problema of problemas.slice(0, MAXIMO_DE_ITENS_NO_MOTIVO)) {
+    const item = itemDoMotivo(problema);
+    if (itens.length > 0 && prefixo.length + [...itens, item].join(';').length > TETO_DO_MOTIVO) break;
+    itens.push(item);
+  }
+  return { motivo: `${prefixo}${itens.join(';')}`.slice(0, TETO_DO_MOTIVO), problemas: problemas.slice(0, MAXIMO_DE_PROBLEMAS_PARA_CORRIGIR).map(textoDoProblema) };
+}
+
+export function motivoDaIntegridade(problemas: readonly ProblemaBruto[]): MotivoDaFalha {
   return motivoDoPlano('rascunho_fora_da_integridade', problemas);
 }
 
-function motivoDoEsquema(erro: { readonly issues: readonly { readonly path: readonly PropertyKey[] }[] }): string {
-  const caminhos = [...new Set(erro.issues.slice(0, 3).map((problema) => problema.path.map(String).join('.').replace(/[^a-z0-9_.]/gi, '').slice(0, 60)))];
-  return `esquema:${caminhos.join(',')}`.slice(0, 160);
+const DICA_DO_TIPO_DE_PROBLEMA: Readonly<Record<string, string>> = {
+  too_big: 'valor ou texto grande demais',
+  too_small: 'valor ou texto pequeno demais',
+  invalid_type: 'tipo errado',
+  invalid_value: 'valor fora das opções',
+  invalid_format: 'formato inválido',
+  unrecognized_keys: 'campo não previsto no esquema',
+  custom: 'viola uma regra do esquema',
+};
+
+function problemaDoEsquema(caminho: string, tipo: string): string {
+  const limpo = caminho.replace(/[^a-z0-9_.]/gi, '').slice(0, 60) || 'raiz';
+  return `${limpo} (${DICA_DO_TIPO_DE_PROBLEMA[tipo] ?? 'fora do esquema'})`;
 }
 
-function motivoDaFalhaDeIA(erro: { readonly codigo: string; readonly mensagem: string }): string {
+function motivoDoEsquema(erro: { readonly issues: readonly { readonly path: readonly PropertyKey[]; readonly code?: string }[] }): MotivoDaFalha {
+  const itens = erro.issues.slice(0, MAXIMO_DE_PROBLEMAS_PARA_CORRIGIR);
+  const caminhos = [...new Set(itens.slice(0, 3).map((problema) => problema.path.map(String).join('.').replace(/[^a-z0-9_.]/gi, '').slice(0, 60)))];
+  return {
+    motivo: `esquema:${caminhos.join(',')}`.slice(0, 160),
+    problemas: itens.map((problema) => problemaDoEsquema(problema.path.map(String).join('.'), problema.code ?? '')),
+  };
+}
+
+function motivoDaFalhaDeIA(erro: { readonly codigo: string; readonly mensagem: string }): MotivoDaFalha {
   const caminhos = erro.codigo === 'saida_invalida' ? /\[(esquema:[a-z0-9_.,:]*)\]$/i.exec(erro.mensagem)?.[1] : undefined;
-  return caminhos ? `ia:${erro.codigo}:${caminhos}` : `ia:${erro.codigo}`;
+  if (!caminhos) return { motivo: `ia:${erro.codigo}`, problemas: [] };
+  const problemas = caminhos
+    .slice('esquema:'.length)
+    .split(',')
+    .filter((item) => item !== '')
+    .map((item) => {
+      const corte = item.lastIndexOf(':');
+      return corte < 0 ? problemaDoEsquema(item, '') : problemaDoEsquema(item.slice(0, corte), item.slice(corte + 1));
+    });
+  return { motivo: `ia:${erro.codigo}:${caminhos}`, problemas };
+}
+
+type ProblemaParaCorrigir = { readonly texto: string; readonly secao: string | null; readonly plataforma: string | null };
+
+export function problemaParaCorrigir(texto: string): ProblemaParaCorrigir {
+  const plataforma = /^plano_de_midia\/([a-z_]+)\//.exec(texto)?.[1] ?? null;
+  const secao = plataforma ? 'plano_de_midia' : (/^([a-z_]+)[.\s(:]/.exec(texto)?.[1] ?? null);
+  return { texto, secao, plataforma };
+}
+
+export function corrigirDaChamada(problemas: readonly ProblemaParaCorrigir[], chave: string): readonly string[] {
+  const alvo = /:g(\d+)(?::([a-z_]+))?$/.exec(chave);
+  const grupo = alvo ? (GRUPOS_DE_REDACAO[Number(alvo[1])] ?? null) : null;
+  const plataformaDaChamada = alvo?.[2] ?? null;
+  const cabem = problemas.filter((problema) => {
+    if (problema.plataforma !== null) return plataformaDaChamada === problema.plataforma;
+    if (problema.secao !== null && grupo !== null && GRUPOS_DE_REDACAO.some((g) => (g as readonly string[]).includes(problema.secao as string))) {
+      return (grupo as readonly string[]).includes(problema.secao);
+    }
+    return true;
+  });
+  const escolhidos: string[] = [];
+  let usados = 0;
+  for (const problema of cabem.slice(0, MAXIMO_DE_PROBLEMAS_PARA_CORRIGIR)) {
+    if (usados + problema.texto.length > LIMITE_DE_CARACTERES_DO_CORRIGIR) break;
+    escolhidos.push(problema.texto);
+    usados += problema.texto.length;
+  }
+  return escolhidos;
+}
+
+function dadosComCorrigir(dados: unknown, corrigir: readonly string[]): unknown {
+  if (corrigir.length === 0) return dados;
+  if (typeof dados === 'object' && dados !== null && !Array.isArray(dados)) return { ...dados, corrigir };
+  return { entrada: dados, corrigir };
 }
 
 function falhaDoBanco(erro: ErroDeEstrategia): FalhaDaEtapa {
@@ -372,6 +475,17 @@ export function distribuirPontos(
   }
   if (porGrupo.size === 0) grupo(INDICE_DO_ULTIMO_GRUPO);
   return porGrupo;
+}
+
+type LinhaDaAuditoriaDoPasso = { readonly metadata?: Readonly<Record<string, unknown>> | undefined; readonly occurredAt?: Date | undefined };
+
+export function estadoDaEtapaNaAuditoria(linhas: readonly LinhaDaAuditoriaDoPasso[], etapa: string, rodada: number): { readonly repeticoes: number; readonly problemas: readonly ProblemaParaCorrigir[] } {
+  const daEtapaEDaRodada = (linha: LinhaDaAuditoriaDoPasso) => linha.metadata?.['etapa'] === etapa && linha.metadata?.['rodada'] === rodada;
+  const adiadas = linhas.filter((linha) => daEtapaEDaRodada(linha) && linha.metadata?.['status'] === 'adiada');
+  const maisRecente = [...linhas].sort((a, b) => (a.occurredAt?.getTime() ?? 0) - (b.occurredAt?.getTime() ?? 0)).at(-1);
+  const brutos = maisRecente !== undefined && daEtapaEDaRodada(maisRecente) && maisRecente.metadata?.['status'] === 'adiada' ? maisRecente.metadata['problemas'] : undefined;
+  const problemas = Array.isArray(brutos) ? brutos.filter((item): item is string => typeof item === 'string').map(problemaParaCorrigir) : [];
+  return { repeticoes: adiadas.length, problemas };
 }
 
 export function createMotorDoPlano(deps: DependenciasDoMotor): MotorDoPlano {
@@ -469,7 +583,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
       resposta = await executorDeIA.executar<T>({
         tarefa,
         instrucoes,
-        dados,
+        dados: tarefa === 'strategy_plan' ? dadosComCorrigir(dados, corrigirDaChamada(contexto.corrigir ?? [], chave)) : dados,
         esquema: esquemaDaChamada,
         orcamento: ORCAMENTO_DA_IA[tarefa],
         organizacaoId: execucao.organizationId,
@@ -1274,23 +1388,25 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     return { estado: 'final', execucao: relida };
   }
 
-  async function repeticoesNaEtapa(execucao: Execucao): Promise<number> {
+  type EstadoDaEtapa = { readonly repeticoes: number; readonly problemas: readonly ProblemaParaCorrigir[] };
+
+  async function estadoDaEtapa(execucao: Execucao): Promise<EstadoDaEtapa> {
     try {
       const linhas = await audit.search(execucao.organizationId, { action: 'strategy.run.step', targetId: execucao.id, limit: LIMITE_DE_LINHAS_DA_AUDITORIA_DA_EXECUCAO });
-      return linhas.filter((linha) => linha.metadata?.['etapa'] === execucao.etapa && linha.metadata?.['status'] === 'adiada').length;
+      return estadoDaEtapaNaAuditoria(linhas, execucao.etapa, execucao.rodada);
     } catch {
-      return 0;
+      return { repeticoes: 0, problemas: [] };
     }
   }
 
   async function falhar(execucao: Execucao, falha: FalhaDaEtapa, ficha: number): Promise<ResultadoDoPasso> {
-    const reintentar = falha.transitoria && execucao.falhas + 1 < maximoDeFalhasTransitorias && (await repeticoesNaEtapa(execucao)) < repeticoesPorEtapa;
+    const reintentar = falha.transitoria && execucao.falhas + 1 < maximoDeFalhasTransitorias && (await estadoDaEtapa(execucao)).repeticoes < repeticoesPorEtapa;
     const mudanca: MudancaDaExecucao = reintentar
       ? { status: 'pendente', falhas: execucao.falhas + 1, leaseAte: null }
       : { status: 'falhou', falhas: execucao.falhas + 1, erroCodigo: falha.codigo, leaseAte: null };
     const resultado = await aplicar(execucao, mudanca, ficha);
     if ('estado' in resultado) return resultado;
-    await auditar(execucao, execucao.etapa, reintentar ? 'adiada' : 'falhou', { codigo: falha.codigo, transitoria: falha.transitoria, ...(falha.motivo === null ? {} : { motivo: falha.motivo }) });
+    await auditar(execucao, execucao.etapa, reintentar ? 'adiada' : 'falhou', { codigo: falha.codigo, transitoria: falha.transitoria, ...(falha.motivo === null ? {} : { motivo: falha.motivo }), ...(falha.problemas.length === 0 ? {} : { problemas: falha.problemas }) });
     return { estado: reintentar ? 'adiado' : 'final', execucao: resultado };
   }
 
@@ -1306,6 +1422,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     const ficha = contexto.ficha;
     if (execucao.tentativas !== ficha) return { estado: 'perdida', execucao };
 
+    contexto.corrigir = execucao.falhas > 0 ? (await estadoDaEtapa(execucao)).problemas : [];
     let efeito: Efeito;
     try {
       efeito = await executarEtapa(execucao, contexto);
