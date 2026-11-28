@@ -4,10 +4,25 @@ import { dataIsoValida } from '../domain/datas.ts';
 import { OUSADIAS, PLATAFORMAS, type Plataforma, type SecaoDoPlano } from '../domain/plano.ts';
 import { TIPOS_DE_PLANO, type TipoDePlano } from '../domain/tipoDePlano.ts';
 import { secaoEditavel, type SecaoEditavel } from './camposEditaveisDaSecao.ts';
-import { centavosDeReais } from './formatosDoPlano.ts';
+import { lerVerbaDoFormulario, periodoDaVerba } from './verbaDoPlano.ts';
 
 export type CamposBrutos = Readonly<Record<string, string | undefined>>;
 export type ErrosDeCampo = Readonly<Record<string, string>>;
+
+const CAMPOS_DE_VALOR_MULTIPLO: ReadonlySet<string> = new Set(['plataformas', 'produtos']);
+
+export function camposBrutosDasEntradas(entradas: Iterable<readonly [string, unknown]>): CamposBrutos {
+  const campos: Record<string, string> = {};
+  for (const [chave, valor] of entradas) {
+    if (typeof valor !== 'string') continue;
+    campos[chave] = CAMPOS_DE_VALOR_MULTIPLO.has(chave) && campos[chave] !== undefined ? `${campos[chave]},${valor}` : valor;
+  }
+  return campos;
+}
+
+export function listaSeparadaPorVirgula(texto: string | undefined): readonly string[] {
+  return (texto ?? '').split(',').map((item) => item.trim()).filter((item) => item !== '');
+}
 
 export const TAMANHO_MAXIMO_DA_INSTRUCAO_NA_TELA = 2000;
 
@@ -84,11 +99,12 @@ export function lerIntencaoDoFormulario(campos: CamposBrutos): Result<IntencaoDo
   if (retorno.length < 3) erros['retorno'] = 'Descreva o retorno esperado (mínimo 3 caracteres).';
   else if (retorno.length > 400) erros['retorno'] = 'O retorno esperado pode ter no máximo 400 caracteres.';
 
-  const centavos = centavosDeReais(aparado('verba'));
-  if (centavos === null) erros['verba'] = 'Informe a verba em reais, por exemplo 15.000,00.';
-  else if (BigInt(centavos) <= 0n) erros['verba'] = 'A verba precisa ser maior que zero.';
+  const periodo = inicio.success && fim.success ? periodoDaVerba({ inicio: inicio.data, fim: fim.data }) : null;
+  const verba = lerVerbaDoFormulario(campos, periodo);
+  if (!verba.ok) erros['verba'] = verba.error;
 
-  if (Object.keys(erros).length > 0 || !plataformasLidas.success || !landingPage.success || !foco.ok || !tipo.success || !inicio.success || !fim.success || !ousadia.success || centavos === null) return err(erros);
+  if (Object.keys(erros).length > 0 || !plataformasLidas.success || !landingPage.success || !foco.ok || !tipo.success || !inicio.success || !fim.success || !ousadia.success || !verba.ok || verba.value === null) return err(erros);
+  const centavos = verba.value;
 
   return ok({
     tipoDePlano: tipo.data,

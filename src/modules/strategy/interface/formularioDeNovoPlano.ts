@@ -2,7 +2,8 @@ import { rotaDoCliente } from '../../clients/domain/painel/enderecos.ts';
 import type { ModeloDeCriacao, PreviaDeUtmDoPedido } from '../application/estrategiaService.ts';
 import { OUSADIAS } from '../domain/plano.ts';
 import { ROTULO_DA_OUSADIA } from './rotulosDoPlano.ts';
-import type { CamposBrutos, ErrosDeCampo } from './formulariosDaEstrategia.ts';
+import { listaSeparadaPorVirgula, type CamposBrutos, type ErrosDeCampo } from './formulariosDaEstrategia.ts';
+import { MODOS_DA_VERBA, MODO_DA_VERBA_PADRAO, ROTULO_DO_MODO_DA_VERBA, modoDaVerba } from './verbaDoPlano.ts';
 
 export type OpcaoDoFormulario = { readonly valor: string; readonly rotulo: string; readonly marcada: boolean };
 
@@ -17,12 +18,13 @@ export type FormularioDeNovoPlano = {
     readonly chave: string;
   };
   readonly ousadias: readonly OpcaoDoFormulario[];
+  readonly modosDaVerba: readonly OpcaoDoFormulario[];
   readonly selecionados: { readonly tipo: string; readonly landingPage: string; readonly ousadia: string };
   readonly whatsapp: { readonly texto: string; readonly ausente: boolean; readonly link: { readonly rotulo: string; readonly href: string } | null };
   readonly semLandingPage: { readonly texto: string; readonly link: { readonly rotulo: string; readonly href: string } } | null;
   readonly podeCriar: boolean;
   readonly chaveDeIdempotencia: string;
-  readonly valores: { readonly objetivo: string; readonly inicio: string; readonly fim: string; readonly retorno: string; readonly verba: string };
+  readonly valores: { readonly objetivo: string; readonly inicio: string; readonly fim: string; readonly retorno: string; readonly verba: string; readonly modoDaVerba: string };
 };
 
 export type PreviaNaTela = {
@@ -37,18 +39,15 @@ export type PreviaNaTela = {
 const OUSADIA_PADRAO = 'moderado';
 const PRIMEIRO_TIPO_PADRAO = 'aquisicao';
 
-function listaDe(texto: string | undefined): readonly string[] {
-  return (texto ?? '').split(',').map((item) => item.trim()).filter((item) => item !== '');
-}
-
 export function formularioDeNovoPlano(modelo: ModeloDeCriacao, valores: CamposBrutos, clienteId: string): FormularioDeNovoPlano {
   const tipoEscolhido = valores['tipoDePlano'] ?? modelo.tipos.find((t) => t.tipo === PRIMEIRO_TIPO_PADRAO)?.tipo ?? modelo.tipos[0]?.tipo;
-  const plataformasEscolhidas = new Set(listaDe(valores['plataformas']));
+  const plataformasEscolhidas = new Set(listaSeparadaPorVirgula(valores['plataformas']));
   const ousadiaEscolhida = valores['ousadia'] ?? OUSADIA_PADRAO;
+  const modoEscolhido = modoDaVerba(valores['modoDaVerba']) ?? MODO_DA_VERBA_PADRAO;
   const paginaEscolhida = valores['landingPageId'];
   const destino = rotaDoCliente(clienteId, 'contexto', { secao: 'destino' });
   const marcaEscolhida = valores['focoMarca'] === '1';
-  const produtosEscolhidos = new Set(marcaEscolhida ? [] : listaDe(valores['produtos']));
+  const produtosEscolhidos = new Set(marcaEscolhida ? [] : listaSeparadaPorVirgula(valores['produtos']));
   const semProdutos = modelo.produtosIndisponiveis
     ? { texto: 'Não foi possível ler os produtos do cliente agora. Tente de novo ou escolha campanha de marca.', link: null }
     : modelo.produtos.length === 0
@@ -65,6 +64,7 @@ export function formularioDeNovoPlano(modelo: ModeloDeCriacao, valores: CamposBr
       chave: `${marcaEscolhida ? 'marca' : 'produtos'}:${[...produtosEscolhidos].sort().join(',')}`,
     },
     ousadias: OUSADIAS.map((nivel) => ({ valor: nivel, rotulo: ROTULO_DA_OUSADIA[nivel] ?? nivel, marcada: nivel === ousadiaEscolhida })),
+    modosDaVerba: MODOS_DA_VERBA.map((modo) => ({ valor: modo, rotulo: ROTULO_DO_MODO_DA_VERBA[modo], marcada: modo === modoEscolhido })),
     selecionados: {
       tipo: tipoEscolhido ?? '',
       landingPage: modelo.landingPages.some((pagina) => pagina.id === paginaEscolhida) ? (paginaEscolhida ?? '') : '',
@@ -82,6 +82,7 @@ export function formularioDeNovoPlano(modelo: ModeloDeCriacao, valores: CamposBr
       fim: valores['fim'] ?? '',
       retorno: valores['retorno'] ?? '',
       verba: valores['verba'] ?? '',
+      modoDaVerba: modoEscolhido,
     },
   };
 }

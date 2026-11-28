@@ -6,6 +6,7 @@ import { escopoDoClienteNaOrganizacao } from '@/../app/clientes/[id]/_escopo';
 import { modules } from '@/composition';
 import { comAviso } from '@/modules/clients/domain/painel/enderecos';
 import {
+  camposBrutosDasEntradas,
   lerEdicaoPorCampos,
   lerIdDoCampo,
   lerIntencaoDoFormulario,
@@ -36,12 +37,7 @@ const NAO_ENCONTRADO: EstadoDoFormulario = { erro: 'Cliente não encontrado.' };
 const LIMITE_DA_MENSAGEM = 400;
 
 function camposDo(formData: FormData): CamposBrutos {
-  const campos: Record<string, string> = {};
-  for (const [chave, valor] of formData.entries()) {
-    if (typeof valor !== 'string') continue;
-    campos[chave] = (chave === 'plataformas' || chave === 'produtos') && campos[chave] !== undefined ? `${campos[chave]},${valor}` : valor;
-  }
-  return campos;
+  return camposBrutosDasEntradas(formData.entries());
 }
 
 function textoDaFalha(falha: Failure): string {

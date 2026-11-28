@@ -263,7 +263,7 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
     signIn(ids.operador);
     const { status, texto } = await pagina(rota(clientes.semPlano, '?novo=1'));
     assert.equal(status, 200);
-    for (const rotulo of ['Tipo de plano', 'Plataformas', 'Landing page', 'Ousadia', 'Objetivo', 'Início do horizonte', 'Fim do horizonte', 'Retorno esperado', 'Verba do horizonte', 'Links com UTM']) {
+    for (const rotulo of ['Tipo de plano', 'Plataformas', 'Landing page', 'Ousadia', 'Objetivo', 'Início do horizonte', 'Fim do horizonte', 'Retorno esperado', 'Verba (R$)', 'Total do período', 'Por mês', 'Links com UTM']) {
       assert.ok(texto.includes(rotulo), rotulo);
     }
     for (const tipo of ['Aquisição', 'Marca', 'Comunidade', 'Retenção']) assert.ok(texto.includes(`>${tipo}</option>`), tipo);
