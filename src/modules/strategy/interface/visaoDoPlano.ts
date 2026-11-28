@@ -2,7 +2,7 @@ import { rotaDoCliente } from '../../clients/domain/painel/enderecos.ts';
 import type { MemberRole } from '../../identity/domain/user.ts';
 import { aplicarUtm } from '../../../shared/utm/utm.ts';
 import type { FaltaParaAplicar } from '../domain/aplicacao.ts';
-import { criarPodeRepetir, erroRepetivel } from '../domain/repeticaoDaExecucao.ts';
+import { criarPodeRepetir, execucaoRepetivel } from '../domain/repeticaoDaExecucao.ts';
 import { podeExecutar, type AcaoDoPlano } from '../domain/papeis.ts';
 import { gruposEditaveis, type GrupoDeCampos } from './camposEditaveisDaSecao.ts';
 import { CATALOGOS_DISPONIVEIS } from '../domain/catalogo/disponiveis.ts';
@@ -13,6 +13,7 @@ import { ROTULO_DO_TIPO_DE_PLANO, ehTipoDePlano } from '../domain/tipoDePlano.ts
 import type { Execucao } from '../application/portas.ts';
 import type { PainelDoPlano } from '../application/estrategiaService.ts';
 import { execucaoSemAvanco } from './agendamentoDaAtualizacao.ts';
+import { intencaoDoPedido, pedidoNaTela, type PedidoNaTela } from './pedidoDoPlano.ts';
 import { MOTIVO_DE_APAGAR_COM_EXECUCAO, tituloDoPlano } from './cardsDePlano.ts';
 import type { FalhaDoGate } from './falhaDoGate.ts';
 import { textoDoFocoCompleto } from './focoNaTela.ts';
@@ -179,6 +180,7 @@ export type VisaoDoPlano = {
   readonly midia: BlocoDoPlano<readonly PlataformaDeMidiaNaTela[]> | null;
   readonly lacunas: LacunasNaTela | null;
   readonly falhaDoGate: FalhaDoGate | null;
+  readonly pedido: PedidoNaTela | null;
 };
 
 export const MAXIMO_DE_CARACTERES_DA_INSTRUCAO = 2000;
@@ -392,8 +394,7 @@ function avisoDoImpacto(desatualizado: PainelDoPlano['desatualizado'], entradas:
 
 export function podeTentarDeNovo(painel: PainelDoPlano | null, papel: MemberRole): boolean {
   const ultima = painel?.ultimaExecucao ?? null;
-  if (!painel || !ultima || painel.execucaoAtiva || ultima.status !== 'falhou') return false;
-  if (ultima.tipo === 'corrigir_gate' || !erroRepetivel(ultima.erroCodigo)) return false;
+  if (!painel || !ultima || painel.execucaoAtiva || !execucaoRepetivel(ultima)) return false;
   if (ultima.tipo === 'criar' && !criarPodeRepetir(painel.historico.versoes)) return false;
   return podeExecutar(ultima.tipo === 'criar' ? 'criar' : 'editar', { tipo: 'pessoa', papel });
 }
@@ -499,6 +500,16 @@ function avisosDaVisao(painel: PainelDoPlano, plano: Plano | null, planoLegivel:
       link: mensagem.link === 'config' ? { rotulo: 'Abrir configurações', href: '/config' } : null,
     });
   }
+  if (!ativa && painel.versaoExibida === null && painel.ultimaExecucao?.status === 'cancelada' && painel.ultimaExecucao.tipo === 'criar') {
+    avisos.push({
+      chave: 'execucao_cancelada',
+      tom: 'warn',
+      titulo: 'A execução foi cancelada antes de o plano ser redigido',
+      texto: repetir ? 'Nada foi escrito. Use Tentar de novo para repetir o mesmo pedido, ou edite o pedido abaixo.' : 'Nada foi escrito. Quem opera ou administra pode pedir o plano de novo.',
+      itens: [],
+      link: null,
+    });
+  }
   const impacto = avisoDoImpacto(painel.desatualizado, contexto.entradas);
   if (impacto) avisos.push(impacto);
   if (!planoLegivel && painel.versaoExibida) {
@@ -543,7 +554,7 @@ export function visaoDoPlano(entrada: EntradaDaVisao): VisaoDoPlano {
       planoId: painel?.plano.id ?? null,
       temPlano: false,
       somenteLeitura,
-      titulo: tituloDoPlano(null, tipo),
+      titulo: tituloDoPlano(painel ? (intencaoDoPedido(painel)?.objetivo ?? null) : null, tipo),
       tipoRotulo,
       plataformas,
       foco: textoDoFocoCompleto(painel?.plano.foco),
@@ -559,6 +570,7 @@ export function visaoDoPlano(entrada: EntradaDaVisao): VisaoDoPlano {
       midia: null,
       lacunas: painel ? lacunasNaTela(painel, clienteId) : null,
       falhaDoGate: null,
+      pedido: painel ? pedidoNaTela({ painel, papel, clienteId }) : null,
     };
   }
 
@@ -588,5 +600,6 @@ export function visaoDoPlano(entrada: EntradaDaVisao): VisaoDoPlano {
     midia: plano ? { chave: 'plano_de_midia', titulo: TITULO_DA_SECAO.plano_de_midia, grupos: gruposEditaveis('plano_de_midia', plano.plano_de_midia, catalogos), conteudo: plataformasDeMidia(plano, contexto) } : null,
     lacunas: lacunasNaTela(painel, clienteId),
     falhaDoGate: painel.falhaDoGate ?? null,
+    pedido: null,
   };
 }

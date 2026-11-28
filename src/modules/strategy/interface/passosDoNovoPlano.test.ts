@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { PASSOS_DO_NOVO_PLANO, indicadorDePassos, limitarPasso, navegacaoDoPasso, passosComErro, primeiroPassoComErro } from './passosDoNovoPlano.ts';
+import { PASSOS_DO_NOVO_PLANO, SEM_CORRECOES, campoDeErroDaEntrada, corrigirCampo, errosAposCorrecoes, errosVigentes, indicadorDePassos, limitarPasso, navegacaoDoPasso, passosComErro, primeiroPassoComErro } from './passosDoNovoPlano.ts';
 
 const CAMPOS_DO_SERVIDOR = ['tipoDePlano', 'plataformas', 'landingPageId', 'foco', 'objetivo', 'inicio', 'fim', 'ousadia', 'verba', 'retorno'];
 
@@ -65,5 +65,34 @@ describe('navegação e indicador', () => {
     assert.equal(verba?.comErro, true);
     assert.equal(verba?.textoDoEstado, 'com erro');
     assert.equal(itens.filter((i) => i.comErro).length, 1);
+  });
+
+  it('erro de campo já corrigido deixa de valer e o passo sai do estado de erro', () => {
+    const erros = { landingPageId: 'Escolha a landing page.', objetivo: 'Descreva o objetivo.' };
+    const vigentes = errosVigentes(erros, new Set(['landingPageId']));
+    assert.deepEqual(vigentes, { objetivo: 'Descreva o objetivo.' });
+    assert.deepEqual([...passosComErro(vigentes)], [...passosComErro({ objetivo: 'x' })]);
+    assert.deepEqual(errosVigentes(undefined, new Set()), {});
+    assert.deepEqual(errosVigentes(erros, new Set()), erros);
+  });
+
+  it('corrigir um campo esconde só o erro dele, e erros novos do servidor zeram as correções', () => {
+    const erros = { foco: 'Escolha o foco.', landingPageId: 'Escolha a landing page.' };
+    const semErro = corrigirCampo(SEM_CORRECOES, erros, 'objetivo');
+    assert.equal(semErro, SEM_CORRECOES);
+    const umaCorrecao = corrigirCampo(SEM_CORRECOES, erros, 'landingPageId');
+    assert.deepEqual(errosAposCorrecoes(erros, umaCorrecao), { foco: 'Escolha o foco.' });
+    const duasCorrecoes = corrigirCampo(umaCorrecao, erros, 'produtos');
+    assert.deepEqual(errosAposCorrecoes(erros, duasCorrecoes), {});
+    const novosErros = { landingPageId: 'Escolha a landing page.' };
+    assert.deepEqual(errosAposCorrecoes(novosErros, duasCorrecoes), novosErros);
+    assert.deepEqual(errosAposCorrecoes(undefined, duasCorrecoes), {});
+  });
+
+  it('entrada do foco e do modo da verba apontam para o campo de erro certo', () => {
+    assert.equal(campoDeErroDaEntrada('focoMarca'), 'foco');
+    assert.equal(campoDeErroDaEntrada('produtos'), 'foco');
+    assert.equal(campoDeErroDaEntrada('modoDaVerba'), 'verba');
+    assert.equal(campoDeErroDaEntrada('landingPageId'), 'landingPageId');
   });
 });

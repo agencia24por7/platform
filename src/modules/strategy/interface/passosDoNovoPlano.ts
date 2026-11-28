@@ -87,3 +87,27 @@ export function navegacaoDoPasso(atual: number): NavegacaoDoPasso {
     progresso: `Passo ${indice + 1} de ${PASSOS_DO_NOVO_PLANO.length}`,
   };
 }
+
+const CAMPO_DE_ERRO_POR_ENTRADA: Readonly<Record<string, string>> = { focoMarca: 'foco', produtos: 'foco', modoDaVerba: 'verba' };
+
+export function campoDeErroDaEntrada(nomeDaEntrada: string): string {
+  return CAMPO_DE_ERRO_POR_ENTRADA[nomeDaEntrada] ?? nomeDaEntrada;
+}
+
+export type CorrecoesDeCampo = { readonly origem: ErrosDeCampo | undefined; readonly campos: ReadonlySet<string> };
+
+export const SEM_CORRECOES: CorrecoesDeCampo = { origem: undefined, campos: new Set() };
+
+export function corrigirCampo(correcoes: CorrecoesDeCampo, erros: ErrosDeCampo | undefined, nomeDaEntrada: string): CorrecoesDeCampo {
+  const campo = campoDeErroDaEntrada(nomeDaEntrada);
+  if (!erros?.[campo]) return correcoes;
+  return { origem: erros, campos: new Set([...(correcoes.origem === erros ? correcoes.campos : []), campo]) };
+}
+
+export function errosAposCorrecoes(erros: ErrosDeCampo | undefined, correcoes: CorrecoesDeCampo): ErrosDeCampo {
+  return errosVigentes(erros, correcoes.origem === erros ? correcoes.campos : SEM_CORRECOES.campos);
+}
+
+export function errosVigentes(erros: ErrosDeCampo | undefined, corrigidos: ReadonlySet<string>): ErrosDeCampo {
+  return Object.fromEntries(Object.entries(erros ?? {}).filter(([campo]) => !corrigidos.has(campo)));
+}

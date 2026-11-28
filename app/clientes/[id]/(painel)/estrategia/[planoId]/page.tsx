@@ -12,6 +12,7 @@ import { EncaixesDoPlano } from '@/../app/clientes/[id]/(painel)/estrategia/Enca
 import { LinhaDoTempo } from '@/../app/clientes/[id]/(painel)/estrategia/LinhaDoTempo';
 import { MemoriaDoPlano } from '@/../app/clientes/[id]/(painel)/estrategia/MemoriaDoPlano';
 import { PlanoDeMidia } from '@/../app/clientes/[id]/(painel)/estrategia/PlanoDeMidia';
+import { PedidoDoPlano } from '@/../app/clientes/[id]/(painel)/estrategia/PedidoDoPlano';
 import { modules } from '@/composition';
 import { idValido, rotaDoCliente } from '@/modules/clients/domain/painel/enderecos';
 import { podeVerAEstrategia } from '@/modules/strategy/domain/papeis';
@@ -70,6 +71,7 @@ export default async function PaginaDoPlano({ params, searchParams }: { readonly
           {ROTULO_DO_LINK_NA_PAGINA_DO_PLANO}
         </Link>
       </div>
+      {visao.pedido ? <PedidoDoPlano pedido={visao.pedido} /> : null}
       <EncaixesDoPlano clienteId={cliente.id} planoId={planoId} lacunas={visao.lacunas} falhaDoGate={visao.falhaDoGate} />
       {visao.resumo && visao.versao ? (
         <BlocoDoPlano clienteId={cliente.id} planoId={planoId} versaoId={visao.versao.id} bloco={visao.resumo} edicao={edicao}>
