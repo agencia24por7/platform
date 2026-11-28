@@ -40,17 +40,25 @@ import { createLimiteDeAlertasNovos, createNotificadorPorWebhook } from '@/modul
 import { createDimensoesService } from '@/modules/coleta/application/dimensoesService';
 import { createDimensoesRepository } from '@/modules/coleta/infrastructure/dimensoesRepository';
 import { createDimensoesBigQuery } from '@/modules/coleta/infrastructure/dimensoesBigQuery';
+import { createBrainRepository } from '@/modules/brain/infrastructure/brainRepository';
 import { criarBrain } from '@/modules/brain/infrastructure/criarBrain';
 import { ferramentasDoBrain } from '@/modules/brain/interface/ferramentas';
 import { criarIa } from '@/modules/ia/infrastructure/criarIa';
 import { createDestinoService } from '@/modules/clients/application/destinoService';
+import { createCulturaService } from '@/modules/brain/application/culturaService';
+import { createCulturaRepository } from '@/modules/brain/infrastructure/culturaRepository';
 import { createDestinoRepository } from '@/modules/clients/infrastructure/destinoRepository';
 import { createEstrategiaService } from '@/modules/strategy/application/estrategiaService';
+import { createComitesService } from '@/modules/strategy/application/comitesService';
 import { createMotorDoPlano } from '@/modules/strategy/application/motorDoPlano';
 import { createProcessadorDeExecucoes } from '@/modules/strategy/application/processadorDeExecucoes';
+import { createDiretorDeProducao } from '@/modules/strategy/application/diretorDeProducao';
+import { createPlanoDeProducaoService } from '@/modules/strategy/application/planoDeProducaoService';
+import { createProducaoRepository } from '@/modules/strategy/infrastructure/producaoRepository';
 import { criarAvaliadorDeLimites } from '@/modules/strategy/infrastructure/avaliadorDeLimites';
 import { carregadorDoServicoDeContexto } from '@/modules/brain/infrastructure/carregadorDeContexto';
 import { criarLeitorDoBrain } from '@/modules/strategy/infrastructure/leitorDoBrain';
+import { createComitesRepository } from '@/modules/strategy/infrastructure/comitesRepository';
 import { createEstrategiaRepository } from '@/modules/strategy/infrastructure/estrategiaRepository';
 import { comValidacao } from '@/modules/strategy/infrastructure/ia/comValidacao';
 import { criarIaDaCamada } from '@/modules/strategy/infrastructure/ia/iaDaCamada';
@@ -97,13 +105,17 @@ function build() {
 
   const identity = createIdentityService(createUserRepository(), audit);
   const destino = createDestinoService(createDestinoRepository(), audit);
+  const cultura = createCulturaService(createCulturaRepository(), audit, { resolverCliente: (clienteId) => createBrainRepository().resolverCliente(clienteId) });
   const estrategiaRepository = createEstrategiaRepository();
   const brain = criarBrain(audit, contexto, regras);
   const ia = criarIa(audit, ferramentasDoBrain(brain));
   const leitorDoBrainDaEstrategia = criarLeitorDoBrain({ brain, carregadorDeContexto: carregadorDoServicoDeContexto(contexto) });
   const executorDeIA = comValidacao(criarIaDaCamada(ia.executor));
   const avaliadorDeLimites = criarAvaliadorDeLimites({ regras });
+  const comitesRepository = createComitesRepository();
+  const producaoRepository = createProducaoRepository();
   const motorDoPlano = createMotorDoPlano({
+    leitorDosComites: comitesRepository,
     repositorio: estrategiaRepository,
     executorDeIA,
     leitorDoBrain: leitorDoBrainDaEstrategia,
@@ -128,6 +140,7 @@ function build() {
     identity,
     clients: createClientService(clientRepository, audit),
     destino,
+    cultura,
     contexto,
     regras,
     team: createTeamService(createTeamRepository(), audit),
@@ -168,9 +181,18 @@ function build() {
     ia,
     strategy: {
       service: createEstrategiaService({ repositorio: estrategiaRepository, audit, leitorDoBrain: leitorDoBrainDaEstrategia, destino, regras }),
+      comites: createComitesService({ repositorio: comitesRepository, audit }),
+      producao: createPlanoDeProducaoService({ repositorio: producaoRepository, estrategia: estrategiaRepository, audit }),
     },
     strategyDoWorker: {
       processador: createProcessadorDeExecucoes({ repositorio: estrategiaRepository, motor: motorDoPlano, audit }),
+      diretorDeProducao: createDiretorDeProducao({
+        repositorio: producaoRepository,
+        estrategia: estrategiaRepository,
+        leitorDoBrain: leitorDoBrainDaEstrategia,
+        executorDeIA,
+        audit,
+      }),
     },
     tokens,
     expurgoDeFontes,

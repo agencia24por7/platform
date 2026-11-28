@@ -18,6 +18,7 @@ export type ContextoDoGate = {
   readonly ajuste?: Ajuste;
   readonly vereditosDoJuiz?: readonly VereditoDoJuiz[];
   readonly comiteDaMesmaExecucao?: boolean;
+  readonly comitesConvocados?: readonly string[];
   readonly medidasComLimite: readonly Medida[];
   readonly planosBase?: readonly Plano[];
   readonly exigePlanoBase?: boolean;

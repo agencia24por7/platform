@@ -7,7 +7,7 @@ import { createExecutor, type Executor } from '../application/execucao.ts';
 import { createModelosService, type ModelosService } from '../application/modelosService.ts';
 import { criarRegistro, type FerramentaRegistrada, type RegistroDeFerramentas } from '../domain/ferramenta.ts';
 import { fornecedoresHabilitados } from '../domain/tarefa.ts';
-import { TAREFAS_INTERNAS } from '../domain/tarefasInternas.ts';
+import { TAREFAS_CONFIGURAVEIS } from '../domain/tarefasInternas.ts';
 import { criarRotaMcp } from '../interface/rotaMcp.ts';
 import { escolherChaveMestra } from '@/modules/tokens/infrastructure/chavesMestras';
 import { createSeladorDeEnvelope } from '@/modules/tokens/infrastructure/envelope';
@@ -42,7 +42,7 @@ export function criarIa(audit: AuditRecorder, ferramentas: readonly FerramentaRe
     catalogo: comCatalogoDeTeste(createCatalogoDeModelos(), config),
     audit,
     fornecedores,
-    tarefas: TAREFAS_INTERNAS,
+    tarefas: TAREFAS_CONFIGURAVEIS,
     avisar,
     permitirTentativa: (organizationId) => consume('ia', `ia:chave:${organizationId}`, TENTATIVAS_DE_CHAVE, JANELA_DE_TENTATIVAS_MS).allowed,
   });

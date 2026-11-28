@@ -3,6 +3,12 @@ import { describe, it } from 'node:test';
 import '../../../shared/testing/registrarAlias.mjs';
 import type { AvaliadorDeLimites, ErroDeIA, Execucao, PedidoDeIA } from '@/modules/strategy/application/portas';
 import { parecer, ponto } from '../domain/comite/fixturesDeParecer.ts';
+import { ehPedidoDeComite, respostaDoComite } from '../domain/comite/fixturesDoComite.ts';
+import { COMITES, chamadasPorRodadaDoComite, comitesConvocados } from '../domain/comite/comites.ts';
+import type { SecaoDoPlano } from '../domain/plano.ts';
+
+const chamadasDosConvocados = (secoesTocadas: SecaoDoPlano[]) =>
+  comitesConvocados(COMITES, { secoesTocadas }).reduce((soma, comite) => soma + chamadasPorRodadaDoComite(comite), 0);
 import { CATALOGOS_DE_TESTE, CLIENTE_ID, ORGANIZACAO_ID, URN_BENCHMARK_B, pacoteDeTeste, planoCompleto, secoesDoGrupoDaChave } from '../domain/fixturesDeTeste.ts';
 import type { NaoFaremos, Plano } from '../domain/plano.ts';
 
@@ -53,10 +59,7 @@ function roteiro(opcoes: Opcoes = {}): Roteiro {
       }
       return secoes;
     }
-    if (pedido.tarefa === 'comite') {
-      const persona = (pedido.dados as { persona: { chave: string } }).persona.chave;
-      return opcoes.comite ? opcoes.comite(persona) : parecer(persona, 'aprova');
-    }
+    if (ehPedidoDeComite(pedido)) return respostaDoComite(pedido, (persona) => opcoes.comite ? opcoes.comite(persona) : parecer(persona, 'aprova'));
     if (pedido.tarefa === 'juiz') return opcoes.juiz ? opcoes.juiz(pedido.dados) : { vereditos: [] };
     chamadasDoGate += 1;
     return opcoes.gate ? opcoes.gate(chamadasDoGate) : { resultado: 'aprovado', problemas: [] };
@@ -117,7 +120,7 @@ async function ate(m: Montagem, execucaoId = m.execucaoId): Promise<Execucao> {
 }
 
 const eventosDe = (m: Montagem, tipo: string) => m.repositorio.estado.eventos.filter((e) => e.tipo === tipo);
-const chamadas = (m: Montagem, tarefa: string) => m.ia.pedidos.filter((p) => p.tarefa === tarefa);
+const chamadas = (m: Montagem, tarefa: string) => m.ia.pedidos.filter((p) => (tarefa.endsWith('_') ? p.tarefa.startsWith(tarefa) : p.tarefa === tarefa));
 const vereditoDe = (persona: string, pontoId: string, v: Veredito['veredito'], prova: string[] = []): Veredito => ({ persona, pontoId, veredito: v, motivo: `Motivo de ${pontoId}.`, prova });
 
 describe('juiz do Comitê no motor', () => {
@@ -356,7 +359,8 @@ describe('corrigir a falha do Gate com IA (motor)', () => {
     assert.equal(final.status, 'concluida', JSON.stringify(final));
     assert.equal(final.erroCodigo, null);
     assert.equal(chamadas(m, 'strategy_plan').length, 0, 'restauração determinística: zero chamadas ao agente de plano');
-    assert.equal(chamadas(m, 'comite').length, 9, 'a nova execução convoca o Comitê');
+    assert.equal(chamadas(m, 'comite_').length, chamadasDosConvocados(['estrategia']), 'a nova execução reconvoca só os comitês da seção tocada e o de risco e legal');
+    assert.ok(chamadas(m, 'comite_risco_legal').length > 0, 'risco e legal sempre é reconvocado');
 
     const novas = m.repositorio.estado.versoes.filter((v) => v.agentRunId === 'run-correcao-1');
     assert.equal(novas.length, 1);
@@ -410,6 +414,6 @@ describe('corrigir a falha do Gate com IA (motor)', () => {
     const final = await ate(m, m.correcaoId);
     assert.equal(final.status, 'falhou');
     assert.equal(final.erroCodigo, 'interno');
-    assert.equal(chamadas(m, 'comite').length, 0);
+    assert.equal(chamadas(m, 'comite_').length, 0);
   });
 });

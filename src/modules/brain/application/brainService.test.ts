@@ -19,7 +19,7 @@ type Estado = { publicadoEm: Date | null; ultimoHash: string | null; pendente: b
 
 const WORKER = { requestId: 'r', callerFingerprint: 'f', sourceIp: null };
 
-function repositorio(opcoes: { excluidos?: string[]; estado?: Estado | null; coberturaFalha?: boolean; conhecimentoFalha?: boolean } = {}) {
+function repositorio(opcoes: { excluidos?: string[]; estado?: Estado | null; coberturaFalha?: boolean; conhecimentoFalha?: boolean; culturaFalha?: boolean } = {}) {
   const chamadas: Chamadas = {};
   const conta = (nome: string) => { chamadas[nome] = (chamadas[nome] ?? 0) + 1; };
   let estado = opcoes.estado ?? null;
@@ -52,6 +52,11 @@ function repositorio(opcoes: { excluidos?: string[]; estado?: Estado | null; cob
       conta('carregarConhecimento');
       if (opcoes.conhecimentoFalha) throw new Error('banco fora');
       return fx.conhecimento();
+    },
+    async carregarSinaisDeCultura() {
+      conta('carregarSinaisDeCultura');
+      if (opcoes.culturaFalha) throw new Error('banco fora');
+      return fx.sinaisDeCultura();
     },
     async gravarDesempenho(_c: unknown, medicao: { linhas: readonly unknown[]; medidos: readonly unknown[] }) { conta('gravarDesempenho'); desempenhoGravado.push(medicao); },
   };
@@ -189,7 +194,7 @@ describe('API de leitura do brain (serviço)', () => {
     const repo = repositorio();
     const { s } = servico({ repo });
     await s.catalogo(fx.CLIENTE, { limite: 200, cursor: null }, WORKER);
-    assert.deepEqual(repo.chamadas, { resolverCliente: 1, carregarInventario: 1, carregarConhecimento: 1 });
+    assert.deepEqual(repo.chamadas, { resolverCliente: 1, carregarInventario: 1, carregarConhecimento: 1, carregarSinaisDeCultura: 1 });
   });
 
   it('conhecimento que falha ao carregar deixa o provedor indisponível sem derrubar o catálogo', async () => {
@@ -199,6 +204,24 @@ describe('API de leitura do brain (serviço)', () => {
     assert.equal(r.value.provedores.find((p) => p.id === 'conhecimento')?.status, 'indisponivel');
     assert.ok(!r.value.entradas.some((e) => e.tipo.startsWith('conhecimento_')));
     assert.ok(r.value.entradas.some((e) => e.tipo === 'desempenho_mensal'));
+  });
+
+  it('sinais de cultura que falham ao carregar deixam o provedor indisponível sem derrubar o catálogo', async () => {
+    const { s } = servico({ repo: repositorio({ culturaFalha: true }) });
+    const r = await s.montar(fx.CLIENTE);
+    assert.ok(r.ok);
+    assert.equal(r.value.provedores.find((p) => p.id === 'culture')?.status, 'indisponivel');
+    assert.ok(!r.value.entradas.some((e) => e.tipo.startsWith('culture_')));
+    assert.ok(r.value.entradas.some((e) => e.tipo === 'conhecimento_lente'));
+  });
+
+  it('sinal de cultura vigente entra no catálogo e o vencido sai', async () => {
+    const { s } = servico({ repo: repositorio() });
+    const r = await s.montar(fx.CLIENTE);
+    assert.ok(r.ok);
+    const culturais = r.value.entradas.filter((e) => e.provedor === 'culture');
+    assert.equal(culturais.length, 6);
+    assert.ok(!culturais.some((e) => e.id === 'c0de0007-0000-4000-8000-000000000007'));
   });
 
   it('contexto que falha ao carregar não derruba o catálogo', async () => {

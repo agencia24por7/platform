@@ -7,6 +7,7 @@ import { err, ok, type Result } from '@/shared/result/result';
 import type { DefinicaoDeCapacidade } from '../domain/capacidades.ts';
 import { filtrarCatalogo, paginar, type FiltrosDoCatalogo } from '../domain/consulta.ts';
 import type { EntradaDeConhecimento } from '../domain/conhecimento.ts';
+import type { SinalDeCultura } from '../domain/cultura.ts';
 import { janelaDeDesempenho, PLATAFORMAS_DE_DESEMPENHO } from '../domain/desempenho.ts';
 import type { CarregadorDeContexto, ContextoParaCatalogo, VisaoDoContexto } from '../domain/contexto.ts';
 import { CARREGADOR_DE_REGRAS_INDISPONIVEL, type CarregadorDeRegras, type RegrasParaCatalogo } from '../domain/regras.ts';
@@ -164,12 +165,22 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
     }
   }
 
+  async function carregarCultura(cliente: ClienteResolvido): Promise<readonly SinalDeCultura[] | null> {
+    try {
+      return await deps.repositorio.carregarSinaisDeCultura(cliente, hojeEmSaoPaulo(agora()));
+    } catch (erro) {
+      aviso('brain.cultura_indisponivel', { clienteId: cliente.clienteId, erro: mensagem(erro) });
+      return null;
+    }
+  }
+
   async function montarResolvido(cliente: ClienteResolvido, visao: VisaoDoContexto): Promise<Snapshot | null> {
-    const [inventario, contexto, regras, conhecimento] = await Promise.all([
+    const [inventario, contexto, regras, conhecimento, cultura] = await Promise.all([
       deps.repositorio.carregarInventario(cliente),
       carregarContexto(cliente, visao),
       carregarRegras(cliente),
       carregarConhecimento(cliente),
+      carregarCultura(cliente),
     ]);
     if (!inventario) return null;
     return construirCatalogo(
@@ -190,6 +201,7 @@ export function createBrainService(deps: DependenciasDoBrain): BrainService {
         contexto,
         regras,
         conhecimento,
+        cultura,
       },
     );
   }

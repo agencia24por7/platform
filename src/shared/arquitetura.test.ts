@@ -92,12 +92,12 @@ describe('a camada de tela só recebe o serviço de Estratégia', () => {
   });
 
   it('nenhum arquivo de app/ importa a infraestrutura, o motor ou o processador do módulo', () => {
-    const PROIBIDO = /strategy\/(infrastructure\/|application\/(motorDoPlano|processadorDeExecucoes))/;
+    const PROIBIDO = /strategy\/(infrastructure\/|application\/(motorDoPlano|processadorDeExecucoes|diretorDeProducao))/;
     const violacoes = doApp().filter((c) => PROIBIDO.test(texto(c)));
     assert.deepEqual(violacoes, []);
   });
 
-  it('modules().strategy expõe só o serviço', () => {
+  it('modules().strategy expõe só serviços de aplicação (o da Estratégia, o da configuração dos comitês e o do plano de produção)', () => {
     const chaves = ['repositorio', 'motor', 'leitorDoBrain', 'processador', 'executorDeIA', 'avaliadorDeLimites'] as const;
     type Estrategia = ReturnType<typeof modules>['strategy'];
     type ChavesProibidas = Extract<keyof Estrategia, (typeof chaves)[number]>;
@@ -107,7 +107,7 @@ describe('a camada de tela só recebe o serviço de Estratégia', () => {
     const bloco = /^ {4}strategy: \{([\s\S]*?)^ {4}\},/m.exec(composicao)?.[1] ?? '';
     assert.ok(bloco.includes('service:'));
     const declaradas = [...bloco.matchAll(/^ {6}(\w+):/gm)].map((m) => m[1]);
-    assert.deepEqual(declaradas, ['service']);
+    assert.deepEqual(declaradas, ['service', 'comites', 'producao']);
     for (const chave of chaves) assert.equal(declaradas.includes(chave), false, chave);
   });
 });

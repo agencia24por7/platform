@@ -84,6 +84,12 @@ function criarRepositorio(estado: Estado): RepositorioDeEstrategia {
     };
   };
   const repo: RepositorioDeEstrategia = {
+    async registrarDeliberacao() {
+      return err({ codigo: 'sem_permissao', mensagem: 'o serviço não delibera' });
+    },
+    async deliberacoesDaVersao() {
+      return [];
+    },
     async clienteVisivel() {
       return estado.clienteExiste;
     },

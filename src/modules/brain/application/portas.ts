@@ -1,4 +1,5 @@
 import type { EntradaDeConhecimento } from '../domain/conhecimento.ts';
+import type { SinalDeCultura } from '../domain/cultura.ts';
 import type { JanelaDeDesempenho, ResultadoDaMedicaoDeDesempenho } from '../domain/desempenho.ts';
 import type { InventarioDoCliente } from '../domain/inventario.ts';
 
@@ -37,6 +38,7 @@ export type BrainRepository = {
   clientesParaMedir(limite: number): Promise<readonly ClienteParaMedir[]>;
   gravarCobertura(cliente: ClienteResolvido, medidas: readonly MedidaNova[]): Promise<void>;
   carregarConhecimento(cliente: ClienteResolvido): Promise<readonly EntradaDeConhecimento[]>;
+  carregarSinaisDeCultura(cliente: ClienteResolvido, hoje: string): Promise<readonly SinalDeCultura[]>;
   gravarDesempenho(cliente: ClienteResolvido, medicao: Pick<ResultadoDaMedicaoDeDesempenho, 'linhas' | 'medidos'>): Promise<void>;
 };
 

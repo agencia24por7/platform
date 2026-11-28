@@ -15,7 +15,7 @@ const TAREFA = 'teste_de_modelo';
 
 type Linha = { bytes: Buffer; versaoDaChave: string; rotulo: string; modelos: readonly string[] };
 
-function montar(opcoes: { catalogo?: unknown; cofreFora?: boolean; fornecedores?: readonly string[]; tentativas?: number } = {}) {
+function montar(opcoes: { catalogo?: unknown; cofreFora?: boolean; fornecedores?: readonly string[]; tentativas?: number; tarefas?: readonly { chave: string; titulo: string; classe: 'rapido_e_barato' | 'raciocinio_forte'; herdaDe?: string }[] } = {}) {
   const chaves = new Map<string, Linha>();
   const escolhas = new Map<string, { tarefa: string; fornecedor: string; modelo: string }>();
   const configuracoes = new Map<string, typeof CONFIGURACAO_PADRAO>();
@@ -54,6 +54,7 @@ function montar(opcoes: { catalogo?: unknown; cofreFora?: boolean; fornecedores?
     },
     async escolhas(org: string) { return [...escolhas.entries()].filter(([k]) => k.startsWith(`${org}|`)).map(([, v]) => v); },
     async escolher(org: string, escolha: { tarefa: string; fornecedor: string; modelo: string }) { escolhas.set(`${org}|${escolha.tarefa}`, escolha); },
+    async removerEscolha(org: string, tarefa: string) { return escolhas.delete(`${org}|${tarefa}`); },
     async configuracao(org: string) { return configuracoes.get(org) ?? CONFIGURACAO_PADRAO; },
     async salvarLigada(org: string, ligada: boolean) { configuracoes.set(org, { ...(configuracoes.get(org) ?? CONFIGURACAO_PADRAO), ligada }); },
     async salvarTetos(org: string, tetos: { chamadasPorDia: number; tokensPorDia: number }) { configuracoes.set(org, { ...(configuracoes.get(org) ?? CONFIGURACAO_PADRAO), ...tetos }); },
@@ -87,7 +88,7 @@ function montar(opcoes: { catalogo?: unknown; cofreFora?: boolean; fornecedores?
     catalogo,
     audit: { record: async (e: Record<string, unknown>) => { eventos.push(e); }, list: async () => [], search: async () => [] } as never,
     fornecedores: (opcoes.fornecedores ?? ['google', 'anthropic']) as never,
-    tarefas: [{ chave: TAREFA, titulo: 'Teste', classe: 'rapido_e_barato' }],
+    tarefas: opcoes.tarefas ?? [{ chave: TAREFA, titulo: 'Teste', classe: 'rapido_e_barato' }],
     avisar: (evento, dados) => { avisos.push({ evento, ...dados }); },
     permitirTentativa: () => { estado.tentativas += 1; return estado.tentativas <= (opcoes.tentativas ?? 1000); },
   });
@@ -291,5 +292,43 @@ describe('teto diário e lista de modelos', () => {
 
   it('lista de modelos: sem repetição, sem modelo que não gera texto, sem id fora do padrão', () => {
     assert.deepEqual(modelosDeTexto(['b', 'a', 'a', 'text-embedding-3', 'whisper-1', 'id com espaço', '<script>', 'gerador/de-texto:1.0']), ['a', 'b', 'gerador/de-texto:1.0']);
+  });
+});
+
+describe('tarefa de comitê herda o modelo da tarefa comite (24K-134)', () => {
+  const tarefas = [
+    { chave: 'comite', titulo: 'Comitê', classe: 'rapido_e_barato' as const },
+    { chave: 'comite_marca', titulo: 'Comitê de marca', classe: 'raciocinio_forte' as const, herdaDe: 'comite' },
+  ];
+
+  it('sem modelo próprio usa o de comite; com modelo próprio usa o seu; voltar ao padrão remove a escolha', async () => {
+    const { servico, eventos } = montar({ tarefas });
+    assert.ok((await servico.guardarChave(admin, 'google', CHAVE, ATOR)).ok);
+    assert.equal((await servico.resolver(ORG, 'comite_marca')).ok, false);
+    assert.ok((await servico.escolherModelo(admin, 'comite', 'google', 'modelo-a', ATOR)).ok);
+    const herdado = await servico.resolver(ORG, 'comite_marca');
+    assert.ok(herdado.ok && herdado.value.modelo === 'modelo-a');
+    const painel = await servico.painel(admin);
+    assert.ok(painel.ok);
+    const daMarca = painel.value.tarefas.find((t) => t.chave === 'comite_marca')!;
+    assert.equal(daMarca.herdada, true);
+    assert.equal(daMarca.escolha, null);
+    assert.equal(daMarca.estado, 'configurada');
+
+    assert.ok((await servico.escolherModelo(admin, 'comite_marca', 'google', 'modelo-b', ATOR)).ok);
+    const proprio = await servico.resolver(ORG, 'comite_marca');
+    assert.ok(proprio.ok && proprio.value.modelo === 'modelo-b');
+    assert.ok((await servico.usarModeloPadrao(admin, 'comite_marca', ATOR)).ok);
+    const devolvido = await servico.resolver(ORG, 'comite_marca');
+    assert.ok(devolvido.ok && devolvido.value.modelo === 'modelo-a');
+    assert.ok(eventos.some((e) => e.action === 'ia.modelo_padrao'));
+  });
+
+  it('modelo padrão só vale para tarefa que herda e só para quem administra', async () => {
+    const { servico } = montar({ tarefas });
+    const semHeranca = await servico.usarModeloPadrao(admin, 'comite', ATOR);
+    assert.equal(semHeranca.ok, false);
+    const operador = await servico.usarModeloPadrao({ organizationId: ORG, papelDeQuemAge: 'operator' }, 'comite_marca', ATOR);
+    assert.ok(!operador.ok && operador.error.code === 'forbidden');
   });
 });

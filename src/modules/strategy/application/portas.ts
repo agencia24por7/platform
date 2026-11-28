@@ -196,6 +196,31 @@ export type NovoEvento = {
   readonly requestId: string;
 };
 
+export type RodadaDaDeliberacao = 0 | 1 | 2;
+
+export type Deliberacao = {
+  readonly versaoId: string;
+  readonly execucaoId: string;
+  readonly comite: string;
+  readonly rodada: RodadaDaDeliberacao;
+  readonly membro: string | null;
+  readonly payload: Readonly<Record<string, unknown>>;
+  readonly agentRunId: string;
+  readonly criadaEm: Date;
+};
+
+export type NovaDeliberacao = {
+  readonly planoId: string;
+  readonly versaoId: string;
+  readonly execucaoId: string;
+  readonly comite: string;
+  readonly rodada: RodadaDaDeliberacao;
+  readonly membro: string | null;
+  readonly payload: Readonly<Record<string, unknown>>;
+  readonly autoria: AutoriaDeAgente;
+  readonly requestId: string;
+};
+
 export type Execucao = {
   readonly id: string;
   readonly planoId: string;
@@ -262,6 +287,8 @@ export type RepositorioDeEstrategia = {
   lerVersao(organizationId: string, versaoId: string): Promise<Versao | null>;
   listarVersoes(organizationId: string, planoId: string, limite: number): Promise<readonly VersaoResumo[]>;
   eventosDaVersao(organizationId: string, versaoId: string): Promise<readonly EventoDaVersao[]>;
+  registrarDeliberacao(organizationId: string, nova: NovaDeliberacao): Promise<Result<Deliberacao, ErroDeEstrategia>>;
+  deliberacoesDaVersao(organizationId: string, versaoId: string): Promise<readonly Deliberacao[]>;
   criarExecucao(organizationId: string, clientId: string, nova: NovaExecucao): Promise<Result<Execucao, ErroDeEstrategia>>;
   lerExecucao(organizationId: string, execucaoId: string): Promise<Execucao | null>;
   execucaoAtiva(organizationId: string, planoId: string): Promise<Execucao | null>;
@@ -297,7 +324,22 @@ export type TelemetriaDeIA = {
 
 export type ErroDeIA = { readonly codigo: CodigoDeErroDeIA; readonly mensagem: string; readonly telemetria?: TelemetriaDeIA };
 
-export type TarefaDeIA = 'strategy_plan' | 'comite' | 'juiz' | 'gate';
+export type TarefaDoComite = `comite_${string}`;
+export type TarefaDeIA = 'strategy_plan' | 'comite' | 'juiz' | 'gate' | 'diretor_de_producao' | TarefaDoComite;
+
+export type ConfiguracaoDoComite = {
+  readonly comite: string;
+  readonly ligado: boolean;
+  readonly atualizadoPor: string | null;
+  readonly atualizadoEm: Date | null;
+};
+
+export type RepositorioDosComites = {
+  listar(organizationId: string): Promise<readonly ConfiguracaoDoComite[]>;
+  definir(organizationId: string, comite: string, ligado: boolean): Promise<void>;
+};
+
+export type LeitorDosComites = Pick<RepositorioDosComites, 'listar'>;
 
 export type PedidoDeIA<T> = {
   readonly tarefa: TarefaDeIA;

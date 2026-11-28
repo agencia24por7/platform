@@ -5,7 +5,7 @@ import { lerPlano, type Afirmacao, type Evidencia, type Intencao, type PapelDaEv
 import type { CatalogoDeCampos } from './catalogo/tipos.ts';
 import { gerarUtmPorPlataforma } from './utm.ts';
 import { parecer } from './comite/fixturesDeParecer.ts';
-import { PERSONAS } from './comite/personas.ts';
+import { PERSONAS_DOS_COMITES } from './comite/comites.ts';
 import type { ContextoDoGate } from './gate/resultado.ts';
 
 export type PlanoComIntencao = Plano & { intencao: Intencao };
@@ -367,7 +367,7 @@ export function contextoDeTeste(sobrescrita: Partial<ContextoDoGate> = {}): Cont
     catalogosDeCampos: CATALOGOS_DE_TESTE,
     pacote: pacoteDeTeste(),
     hoje: HOJE,
-    pareceres: PERSONAS.map((persona) => parecer(persona.chave, 'aprova')),
+    pareceres: PERSONAS_DOS_COMITES.map((persona) => parecer(persona.chave, 'aprova')),
     avaliarLimite: () => 'ok',
     medidasComLimite: [],
     ...sobrescrita,

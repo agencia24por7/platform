@@ -28,6 +28,7 @@ const montar = (opcoes: { regras?: ReturnType<typeof fx.regras> | null; contexto
       contexto: opcoes.contexto ?? fx.contexto(),
       regras: opcoes.regras === undefined ? fx.regras() : opcoes.regras,
       conhecimento: fx.conhecimento(),
+      cultura: fx.sinaisDeCultura(),
     },
   );
 
@@ -70,7 +71,7 @@ describe('provedor de regras', () => {
       assert.ok(entrada.tags.includes('conteudo_nao_confiavel'), entrada.urn);
       assert.match(entrada.qualidade.avisos.join(' '), /não confiável/, entrada.urn);
     }
-    for (const entrada of s.entradas.filter((e) => !['limite', 'regra', 'decisao'].includes(e.tipo) && !e.tipo.startsWith('conhecimento_') && e.tipo !== 'desempenho_campanhas')) assert.equal(entrada.conteudoNaoConfiavel, undefined);
+    for (const entrada of s.entradas.filter((e) => !['limite', 'regra', 'decisao'].includes(e.tipo) && !e.tipo.startsWith('conhecimento_') && !e.tipo.startsWith('culture_') && e.tipo !== 'desempenho_campanhas')) assert.equal(entrada.conteudoNaoConfiavel, undefined);
   });
 
   it('privacidade: e-mail no texto sai omitido, [redigido] sai como está e a instrução é só dado', async () => {

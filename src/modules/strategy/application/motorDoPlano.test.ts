@@ -4,7 +4,8 @@ import '../../../shared/testing/registrarAlias.mjs';
 import type { AuditEvent } from '@/modules/audit/domain/auditEvent';
 import type { AvaliadorDeLimites, ErroDeIA, Execucao, LeitorDoBrain, PedidoDeIA } from '@/modules/strategy/application/portas';
 import { parecer, ponto } from '../domain/comite/fixturesDeParecer.ts';
-import { PERSONAS } from '../domain/comite/personas.ts';
+import { CHAMADAS_DOS_COMITES, PARECERES_DOS_COMITES, ehPedidoDeComite, membroDoPedido, respostaDoComite } from '../domain/comite/fixturesDoComite.ts';
+import { COMITES } from '../domain/comite/comites.ts';
 import { CLIENTE_ID, ORGANIZACAO_ID, URN_BENCHMARK_B, URN_DESEMPENHO, CATALOGOS_DE_TESTE, pacoteDeTeste, planoCompleto, secoesDoGrupoDaChave, urnDeTeste } from '../domain/fixturesDeTeste.ts';
 import { GRUPOS_DE_REDACAO } from '../domain/gruposDoPlano.ts';
 
@@ -48,10 +49,7 @@ function roteiroPadrao(sobrescrita: { comite?: (persona: string) => unknown; gat
       if (pedido.chaveDeIdempotencia.includes(':ajustar:')) return { secoes, respostas: respostasPara(pedido.dados) };
       return secoes;
     }
-    if (pedido.tarefa === 'comite') {
-      const chave = (pedido.dados as { persona: { chave: string } }).persona.chave;
-      return sobrescrita.comite ? sobrescrita.comite(chave) : parecer(chave, 'aprova');
-    }
+    if (ehPedidoDeComite(pedido)) return respostaDoComite(pedido, (chave) => sobrescrita.comite ? sobrescrita.comite(chave) : parecer(chave, 'aprova'));
     if (pedido.tarefa === 'juiz') return aceitaTodos(pedido.dados);
     chamadasDoGate += 1;
     return sobrescrita.gate ? sobrescrita.gate(chamadasDoGate) : { resultado: 'aprovado', problemas: [] };
@@ -154,13 +152,13 @@ describe('motor do plano: caminho feliz', () => {
     assert.equal(versao.agentRunId, 'run-teste-1');
     assert.ok(versao.referencias.length > 0);
     assert.ok(versao.referencias.every((r) => /^[0-9a-f]{64}$/.test(r.hash)));
-    assert.equal(eventosDe(m, 'parecer').length, PERSONAS.length);
-    assert.equal(PERSONAS.length, 9);
+    assert.equal(eventosDe(m, 'parecer').length, COMITES.length);
+    assert.equal(COMITES.length, 17);
     assert.equal(eventosDe(m, 'ajuste').length, 0);
     assert.equal(eventosDe(m, 'gate').length, 1);
     assert.equal(eventosDe(m, 'gate')[0]!.payload.resultado, 'aprovado');
     assert.deepEqual(tarefas(m).filter((t) => t === 'strategy_plan').length, CHAMADAS_DE_REDACAO);
-    assert.equal(tarefas(m).filter((t) => t === 'comite').length, 9);
+    assert.equal(tarefas(m).filter((t) => t.startsWith('comite_')).length, CHAMADAS_DOS_COMITES);
     assert.equal(tarefas(m).filter((t) => t === 'gate').length, 1);
     assert.equal(eventosDe(m, 'proposta').length + eventosDe(m, 'efetivada').length, 0);
   });
@@ -193,7 +191,10 @@ describe('motor do plano: caminho feliz', () => {
     await ate(m);
     const chaves = new Set(m.ia.pedidos.map((p) => p.chaveDeIdempotencia));
     assert.ok(chaves.has(`${m.execucaoId}:redigir:0:g0`));
-    assert.ok(chaves.has(`${m.execucaoId}:parecer:risco_legal`) || [...chaves].some((c) => c.includes(':parecer:')));
+    assert.ok(chaves.has(`${m.execucaoId}:deliberacao:risco_legal:0:risco_legal`));
+    assert.ok(chaves.has(`${m.execucaoId}:deliberacao:risco_legal:1`) && chaves.has(`${m.execucaoId}:deliberacao:risco_legal:2`));
+    const parecerDoLegal = eventosDe(m, 'parecer').find((e) => e.payload.persona === 'risco_legal');
+    assert.equal(m.repositorio.estado.eventos.find((e) => e.id === parecerDoLegal?.id)?.chave, `${m.execucaoId}:parecer:risco_legal`);
     assert.ok(m.ia.pedidos.every((p) => p.execucaoId === m.execucaoId && p.organizacaoId === ORGANIZACAO_ID && p.clienteId === CLIENTE_ID));
   });
 
@@ -591,11 +592,11 @@ describe('motor do plano: retomada e idempotência', () => {
     assert.equal(chamadasDoPlano(), CHAMADAS_DE_REDACAO);
 
     assert.equal((await passo()).execucao?.etapa, 'ajustar');
-    assert.equal(eventosDe(m, 'parecer').length, 9);
+    assert.equal(eventosDe(m, 'parecer').length, PARECERES_DOS_COMITES);
     await forcar('comite');
     assert.equal((await passo()).execucao?.etapa, 'ajustar');
-    assert.equal(eventosDe(m, 'parecer').length, 9);
-    assert.equal(tarefas(m).filter((t) => t === 'comite').length, 9);
+    assert.equal(eventosDe(m, 'parecer').length, PARECERES_DOS_COMITES);
+    assert.equal(tarefas(m).filter((t) => t.startsWith('comite_')).length, CHAMADAS_DOS_COMITES);
 
     assert.equal((await passo()).execucao?.etapa, 'gates');
     const gate = await passo();
@@ -608,7 +609,7 @@ describe('motor do plano: retomada e idempotência', () => {
     const base = roteiroPadrao();
     const m = await montar({
       roteiro: (p) => {
-        if (p.tarefa === 'comite' && (p.dados as { persona: { chave: string } }).persona.chave === 'redator' && !falhou) {
+        if (ehPedidoDeComite(p) && membroDoPedido(p) === 'redator' && !falhou) {
           falhou = true;
           return { codigo: 'falha_do_fornecedor', mensagem: 'x' };
         }
@@ -617,8 +618,8 @@ describe('motor do plano: retomada e idempotência', () => {
     });
     const final = await ate(m);
     assert.equal(final.status, 'concluida');
-    assert.equal(eventosDe(m, 'parecer').length, 9);
-    assert.equal(new Set(eventosDe(m, 'parecer').map((e) => e.payload.persona)).size, 9);
+    assert.equal(eventosDe(m, 'parecer').length, PARECERES_DOS_COMITES);
+    assert.equal(new Set(eventosDe(m, 'parecer').map((e) => e.payload.persona)).size, PARECERES_DOS_COMITES);
     assert.equal(m.repositorio.estado.versoes.length, 1);
     assert.equal(tarefas(m).filter((t) => t === 'strategy_plan').length, CHAMADAS_DE_REDACAO);
   });
@@ -694,17 +695,23 @@ describe('motor do plano: Comitê e injeção de instrução', () => {
     const m = await montar({ roteiro: roteiroPadrao({ comite: () => parecer('publicitario', 'aprova') }) });
     const final = await ate(m);
     assert.equal(final.status, 'concluida');
-    assert.equal(new Set(eventosDe(m, 'parecer').map((e) => e.payload.persona)).size, 9);
+    assert.equal(new Set(eventosDe(m, 'parecer').map((e) => e.payload.persona)).size, PARECERES_DOS_COMITES);
   });
 
-  it('as nove personas, com a instrução de cada uma, vão ao modelo do Comitê', async () => {
+  it('cada membro de cada comitê, com a instrução dele, vai à tarefa do seu comitê, e cada comitê faz as duas mesas', async () => {
     const m = await montar();
     await ate(m);
-    const doComite = m.ia.pedidos.filter((p) => p.tarefa === 'comite');
-    for (const persona of PERSONAS) {
-      const pedido = doComite.find((p) => (p.dados as { persona: { chave: string } }).persona.chave === persona.chave);
-      assert.ok(pedido, persona.chave);
-      assert.ok(pedido.instrucoes.includes(persona.instrucao));
+    for (const comite of COMITES) {
+      const doComite = m.ia.pedidos.filter((p) => p.tarefa === comite.tarefa);
+      assert.equal(doComite.length, comite.membros.length + 2, comite.chave);
+      for (const membro of comite.membros) {
+        const pedido = doComite.find((p) => membroDoPedido(p) === membro.chave);
+        assert.ok(pedido, membro.chave);
+        assert.ok(pedido.instrucoes.includes(membro.instrucao));
+        assert.equal(pedido.chaveDeIdempotencia, `${m.execucaoId}:deliberacao:${comite.chave}:0:${membro.chave}`);
+      }
+      assert.ok(doComite.some((p) => p.chaveDeIdempotencia === `${m.execucaoId}:deliberacao:${comite.chave}:1`));
+      assert.ok(doComite.some((p) => p.chaveDeIdempotencia === `${m.execucaoId}:deliberacao:${comite.chave}:2`));
     }
   });
 });
@@ -719,7 +726,7 @@ describe('motor do plano: ajustar, revisar e o desatualizado', () => {
     assert.ok(dados.secoesDoPlanoBase);
     assert.equal(m.repositorio.estado.versoes.length, 2);
     assert.equal(m.repositorio.estado.versoes[0]!.status, 'cancelado');
-    assert.equal(eventosDe(m, 'parecer').length, 9);
+    assert.equal(eventosDe(m, 'parecer').length, PARECERES_DOS_COMITES);
   });
 
   it('revisar por edição manual pula o redigir: a primeira chamada de IA é do Comitê e a versão é a da pessoa', async () => {
@@ -727,7 +734,7 @@ describe('motor do plano: ajustar, revisar e o desatualizado', () => {
     const final = await ate(m);
     assert.equal(final.status, 'concluida');
     assert.equal(tarefas(m).filter((t) => t === 'strategy_plan').length, 0);
-    assert.equal(m.ia.pedidos[0]!.tarefa, 'comite');
+    assert.ok(m.ia.pedidos[0]!.tarefa.startsWith('comite_'));
     assert.equal(m.repositorio.estado.versoes.length, 1);
     assert.equal(m.repositorio.estado.versoes[0]!.autorTipo, 'usuario');
     assert.ok(eventosDe(m, 'gate').every((e) => e.versaoId === m.repositorio.estado.versoes[0]!.id));
@@ -993,7 +1000,7 @@ describe('motor do plano: repetição por etapa e teto total de falhas transitó
           return transitoria;
         }
       }
-      if (pedido.tarefa === 'comite' && (pedido.dados as { persona: { chave: string } }).persona.chave === 'redator' && restantes.comite > 0) {
+      if (ehPedidoDeComite(pedido) && membroDoPedido(pedido) === 'redator' && restantes.comite > 0) {
         restantes.comite -= 1;
         return transitoria;
       }

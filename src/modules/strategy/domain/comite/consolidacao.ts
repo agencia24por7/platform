@@ -1,5 +1,6 @@
 import type { Parecer, Veredito } from './parecer.ts';
-import { PERSONAS, type Persona } from './personas.ts';
+import { PERSONAS_DOS_COMITES } from './comites.ts';
+import type { Persona } from './personas.ts';
 
 export type PontoReferenciado = { readonly persona: string; readonly pontoId: string };
 
@@ -28,7 +29,7 @@ function chaveDoArgumento(trecho: string, fontes: readonly string[], persona: st
   return `${trecho}|${fontes.join(',')}`;
 }
 
-export function consolidarPareceres(pareceres: readonly Parecer[], personas: readonly Persona[] = PERSONAS): Consolidacao {
+export function consolidarPareceres(pareceres: readonly Parecer[], personas: readonly Persona[] = PERSONAS_DOS_COMITES): Consolidacao {
   const acumulados = new Map<string, Acumulador>();
   const vereditos: Record<Veredito, number> = { aprova: 0, aprova_com_ajuste: 0, reprova: 0 };
   const pendencias: PendenciaObrigatoria[] = [];

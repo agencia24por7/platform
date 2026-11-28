@@ -1,10 +1,12 @@
 import { withTenant, withoutTenant } from '@/shared/db/tenant';
 import { err, ok, type Result } from '@/shared/result/result';
 import type {
+  Deliberacao,
   ErroDeEstrategia,
   EventoDaVersao,
   Execucao,
   MudancaDaExecucao,
+  NovaDeliberacao,
   NovaExecucao,
   NovaVersao,
   NovoEvento,
@@ -157,6 +159,55 @@ function paraEvento(row: EventoRow): EventoDaVersao {
     payload: row.payload,
     criadoEm: row.created_at,
   };
+}
+
+type DeliberacaoRow = {
+  version_id: string;
+  execution_id: string;
+  comite: string;
+  rodada: number;
+  membro: string | null;
+  payload: Record<string, unknown>;
+  agent_run_id: string;
+  created_at: Date;
+};
+
+const colunasDaDeliberacao = (tx: Tx) => tx`version_id, execution_id, comite, rodada, membro, payload, agent_run_id, created_at`;
+
+function paraDeliberacao(row: DeliberacaoRow): Deliberacao {
+  return {
+    versaoId: row.version_id,
+    execucaoId: row.execution_id,
+    comite: row.comite,
+    rodada: row.rodada as Deliberacao['rodada'],
+    membro: row.membro,
+    payload: row.payload,
+    agentRunId: row.agent_run_id,
+    criadaEm: row.created_at,
+  };
+}
+
+async function inserirDeliberacao(tx: Tx, organizationId: string, nova: NovaDeliberacao): Promise<Deliberacao> {
+  await definirFicha(tx, nova.autoria);
+  const inseridas = (await tx`
+    INSERT INTO core.strategy_plan_deliberations
+      (organization_id, client_id, plan_id, version_id, execution_id, comite, rodada, membro, payload, agent_run_id)
+    SELECT v.organization_id, v.client_id, v.plan_id, v.id, ${nova.execucaoId}::uuid, ${nova.comite}::text, ${nova.rodada}::smallint,
+           ${nova.membro}::text, ${tx.json(nova.payload as Json)}, ${nova.autoria.agentRunId}::text
+      FROM core.strategy_plan_versions v
+     WHERE v.id = ${nova.versaoId} AND v.organization_id = ${organizationId} AND v.plan_id = ${nova.planoId}
+       AND EXISTS (SELECT 1 FROM core.strategy_plans p WHERE p.id = v.plan_id AND p.removido_em IS NULL)
+    ON CONFLICT (version_id, comite, rodada, (coalesce(membro, ''))) DO NOTHING
+    RETURNING ${colunasDaDeliberacao(tx)}
+  `) as unknown as DeliberacaoRow[];
+  if (inseridas[0]) return paraDeliberacao(inseridas[0]);
+  const existentes = (await tx`
+    SELECT ${colunasDaDeliberacao(tx)} FROM core.strategy_plan_deliberations
+     WHERE version_id = ${nova.versaoId} AND organization_id = ${organizationId}
+       AND comite = ${nova.comite} AND rodada = ${nova.rodada} AND coalesce(membro, '') = ${nova.membro ?? ''}
+  `) as unknown as DeliberacaoRow[];
+  if (!existentes[0]) throw new NaoEncontrado();
+  return paraDeliberacao(existentes[0]);
 }
 
 function paraExecucao(row: ExecucaoRow): Execucao {
@@ -559,6 +610,27 @@ export function createEstrategiaRepository(): RepositorioDeEstrategia {
            ORDER BY created_at, id
         `) as unknown as EventoRow[];
         return rows.map(paraEvento);
+      });
+    },
+
+    async registrarDeliberacao(organizationId, nova: NovaDeliberacao) {
+      return comTraducaoOuAusencia(() =>
+        withTenant(organizationId, async (tx) => {
+          await definirRequestId(tx, nova.requestId);
+          return inserirDeliberacao(tx, organizationId, nova);
+        }),
+      );
+    },
+
+    async deliberacoesDaVersao(organizationId, versaoId) {
+      return withTenant(organizationId, async (tx) => {
+        const rows = (await tx`
+          SELECT ${colunasDaDeliberacao(tx)} FROM core.strategy_plan_deliberations
+           WHERE version_id = ${versaoId} AND organization_id = ${organizationId}
+             AND EXISTS (SELECT 1 FROM core.strategy_plans p WHERE p.id = plan_id AND p.removido_em IS NULL)
+           ORDER BY created_at, id
+        `) as unknown as DeliberacaoRow[];
+        return rows.map(paraDeliberacao);
       });
     },
 

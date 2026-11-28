@@ -1,6 +1,7 @@
 import { AvisoEfemero } from '@/../app/clientes/[id]/_componentes/AvisoEfemero';
 import { carregarPainel, primeiro } from '@/../app/clientes/[id]/_dados';
 import { BrainView } from '@/../app/clientes/[id]/(painel)/contexto/brain/BrainView';
+import { Cultura } from '@/../app/clientes/[id]/(painel)/contexto/cultura/Cultura';
 import { Perfil } from '@/../app/clientes/[id]/(painel)/contexto/Perfil';
 import { secaoInicialDoMapa } from '@/modules/clients/domain/painel/enderecos';
 
@@ -20,6 +21,7 @@ export default async function Contexto({
     <div className="pilha contexto">
       <AvisoEfemero erro={primeiro(busca['erro'])} feito={primeiro(busca['feito'])} />
       <BrainView clienteId={cliente.id} />
+      <Cultura clienteId={cliente.id} />
       <Perfil clienteId={cliente.id} secaoInicial={secaoInicialDoMapa(primeiro(busca['secao']))} campoInicial={primeiro(busca['campo']) ?? null} />
     </div>
   );
