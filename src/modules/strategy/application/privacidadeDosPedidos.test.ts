@@ -4,6 +4,8 @@ import '../../../shared/testing/registrarAlias.mjs';
 import type { EntradaDoCatalogo, EntradaSemSelo } from '../../brain/domain/entrada.ts';
 import type { PedidoDeIA } from '@/modules/strategy/application/portas';
 import { parecer, ponto } from '../domain/comite/fixturesDeParecer.ts';
+import { ehPedidoDeComite, respostaDoComite } from '../domain/comite/fixturesDoComite.ts';
+import { COMITES } from '../domain/comite/comites.ts';
 import { CLIENTE_ID, ORGANIZACAO_ID, URN_BENCHMARK_B, CATALOGOS_DE_TESTE, pacoteDeTeste, planoCompleto, secoesDoGrupoDaChave, urnDeTeste } from '../domain/fixturesDeTeste.ts';
 
 Object.assign(process.env, {
@@ -112,10 +114,7 @@ describe('o que cada tarefa de IA recebe em dados', () => {
         }
         return secoesDoGrupoDaChave(pedido.chaveDeIdempotencia);
       }
-      if (pedido.tarefa === 'comite') {
-        const chave = (pedido.dados as { persona: { chave: string } }).persona.chave;
-        return chave === 'redator' ? parecer(chave, 'aprova_com_ajuste', [ponto('p1', 'estrategia', [URN_BENCHMARK_B])]) : parecer(chave, 'aprova');
-      }
+      if (ehPedidoDeComite(pedido)) return respostaDoComite(pedido, (chave) => chave === 'redator' ? parecer(chave, 'aprova_com_ajuste', [ponto('p1', 'estrategia', [URN_BENCHMARK_B])]) : parecer(chave, 'aprova'));
       if (pedido.tarefa === 'juiz') return aceitaTodos(pedido.dados);
       return { resultado: 'aprovado', problemas: [] };
     });
@@ -149,7 +148,7 @@ describe('o que cada tarefa de IA recebe em dados', () => {
     assert.equal(final?.status, 'concluida', JSON.stringify(final));
 
     const tarefas = new Set(ia.pedidos.map((p) => p.tarefa));
-    assert.deepEqual([...tarefas].sort(), ['comite', 'gate', 'juiz', 'strategy_plan']);
+    assert.deepEqual([...tarefas].sort(), ['gate', 'juiz', 'strategy_plan', ...COMITES.map((comite) => comite.tarefa)].sort());
     assert.ok(ia.pedidos.some((p) => p.chaveDeIdempotencia.includes(':ajustar:')), 'o ajuste foi exercitado');
     const todos = JSON.stringify(ia.pedidos.map((p) => p.dados));
     assert.ok(todos.includes('Base restrita extra'), 'a entrada restrita chega, só como metadados');

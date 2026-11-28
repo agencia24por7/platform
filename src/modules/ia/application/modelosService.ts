@@ -54,6 +54,7 @@ export type ModelosRepository = {
   comVersaoAntiga(versaoPrimaria: string, limite: number): Promise<readonly { readonly organizationId: string; readonly fornecedor: Fornecedor }[]>;
   escolhas(organizationId: string): Promise<readonly EscolhaDeModelo[]>;
   escolher(organizationId: string, escolha: EscolhaDeModelo, userId: string | null): Promise<void>;
+  removerEscolha(organizationId: string, tarefa: string): Promise<boolean>;
   configuracao(organizationId: string): Promise<ConfiguracaoDeIa>;
   salvarLigada(organizationId: string, ligada: boolean, userId: string | null): Promise<void>;
   salvarTetos(organizationId: string, tetos: Pick<ConfiguracaoDeIa, 'chamadasPorDia' | 'tokensPorDia'>, userId: string | null): Promise<void>;
@@ -62,7 +63,14 @@ export type ModelosRepository = {
   concluir(organizationId: string, reservaId: string, desfecho: Desfecho): Promise<void>;
 };
 
-export type TarefaConfiguravel = { readonly chave: string; readonly titulo: string; readonly classe: ClasseDeCapacidade };
+export type TarefaConfiguravel = { readonly chave: string; readonly titulo: string; readonly classe: ClasseDeCapacidade; readonly herdaDe?: string };
+
+export function escolhaEfetiva(escolhas: readonly EscolhaDeModelo[], tarefa: Pick<TarefaConfiguravel, 'chave' | 'herdaDe'>): { readonly escolha: EscolhaDeModelo | undefined; readonly herdada: boolean } {
+  const propria = escolhas.find((candidata) => candidata.tarefa === tarefa.chave);
+  if (propria || tarefa.herdaDe === undefined) return { escolha: propria, herdada: false };
+  const herdada = escolhas.find((candidata) => candidata.tarefa === tarefa.herdaDe);
+  return { escolha: herdada, herdada: herdada !== undefined };
+}
 
 export type QuemConfigura = { readonly organizationId: string; readonly papelDeQuemAge: MemberRole };
 
@@ -71,7 +79,7 @@ export type PainelDeIa = {
   readonly usoDeHoje: UsoDoDia;
   readonly fornecedores: readonly { readonly fornecedor: Fornecedor; readonly chave: ChaveGuardada | null }[];
   readonly chavesDeFornecedorDesligado: readonly ChaveGuardada[];
-  readonly tarefas: readonly (TarefaConfiguravel & { readonly escolha: EscolhaDeModelo | null; readonly estado: EstadoDaTarefa })[];
+  readonly tarefas: readonly (TarefaConfiguravel & { readonly escolha: EscolhaDeModelo | null; readonly herdada: boolean; readonly estado: EstadoDaTarefa })[];
 };
 
 export type ContagemDeRecifragem = { readonly avaliadas: number; readonly recifradas: number; readonly falhas: number };
@@ -82,6 +90,7 @@ export type ModelosService = {
   removerChave(quem: QuemConfigura, fornecedor: string, ator: Ator): Promise<Result<void, Failure>>;
   atualizarModelos(quem: QuemConfigura, fornecedor: string, ator: Ator): Promise<Result<number, Failure>>;
   escolherModelo(quem: QuemConfigura, tarefa: string, fornecedor: string, modelo: string, ator: Ator): Promise<Result<void, Failure>>;
+  usarModeloPadrao(quem: QuemConfigura, tarefa: string, ator: Ator): Promise<Result<void, Failure>>;
   ligarOuDesligar(quem: QuemConfigura, ligada: boolean, ator: Ator): Promise<Result<void, Failure>>;
   definirTetos(quem: QuemConfigura, tetos: unknown, ator: Ator): Promise<Result<void, Failure>>;
   readonly resolver: ResolvedorDeModelo;
@@ -163,8 +172,8 @@ export function createModelosService(deps: DependenciasDosModelos): ModelosServi
         })),
         chavesDeFornecedorDesligado: chaves.filter((chave) => !deps.fornecedores.includes(chave.fornecedor)),
         tarefas: deps.tarefas.map((tarefa) => {
-          const escolha = escolhas.find((candidata) => candidata.tarefa === tarefa.chave);
-          return { ...tarefa, escolha: escolha ?? null, estado: estadoDaTarefa(escolha, vivas) };
+          const { escolha, herdada } = escolhaEfetiva(escolhas, tarefa);
+          return { ...tarefa, escolha: herdada ? null : (escolha ?? null), herdada, estado: estadoDaTarefa(escolha, vivas) };
         }),
       });
     },
@@ -235,6 +244,16 @@ export function createModelosService(deps: DependenciasDosModelos): ModelosServi
       return ok(undefined);
     },
 
+    async usarModeloPadrao(quem, tarefa, ator) {
+      if (!canAdminister(quem.papelDeQuemAge)) return err(SEM_PERMISSAO);
+      const configuravel = deps.tarefas.find((candidata) => candidata.chave === tarefa);
+      if (!configuravel || configuravel.herdaDe === undefined) return err(failure('validation', 'Esta tarefa não tem modelo padrão para herdar.'));
+      if (await deps.repositorio.removerEscolha(quem.organizationId, tarefa)) {
+        await auditar(quem, ator, 'ia.modelo_padrao', { tarefa, herdaDe: configuravel.herdaDe });
+      }
+      return ok(undefined);
+    },
+
     async ligarOuDesligar(quem, ligada, ator) {
       if (!canAdminister(quem.papelDeQuemAge)) return err(SEM_PERMISSAO);
       await deps.repositorio.salvarLigada(quem.organizationId, ligada, ator.userId);
@@ -253,7 +272,8 @@ export function createModelosService(deps: DependenciasDosModelos): ModelosServi
 
     async resolver(organizationId, tarefa) {
       const escolhas = await deps.repositorio.escolhas(organizationId);
-      const escolha = escolhas.find((candidata) => candidata.tarefa === tarefa);
+      const herdaDe = deps.tarefas.find((candidata) => candidata.chave === tarefa)?.herdaDe;
+      const { escolha } = escolhaEfetiva(escolhas, { chave: tarefa, ...(herdaDe === undefined ? {} : { herdaDe }) });
       if (!escolha) return err(SEM_MODELO_CONFIGURADO);
       return ok({ fornecedor: escolha.fornecedor, modelo: escolha.modelo, abrirChave: () => abrir(organizationId, escolha.fornecedor) });
     },

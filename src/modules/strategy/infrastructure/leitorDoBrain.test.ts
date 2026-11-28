@@ -124,8 +124,9 @@ describe('montarPacote', () => {
     assert.equal(prioridadeDaEntrada({ tipo: 'limite', provedor: 'regras', evidencia: undefined }), 0);
     assert.equal(prioridadeDaEntrada({ tipo: 'contexto_lista', provedor: 'contexto', evidencia: undefined }), 1);
     assert.equal(prioridadeDaEntrada({ tipo: 'tabela_de_dados', provedor: 'desempenho', evidencia: undefined }), 2);
-    assert.equal(prioridadeDaEntrada({ tipo: 'conhecimento', provedor: 'conhecimento', evidencia: undefined }), 3);
-    assert.equal(prioridadeDaEntrada({ tipo: 'conexao', provedor: 'conexoes', evidencia: undefined }), 4);
+    assert.equal(prioridadeDaEntrada({ tipo: 'culture_tendencia', provedor: 'culture', evidencia: undefined }), 3);
+    assert.equal(prioridadeDaEntrada({ tipo: 'conhecimento', provedor: 'conhecimento', evidencia: undefined }), 4);
+    assert.equal(prioridadeDaEntrada({ tipo: 'conexao', provedor: 'conexoes', evidencia: undefined }), 5);
   });
 
   it('estourar o limite corta por prioridade e conta quantas ficaram de fora', () => {

@@ -1,6 +1,6 @@
 import { validarAjuste } from '../comite/ajuste.ts';
 import { conferirAjusteContraOJuiz } from '../comite/juiz.ts';
-import { PERSONAS } from '../comite/personas.ts';
+import { CHAVE_DO_COMITE_OBRIGATORIO, COMITES } from '../comite/comites.ts';
 import { aprovar, reprovar, type ContextoDoGate, type ResultadoDaChecagem } from './resultado.ts';
 
 export const CHAVE_COMITE_COMPLETO = 'comite_completo';
@@ -13,13 +13,14 @@ export function checarComiteCompleto(contexto: ContextoDoGate): ResultadoDaCheca
   if (pareceres === undefined) return reprovar(CHAVE_COMITE_COMPLETO, 'Pareceres do Comitê ausentes no contexto.', ['comite']);
 
   const quemOpinou = new Set(pareceres.map((p) => p.persona));
-  const semParecer = PERSONAS.filter((persona) => !quemOpinou.has(persona.chave)).map((persona) => `comite/${persona.chave} (sem parecer)`);
+  const convocados = new Set([...(contexto.comitesConvocados ?? COMITES.map((comite) => comite.chave)), CHAVE_DO_COMITE_OBRIGATORIO]);
+  const semParecer = [...convocados].filter((chave) => !quemOpinou.has(chave)).map((chave) => `comite/${chave} (sem parecer)`);
   if (semParecer.length > 0) {
-    return reprovar(CHAVE_COMITE_COMPLETO, `${semParecer.length} persona(s) sem parecer.`, semParecer);
+    return reprovar(CHAVE_COMITE_COMPLETO, `${semParecer.length} comitê(s) convocado(s) sem parecer.`, semParecer);
   }
 
   const exigeAjuste = pareceres.some((p) => p.veredito !== 'aprova');
-  if (!exigeAjuste) return aprovar(CHAVE_COMITE_COMPLETO, 'Todas as personas aprovaram.');
+  if (!exigeAjuste) return aprovar(CHAVE_COMITE_COMPLETO, 'Todos os comitês convocados aprovaram.');
   if (ajuste === undefined) {
     return reprovar(CHAVE_COMITE_COMPLETO, 'Há parecer que pede ajuste ou reprova e o ajuste está ausente.', ['comite/ajuste']);
   }

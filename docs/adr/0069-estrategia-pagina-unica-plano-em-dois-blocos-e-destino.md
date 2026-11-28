@@ -15,6 +15,7 @@ O plano da fase 1 (ADR 0065) era único por tipo, tinha esquema com `criativos`,
 ### 1. Página única de planos
 - A Estratégia é uma página única: cards de planos, página do plano e linha do tempo. Saem as abas por tipo.
 - Comitê, Gates, histórico e eventos continuam gravados, mas nenhum papel os vê na tela. O leitor (`viewer`) continua sem acesso, como no ADR 0065 §5.
+- Superado em parte pelo ADR 0073 §1: a Memória do plano (bloco da página do plano e download em Markdown) mostra as decisões com o comitê como autor. O Comitê segue sem tela própria e pareceres, deliberação e Gates continuam fora da tela.
 - Planos são independentes: o mesmo cliente tem vários do mesmo tipo. A migração 0148 remove `strategy_plans_tipo_unico` e cria o índice `strategy_plans_cliente_tipo`.
 
 ### 2. Esquema único em dois blocos

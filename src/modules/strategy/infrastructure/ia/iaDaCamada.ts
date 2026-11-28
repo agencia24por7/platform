@@ -2,17 +2,21 @@ import { createHash } from 'node:crypto';
 import { SEM_MODELO_CONFIGURADO, type Executor } from '@/modules/ia/application/execucao';
 import { MENSAGEM_DO_BLOQUEIO } from '@/modules/ia/domain/modelos';
 import { TETO_DO_ORCAMENTO, TETO_ELASTICO_DE_SAIDA, type Orcamento, type Tarefa } from '@/modules/ia/domain/tarefa';
-import { COMITE_DA_ESTRATEGIA, GATE_DA_ESTRATEGIA, JUIZ_DA_ESTRATEGIA, PLANO_DE_ESTRATEGIA } from '@/modules/ia/domain/tarefasInternas';
+import { COMITE_DA_ESTRATEGIA, DIRETOR_DE_PRODUCAO, GATE_DA_ESTRATEGIA, JUIZ_DA_ESTRATEGIA, PLANO_DE_ESTRATEGIA, TAREFAS_DOS_COMITES } from '@/modules/ia/domain/tarefasInternas';
 import type { Failure } from '@/shared/result/failure';
 import { err, ok, type Result } from '@/shared/result/result';
 import type { CodigoDeErroDeIA, ErroDeIA, ExecutorDeIA, PedidoDeIA, RespostaDeIA, TarefaDeIA, TelemetriaDeIA } from '@/modules/strategy/application/portas';
 
-const TAREFAS_REGISTRADAS: Readonly<Record<TarefaDeIA, Tarefa<unknown>>> = {
-  strategy_plan: PLANO_DE_ESTRATEGIA,
-  comite: COMITE_DA_ESTRATEGIA,
-  gate: GATE_DA_ESTRATEGIA,
-  juiz: JUIZ_DA_ESTRATEGIA,
-};
+export const TAREFAS_REGISTRADAS: ReadonlyMap<TarefaDeIA, Tarefa<unknown>> = new Map<TarefaDeIA, Tarefa<unknown>>([
+  ['strategy_plan', PLANO_DE_ESTRATEGIA],
+  ['comite', COMITE_DA_ESTRATEGIA],
+  ['gate', GATE_DA_ESTRATEGIA],
+  ['juiz', JUIZ_DA_ESTRATEGIA],
+  ['diretor_de_producao', DIRETOR_DE_PRODUCAO],
+  ...TAREFAS_DOS_COMITES.map((tarefa) => [tarefa.chave as TarefaDeIA, tarefa as Tarefa<unknown>] as const),
+]);
+
+const TAREFA_NAO_REGISTRADA: ErroDeIA = { codigo: 'nao_configurada', mensagem: 'Tarefa de IA não registrada na camada.' };
 
 export const MARGEM_DA_CAMADA_MS = 10_000;
 export const PREFIXO_DO_ATOR_DA_ESTRATEGIA = 'estrategia:';
@@ -71,7 +75,8 @@ export function telemetriaDosDetalhes(detalhes: Readonly<Record<string, string>>
 export function criarIaDaCamada(executor: Executor): ExecutorDeIA {
   return {
     async executar<T>(pedido: PedidoDeIA<T>): Promise<Result<RespostaDeIA<T>, ErroDeIA>> {
-      const registrada = TAREFAS_REGISTRADAS[pedido.tarefa];
+      const registrada = TAREFAS_REGISTRADAS.get(pedido.tarefa);
+      if (registrada === undefined) return err(TAREFA_NAO_REGISTRADA);
       const requestId = idDoPedido(pedido.execucaoId, pedido.chaveDeIdempotencia);
       const resposta = await executor.executar<T>({
         organizationId: pedido.organizacaoId,

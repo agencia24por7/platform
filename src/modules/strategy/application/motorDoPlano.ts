@@ -3,8 +3,25 @@ import type { AuditRecorder } from '@/modules/audit/application/auditRecorder';
 import { registrarSemFalhar } from '@/modules/audit/application/registrarSemFalhar';
 import { textoSeguro } from '@/modules/brain/domain/privacidade';
 import {
-  PERSONAS,
+  CHAVE_DO_COMITE_OBRIGATORIO,
+  COMITES,
+  MAXIMO_DE_PONTOS_NO_JUIZ,
+  NUMERO_DE_MESAS_DO_COMITE,
   SCHEMA_VERSION,
+  comitesConvocados,
+  comitesDesligados,
+  conferirMesa,
+  esquemaParecerDeMembro,
+  esquemaRodadaDaMesa,
+  personaDoComite,
+  secoesAlteradas,
+  sintetizarComitesComCota,
+  ajustarRespostasAoTamanho,
+  type Comite,
+  type EntradaDaSintese,
+  type MembroDoComite,
+  type ParecerDeMembro,
+  type RodadaDaMesa,
   combinarReferencias,
   consolidarPareceres,
   esquemaAjuste,
@@ -92,7 +109,9 @@ import {
   TAREFA_PARA_AJUSTAR_PLANO,
   TAREFA_PARA_ATUALIZAR_AO_BRAIN,
   TAREFA_PARA_CRIAR_PLANO,
-  instrucaoDaPersona,
+  instrucaoDaMesa1,
+  instrucaoDaMesa2,
+  instrucaoDoMembro,
   instrucaoDoGrupo,
   instrucaoDoPlanoDeMidia,
 } from '@/modules/strategy/application/instrucoes/index';
@@ -102,16 +121,19 @@ import type {
   CatalogoDeLimites,
   CodigoDeErroDaExecucao,
   CodigoDeErroDeIA,
+  Deliberacao,
   ErroDeEstrategia,
   EtapaDaExecucao,
   EventoDaVersao,
   ExecutorDeIA,
   Execucao,
   LeitorDoBrain,
+  LeitorDosComites,
   MudancaDaExecucao,
   PedidoDeIA,
   Relogio,
   RepositorioDeEstrategia,
+  RodadaDaDeliberacao,
   TarefaDeIA,
   Versao,
   VersaoResumo,
@@ -131,12 +153,20 @@ export const AGENTE_DE_PLANO = 'agente_de_plano';
 export const AGENTE_DO_GATE = 'gates';
 export const AGENTE_DO_JUIZ = 'juiz';
 
-export const ORCAMENTO_DA_IA: Readonly<Record<TarefaDeIA, { readonly tokensMaximos: number; readonly tempoMaximoMs: number }>> = {
+type OrcamentoDaChamada = { readonly tokensMaximos: number; readonly tempoMaximoMs: number };
+
+const ORCAMENTO_DO_COMITE: OrcamentoDaChamada = { tokensMaximos: 5_000, tempoMaximoMs: 90_000 };
+
+export const ORCAMENTO_DA_IA: Readonly<Record<TarefaDeIA, OrcamentoDaChamada>> = {
   strategy_plan: { tokensMaximos: 6_500, tempoMaximoMs: 115_000 },
-  comite: { tokensMaximos: 5_000, tempoMaximoMs: 90_000 },
+  comite: ORCAMENTO_DO_COMITE,
   juiz: { tokensMaximos: 4_500, tempoMaximoMs: 60_000 },
   gate: { tokensMaximos: 3_000, tempoMaximoMs: 60_000 },
+  diretor_de_producao: { tokensMaximos: 8_000, tempoMaximoMs: 115_000 },
+  ...Object.fromEntries(COMITES.map((comite) => [comite.tarefa, ORCAMENTO_DO_COMITE])),
 };
+
+export const MAXIMO_DE_RESPOSTAS_NO_AJUSTE = 80;
 
 const CODIGO_DA_FALHA_DE_IA: Readonly<Record<CodigoDeErroDeIA, CodigoDeErroDaExecucao>> = {
   nao_configurada: 'ia_nao_configurada',
@@ -232,7 +262,8 @@ export type DependenciasDoMotor = {
   readonly catalogoDeLimites?: CatalogoDeLimites;
   readonly audit: AuditRecorder;
   readonly relogio?: Relogio;
-  readonly personas?: readonly Persona[];
+  readonly comites?: readonly Comite[];
+  readonly leitorDosComites?: LeitorDosComites;
   readonly maximoDeRodadas?: number;
   readonly repeticoesPorEtapa?: number;
   readonly maximoDeFalhasTransitorias?: number;
@@ -267,7 +298,15 @@ class FalhaDaEtapa extends Error {
 
 type ChamadaDeIaNaAuditoria = TelemetriaDeIA & { readonly tarefa: string };
 
-type Contexto = { pacote?: PacoteDeLeitura; foco?: FocoDoPlano | null; corrigir?: readonly ProblemaParaCorrigir[]; truncada?: boolean; telemetria?: ChamadaDeIaNaAuditoria[]; readonly ficha: number };
+type Contexto = {
+  pacote?: PacoteDeLeitura;
+  foco?: FocoDoPlano | null;
+  corrigir?: readonly ProblemaParaCorrigir[];
+  truncada?: boolean;
+  telemetria?: ChamadaDeIaNaAuditoria[];
+  readonly ficha: number;
+  readonly limiteMs?: number;
+};
 
 type Efeito = {
   readonly proximo: Partial<MudancaDaExecucao>;
@@ -503,7 +542,8 @@ export function estadoDaEtapaNaAuditoria(linhas: readonly LinhaDaAuditoriaDoPass
 export function createMotorDoPlano(deps: DependenciasDoMotor): MotorDoPlano {
   const { repositorio, executorDeIA, leitorDoBrain, avaliadorDeLimites, audit } = deps;
   const relogio = deps.relogio ?? { agora: () => new Date() };
-  const personas = deps.personas ?? PERSONAS;
+  const comites = deps.comites ?? COMITES;
+  const personas: readonly Persona[] = comites.map(personaDoComite);
   const maximoDeRodadas = deps.maximoDeRodadas ?? MAXIMO_DE_RODADAS;
   const repeticoesPorEtapa = deps.repeticoesPorEtapa ?? MAXIMO_DE_REPETICOES_POR_ETAPA;
   const maximoDeFalhasTransitorias = deps.maximoDeFalhasTransitorias ?? MAXIMO_DE_FALHAS_TRANSITORIAS;
@@ -579,7 +619,8 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
   }
 
   function orcamentoDaChamada(tarefa: TarefaDeIA, contexto: Contexto): PedidoDeIA<unknown>['orcamento'] {
-    const base = ORCAMENTO_DA_IA[tarefa];
+    const base = ORCAMENTO_DA_IA[tarefa] as OrcamentoDaChamada | undefined;
+    if (base === undefined) throw new FalhaDaEtapa('interno', false, false, `tarefa_sem_orcamento:${tarefa}`.slice(0, 80));
     if (contexto.truncada !== true || tarefa !== 'strategy_plan') return base;
     return { tokensMaximos: Math.ceil(base.tokensMaximos * FATOR_ELASTICO_DE_SAIDA), tempoMaximoMs: base.tempoMaximoMs, elastico: true };
   }
@@ -595,6 +636,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     codigos?: CodigosDoPacote,
   ): Promise<T> {
     const esquemaDaChamada = codigos === undefined ? esquema : esquemaQueAceitaCodigos(esquema, codigos);
+    if ((ORCAMENTO_DA_IA[tarefa] as OrcamentoDaChamada | undefined) === undefined) throw new FalhaDaEtapa('interno', false, false, `tarefa_sem_orcamento:${tarefa}`.slice(0, 80));
     await renovarLease(execucao, contexto);
     let resposta;
     try {
@@ -858,40 +900,237 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     return { proximo: { etapa: 'comite' }, contagens: { referencias: referencias.length, chamadas: GRUPOS_DE_REDACAO.length } };
   }
 
-  async function executarPersona(execucao: Execucao, contexto: Contexto, versao: Versao, plano: Plano, pacote: PacoteDeLeitura, persona: Persona) {
-    const chave = `${execucao.id}:parecer:${persona.chave}`;
-    const codigos = codigosDoPacote(pacote);
-    const visaoDaPersona = secoesDoPlano(plano, persona.secoes);
+  type GuardadasDoComite = ReadonlyMap<string, Deliberacao>;
+
+  const chaveDaDeliberacao = (comite: string, rodada: RodadaDaDeliberacao, membro: string | null) => `${comite}:${rodada}:${membro ?? ''}`;
+
+  function criarLimitador(maximo: number) {
+    let ativos = 0;
+    const espera: (() => void)[] = [];
+    return async function limitar<T>(trabalho: () => Promise<T>): Promise<T> {
+      if (ativos >= maximo) await new Promise<void>((liberar) => espera.push(liberar));
+      ativos += 1;
+      try {
+        return await trabalho();
+      } finally {
+        ativos -= 1;
+        espera.shift()?.();
+      }
+    };
+  }
+
+  async function desligadosDaOrganizacao(organizationId: string): Promise<readonly string[]> {
+    if (deps.leitorDosComites === undefined) return [];
+    try {
+      return comitesDesligados(await deps.leitorDosComites.listar(organizationId), comites);
+    } catch {
+      throw new FalhaDaEtapa('interno', true, false, 'configuracao_dos_comites_indisponivel');
+    }
+  }
+
+  async function secoesTocadasNaRodada(execucao: Execucao, versao: Versao): Promise<readonly string[] | undefined> {
+    if (execucao.tipo !== 'corrigir_gate' || execucao.versaoBaseId === null) return undefined;
+    const base = await lerPlanoDaVersao(execucao, execucao.versaoBaseId);
+    if (base === null) return undefined;
+    return secoesAlteradas(base as unknown as Record<string, unknown>, planoDe(versao.conteudo) as unknown as Record<string, unknown>);
+  }
+
+  async function comitesDaEtapa(execucao: Execucao, versao: Versao, deliberacoes: readonly Deliberacao[]): Promise<readonly Comite[]> {
+    const desligados = await desligadosDaOrganizacao(execucao.organizationId);
+    const secoesTocadas = await secoesTocadasNaRodada(execucao, versao);
+    const doFiltro = new Set(
+      comitesConvocados(comites, { desligados, ...(secoesTocadas === undefined ? {} : { secoesTocadas: secoesTocadas as Comite['secoes'] }) }).map((comite) => comite.chave),
+    );
+    const jaIniciados = new Set(deliberacoes.map((deliberacao) => deliberacao.comite));
+    return comites.filter((comite) => doFiltro.has(comite.chave) || jaIniciados.has(comite.chave));
+  }
+
+  function motivoDoComite(comite: Comite, falha: FalhaDaEtapa): FalhaDaEtapa {
+    if (falha.perdida) return falha;
+    return new FalhaDaEtapa(falha.codigo, falha.transitoria, false, `comite:${comite.chave}:${falha.motivo ?? falha.codigo}`.slice(0, 200));
+  }
+
+  function lerGuardada<T>(esquema: z.ZodType<T>, deliberacao: Deliberacao): T {
+    const lido = esquema.safeParse(deliberacao.payload);
+    if (!lido.success) throw new FalhaDaEtapa('interno', false, false, `deliberacao_ilegivel:r${deliberacao.rodada}`);
+    return lido.data;
+  }
+
+  async function gravarDeliberacao(
+    execucao: Execucao,
+    contexto: Contexto,
+    versao: Versao,
+    comite: Comite,
+    rodada: RodadaDaDeliberacao,
+    membro: string | null,
+    payload: Record<string, unknown>,
+  ): Promise<Deliberacao> {
+    const chave = `${execucao.id}:deliberacao:${comite.chave}:${rodada}${membro === null ? '' : `:${membro}`}`;
+    const gravada = await repositorio.registrarDeliberacao(execucao.organizationId, {
+      planoId: execucao.planoId,
+      versaoId: versao.id,
+      execucaoId: execucao.id,
+      comite: comite.chave,
+      rodada,
+      membro,
+      payload,
+      autoria: autoria(execucao, comite.chave, chave, contexto),
+      requestId: requestIdDe(execucao, `deliberacao:${comite.chave}:${rodada}`),
+    });
+    if (!gravada.ok) throw falhaDoBanco(gravada.error);
+    return gravada.value;
+  }
+
+  type EntradaDoComite = {
+    readonly execucao: Execucao;
+    readonly contexto: Contexto;
+    readonly versao: Versao;
+    readonly plano: Plano;
+    readonly pacote: PacoteDeLeitura;
+    readonly codigos: CodigosDoPacote;
+    readonly guardadas: GuardadasDoComite;
+    readonly limitar: <T>(trabalho: () => Promise<T>) => Promise<T>;
+    readonly contagem: { chamadas: number; reaproveitadas: number; fontesDescartadas: number };
+  };
+
+  async function parecerDoMembro(entrada: EntradaDoComite, comite: Comite, membro: MembroDoComite): Promise<ParecerDeMembro> {
+    const { execucao, contexto, versao, plano, pacote, codigos, guardadas, limitar, contagem } = entrada;
+    const guardada = guardadas.get(chaveDaDeliberacao(comite.chave, 0, membro.chave));
+    if (guardada) {
+      contagem.reaproveitadas += 1;
+      return lerGuardada(esquemaParecerDeMembro, guardada);
+    }
+    const visao = secoesDoPlano(plano, membro.secoes);
     const dados = {
-      plano: abreviarUrnsParaCodigos(visaoDaPersona, codigos),
+      plano: abreviarUrnsParaCodigos(visao, codigos),
       pacote: pacoteParaEntrada(pacote, MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA.comite, {
-        primeiras: new Set([...urnsDeRegraOuLimite(pacote), ...urnsCitadasNasSecoes(visaoDaPersona)]),
+        primeiras: new Set([...urnsDeRegraOuLimite(pacote), ...urnsCitadasNasSecoes(visao)]),
         comCatalogo: false,
       }),
-      persona: { chave: persona.chave, nome: persona.nome, foco: persona.foco },
+      persona: { chave: membro.chave, nome: membro.nome, foco: membro.foco },
+      comite: { chave: comite.chave, nome: comite.nome, proposito: comite.proposito },
     };
-    const bruto = await executarIA(execucao, contexto, 'comite', instrucaoDaPersona(persona), dados, esquemaParecer, chave, codigos);
+    const chave = `${execucao.id}:deliberacao:${comite.chave}:0:${membro.chave}`;
+    const bruto = await limitar(() => executarIA(execucao, contexto, comite.tarefa as TarefaDeIA, instrucaoDoMembro(comite, membro), dados, esquemaParecerDeMembro, chave, codigos));
+    contagem.chamadas += 1;
     const urns = new Set(pacote.entradas.map((e) => e.urn));
-    let descartadas = 0;
-    const parecer: Parecer = {
+    const parecer: ParecerDeMembro = {
       ...bruto,
-      persona: persona.chave,
+      persona: membro.chave,
       pontos: bruto.pontos.map((ponto) => {
         const fontes = ponto.fontes.filter((urn) => urns.has(urn));
-        descartadas += ponto.fontes.length - fontes.length;
+        contagem.fontesDescartadas += ponto.fontes.length - fontes.length;
         return { ...ponto, fontes };
       }),
     };
     if (!parecerSemDadoPessoal(parecer).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_parecer');
-    const gravado = await repositorio.registrarEvento(execucao.organizationId, {
-      versaoId: versao.id,
-      tipo: 'parecer',
-      payload: parecer,
-      autoria: autoria(execucao, persona.chave, chave, contexto),
-      requestId: requestIdDe(execucao, `parecer:${persona.chave}`),
+    const gravada = await gravarDeliberacao(execucao, contexto, versao, comite, 0, membro.chave, parecer);
+    return lerGuardada(esquemaParecerDeMembro, gravada);
+  }
+
+  function falhaDaMesa(codigos: readonly string[]): FalhaDaEtapa {
+    return falhaDeIA('saida_invalida', `mesa_invalida:${[...new Set(codigos)].slice(0, 4).join(',')}`);
+  }
+
+  async function rodadaDaMesa(
+    entrada: EntradaDoComite,
+    comite: Comite,
+    pareceres: readonly ParecerDeMembro[],
+    anteriores: readonly RodadaDaMesa[],
+  ): Promise<RodadaDaMesa> {
+    const { execucao, contexto, versao, plano, pacote, codigos, guardadas, limitar, contagem } = entrada;
+    const rodada = (anteriores.length + 1) as 1 | 2;
+    const guardada = guardadas.get(chaveDaDeliberacao(comite.chave, rodada, null));
+    if (guardada) {
+      contagem.reaproveitadas += 1;
+      return lerGuardada(esquemaRodadaDaMesa, guardada);
+    }
+    const citadas = new Set(pareceres.flatMap((parecer) => parecer.pontos.flatMap((ponto) => ponto.fontes)));
+    const dados = abreviarUrnsParaCodigos(
+      {
+        comite: comite.chave,
+        membros: comite.membros.map((membro) => ({ chave: membro.chave, nome: membro.nome, foco: membro.foco, relatora: membro.relatora })),
+        pareceres,
+        ...(rodada === 2 ? { mesa1: anteriores[0] } : {}),
+        plano: secoesDoPlano(plano, comite.secoes),
+        pacote: resumoDoPacote(pacoteParaEntrada(pacote, MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA.comite, { somenteUrns: citadas, primeiras: citadas, comCatalogo: false })),
+      },
+      codigos,
+    );
+    const instrucao = rodada === 1 ? instrucaoDaMesa1(comite) : instrucaoDaMesa2(comite);
+    const chave = `${execucao.id}:deliberacao:${comite.chave}:${rodada}`;
+    const mesa = await limitar(() => executarIA(execucao, contexto, comite.tarefa as TarefaDeIA, instrucao, dados, esquemaRodadaDaMesa, chave));
+    contagem.chamadas += 1;
+    const conferida = conferirMesa(comite, pareceres, [...anteriores, mesa]);
+    if (!conferida.ok) throw falhaDaMesa(conferida.error.problemas.map((problema) => problema.codigo));
+    const textos = { posicoes: mesa.debate.map((fala) => fala.posicao), consensos: mesa.consensos, divergencias: mesa.divergencias.map((d) => d.resumo) };
+    if (!planoSemDadoPessoal(textos).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_na_mesa');
+    const gravada = await gravarDeliberacao(execucao, contexto, versao, comite, rodada, null, mesa);
+    return lerGuardada(esquemaRodadaDaMesa, gravada);
+  }
+
+  async function deliberarComite(entrada: EntradaDoComite, comite: Comite): Promise<void> {
+    const { execucao, contexto } = entrada;
+    await renovarLease(execucao, contexto);
+    const resultados = await Promise.allSettled(comite.membros.map((membro) => parecerDoMembro(entrada, comite, membro)));
+    const falhou = resultados.find((resultado): resultado is PromiseRejectedResult => resultado.status === 'rejected');
+    if (falhou) throw falhou.reason;
+    const pareceres = resultados.map((resultado) => (resultado as PromiseFulfilledResult<ParecerDeMembro>).value);
+    const mesa1 = await rodadaDaMesa(entrada, comite, pareceres, []);
+    await rodadaDaMesa(entrada, comite, pareceres, [mesa1]);
+  }
+
+  function entradaDeSintese(comite: Comite, deliberacoes: readonly Deliberacao[]): EntradaDaSintese | null {
+    const doComite = deliberacoes.filter((deliberacao) => deliberacao.comite === comite.chave);
+    const mesa2 = doComite.find((deliberacao) => deliberacao.rodada === 2);
+    if (mesa2 === undefined) return null;
+    const membros = new Set(comite.membros.map((membro) => membro.chave));
+    const pareceres = doComite
+      .filter((deliberacao) => deliberacao.rodada === 0 && deliberacao.membro !== null && membros.has(deliberacao.membro))
+      .map((deliberacao) => lerGuardada(esquemaParecerDeMembro, deliberacao));
+    return { comite, pareceres, mesa2: lerGuardada(esquemaRodadaDaMesa, mesa2) };
+  }
+
+  async function registrarPareceresDosComites(
+    execucao: Execucao,
+    contexto: Contexto,
+    versao: Versao,
+    convocados: readonly Comite[],
+    jaOpinaram: ReadonlySet<string>,
+  ): Promise<number> {
+    const deliberacoes = await repositorio.deliberacoesDaVersao(execucao.organizationId, versao.id);
+    const entradas = convocados.flatMap((comite) => {
+      const entrada = entradaDeSintese(comite, deliberacoes);
+      return entrada === null ? [] : [entrada];
     });
-    if (!gravado.ok && gravado.error.codigo !== 'ja_feito') throw falhaDoBanco(gravado.error);
-    return descartadas;
+    const sinteses = sintetizarComitesComCota(entradas);
+    if (!sinteses.ok) throw falhaDaMesa(sinteses.error.problemas.map((problema) => problema.codigo));
+    let registrados = 0;
+    for (const { comite } of entradas) {
+      if (jaOpinaram.has(comite.chave)) continue;
+      const sintese = sinteses.value.get(comite.chave)!;
+      if (!parecerSemDadoPessoal(sintese.parecer).ok) throw falhaDeIA('saida_invalida', 'dado_pessoal_no_parecer');
+      const chave = `${execucao.id}:parecer:${comite.chave}`;
+      const gravado = await repositorio.registrarEvento(execucao.organizationId, {
+        versaoId: versao.id,
+        tipo: 'parecer',
+        payload: sintese.parecer,
+        autoria: autoria(execucao, comite.chave, chave, contexto),
+        requestId: requestIdDe(execucao, `parecer:${comite.chave}`),
+      });
+      if (!gravado.ok && gravado.error.codigo !== 'ja_feito') throw falhaDoBanco(gravado.error);
+      registrados += 1;
+    }
+    return registrados;
+  }
+
+  function tempoEstimadoDoComite(comite: Comite): number {
+    return (Math.ceil(comite.membros.length / paralelismo) + NUMERO_DE_MESAS_DO_COMITE) * ORCAMENTO_DO_COMITE.tempoMaximoMs;
+  }
+
+  function semTempoParaOComite(contexto: Contexto, comite: Comite): boolean {
+    if (contexto.limiteMs === undefined) return false;
+    return relogio.agora().getTime() + tempoEstimadoDoComite(comite) > contexto.limiteMs;
   }
 
   async function etapaComite(execucao: Execucao, contexto: Contexto): Promise<Efeito> {
@@ -899,25 +1138,59 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     const eventos = await repositorio.eventosDaVersao(execucao.organizationId, versao.id);
     if (eventos.some((e) => e.tipo === 'ajuste')) return { proximo: { etapa: 'gates' }, contagens: { versaoId: versao.id } };
 
+    const deliberacoes = await repositorio.deliberacoesDaVersao(execucao.organizationId, versao.id);
     const jaOpinaram = new Set(eventos.filter((e) => e.tipo === 'parecer').map((e) => String(e.payload.persona)));
-    const faltantes = personas.filter((persona) => !jaOpinaram.has(persona.chave));
-    let fontesDescartadas = 0;
-    if (faltantes.length > 0) {
+    const convocados = await comitesDaEtapa(execucao, versao, deliberacoes);
+    const jaDeliberaram = new Set(deliberacoes.filter((d) => d.rodada === 2).map((d) => d.comite));
+    const fila = convocados.filter((comite) => !jaOpinaram.has(comite.chave) && !jaDeliberaram.has(comite.chave));
+    const faltavamPareceres = convocados.some((comite) => !jaOpinaram.has(comite.chave));
+    const contagem = { chamadas: 0, reaproveitadas: 0, fontesDescartadas: 0 };
+    const total = fila.length;
+    if (fila.length > 0) {
       const pacote = await lerPacote(execucao, contexto, false);
-      const plano = planoDe(versao.conteudo);
-      let primeiraFalha: FalhaDaEtapa | null = null;
-      for (let inicio = 0; inicio < faltantes.length; inicio += paralelismo) {
-        const lote = faltantes.slice(inicio, inicio + paralelismo);
-        const resultados = await Promise.allSettled(lote.map((persona) => executarPersona(execucao, contexto, versao, plano, pacote, persona)));
-        for (const resultado of resultados) {
-          if (resultado.status === 'fulfilled') fontesDescartadas += resultado.value;
-          else if (resultado.reason instanceof FalhaDaEtapa && resultado.reason.perdida) primeiraFalha = resultado.reason;
-          else primeiraFalha ??= resultado.reason instanceof FalhaDaEtapa ? resultado.reason : new FalhaDaEtapa('interno', true);
+      const entrada: EntradaDoComite = {
+        execucao,
+        contexto,
+        versao,
+        plano: planoDe(versao.conteudo),
+        pacote,
+        codigos: codigosDoPacote(pacote),
+        guardadas: new Map(deliberacoes.map((d) => [chaveDaDeliberacao(d.comite, d.rodada, d.membro), d] as const)),
+        limitar: criarLimitador(paralelismo),
+        contagem,
+      };
+      const andamento: { falha: FalhaDaEtapa | null; iniciados: number } = { falha: null, iniciados: 0 };
+      const trabalhador = async () => {
+        while (fila.length > 0 && andamento.falha === null) {
+          if (andamento.iniciados > 0 && semTempoParaOComite(contexto, fila[0]!)) return;
+          const comite = fila.shift()!;
+          andamento.iniciados += 1;
+          try {
+            await deliberarComite(entrada, comite);
+          } catch (erro) {
+            const falha = erro instanceof FalhaDaEtapa ? motivoDoComite(comite, erro) : new FalhaDaEtapa('interno', true, false, `comite:${comite.chave}`);
+            if (falha.perdida || andamento.falha === null) andamento.falha = falha;
+          }
         }
-        if (primeiraFalha) throw primeiraFalha;
+      };
+      await Promise.all(Array.from({ length: Math.min(paralelismo, fila.length) }, trabalhador));
+      if (andamento.falha) throw andamento.falha;
+      if (fila.length > 0) {
+        return { proximo: { etapa: 'comite' }, contagens: { versaoId: versao.id, comites: total - fila.length, restantes: fila.length, ...contagem } };
       }
     }
-    return { proximo: { etapa: 'ajustar' }, contagens: { versaoId: versao.id, pareceres: faltantes.length, fontesDescartadas } };
+    if (faltavamPareceres) await registrarPareceresDosComites(execucao, contexto, versao, convocados, jaOpinaram);
+    return { proximo: { etapa: 'ajustar' }, contagens: { versaoId: versao.id, comites: total, convocados: convocados.length, ...contagem } };
+  }
+
+  async function comitesConvocadosNaRaiz(execucao: Execucao, raiz: string | null, pareceres: readonly Parecer[]): Promise<readonly string[] | undefined> {
+    if (raiz === null) return [];
+    const deliberacoes = await repositorio.deliberacoesDaVersao(execucao.organizationId, raiz);
+    const chaves = new Set(comites.map((comite) => comite.chave));
+    const comParecer = pareceres.map((p) => p.persona).filter((persona) => chaves.has(persona));
+    const gravados = [...deliberacoes.map((d) => d.comite), ...comParecer];
+    if (gravados.length === 0) return undefined;
+    return [...new Set([...gravados, CHAVE_DO_COMITE_OBRIGATORIO])];
   }
 
   function pendenciasDoGate(eventos: readonly EventoDaVersao[]): PendenciaDoGate[] {
@@ -1056,6 +1329,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     codigos: CodigosDoPacote,
   ): Promise<readonly VereditoDoJuiz[]> {
     const pontos = pontosParaJulgar(pareceres, personas);
+    if (pontos.length > MAXIMO_DE_PONTOS_NO_JUIZ) throw new FalhaDaEtapa('ia_saida_invalida', false, false, `juiz_acima_do_teto:${pontos.length}`);
     const citadas = new Set(pontos.flatMap((ponto) => ponto.fontes));
     const doJuiz = pacoteParaEntrada(pacote, MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA.comite, { somenteUrns: citadas, primeiras: citadas, comCatalogo: false });
     const { utm: _utm, whatsapp: _whatsapp, destino: _destino, plataformas: _plataformas, ...intencaoEssencial } = plano.intencao;
@@ -1118,6 +1392,8 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     const codigos = codigosDoPacote(pacote);
     const plano = planoDe(versao.conteudo);
     const consolidacao = consolidarPareceres(pareceres, personas);
+    const totalDePontos = pareceres.reduce((soma, parecer) => soma + parecer.pontos.length, 0);
+    if (totalDePontos > MAXIMO_DE_RESPOSTAS_NO_AJUSTE) throw new FalhaDaEtapa('ia_saida_invalida', false, false, `ajuste_acima_do_teto:${totalDePontos}`);
 
     const vereditos = await vereditosParaOAjuste(execucao, contexto, versao, raiz, cadeia, pareceres, plano, pacote, codigos);
     const destinos = destinosDosPontos(pareceres, vereditos, personas);
@@ -1128,7 +1404,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     const pontosPorGrupo = haPontos ? distribuirPontos(aplicar, consolidacao.pendenciasObrigatorias, doGate) : new Map<number, PontosDoGrupo>();
 
     const ajustado = await ajustarGrupos({ execucao, contexto, plano, pacote, codigos, pontosPorGrupo, tarefa: TAREFA_PARA_AJUSTAR_AO_COMITE, prefixoDaChave: 'ajustar' });
-    const respostas = [...ajustado.respostas, ...respostasDeRecusaDoJuiz(destinos.value)];
+    const respostas = ajustarRespostasAoTamanho(versao.id, [...ajustado.respostas, ...respostasDeRecusaDoJuiz(destinos.value)]);
 
     const chave = `${execucao.id}:ajustar:${execucao.rodada}`;
     const ajuste: Ajuste = { responde_a: versao.id, respostas };
@@ -1300,12 +1576,14 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     if (!limites.ok) throw new FalhaDaEtapa('interno', true);
 
     const doJuiz = raiz === null ? undefined : vereditosDoEvento((cadeia.get(raiz) ?? []).find((evento) => evento.tipo === 'veredito_juiz')?.payload);
+    const convocados = await comitesConvocadosNaRaiz(execucao, raiz, pareceres);
     const veredito = rodarGates({
       plano,
       pacote,
       hoje: relogio.agora().toISOString().slice(0, 10),
       pareceres,
       comiteDaMesmaExecucao: raiz !== null,
+      ...(convocados === undefined ? {} : { comitesConvocados: convocados }),
       ...(ajusteLido?.success ? { ajuste: ajusteLido.data } : {}),
       ...(doJuiz === undefined ? {} : { vereditosDoJuiz: doJuiz }),
       catalogosDeCampos: catalogos,
@@ -1468,7 +1746,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     passo: (organizationId, execucaoId, ficha) => passo(organizationId, execucaoId, { ficha }),
     async avancarExecucao(organizationId, execucaoId, opcoes) {
       const limite = relogio.agora().getTime() + opcoes.orcamentoMs;
-      const contexto: Contexto = { ficha: opcoes.ficha };
+      const contexto: Contexto = { ficha: opcoes.ficha, limiteMs: limite };
       let ultimo: ResultadoDoPasso;
       let passos = 0;
       do {

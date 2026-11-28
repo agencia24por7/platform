@@ -4,7 +4,8 @@ import { esquemaId, esquemaUrn } from '../plano.ts';
 import type { Ajuste, RespostaDoAjuste } from './ajuste.ts';
 import { consolidarPareceres, type Argumento } from './consolidacao.ts';
 import type { Parecer } from './parecer.ts';
-import { PADRAO_DA_CHAVE_DA_PERSONA, PERSONAS, type Persona } from './personas.ts';
+import { PERSONAS_DOS_COMITES } from './comites.ts';
+import { PADRAO_DA_CHAVE_DA_PERSONA, type Persona } from './personas.ts';
 
 export const VEREDITOS_DO_JUIZ = ['aceito', 'rejeitado'] as const;
 export type DecisaoDoJuiz = (typeof VEREDITOS_DO_JUIZ)[number];
@@ -39,11 +40,11 @@ export type PontoParaOJuiz = {
 
 export const chaveDoPontoDoJuiz = (persona: string, pontoId: string) => `${persona}/${pontoId}`;
 
-export function pontosObrigatorios(pareceres: readonly Parecer[], personas: readonly Persona[] = PERSONAS): ReadonlySet<string> {
+export function pontosObrigatorios(pareceres: readonly Parecer[], personas: readonly Persona[] = PERSONAS_DOS_COMITES): ReadonlySet<string> {
   return new Set(consolidarPareceres(pareceres, personas).pendenciasObrigatorias.map((p) => chaveDoPontoDoJuiz(p.persona, p.pontoId)));
 }
 
-export function pontosParaJulgar(pareceres: readonly Parecer[], personas: readonly Persona[] = PERSONAS): PontoParaOJuiz[] {
+export function pontosParaJulgar(pareceres: readonly Parecer[], personas: readonly Persona[] = PERSONAS_DOS_COMITES): PontoParaOJuiz[] {
   const obrigatorios = pontosObrigatorios(pareceres, personas);
   return pareceres.flatMap((parecer) =>
     parecer.pontos
@@ -99,7 +100,7 @@ export function motivoDoJuiz(motivo: string): string {
 export function destinosDosPontos(
   pareceres: readonly Parecer[],
   vereditos: readonly VereditoDoJuiz[] | undefined,
-  personas: readonly Persona[] = PERSONAS,
+  personas: readonly Persona[] = PERSONAS_DOS_COMITES,
 ): Result<ReadonlyMap<string, DestinoDoPonto>, ErroDoJuiz[]> {
   const obrigatorios = pontosObrigatorios(pareceres, personas);
   const doJuiz = new Map((vereditos ?? []).map((v) => [chaveDoPontoDoJuiz(v.persona, v.pontoId), v]));
@@ -162,7 +163,7 @@ export function conferirAjusteContraOJuiz(
   pareceres: readonly Parecer[],
   ajuste: Ajuste,
   vereditos: readonly VereditoDoJuiz[] | undefined,
-  personas: readonly Persona[] = PERSONAS,
+  personas: readonly Persona[] = PERSONAS_DOS_COMITES,
 ): ErroDeAjusteContraOJuiz[] {
   const destinos = destinosDosPontos(pareceres, vereditos, personas);
   if (!destinos.ok) return destinos.error.map((erro) => ({ codigo: 'juiz_sem_veredito', persona: erro.persona, pontoId: erro.pontoId }));

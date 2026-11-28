@@ -122,6 +122,8 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
 
   const semScripts = (texto) => texto.replace(/<script[\s\S]*?<\/script>/g, '');
   const semAreaDeTexto = (texto) => semScripts(texto).replace(/<textarea[\s\S]*?<\/textarea>/g, '');
+  const semMemoria = (texto) => texto.replace(/<section[^>]*data-memoria-do-plano[\s\S]*?<\/section>/, '');
+  const memoriaDe = (texto) => texto.match(/<section[^>]*data-memoria-do-plano[\s\S]*?<\/section>/)?.[0] ?? '';
 
   function botao(texto, rotulo) {
     const casos = [...semScripts(texto).matchAll(new RegExp(`<button([^>]*)>\\s*${rotulo}\\s*</button>`, 'g'))];
@@ -294,7 +296,7 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
     assert.match(texto, /Andamento do plano/);
     assert.match(texto, /etapas__item--atual"[^>]*aria-current="step"[\s\S]{0,900}?Revisando o plano/);
     for (const etapa of ['Lendo o contexto do cliente', 'Redigindo o plano', 'Ajustando o plano', 'Conferindo o plano']) assert.ok(texto.includes(etapa), etapa);
-    assert.ok(!TERMOS_INTERNOS.test(semScripts(texto)), 'sem Comitê, Gates ou Histórico');
+    assert.ok(!TERMOS_INTERNOS.test(semMemoria(semScripts(texto))), 'sem Comitê, Gates ou Histórico');
     assert.ok(!habilitado(texto, 'Aplicar o plano'));
     assert.ok(desabilitado(texto, 'Aplicar o plano'));
     assert.match(texto, /Há uma execução em andamento/);
@@ -334,8 +336,15 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
     assert.match(texto, /Toda mudança cria uma versão nova, que passa por revisão de novo\./);
     assert.doesNotMatch(texto, /Edição avançada|name="json"/);
     assert.match(texto, /[0-9]+\/2000/);
-    assert.ok(!TERMOS_INTERNOS.test(semAreaDeTexto(texto)), 'sem Comitê, Gates ou Histórico');
-    for (const interno of TEXTOS_INTERNOS_SEMEADOS) assert.ok(!texto.includes(interno), interno);
+    assert.ok(!TERMOS_INTERNOS.test(semMemoria(semAreaDeTexto(texto))), 'sem Comitê, Gates ou Histórico fora da Memória do plano (ADR 0073)');
+    for (const interno of TEXTOS_INTERNOS_SEMEADOS) assert.ok(!semMemoria(semScripts(texto)).includes(interno), interno);
+    const memoria = memoriaDe(texto);
+    assert.match(memoria, /Memória do plano/);
+    assert.match(memoria, /Baixar memória do plano/);
+    assert.match(memoria, /Comitê de mensagem[^<]*: Acatado\. Motivo: Promessa com número/);
+    assert.match(memoria, /Posicionamento e mensagem/);
+    for (const bruto of ['Promessa genérica.', 'A promessa está vaga', 'Dar um número à promessa', 'Sem risco legal aparente.', 'Gate', 'Parecer']) assert.ok(!memoria.includes(bruto), `${bruto} fora da memória`);
+    assert.ok(!/https?:\/\/|orla:/.test(memoria.replace(/href="[^"]*"/g, '')), 'sem URL nem URN na memória');
     for (const ruim of ['undefined', '[object Object]', 'NaN']) assert.ok(!semScripts(texto).includes(ruim), ruim);
     assert.ok(!semAreaDeTexto(texto).includes('&quot;centavos&quot;'), 'JSON cru fora do editor avançado');
     const lista = await pagina(rota(clientes.pronto));
@@ -430,6 +439,50 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
     assert.match(semScripts(comoOperador.texto), new RegExp(`href="/clientes/${clientes.pronto}/estrategia"[^>]*>(?:(?!</a>)[\\s\\S])*Estratégia`));
   });
 
+  describe('Memória do plano: download em Markdown (ADR 0073)', () => {
+    const rotaMemoria = (cli, plano) => `${rotaPlano(cli, plano)}/memoria`;
+    const baixar = async (quem, caminho) => {
+      signIn(quem);
+      const resposta = await browse(caminho);
+      return { status: resposta.status, tipo: resposta.headers.get('content-type') ?? '', disposicao: resposta.headers.get('content-disposition') ?? '', cache: resposta.headers.get('cache-control') ?? '', texto: await resposta.text(), destino: resposta.headers.get('location') };
+    };
+
+    it('operator baixa o Markdown do plano do próprio cliente, sem pareceres, URL nem URN', async () => {
+      const r = await baixar(ids.operador, rotaMemoria(clientes.pronto, ids.pronto.plano));
+      assert.equal(r.status, 200);
+      assert.match(r.tipo, /^text\/markdown/);
+      assert.match(r.disposicao, /^attachment; filename="memoria-do-plano[a-z0-9-]*\.md"$/);
+      assert.match(r.cache, /no-store/);
+      assert.match(r.texto, /^# Memória do plano: /);
+      assert.match(r.texto, /Comitê de mensagem: Acatado\. Motivo: Promessa com número/);
+      for (const bruto of ['Promessa genérica.', 'A promessa está vaga', 'Dar um número à promessa', 'Sem risco legal aparente.']) assert.ok(!r.texto.includes(bruto), bruto);
+      assert.ok(!/https?:\/\/|orla:/.test(r.texto));
+    });
+
+    it('viewer recebe 403 e nenhum conteúdo; sem sessão vai para a entrada', async () => {
+      const r = await baixar(ids.leitor, rotaMemoria(clientes.pronto, ids.pronto.plano));
+      assert.equal(r.status, 403);
+      assert.ok(!r.texto.includes('Memória do plano') && !r.texto.includes('Promessa com número'));
+      signOut();
+      const anonimo = await fetch(`${BASE}${rotaMemoria(clientes.pronto, ids.pronto.plano)}`, { redirect: 'manual' });
+      assert.ok([302, 303, 307, 308].includes(anonimo.status), `status ${anonimo.status}`);
+      assert.match(decodeURIComponent(anonimo.headers.get('location') ?? ''), /\/entrar|\/api\/auth\/google\/start/);
+    });
+
+    it('isolamento: plano de outro cliente na URL, cliente de outra organização e cliente fora do recorte dão 404', async () => {
+      assert.equal((await baixar(ids.operador, rotaMemoria(clientes.emAutorizacao, ids.pronto.plano))).status, 404, 'plano de outro cliente');
+      assert.equal((await baixar(ids.operador, rotaMemoria(clientes.alheio, ids.pronto.plano))).status, 404, 'cliente de outra organização');
+      assert.equal((await baixar(ids.donoOutra, rotaMemoria(clientes.pronto, ids.pronto.plano))).status, 404, 'dono de outra organização');
+      assert.equal((await baixar(ids.recortado, rotaMemoria(clientes.pronto, ids.pronto.plano))).status, 404, 'membro recortado fora do recorte');
+      assert.equal((await baixar(ids.operador, rotaMemoria(clientes.pronto, 'nao-e-uuid'))).status, 404, 'plano malformado');
+      assert.equal((await baixar(ids.operador, rotaMemoria(clientes.pronto, ids.pronto.versao))).status, 404, 'id que não é de plano');
+    });
+
+    it('plano sem versão não tem memória: 404', async () => {
+      assert.equal((await baixar(ids.operador, rotaMemoria(clientes.preso, ids.preso.plano))).status, 404);
+    });
+  });
+
   it('(h) a Estratégia é uma página só: rotas antigas de seção e tipo caem na lista e nada interno aparece', async () => {
     signIn(ids.dono);
     for (const antiga of ['?secao=comite', '?secao=gates', '?secao=historico', '?secao=plano&tipo=marca']) {
@@ -440,7 +493,7 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
       assert.ok(!semScripts(resposta.texto).includes('aria-label="Tipo de plano"'), antiga);
     }
     const plano = await pagina(rotaPlano(clientes.pronto, ids.pronto.plano));
-    assert.ok(!TERMOS_INTERNOS.test(semAreaDeTexto(plano.texto)));
+    assert.ok(!TERMOS_INTERNOS.test(semMemoria(semAreaDeTexto(plano.texto))));
     assert.ok(!semScripts(plano.texto).includes('Parecer'), 'sem pareceres');
   });
 
@@ -817,7 +870,7 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
       assert.ok(desabilitado(depois.texto, 'Aplicar o plano'));
       assert.match(depois.texto, /Há uma execução em andamento/);
       assert.match(depois.texto, /Revisando o plano/);
-      assert.ok(!TERMOS_INTERNOS.test(semAreaDeTexto(depois.texto)), 'sem Comitê, Gates ou Histórico');
+      assert.ok(!TERMOS_INTERNOS.test(semMemoria(semAreaDeTexto(depois.texto))), 'sem Comitê, Gates ou Histórico');
     });
 
     it('a intenção é fixa: não há campo nem caminho para editá-la pela tela', async () => {
@@ -870,7 +923,7 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
       const planoTela = await pagina(rotaPlano(cli, plano));
       assert.equal(planoTela.status, 200);
       assert.match(planoTela.texto, /Cancelado/);
-      assert.ok(!TERMOS_INTERNOS.test(semAreaDeTexto(planoTela.texto)));
+      assert.ok(!TERMOS_INTERNOS.test(semMemoria(semAreaDeTexto(planoTela.texto))));
       const lista = await pagina(rota(cli));
       assert.match(lista.texto, new RegExp(`href="${rotaPlano(cli, plano)}"`));
       assert.match(lista.texto, /Cancelado/);

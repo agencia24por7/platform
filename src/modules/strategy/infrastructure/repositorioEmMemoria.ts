@@ -2,6 +2,7 @@ import { err, ok, type Result } from '@/shared/result/result';
 import { CHAVE_DE_IDEMPOTENCIA_COM_OUTRO_PEDIDO, MAXIMO_DE_RESERVAS, mesmoPedidoDePlano } from '@/modules/strategy/application/portas';
 import type {
   Autoria,
+  Deliberacao,
   ErroDeEstrategia,
   EventoDaVersao,
   Execucao,
@@ -33,6 +34,7 @@ export type RepositorioEmMemoria = RepositorioDeEstrategia & {
     readonly versoes: VersaoInterna[];
     readonly eventos: EventoInterno[];
     readonly execucoes: ExecucaoInterna[];
+    readonly deliberacoes: Deliberacao[];
     readonly removidos: Set<string>;
   };
   criarPlano(escopo: { readonly organizationId: string; readonly clientId: string }, tipo: string, destino?: Partial<Pick<Plano, 'plataformas' | 'whatsapp' | 'landingPageId' | 'foco'>>): Promise<Result<Plano, ErroDeEstrategia>>;
@@ -54,6 +56,7 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
   const versoes: VersaoInterna[] = [];
   const eventos: EventoInterno[] = [];
   const execucoes: ExecucaoInterna[] = [];
+  const deliberacoes: Deliberacao[] = [];
   const removidos = new Set<string>();
   const ativo = (planoId: string) => !removidos.has(planoId);
   const falhas = new Map<string, ErroDeEstrategia[]>();
@@ -325,6 +328,38 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
       contar('listarVersoes');
       return versoes.filter((v) => v.planoId === planoId && ativo(planoId)).map(resumo).reverse().slice(0, limite);
     },
+    async registrarDeliberacao(_org, nova) {
+      const falha = entrada('registrarDeliberacao');
+      if (falha) return err(falha);
+      const versao = versoes.find((v) => v.id === nova.versaoId && v.planoId === nova.planoId);
+      if (!versao || !ativo(versao.planoId)) return err(erro('nao_encontrado', 'versão'));
+      const execucao = execucoes.find((e) => e.id === nova.execucaoId);
+      if (!execucao || execucao.agentRunId !== nova.autoria.agentRunId || !execucaoAtivaDoAgente(nova.autoria.agentRunId, versao.planoId, nova.autoria.ficha)) {
+        return err(erro('execucao_perdida', 'execução do agente inativa'));
+      }
+      if (versao.status !== 'rascunho') return err(erro('transicao_invalida', 'só valem em versão rascunho'));
+      if ((nova.rodada === 0) !== (nova.membro !== null)) return err(erro('invalido', 'membro só na rodada 0'));
+      const existente = deliberacoes.find((d) => d.versaoId === nova.versaoId && d.comite === nova.comite && d.rodada === nova.rodada && d.membro === nova.membro);
+      if (existente) return ok(existente);
+      const gravada: Deliberacao = {
+        versaoId: nova.versaoId,
+        execucaoId: nova.execucaoId,
+        comite: nova.comite,
+        rodada: nova.rodada,
+        membro: nova.membro,
+        payload: structuredClone(nova.payload) as Record<string, unknown>,
+        agentRunId: nova.autoria.agentRunId,
+        criadaEm: agora(),
+      };
+      deliberacoes.push(gravada);
+      return ok(gravada);
+    },
+    async deliberacoesDaVersao(_org, versaoId) {
+      contar('deliberacoesDaVersao');
+      const versao = versoes.find((v) => v.id === versaoId);
+      if (!versao || !ativo(versao.planoId)) return [];
+      return deliberacoes.filter((d) => d.versaoId === versaoId);
+    },
     async eventosDaVersao(_org, versaoId) {
       contar('eventosDaVersao');
       const versao = versoes.find((v) => v.id === versaoId);
@@ -449,7 +484,7 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
 
   return {
     ...repositorio,
-    estado: { planos, versoes, eventos, execucoes, removidos },
+    estado: { planos, versoes, eventos, execucoes, deliberacoes, removidos },
     async criarPlano(escopo, tipo, destino = {}) {
       const plano: Plano = {
         id: id(),

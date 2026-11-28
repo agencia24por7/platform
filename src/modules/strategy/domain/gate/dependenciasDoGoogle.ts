@@ -83,8 +83,8 @@ export const LIMITES_DO_ANUNCIO_RESPONSIVO = {
   caminho: { caracteres: 15 },
 } as const;
 
-type LimiteDeLista = { readonly minimo: number; readonly maximo: number; readonly caracteres?: number };
-const LIMITES_DE_LISTA: ReadonlyArray<readonly [string, LimiteDeLista]> = [
+export type LimiteDeLista = { readonly minimo: number; readonly maximo: number; readonly caracteres?: number };
+export const LIMITES_DE_LISTA: ReadonlyArray<readonly [string, LimiteDeLista]> = [
   ['ad_headlines', LIMITES_DO_ANUNCIO_RESPONSIVO.titulos],
   ['ad_descriptions', LIMITES_DO_ANUNCIO_RESPONSIVO.descricoes],
   ['ad_display_headlines', { minimo: 1, maximo: 5, caracteres: 30 }],
@@ -112,7 +112,7 @@ const LIMITES_DE_LISTA: ReadonlyArray<readonly [string, LimiteDeLista]> = [
   ['ad_app_images', { minimo: 0, maximo: 20 }],
   ['ad_app_youtube_videos', { minimo: 0, maximo: 20 }],
 ];
-const LIMITES_DE_TEXTO: ReadonlyArray<readonly [string, number]> = [
+export const LIMITES_DE_TEXTO: ReadonlyArray<readonly [string, number]> = [
   ['ad_path1', 15],
   ['ad_path2', 15],
   ['assetgroup_pmax_path1', 15],

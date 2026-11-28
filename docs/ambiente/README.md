@@ -77,6 +77,7 @@ Rode a skill `revisar-ambiente` quando:
 - 2026-11-21: camada de economia de tokens, escolha de potência (modelo e esforço), gestão de contexto e segurança (ADR 0038), com base em pesquisa nas documentações da Anthropic.
 - 2026-11-21: hooks do git (pre-commit e pre-push) com varredura e verificação de segurança, espelhados no CI (ADR 0039).
 - 2026-11-26: ADR 0069 supera 0039, 0046, 0047 e 0048. Saem hooks do git, varredura de segredo, Stop e prompt; o agente opera produção sem confirmação por operação (24K-129).
+- 2026-11-27: `.claude/rules/frontend.md` ganha a exceção da Memória do plano à regra de que Comitê não aparece ao usuário (ADR 0073, que supera em parte o 0069 da Estratégia; 24K-134).
 
 ## Identidade visual
 `CLAUDE.md` aponta para `docs/marca/LEIA-ME.md` (cor, tipografia, azulejo, link do Figma e referência visual da azulejaria). Material visual novo parte dali.

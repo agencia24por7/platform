@@ -2,6 +2,8 @@ import { sql } from '@/shared/db/client';
 import { withTenant } from '@/shared/db/tenant';
 import type { BrainRepository, ClienteResolvido, EstadoDaPublicacao } from '../application/portas.ts';
 import type { EntradaDeConhecimento } from '../domain/conhecimento.ts';
+import type { SinalDeCultura } from '../domain/cultura.ts';
+import { LIMITE_DE_SINAIS_LIDOS, paraSinalDeCultura, type LinhaDeSinal } from './culturaSql.ts';
 import type { InventarioDoCliente } from '../domain/inventario.ts';
 import { consultarInventario, montarInventario } from './inventarioSql.ts';
 
@@ -162,6 +164,17 @@ export function createBrainRepository(): BrainRepository {
         replicada: row.replicada,
         criadaEm: row.created_at,
       }));
+    },
+
+    async carregarSinaisDeCultura(cliente, hoje): Promise<readonly SinalDeCultura[]> {
+      const rows = (await withTenant(cliente.organizationId, (tx) => tx`
+        SELECT id, kind, titulo, resumo, fonte_url, fonte_nome, plataforma, observado_em::text AS observado_em,
+               valido_ate::text AS valido_ate, nota_evidencia, origem, criado_em
+          FROM core.client_culture_signals
+         WHERE organization_id = ${cliente.organizationId} AND client_id = ${cliente.clienteId} AND arquivado_em IS NULL
+         ORDER BY (valido_ate >= ${hoje}::date) DESC, observado_em DESC, id
+         LIMIT ${LIMITE_DE_SINAIS_LIDOS}`)) as unknown as LinhaDeSinal[];
+      return rows.map(paraSinalDeCultura);
     },
 
     async gravarDesempenho(cliente, medicao) {

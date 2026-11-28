@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import '../../../shared/testing/registrarAlias.mjs';
 import type { AvaliadorDeLimites, Execucao, LeitorDoBrain, PedidoDeIA, ProdutoDoContexto } from '@/modules/strategy/application/portas';
 import { parecer } from '../domain/comite/fixturesDeParecer.ts';
+import { ehPedidoDeComite, respostaDoComite } from '../domain/comite/fixturesDoComite.ts';
 import { CATALOGOS_DE_TESTE, CLIENTE_ID, ORGANIZACAO_ID, hashDeTeste, pacoteDeTeste, planoCompleto, secoesDoGrupoDaChave, urnDeTeste } from '../domain/fixturesDeTeste.ts';
 
 Object.assign(process.env, {
@@ -31,7 +32,7 @@ const aprovaTudo: AvaliadorDeLimites = { async avaliador() { return ok(semMedida
 
 function roteiro(pedido: PedidoDeIA<unknown>): unknown {
   if (pedido.tarefa === 'strategy_plan') return secoesDoGrupoDaChave(pedido.chaveDeIdempotencia);
-  if (pedido.tarefa === 'comite') return parecer((pedido.dados as { persona: { chave: string } }).persona.chave, 'aprova');
+  if (ehPedidoDeComite(pedido)) return respostaDoComite(pedido);
   if (pedido.tarefa === 'juiz') return aceitaTodos(pedido.dados);
   return { resultado: 'aprovado', problemas: [] };
 }

@@ -1,5 +1,6 @@
 import type { ContextoParaCatalogo } from '../domain/contexto.ts';
 import type { EntradaDeConhecimento } from '../domain/conhecimento.ts';
+import type { SinalDeCultura } from '../domain/cultura.ts';
 import type { DesempenhoMedido } from '../domain/desempenho.ts';
 import type { InventarioDoCliente } from '../domain/inventario.ts';
 import type { DecisaoParaCatalogo, DefinicaoParaCatalogo, RegrasParaCatalogo } from '../domain/regras.ts';
@@ -166,6 +167,32 @@ export function conhecimento(): EntradaDeConhecimento[] {
     conhecimentoBase({ key: 'promessa_garantida', categoria: 'pratica', nota: 'D', maturidade: 'rumor', validoAte: '2027-05-31' }),
     conhecimentoBase({ key: 'lgpd_base_legal', categoria: 'regra_legal', nota: 'C', mercado: 'brasil', jurisdicao: 'br', validoAte: '2026-10-31', resumo: 'Base legal exigida. Texto não verificado por pessoa: confirmar antes de usar.' }),
     conhecimentoBase({ key: 'consent_mode', categoria: 'regra_legal', nota: 'C', mercado: 'uniao_europeia', jurisdicao: 'ue', validoAte: '2027-02-28' }),
+  ];
+}
+
+const sinalBase = (extra: Partial<SinalDeCultura> & Pick<SinalDeCultura, 'id' | 'tipo'>): SinalDeCultura => ({
+  titulo: `Título de ${extra.id}`,
+  resumo: `Resumo do sinal ${extra.id}.`,
+  fonteUrl: `https://fonte.exemplo.com.br/${extra.id}`,
+  fonteNome: 'Fonte de teste',
+  plataforma: null,
+  observadoEm: '2026-11-10',
+  validoAte: '2026-12-10',
+  nota: 'B',
+  origem: 'manual',
+  criadoEm: new Date('2026-11-10T12:00:00Z'),
+  ...extra,
+});
+
+export function sinaisDeCultura(): SinalDeCultura[] {
+  return [
+    sinalBase({ id: 'c0de0001-0000-4000-8000-000000000001', tipo: 'tendencia', plataforma: 'tiktok', nota: 'A' }),
+    sinalBase({ id: 'c0de0002-0000-4000-8000-000000000002', tipo: 'meme', plataforma: 'instagram', nota: 'C', origem: 'coletor' }),
+    sinalBase({ id: 'c0de0003-0000-4000-8000-000000000003', tipo: 'conversa' }),
+    sinalBase({ id: 'c0de0004-0000-4000-8000-000000000004', tipo: 'comunidade', nota: 'D' }),
+    sinalBase({ id: 'c0de0005-0000-4000-8000-000000000005', tipo: 'referencia_criativa' }),
+    sinalBase({ id: 'c0de0006-0000-4000-8000-000000000006', tipo: 'anti_referencia' }),
+    sinalBase({ id: 'c0de0007-0000-4000-8000-000000000007', tipo: 'tendencia', observadoEm: '2026-09-01', validoAte: '2026-11-19' }),
   ];
 }
 

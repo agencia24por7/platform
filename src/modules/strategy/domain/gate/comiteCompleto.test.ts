@@ -3,24 +3,24 @@ import { describe, it } from 'node:test';
 import type { Ajuste } from '../comite/ajuste.ts';
 import { parecer, ponto } from '../comite/fixturesDeParecer.ts';
 import type { VereditoDoJuiz } from '../comite/juiz.ts';
-import { PERSONAS } from '../comite/personas.ts';
+import { PERSONAS_DOS_COMITES } from '../comite/comites.ts';
 import { contextoDeTeste } from '../fixturesDeTeste.ts';
 import { checarComiteCompleto } from './comiteCompleto.ts';
 
 const VERSAO = '55555555-5555-4555-8555-555555555555';
-const todasAprovam = () => PERSONAS.map((p) => parecer(p.chave, 'aprova'));
+const todasAprovam = () => PERSONAS_DOS_COMITES.map((p) => parecer(p.chave, 'aprova'));
 const veredito = (persona: string, pontoId: string, v: 'aceito' | 'rejeitado'): VereditoDoJuiz => ({ persona, pontoId, veredito: v, motivo: 'Motivo do juiz.', prova: [] });
 const resposta = (persona: string, pontoId: string, decisao: 'acatado' | 'nao_acatado' = 'acatado') => ({ persona, pontoId, decisao, motivo: 'Motivo.' });
 
 describe('gate: comite_completo', () => {
-  it('aprova quando as nove personas aprovam sem ajuste', () => {
+  it('aprova quando os dezessete comitês aprovam sem ajuste', () => {
     assert.equal(checarComiteCompleto(contextoDeTeste({ pareceres: todasAprovam() })).resultado, 'aprovado');
   });
 
   it('falha fechada: sem pareceres no contexto reprova', () => {
     const contexto = { ...contextoDeTeste(), pareceres: undefined };
     assert.equal(checarComiteCompleto(contexto).resultado, 'reprovado');
-    assert.equal(checarComiteCompleto(contextoDeTeste({ pareceres: [] })).onde.length, 9);
+    assert.equal(checarComiteCompleto(contextoDeTeste({ pareceres: [] })).onde.length, 17);
   });
 
   it('reprova persona sem parecer', () => {
@@ -83,5 +83,27 @@ describe('gate: comite_completo', () => {
     const r = checarComiteCompleto(contextoDeTeste({ comiteDaMesmaExecucao: false }));
     assert.equal(r.resultado, 'reprovado');
     assert.match(r.motivo, /outra execução/);
+  });
+
+  it('confere contra os comitês convocados na raiz: desligado não é exigido, convocado sem parecer reprova', () => {
+    const semCultura = todasAprovam().filter((p) => p.persona !== 'cultura');
+    const convocados = PERSONAS_DOS_COMITES.map((p) => p.chave).filter((chave) => chave !== 'cultura');
+    assert.equal(checarComiteCompleto(contextoDeTeste({ pareceres: semCultura, comitesConvocados: convocados })).resultado, 'aprovado');
+    const r = checarComiteCompleto(contextoDeTeste({ pareceres: semCultura, comitesConvocados: [...convocados, 'cultura'] }));
+    assert.equal(r.resultado, 'reprovado');
+    assert.deepEqual(r.onde, ['comite/cultura (sem parecer)']);
+  });
+
+  it('risco e legal é sempre exigido, mesmo fora da lista de convocados', () => {
+    const semLegal = [parecer('marca', 'aprova')];
+    const r = checarComiteCompleto(contextoDeTeste({ pareceres: semLegal, comitesConvocados: ['marca'] }));
+    assert.equal(r.resultado, 'reprovado');
+    assert.deepEqual(r.onde, ['comite/risco_legal (sem parecer)']);
+    assert.equal(checarComiteCompleto(contextoDeTeste({ pareceres: [...semLegal, parecer('risco_legal', 'aprova')], comitesConvocados: ['marca'] })).resultado, 'aprovado');
+  });
+
+  it('sem a lista de convocados, exige todos os comitês (falha fechada)', () => {
+    const r = checarComiteCompleto(contextoDeTeste({ pareceres: todasAprovam().filter((p) => p.persona !== 'producao') }));
+    assert.deepEqual(r.onde, ['comite/producao (sem parecer)']);
   });
 });

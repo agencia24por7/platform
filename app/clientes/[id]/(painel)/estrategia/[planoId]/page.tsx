@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { montarSnapshotDoCliente } from '@/../app/clientes/[id]/_brain/fonte';
 import { AvisoEfemero } from '@/../app/clientes/[id]/_componentes/AvisoEfemero';
 import { Icone } from '@/../app/clientes/[id]/_componentes/Icones';
 import { carregarPainel, primeiro } from '@/../app/clientes/[id]/_dados';
@@ -8,38 +7,20 @@ import { AcoesDoPlano } from '@/../app/clientes/[id]/(painel)/estrategia/AcoesDo
 import { Avisos } from '@/../app/clientes/[id]/(painel)/estrategia/Avisos';
 import { Bloco } from '@/../app/clientes/[id]/(painel)/estrategia/BlocosDaSecao';
 import { BlocoDoPlano } from '@/../app/clientes/[id]/(painel)/estrategia/BlocoDoPlano';
+import { brainDaPagina } from '@/../app/clientes/[id]/(painel)/estrategia/_brainDoPlano';
 import { EncaixesDoPlano } from '@/../app/clientes/[id]/(painel)/estrategia/EncaixesDoPlano';
 import { LinhaDoTempo } from '@/../app/clientes/[id]/(painel)/estrategia/LinhaDoTempo';
+import { MemoriaDoPlano } from '@/../app/clientes/[id]/(painel)/estrategia/MemoriaDoPlano';
 import { PlanoDeMidia } from '@/../app/clientes/[id]/(painel)/estrategia/PlanoDeMidia';
 import { modules } from '@/composition';
 import { idValido, rotaDoCliente } from '@/modules/clients/domain/painel/enderecos';
 import { podeVerAEstrategia } from '@/modules/strategy/domain/papeis';
-import { rotaDaListaDePlanos, rotaDoPlano } from '@/modules/strategy/interface/rotasDaEstrategia';
-import { visaoDoPlano, type EntradaDoBrainConhecida } from '@/modules/strategy/interface/visaoDoPlano';
-import type { ComandoDeEstrategia, OpcoesDoPainel } from '@/modules/strategy/application/estrategiaService';
+import { memoriaDoPlano, memoriaTemConteudo } from '@/modules/strategy/interface/memoriaDoPlano';
+import { rotaDaListaDePlanos, rotaDaMemoriaDoPlano, rotaDoPlano } from '@/modules/strategy/interface/rotasDaEstrategia';
+import { ROTULO_DO_LINK_NA_PAGINA_DO_PLANO, rotaDoPlanoDeProducao } from '@/modules/strategy/interface/planoDeProducao';
+import { visaoDoPlano } from '@/modules/strategy/interface/visaoDoPlano';
 
 export const dynamic = 'force-dynamic';
-
-type BrainDaPagina = { readonly entradas: ReadonlyMap<string, EntradaDoBrainConhecida>; readonly snapshot: OpcoesDoPainel['snapshotDoBrain'] };
-
-async function brainDaPagina(comando: ComandoDeEstrategia, clientId: string): Promise<BrainDaPagina> {
-  try {
-    const montado = await montarSnapshotDoCliente(comando.organizationId, clientId, comando.papelDeQuemAge);
-    if (!montado.ok) return { entradas: new Map(), snapshot: 'indisponivel' };
-    return {
-      entradas: new Map(montado.value.entradas.map((entrada) => [entrada.urn, {
-        titulo: entrada.titulo,
-        nota: entrada.evidencia?.nota ?? null,
-        ...(entrada.evidencia ? { categoria: entrada.evidencia.categoria } : {}),
-        ...(entrada.evidencia?.validoAte ? { validoAte: entrada.evidencia.validoAte } : {}),
-        ...(entrada.evidencia?.verificadoEm ? { verificadoEm: entrada.evidencia.verificadoEm } : {}),
-      }])),
-      snapshot: montado.value,
-    };
-  } catch {
-    return { entradas: new Map(), snapshot: 'indisponivel' };
-  }
-}
 
 export default async function PaginaDoPlano({ params, searchParams }: { readonly params: Promise<{ id: string; planoId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const [{ id, planoId }, busca] = await Promise.all([params, searchParams]);
@@ -58,6 +39,7 @@ export default async function PaginaDoPlano({ params, searchParams }: { readonly
   if (!resultado.ok || painel === null) notFound();
 
   const visao = visaoDoPlano({ painel, papel: ctx.role, clienteId: cliente.id, entradasDoBrain: brain.entradas });
+  const memoria = memoriaDoPlano({ painel, entradasDoBrain: brain.entradas });
   const aqui = rotaDoPlano(cliente.id, planoId);
   const edicao = visao.acoes.find((acao) => acao.chave === 'editar_secao');
 
@@ -83,6 +65,11 @@ export default async function PaginaDoPlano({ params, searchParams }: { readonly
       <Avisos avisos={visao.avisos} />
       {visao.execucao ? <LinhaDoTempo execucao={visao.execucao} atualizarEm={aqui} /> : null}
       <AcoesDoPlano clienteId={cliente.id} visao={visao} />
+      <div className="acoes">
+        <Link className="btn" href={rotaDoPlanoDeProducao(cliente.id, planoId)}>
+          {ROTULO_DO_LINK_NA_PAGINA_DO_PLANO}
+        </Link>
+      </div>
       <EncaixesDoPlano clienteId={cliente.id} planoId={planoId} lacunas={visao.lacunas} falhaDoGate={visao.falhaDoGate} />
       {visao.resumo && visao.versao ? (
         <BlocoDoPlano clienteId={cliente.id} planoId={planoId} versaoId={visao.versao.id} bloco={visao.resumo} edicao={edicao}>
@@ -98,6 +85,7 @@ export default async function PaginaDoPlano({ params, searchParams }: { readonly
           <PlanoDeMidia plataformas={visao.midia.conteudo} />
         </BlocoDoPlano>
       ) : null}
+      {memoriaTemConteudo(memoria) ? <MemoriaDoPlano memoria={memoria} href={rotaDaMemoriaDoPlano(cliente.id, planoId)} /> : null}
     </div>
   );
 }
