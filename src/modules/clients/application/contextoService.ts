@@ -33,6 +33,8 @@ import { VERSAO_DO_BRAIN, construirBrain } from '@/modules/clients/domain/contex
 import { calcularCompletude, proximosCampos, type CampoFaltando, type Completude } from '@/modules/clients/domain/contexto/completude';
 import { diferencasDeDados, type DiferencaDeChave } from '@/modules/clients/domain/contexto/diff';
 import type { ModeloDeOperacao } from '@/modules/clients/domain/contexto/heranca';
+import { TAMANHO_MAXIMO_DA_LOGO_BYTES, logoDoCliente } from '@/modules/clients/domain/contexto/logo';
+import type { Readable } from 'node:stream';
 import {
   MOTIVO_DO_LINK,
   estadoDoLink,
@@ -237,8 +239,18 @@ export type SituacaoDoBrain = 'publicado' | 'inalterado' | 'sem_armazenamento';
 
 export type Leitura = Escopo & { readonly papelDeQuemLe: MemberRole };
 
+export type LogoAberta = {
+  readonly conteudo: Readable;
+  readonly contentType: string;
+  readonly tamanhoBytes: number;
+  readonly sha256: string;
+};
+
+export type ResultadoDaLogo = { readonly tipo: 'aberta'; readonly logo: LogoAberta } | { readonly tipo: 'sem_mudanca'; readonly sha256: string } | { readonly tipo: 'ausente' };
+
 export type ContextoService = {
   carregar(leitura: Leitura): Promise<Result<ContextoCompleto, Failure>>;
+  abrirLogo(leitura: Leitura, hashConhecido?: string | null): Promise<Result<ResultadoDaLogo, Failure>>;
   carregarNaVisao(escopo: Escopo, visao: VisaoDoContexto): Promise<Result<ContextoCompleto, Failure>>;
   salvarCampo(
     comando: Comando & {
@@ -881,6 +893,25 @@ export function createContextoService(deps: DependenciasDoContexto): ContextoSer
   const servico: ContextoService = {
     carregar(leitura) {
       return servico.carregarNaVisao({ organizationId: leitura.organizationId, clientId: leitura.clientId }, visaoDoPapel(leitura.papelDeQuemLe));
+    },
+
+    async abrirLogo(leitura, hashConhecido = null) {
+      if (!armazenamento.configurado) return ok({ tipo: 'ausente' });
+      const carregado = await servico.carregar(leitura);
+      if (!carregado.ok) return carregado;
+      const logo = logoDoCliente(carregado.value.arquivos);
+      if (!logo) return ok({ tipo: 'ausente' });
+      const prefixo = `${prefixoDoCliente(leitura.organizationId, leitura.clientId)}${PREFIXO_DOS_ARQUIVOS}`;
+      if (!logo.caminho.startsWith(prefixo)) return err(failure('forbidden', 'Arquivo fora do cliente.'));
+      if (hashConhecido === logo.sha256) return ok({ tipo: 'sem_mudanca', sha256: logo.sha256 });
+      const lido = await armazenamento.get(logo.caminho);
+      if (!lido.ok) return lido;
+      if (!lido.value) return ok({ tipo: 'ausente' });
+      if (lido.value.objeto.tamanhoBytes > TAMANHO_MAXIMO_DA_LOGO_BYTES) {
+        lido.value.conteudo.destroy();
+        return ok({ tipo: 'ausente' });
+      }
+      return ok({ tipo: 'aberta', logo: { conteudo: lido.value.conteudo, contentType: logo.mime, tamanhoBytes: lido.value.objeto.tamanhoBytes, sha256: logo.sha256 } });
     },
 
     async carregarNaVisao(escopo, visao) {

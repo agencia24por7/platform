@@ -3,7 +3,8 @@ import { describe, it } from 'node:test';
 import '../../../shared/testing/registrarAlias.mjs';
 import type { AuditEvent } from '@/modules/audit/domain/auditEvent';
 import type { ContextoRepository, EscopoDoLink, LinkDeContexto } from '@/modules/clients/infrastructure/contextoRepository';
-import type { EntradaDeCampo, ItemDeLista } from '@/modules/clients/domain/contexto/tipos';
+import { Readable } from 'node:stream';
+import type { ArquivoDeContexto, EntradaDeCampo, ItemDeLista } from '@/modules/clients/domain/contexto/tipos';
 import type { PortaDoArmazenamento } from './portaDoArmazenamento.ts';
 import type { RateLimitPedido, RateLimitVerdict } from '@/shared/security/rateLimit';
 import type { ContadorDeTentativas } from '@/shared/security/tentativasInvalidas';
@@ -51,6 +52,7 @@ type OpcoesDoMontar = {
   escopoDinamico?: () => EscopoDoLink | null;
   avisarSemEndereco?: () => void;
   hashDoConvite?: (token: string) => string | null;
+  arquivos?: readonly ArquivoDeContexto[];
 };
 
 function montar(opcoes: OpcoesDoMontar = {}) {
@@ -67,7 +69,7 @@ function montar(opcoes: OpcoesDoMontar = {}) {
 
   const repositorio = {
     async carregar() {
-      return { nome: 'Padaria', cadastro: { nome: 'Padaria', segmento: null, modeloDeOperacao: 'leads' as const, temRede: true, redeNome: 'Rede Pão', criadoEm: new Date(0) }, contexto: { campos: [...entradas.values()], itens: [...itens.values()], arquivos: [] } };
+      return { nome: 'Padaria', cadastro: { nome: 'Padaria', segmento: null, modeloDeOperacao: 'leads' as const, temRede: true, redeNome: 'Rede Pão', criadoEm: new Date(0) }, contexto: { campos: [...entradas.values()], itens: [...itens.values()], arquivos: [...(opcoes.arquivos ?? [])] } };
     },
     async lerEntrada(_o: string, _c: string, chave: string) {
       return entradas.get(chave) ?? null;
@@ -967,3 +969,83 @@ describe('limite do formulário público', () => {
   });
 
 });
+
+describe('logo do cliente', () => {
+  const SHA = 'c'.repeat(64);
+  const leitura = { organizationId: ORG, clientId: CLIENTE, papelDeQuemLe: 'operator' as const };
+  const logo = (caminho: string): ArquivoDeContexto => ({
+    id: '33333333-3333-4333-8333-333333333333',
+    secao: 'marca',
+    fieldKey: 'logo',
+    itemId: null,
+    caminho,
+    nome: 'logo.png',
+    mime: 'image/png',
+    tamanhoBytes: PNG.byteLength,
+    sha256: SHA,
+    fonte: 'equipe',
+    compartilhavel: false,
+    criadoEm: AGORA,
+  });
+  const lidos: string[] = [];
+  const comObjeto = (): PortaDoArmazenamento => ({
+    ...armazenamentoEmMemoria().armazenamento,
+    get: async (caminho) => {
+      lidos.push(caminho);
+      return ok({ objeto: { caminho, contentType: 'image/png', tamanhoBytes: PNG.byteLength, atualizadoEm: AGORA }, conteudo: Readable.from([Buffer.from(PNG)]) });
+    },
+  });
+
+  it('sem logo devolve nulo e não toca o armazenamento', async () => {
+    lidos.length = 0;
+    const { servico } = montar({ armazenamento: comObjeto() });
+    const r = await servico.abrirLogo(leitura);
+    assert.ok(r.ok && r.value.tipo === 'ausente');
+    assert.deepEqual(lidos, []);
+  });
+
+  it('abre a logo do próprio cliente com o tipo e o hash gravados', async () => {
+    lidos.length = 0;
+    const caminho = `orgs/${ORG}/clientes/${CLIENTE}/arquivos/33333333-3333-4333-8333-333333333333-logo.png`;
+    const { servico } = montar({ armazenamento: comObjeto(), arquivos: [logo(caminho)] });
+    const r = await servico.abrirLogo(leitura);
+    assert.ok(r.ok && r.value.tipo === 'aberta');
+    assert.equal(r.value.logo.contentType, 'image/png');
+    assert.equal(r.value.logo.sha256, SHA);
+    assert.deepEqual(lidos, [caminho]);
+  });
+
+  it('com o hash que o navegador já tem, responde sem mudança e não lê o objeto', async () => {
+    lidos.length = 0;
+    const caminho = `orgs/${ORG}/clientes/${CLIENTE}/arquivos/33333333-3333-4333-8333-333333333333-logo.png`;
+    const { servico } = montar({ armazenamento: comObjeto(), arquivos: [logo(caminho)] });
+    const r = await servico.abrirLogo(leitura, SHA);
+    assert.ok(r.ok && r.value.tipo === 'sem_mudanca');
+    assert.deepEqual(lidos, []);
+  });
+
+  it('recusa caminho fora do prefixo do cliente, mesmo que o registro aponte para lá', async () => {
+    lidos.length = 0;
+    const alheio = `orgs/${ORG}/clientes/44444444-4444-4444-8444-444444444444/arquivos/x-logo.png`;
+    const { servico } = montar({ armazenamento: comObjeto(), arquivos: [logo(alheio)] });
+    const r = await servico.abrirLogo(leitura);
+    assert.ok(!r.ok);
+    assert.deepEqual(lidos, []);
+  });
+
+  it('quem só vê não recebe a logo que a equipe não compartilhou (ADR 0062)', async () => {
+    lidos.length = 0;
+    const caminho = `orgs/${ORG}/clientes/${CLIENTE}/arquivos/33333333-3333-4333-8333-333333333333-logo.png`;
+    const { servico } = montar({ armazenamento: comObjeto(), arquivos: [logo(caminho)] });
+    const r = await servico.abrirLogo({ ...leitura, papelDeQuemLe: 'viewer' });
+    assert.ok(r.ok && r.value.tipo === 'ausente');
+    assert.deepEqual(lidos, []);
+  });
+
+  it('sem armazenamento configurado não há logo', async () => {
+    const { servico } = montar({ arquivos: [logo(`orgs/${ORG}/clientes/${CLIENTE}/arquivos/x-logo.png`)] });
+    const r = await servico.abrirLogo(leitura);
+    assert.ok(r.ok && r.value.tipo === 'ausente');
+  });
+});
+

@@ -174,6 +174,21 @@ describe('página do cliente: abas, papéis e formulário público', { concurren
     assert.equal(semSessao.status, 401);
   });
 
+  it('logo do cliente: sem sessão 401, cliente de outra organização 404, sem logo 404 sem cache', async () => {
+    signOut();
+    assert.equal((await fetch(`${BASE}/api/contexto/${cliente}/logo`)).status, 401);
+    const outraOrg = dono(`INSERT INTO core.organizations (name, slug, type) VALUES ('Logo ${sufixo}', 'logo-${sufixo}', 'agency') RETURNING id`);
+    const alheio = dono(`INSERT INTO core.clients (organization_id, name, business_model) VALUES ('${outraOrg}', 'Alheio logo ${sufixo}', 'leads') RETURNING id`);
+    signIn(pessoas.owner);
+    assert.equal((await browse(`/api/contexto/${alheio}/logo`)).status, 404);
+    assert.equal((await browse('/api/contexto/nao-e-uuid/logo')).status, 404);
+    const semLogo = await browse(`/api/contexto/${cliente}/logo`);
+    assert.equal(semLogo.status, 404);
+    assert.match(semLogo.headers.get('cache-control') ?? '', /no-store/);
+    const pagina = await browse(`/clientes/${cliente}/conexoes`);
+    assert.ok(!(await pagina.text()).includes('/logo?v='), 'sem logo, o cabeçalho mostra o monograma');
+  });
+
   it('formulário público: link válido abre sem sessão, sem cache e sem indexação; link ruim mostra estado amigável', async () => {
     signOut();
     const { token } = linkAtivo();
