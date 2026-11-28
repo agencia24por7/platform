@@ -96,6 +96,8 @@ Reversão: voltar a imagem basta; não há esquema novo. A logo some do cabeçal
 
 Não verificado antes deste release: a logo servida pelo bucket real (no ambiente local o armazenamento é nulo e o cabeçalho mostra o monograma).
 
+Conferido em produção depois do release #213 (2026-11-28), pelo navegador com sessão de owner: num cliente com logo, `GET /api/contexto/<id>/logo` respondeu 200 com `Content-Type` de imagem, `nosniff`, CSP com `sandbox`, `Cache-Control: private, no-cache` e `ETag`, e 304 com `If-None-Match`; a imagem aparece no cabeçalho. Cliente sem logo e id inexistente responderam 404; sem sessão, 401.
+
 ## Adendo: plano sem versão com pedido visível e erro de campo que some (PR 214, 24K-132)
 
 Entra depois do release `2026-11-comites-cultura-e-producao.md` (PR 213) já publicado: este adendo não leva migração e não deve ser mergeado em `main` enquanto houver deploy anterior aguardando aprovação, para um run antigo não publicar por cima do novo.
