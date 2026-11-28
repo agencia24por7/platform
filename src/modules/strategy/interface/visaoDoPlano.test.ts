@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { CLIENTE_ID, URN_DESEMPENHO, URN_LIMITE, URN_REGRA_LEGAL, planoCompleto } from '../domain/fixturesDeTeste.ts';
+import { CLIENTE_ID, URN_DESEMPENHO, URN_LIMITE, URN_REGRA_LEGAL, intencaoDeTeste, planoCompleto } from '../domain/fixturesDeTeste.ts';
 import type { Execucao, Versao, VersaoResumo } from '../application/portas.ts';
 import type { PainelDoPlano } from '../application/estrategiaService.ts';
 import type { MemberRole } from '../../identity/domain/user.ts';
@@ -458,6 +458,44 @@ describe('visão do plano: execução presa', () => {
     const rodando = execucao({ status: 'rodando', atualizadaEm: depois(5), leaseAte: depois(1) });
     const visao = visaoDoPlano({ painel: painel({ execucaoAtiva: rodando }), papel: 'operator', clienteId: CLIENTE_ID, agora: depois(6) });
     assert.equal(visao.execucao?.parada, true);
+  });
+});
+
+describe('visão do plano sem versão: pedido, cancelamento e edição', () => {
+  const cancelada = () => execucao({ status: 'cancelada', etapa: 'ler_brain', pedido: intencaoDeTeste() });
+
+  it('mostra o que foi pedido, com o objetivo no título', () => {
+    const visao = ver('operator', painel({ versaoExibida: null, ultimaExecucao: execucao({ status: 'falhou', erroCodigo: 'ia_falha', pedido: intencaoDeTeste() }) }));
+    assert.equal(visao.titulo, 'Gerar 600 leads qualificados no trimestre.');
+    assert.equal(visao.pedido?.itens.find((i) => i.rotulo === 'Landing page')?.valor, 'https://exemplo.com.br/oferta');
+    assert.equal(visao.pedido?.itens.find((i) => i.rotulo === 'Plataformas')?.valor, 'Google, Meta');
+    assert.match(visao.pedido?.editar?.href ?? '', /novo=1/);
+    assert.match(visao.pedido?.editar?.href ?? '', new RegExp(`de=${PLANO_ID}`));
+  });
+
+  it('execução cancelada sem versão avisa e oferece tentar de novo a quem pode criar', () => {
+    const p = painel({ versaoExibida: null, ultimaExecucao: cancelada() });
+    const visao = ver('operator', p);
+    assert.ok(visao.acoes.some((a) => a.chave === 'tentar_de_novo' && a.habilitada));
+    assert.match(visao.avisos.find((a) => a.chave === 'execucao_cancelada')?.texto ?? '', /Tentar de novo/);
+    const leitor = ver('viewer', p);
+    assert.equal(leitor.acoes.length, 0);
+    assert.equal(leitor.pedido?.editar, null);
+    assert.ok(leitor.pedido?.itens.length);
+  });
+
+  it('com execução em andamento mostra o pedido sem a edição; pedido ilegível não vira bloco', () => {
+    const ativa = execucao({ pedido: intencaoDeTeste() });
+    assert.equal(ver('operator', painel({ versaoExibida: null, execucaoAtiva: ativa, ultimaExecucao: ativa })).pedido?.editar, null);
+    assert.equal(ver('operator', painel({ versaoExibida: null, ultimaExecucao: execucao({ status: 'cancelada', pedido: { objetivo: 'x' } }) })).pedido, null);
+    assert.equal(ver('operator', painel()).pedido, null);
+  });
+
+  it('o bloco não mostra o WhatsApp, e ajuste cancelado sem versão exibida não diz que nada foi escrito', () => {
+    const visao = ver('operator', painel({ versaoExibida: null, ultimaExecucao: cancelada() }));
+    assert.equal(visao.pedido?.itens.some((i) => /whatsapp/i.test(i.rotulo) || i.valor.includes('+55')), false);
+    const ajuste = ver('operator', painel({ versaoExibida: null, ultimaExecucao: execucao({ status: 'cancelada', tipo: 'ajustar', pedido: { instrucao: 'x' } }) }));
+    assert.equal(ajuste.avisos.some((a) => a.chave === 'execucao_cancelada'), false);
   });
 });
 

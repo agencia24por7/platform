@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState, useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { useActionState, useCallback, useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { Icone } from '@/../app/clientes/[id]/_componentes/Icones';
 import { novoPlanoAcao, type EstadoDoFormulario } from '@/../app/clientes/[id]/(painel)/estrategia/acoes';
 import { GrupoDoFoco } from '@/../app/clientes/[id]/(painel)/estrategia/GrupoDoFoco';
@@ -9,7 +9,7 @@ import { IndicadorDePassos } from '@/../app/clientes/[id]/(painel)/estrategia/In
 import { RevisaoDoNovoPlano } from '@/../app/clientes/[id]/(painel)/estrategia/RevisaoDoNovoPlano';
 import type { FormularioDeNovoPlano as Modelo, OpcaoDoFormulario } from '@/modules/strategy/interface/formularioDeNovoPlano';
 import { camposBrutosDasEntradas, type CamposBrutos } from '@/modules/strategy/interface/formulariosDaEstrategia';
-import { PASSOS_DO_NOVO_PLANO, indicadorDePassos, limitarPasso, navegacaoDoPasso, primeiroPassoComErro } from '@/modules/strategy/interface/passosDoNovoPlano';
+import { PASSOS_DO_NOVO_PLANO, SEM_CORRECOES, corrigirCampo, errosAposCorrecoes, indicadorDePassos, limitarPasso, navegacaoDoPasso, primeiroPassoComErro } from '@/modules/strategy/interface/passosDoNovoPlano';
 import { revisaoDoNovoPlano } from '@/modules/strategy/interface/revisaoDoNovoPlano';
 
 const ESTADO_INICIAL: EstadoDoFormulario = {};
@@ -88,7 +88,8 @@ export function FormularioDeNovoPlano({ clienteId, voltarPara, inicial }: { read
   const titulo = useRef<HTMLHeadingElement>(null);
   const passoAnterior = useRef(posicao.passo);
   const modelo = estado.formulario ?? inicial;
-  const erros = estado.campos ?? {};
+  const [correcoes, definirCorrecoes] = useState(SEM_CORRECOES);
+  const erros = errosAposCorrecoes(estado.campos, correcoes);
   const navegacao = navegacaoDoPasso(posicao.passo);
   const id = (campo: string) => `${base}-${campo}`;
   const ligacao = (campo: string) => ({
@@ -113,6 +114,13 @@ export function FormularioDeNovoPlano({ clienteId, voltarPara, inicial }: { read
     titulo.current?.focus();
   }, [posicao.passo]);
 
+  const aoMudar = (evento: FormEvent<HTMLFormElement>) => {
+    const alvo = evento.target;
+    if (!(alvo instanceof HTMLInputElement || alvo instanceof HTMLSelectElement || alvo instanceof HTMLTextAreaElement)) return;
+    const nome = alvo.name;
+    definirCorrecoes((atual) => corrigirCampo(atual, estado.campos, nome));
+  };
+
   const aoTeclar = (evento: KeyboardEvent<HTMLFormElement>) => {
     if (evento.key !== 'Enter' || !(evento.target instanceof HTMLInputElement)) return;
     evento.preventDefault();
@@ -120,7 +128,7 @@ export function FormularioDeNovoPlano({ clienteId, voltarPara, inicial }: { read
   };
 
   return (
-    <form ref={formulario} className="card estrategia-form" action={enviar} onKeyDown={aoTeclar} noValidate>
+    <form ref={formulario} className="card estrategia-form" action={enviar} onChange={aoMudar} onKeyDown={aoTeclar} noValidate>
       <div className="card__body">
         <input type="hidden" name="clienteId" value={clienteId} />
         <input type="hidden" name="chaveDeIdempotencia" value={modelo.chaveDeIdempotencia} />
