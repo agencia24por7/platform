@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
 import { SEM_MODELO_CONFIGURADO, type Executor } from '@/modules/ia/application/execucao';
 import { MENSAGEM_DO_BLOQUEIO } from '@/modules/ia/domain/modelos';
-import { TETO_DO_ORCAMENTO, type Orcamento, type Tarefa } from '@/modules/ia/domain/tarefa';
+import { TETO_DO_ORCAMENTO, TETO_ELASTICO_DE_SAIDA, type Orcamento, type Tarefa } from '@/modules/ia/domain/tarefa';
 import { COMITE_DA_ESTRATEGIA, GATE_DA_ESTRATEGIA, JUIZ_DA_ESTRATEGIA, PLANO_DE_ESTRATEGIA } from '@/modules/ia/domain/tarefasInternas';
 import type { Failure } from '@/shared/result/failure';
 import { err, ok, type Result } from '@/shared/result/result';
-import type { CodigoDeErroDeIA, ErroDeIA, ExecutorDeIA, PedidoDeIA, RespostaDeIA, TarefaDeIA } from '@/modules/strategy/application/portas';
+import type { CodigoDeErroDeIA, ErroDeIA, ExecutorDeIA, PedidoDeIA, RespostaDeIA, TarefaDeIA, TelemetriaDeIA } from '@/modules/strategy/application/portas';
 
 const TAREFAS_REGISTRADAS: Readonly<Record<TarefaDeIA, Tarefa<unknown>>> = {
   strategy_plan: PLANO_DE_ESTRATEGIA,
@@ -44,13 +44,28 @@ export function orcamentoDaCamada(orcamento: PedidoDeIA<unknown>['orcamento'], r
   const dentro = (valor: number, teto: number) => Math.min(Math.max(1, Math.floor(valor)), teto);
   return {
     passos: Math.min(registrado.passos, TETO_DO_ORCAMENTO.passos),
-    tokensDeSaida: dentro(orcamento.tokensMaximos, Math.min(registrado.tokensDeSaida, TETO_DO_ORCAMENTO.tokensDeSaida)),
+    tokensDeSaida: dentro(orcamento.tokensMaximos, orcamento.elastico === true ? TETO_ELASTICO_DE_SAIDA : Math.min(registrado.tokensDeSaida, TETO_DO_ORCAMENTO.tokensDeSaida)),
     tempoMs: dentro(Math.max(1000, orcamento.tempoMaximoMs - MARGEM_DA_CAMADA_MS), Math.min(registrado.tempoMs, TETO_DO_ORCAMENTO.tempoMs)),
   };
 }
 
 function idDoPedido(execucaoId: string, chaveDeIdempotencia: string): string {
   return `${execucaoId.slice(0, 8)}:${createHash('sha256').update(chaveDeIdempotencia).digest('hex').slice(0, 40)}`;
+}
+
+const CAMINHOS_CONHECIDOS = ['estruturado', 'estruturado_relaxado', 'json_livre'];
+const RECUSAS_CONHECIDAS = ['schema', 'constraint', 'too many states'];
+
+export function telemetriaDosDetalhes(detalhes: Readonly<Record<string, string>> | undefined): TelemetriaDeIA | undefined {
+  if (!detalhes || !CAMINHOS_CONHECIDOS.includes(detalhes['caminho'] ?? '')) return undefined;
+  const recusa = detalhes['recusaDoEsquema'];
+  return {
+    caminho: detalhes['caminho']!,
+    finishReason: (detalhes['finishReason'] ?? 'desconhecido').replace(/[^a-z_-]/gi, '').slice(0, 30),
+    tokensDeSaida: Number(detalhes['tokensDeSaida']) || 0,
+    tetoDeSaida: Number(detalhes['tetoDeSaida']) || 0,
+    ...(recusa !== undefined && RECUSAS_CONHECIDAS.includes(recusa) ? { recusaDoEsquema: recusa } : {}),
+  };
 }
 
 export function criarIaDaCamada(executor: Executor): ExecutorDeIA {
@@ -79,11 +94,13 @@ export function criarIaDaCamada(executor: Executor): ExecutorDeIA {
       });
       if (!resposta.ok) {
         const codigo = codigoDeIaDaFalha(resposta.error);
-        return err({ codigo, mensagem: codigo === 'falha_do_fornecedor' ? FALHA_DO_FORNECEDOR : resposta.error.message });
+        const telemetria = telemetriaDosDetalhes(resposta.error.details);
+        return err({ codigo, mensagem: codigo === 'falha_do_fornecedor' ? FALHA_DO_FORNECEDOR : resposta.error.message, ...(telemetria === undefined ? {} : { telemetria }) });
       }
       return ok({
         saida: resposta.value.saida,
         uso: { tokensDeEntrada: resposta.value.uso.tokensDeEntrada, tokensDeSaida: resposta.value.uso.tokensDeSaida },
+        ...(resposta.value.telemetria === undefined ? {} : { telemetria: resposta.value.telemetria }),
       });
     },
   };

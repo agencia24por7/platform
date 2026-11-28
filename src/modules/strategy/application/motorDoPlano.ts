@@ -96,7 +96,7 @@ import {
   instrucaoDoGrupo,
   instrucaoDoPlanoDeMidia,
 } from '@/modules/strategy/application/instrucoes/index';
-import { MAXIMO_DE_RESERVAS } from '@/modules/strategy/application/portas';
+import { MAXIMO_DE_RESERVAS, type TelemetriaDeIA } from '@/modules/strategy/application/portas';
 import type {
   AvaliadorDeLimites,
   CatalogoDeLimites,
@@ -252,10 +252,12 @@ class FalhaDaEtapa extends Error {
   readonly perdida: boolean;
   readonly motivo: string | null;
   readonly problemas: readonly string[];
+  readonly truncada: boolean;
 
-  constructor(codigo: CodigoDeErroDaExecucao, transitoria: boolean, perdida = false, motivo: string | null = null, problemas: readonly string[] = []) {
+  constructor(codigo: CodigoDeErroDaExecucao, transitoria: boolean, perdida = false, motivo: string | null = null, problemas: readonly string[] = [], truncada = false) {
     super(codigo);
     this.problemas = problemas;
+    this.truncada = truncada;
     this.codigo = codigo;
     this.transitoria = transitoria;
     this.perdida = perdida;
@@ -263,19 +265,22 @@ class FalhaDaEtapa extends Error {
   }
 }
 
-type Contexto = { pacote?: PacoteDeLeitura; foco?: FocoDoPlano | null; corrigir?: readonly ProblemaParaCorrigir[]; readonly ficha: number };
+type ChamadaDeIaNaAuditoria = TelemetriaDeIA & { readonly tarefa: string };
+
+type Contexto = { pacote?: PacoteDeLeitura; foco?: FocoDoPlano | null; corrigir?: readonly ProblemaParaCorrigir[]; truncada?: boolean; telemetria?: ChamadaDeIaNaAuditoria[]; readonly ficha: number };
 
 type Efeito = {
   readonly proximo: Partial<MudancaDaExecucao>;
   readonly contagens?: Readonly<Record<string, number | string>>;
 };
 
-type MotivoDaFalha = { readonly motivo: string; readonly problemas: readonly string[] };
+type MotivoDaFalha = { readonly motivo: string; readonly problemas: readonly string[]; readonly truncada?: boolean };
 
 function falhaDeIA(codigo: CodigoDeErroDeIA, motivo: string | MotivoDaFalha | null = null): FalhaDaEtapa {
   const texto = typeof motivo === 'string' || motivo === null ? motivo : motivo.motivo;
   const problemas = typeof motivo === 'object' && motivo !== null ? motivo.problemas : [];
-  return new FalhaDaEtapa(CODIGO_DA_FALHA_DE_IA[codigo], codigo !== 'nao_configurada' && codigo !== 'limite_atingido', false, texto, problemas);
+  const truncada = typeof motivo === 'object' && motivo !== null && motivo.truncada === true;
+  return new FalhaDaEtapa(CODIGO_DA_FALHA_DE_IA[codigo], codigo !== 'nao_configurada' && codigo !== 'limite_atingido', false, texto, problemas, truncada);
 }
 
 const MAXIMO_DE_PROBLEMAS_DEVOLVIDOS = 10;
@@ -287,6 +292,9 @@ const MAXIMO_DE_ITENS_NO_MOTIVO = 3;
 const LIMITE_DO_ONDE_NO_MOTIVO = 48;
 const LIMITE_DO_PORQUE_NO_MOTIVO = 200;
 export const MAXIMO_DE_PROBLEMAS_PARA_CORRIGIR = 8;
+export const FATOR_ELASTICO_DE_SAIDA = 1.6;
+export const MENSAGEM_DE_TRUNCAMENTO = 'a resposta anterior foi cortada por tamanho: seja mais conciso, mantenha só o pedido';
+const MAXIMO_DE_CHAMADAS_NA_AUDITORIA = 8;
 export const LIMITE_DE_CARACTERES_DO_CORRIGIR = 800;
 const LIMITE_DO_PROBLEMA = 220;
 
@@ -365,6 +373,9 @@ function motivoDoEsquema(erro: { readonly issues: readonly { readonly path: read
 }
 
 function motivoDaFalhaDeIA(erro: { readonly codigo: string; readonly mensagem: string }): MotivoDaFalha {
+  if (erro.codigo === 'saida_invalida' && /\[saida:truncada\]$/.test(erro.mensagem)) {
+    return { motivo: 'ia:saida_invalida:saida:truncada', problemas: [MENSAGEM_DE_TRUNCAMENTO], truncada: true };
+  }
   const caminhos = erro.codigo === 'saida_invalida' ? /\[(esquema:[a-z0-9_.,:]*)\]$/i.exec(erro.mensagem)?.[1] : undefined;
   if (!caminhos) return { motivo: `ia:${erro.codigo}`, problemas: [] };
   const problemas = caminhos
@@ -479,13 +490,14 @@ export function distribuirPontos(
 
 type LinhaDaAuditoriaDoPasso = { readonly metadata?: Readonly<Record<string, unknown>> | undefined; readonly occurredAt?: Date | undefined };
 
-export function estadoDaEtapaNaAuditoria(linhas: readonly LinhaDaAuditoriaDoPasso[], etapa: string, rodada: number): { readonly repeticoes: number; readonly problemas: readonly ProblemaParaCorrigir[] } {
+export function estadoDaEtapaNaAuditoria(linhas: readonly LinhaDaAuditoriaDoPasso[], etapa: string, rodada: number): { readonly repeticoes: number; readonly problemas: readonly ProblemaParaCorrigir[]; readonly truncada: boolean } {
   const daEtapaEDaRodada = (linha: LinhaDaAuditoriaDoPasso) => linha.metadata?.['etapa'] === etapa && linha.metadata?.['rodada'] === rodada;
   const adiadas = linhas.filter((linha) => daEtapaEDaRodada(linha) && linha.metadata?.['status'] === 'adiada');
   const maisRecente = [...linhas].sort((a, b) => (a.occurredAt?.getTime() ?? 0) - (b.occurredAt?.getTime() ?? 0)).at(-1);
   const brutos = maisRecente !== undefined && daEtapaEDaRodada(maisRecente) && maisRecente.metadata?.['status'] === 'adiada' ? maisRecente.metadata['problemas'] : undefined;
   const problemas = Array.isArray(brutos) ? brutos.filter((item): item is string => typeof item === 'string').map(problemaParaCorrigir) : [];
-  return { repeticoes: adiadas.length, problemas };
+  const anteriorTruncada = maisRecente !== undefined && daEtapaEDaRodada(maisRecente) && maisRecente.metadata?.['status'] === 'adiada' && maisRecente.metadata['truncada'] === true;
+  return { repeticoes: adiadas.length, problemas, truncada: anteriorTruncada };
 }
 
 export function createMotorDoPlano(deps: DependenciasDoMotor): MotorDoPlano {
@@ -566,6 +578,12 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     throw new FalhaDaEtapa('interno', true);
   }
 
+  function orcamentoDaChamada(tarefa: TarefaDeIA, contexto: Contexto): PedidoDeIA<unknown>['orcamento'] {
+    const base = ORCAMENTO_DA_IA[tarefa];
+    if (contexto.truncada !== true || tarefa !== 'strategy_plan') return base;
+    return { tokensMaximos: Math.ceil(base.tokensMaximos * FATOR_ELASTICO_DE_SAIDA), tempoMaximoMs: base.tempoMaximoMs, elastico: true };
+  }
+
   async function executarIA<T>(
     execucao: Execucao,
     contexto: Contexto,
@@ -585,7 +603,7 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
         instrucoes,
         dados: tarefa === 'strategy_plan' ? dadosComCorrigir(dados, corrigirDaChamada(contexto.corrigir ?? [], chave)) : dados,
         esquema: esquemaDaChamada,
-        orcamento: ORCAMENTO_DA_IA[tarefa],
+        orcamento: orcamentoDaChamada(tarefa, contexto),
         organizacaoId: execucao.organizationId,
         clienteId: execucao.clientId,
         execucaoId: execucao.id,
@@ -596,6 +614,8 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
       throw new FalhaDaEtapa('ia_falha', true);
     }
     await renovarLease(execucao, contexto);
+    const telemetria = resposta.ok ? resposta.value.telemetria : resposta.error.telemetria;
+    if (telemetria !== undefined && (contexto.telemetria?.length ?? 0) < MAXIMO_DE_CHAMADAS_NA_AUDITORIA) (contexto.telemetria ??= []).push({ tarefa, ...telemetria });
     if (!resposta.ok) throw falhaDeIA(resposta.error.codigo, motivoDaFalhaDeIA(resposta.error));
     const lida = esquemaDaChamada.safeParse(resposta.value.saida);
     if (!lida.success) throw falhaDeIA('saida_invalida', motivoDoEsquema(lida.error));
@@ -1388,25 +1408,29 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     return { estado: 'final', execucao: relida };
   }
 
-  type EstadoDaEtapa = { readonly repeticoes: number; readonly problemas: readonly ProblemaParaCorrigir[] };
+  type EstadoDaEtapa = { readonly repeticoes: number; readonly problemas: readonly ProblemaParaCorrigir[]; readonly truncada: boolean };
 
   async function estadoDaEtapa(execucao: Execucao): Promise<EstadoDaEtapa> {
     try {
       const linhas = await audit.search(execucao.organizationId, { action: 'strategy.run.step', targetId: execucao.id, limit: LIMITE_DE_LINHAS_DA_AUDITORIA_DA_EXECUCAO });
       return estadoDaEtapaNaAuditoria(linhas, execucao.etapa, execucao.rodada);
     } catch {
-      return { repeticoes: 0, problemas: [] };
+      return { repeticoes: 0, problemas: [], truncada: false };
     }
   }
 
-  async function falhar(execucao: Execucao, falha: FalhaDaEtapa, ficha: number): Promise<ResultadoDoPasso> {
+  function telemetriaParaAuditar(contexto: Contexto): Record<string, unknown> {
+    return contexto.telemetria !== undefined && contexto.telemetria.length > 0 ? { ia: contexto.telemetria } : {};
+  }
+
+  async function falhar(execucao: Execucao, falha: FalhaDaEtapa, ficha: number, contexto: Contexto): Promise<ResultadoDoPasso> {
     const reintentar = falha.transitoria && execucao.falhas + 1 < maximoDeFalhasTransitorias && (await estadoDaEtapa(execucao)).repeticoes < repeticoesPorEtapa;
     const mudanca: MudancaDaExecucao = reintentar
       ? { status: 'pendente', falhas: execucao.falhas + 1, leaseAte: null }
       : { status: 'falhou', falhas: execucao.falhas + 1, erroCodigo: falha.codigo, leaseAte: null };
     const resultado = await aplicar(execucao, mudanca, ficha);
     if ('estado' in resultado) return resultado;
-    await auditar(execucao, execucao.etapa, reintentar ? 'adiada' : 'falhou', { codigo: falha.codigo, transitoria: falha.transitoria, ...(falha.motivo === null ? {} : { motivo: falha.motivo }), ...(falha.problemas.length === 0 ? {} : { problemas: falha.problemas }) });
+    await auditar(execucao, execucao.etapa, reintentar ? 'adiada' : 'falhou', { codigo: falha.codigo, transitoria: falha.transitoria, ...(falha.motivo === null ? {} : { motivo: falha.motivo }), ...(falha.problemas.length === 0 ? {} : { problemas: falha.problemas }), ...(falha.truncada ? { truncada: true } : {}), ...telemetriaParaAuditar(contexto) });
     return { estado: reintentar ? 'adiado' : 'final', execucao: resultado };
   }
 
@@ -1422,18 +1446,21 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     const ficha = contexto.ficha;
     if (execucao.tentativas !== ficha) return { estado: 'perdida', execucao };
 
-    contexto.corrigir = execucao.falhas > 0 ? (await estadoDaEtapa(execucao)).problemas : [];
+    const anterior = execucao.falhas > 0 ? await estadoDaEtapa(execucao) : null;
+    contexto.corrigir = anterior?.problemas ?? [];
+    contexto.truncada = anterior?.truncada ?? false;
+    contexto.telemetria = [];
     let efeito: Efeito;
     try {
       efeito = await executarEtapa(execucao, contexto);
     } catch (erro) {
       const falha = erro instanceof FalhaDaEtapa ? erro : new FalhaDaEtapa('interno', true);
       if (falha.perdida) return perdida(organizationId, execucaoId);
-      return falhar(execucao, falha, ficha);
+      return falhar(execucao, falha, ficha, contexto);
     }
     const resultado = await aplicar(execucao, { leaseAte: novoLease(), ...efeito.proximo }, ficha);
     if ('estado' in resultado) return resultado;
-    await auditar(execucao, execucao.etapa, resultado.status, { proximaEtapa: resultado.etapa, ...(efeito.contagens ?? {}) });
+    await auditar(execucao, execucao.etapa, resultado.status, { proximaEtapa: resultado.etapa, ...(efeito.contagens ?? {}), ...telemetriaParaAuditar(contexto) });
     return { estado: resultado.status === 'rodando' ? 'avancou' : 'final', execucao: resultado };
   }
 

@@ -18,7 +18,7 @@ const { ORCAMENTO_DA_IA } = await import('../../application/motorDoPlano.ts');
 const { MENSAGEM_DO_BLOQUEIO } = await import('../../../ia/domain/modelos.ts');
 const { COMITE_DA_ESTRATEGIA, GATE_DA_ESTRATEGIA, JUIZ_DA_ESTRATEGIA, PLANO_DE_ESTRATEGIA } = await import('../../../ia/domain/tarefasInternas.ts');
 const { SEM_MODELO_CONFIGURADO } = await import('../../../ia/application/execucao.ts');
-const { TETO_DO_ORCAMENTO } = await import('../../../ia/domain/tarefa.ts');
+const { TETO_DO_ORCAMENTO, TETO_ELASTICO_DE_SAIDA } = await import('../../../ia/domain/tarefa.ts');
 const { TAREFAS_INTERNAS } = await import('../../../ia/domain/tarefasInternas.ts');
 const { failure } = await import('../../../../shared/result/failure.ts');
 const { ok, err } = await import('../../../../shared/result/result.ts');
@@ -108,6 +108,10 @@ describe('iaDaCamada', () => {
     assert.deepEqual(o, { passos: TETO_DO_ORCAMENTO.passos, tokensDeSaida: TETO_DO_ORCAMENTO.tokensDeSaida, tempoMs: TETO_DO_ORCAMENTO.tempoMs });
     assert.equal(orcamentoDaCamada({ tokensMaximos: 60_000, tempoMaximoMs: 900_000 }, PLANO_DE_ESTRATEGIA.orcamento).passos, PLANO_DE_ESTRATEGIA.orcamento.passos);
     assert.equal(orcamentoDaCamada({ tokensMaximos: 60_000, tempoMaximoMs: 900_000 }, COMITE_DA_ESTRATEGIA.orcamento).passos, 1);
+    const registrado = PLANO_DE_ESTRATEGIA.orcamento;
+    assert.equal(orcamentoDaCamada({ tokensMaximos: 10_400, tempoMaximoMs: 115_000 }, registrado).tokensDeSaida, registrado.tokensDeSaida);
+    assert.equal(orcamentoDaCamada({ tokensMaximos: 10_400, tempoMaximoMs: 115_000, elastico: true }, registrado).tokensDeSaida, 10_400);
+    assert.equal(orcamentoDaCamada({ tokensMaximos: 90_000, tempoMaximoMs: 115_000, elastico: true }, registrado).tokensDeSaida, TETO_ELASTICO_DE_SAIDA);
     assert.equal(orcamentoDaCamada({ tokensMaximos: 0, tempoMaximoMs: -5 }).tokensDeSaida, 1);
   });
 

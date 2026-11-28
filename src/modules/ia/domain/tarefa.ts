@@ -22,6 +22,8 @@ export type Orcamento = {
 
 export const TETO_DO_ORCAMENTO: Orcamento = { passos: 8, tokensDeSaida: 8_000, tempoMs: 120_000 };
 
+export const TETO_ELASTICO_DE_SAIDA = 12_000;
+
 export type Raciocinio = 'minimal' | 'low' | 'medium' | 'high';
 
 export type Tarefa<S> = {

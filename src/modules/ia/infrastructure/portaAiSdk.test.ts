@@ -41,7 +41,7 @@ describe('adaptador do AI SDK (ADR 0063 §3)', () => {
   it('devolve a saída validada pelo esquema e o uso de tokens', async () => {
     const { porta: p, chamadas } = porta(async () => texto('{"ok":true,"nota":7}'));
     const r = await p.gerar(pedido());
-    assert.deepEqual(r, { ok: true, value: { saida: { ok: true, nota: 7 }, uso: { tokensDeEntrada: 11, tokensDeSaida: 5, passos: 1 } } });
+    assert.deepEqual(r, { ok: true, value: { saida: { ok: true, nota: 7 }, uso: { tokensDeEntrada: 11, tokensDeSaida: 5, passos: 1 }, telemetria: { caminho: 'estruturado', finishReason: 'stop', tokensDeSaida: 5, tetoDeSaida: 100 } } });
     assert.equal(chamadas[0]!.maxOutputTokens, 100);
   });
 
@@ -103,20 +103,20 @@ describe('adaptador do AI SDK (ADR 0063 §3)', () => {
     let chamada = 0;
     const { porta: p, chamadas } = porta(async () => {
       chamada += 1;
-      if (chamada === 1) throw esquemaRecusado();
+      if (chamada <= 2) throw esquemaRecusado();
       return texto('```json\n{"ok":true,"nota":4}\n```');
     });
     const r = await p.gerar(pedido());
-    assert.equal(chamadas.length, 2);
+    assert.equal(chamadas.length, 3);
     assert.deepEqual(r.ok && r.value.saida, { ok: true, nota: 4 });
-    assert.match(JSON.stringify(chamadas[1]!.prompt), /JSON Schema/);
+    assert.match(JSON.stringify(chamadas[2]!.prompt), /JSON Schema/);
   });
 
   it('em JSON livre, saída que não valida no esquema vira falha de validação sem o texto do modelo', async () => {
     let chamada = 0;
     const { porta: p } = porta(async () => {
       chamada += 1;
-      if (chamada === 1) throw esquemaRecusado();
+      if (chamada <= 2) throw esquemaRecusado();
       return texto('{"ok":"talvez","conteudo":"texto livre do modelo"}');
     });
     const r = await p.gerar(pedido());
@@ -131,11 +131,119 @@ describe('adaptador do AI SDK (ADR 0063 §3)', () => {
     let chamada = 0;
     const { porta: p } = porta(async () => {
       chamada += 1;
-      if (chamada === 1) throw esquemaRecusado();
+      if (chamada <= 2) throw esquemaRecusado();
       return texto('não sei responder');
     });
     const r = await p.gerar(pedido());
     assert.equal(!r.ok && r.error.code, 'validation');
+  });
+
+  const esquemaComPattern = z.object({ id: z.string().regex(/^[a-z]+$/), nota: z.number().int().max(10) });
+  const comPattern = () => pedido({ saida: esquemaComPattern });
+
+  it('recusa do completo: o relaxado vai sem pattern/limites e a validação local completa pega valor fora do pattern', async () => {
+    let chamada = 0;
+    const { porta: p, chamadas } = porta(async () => {
+      chamada += 1;
+      if (chamada === 1) throw esquemaRecusado();
+      return texto('{"id":"ABC-SEGREDO","nota":99}');
+    });
+    const r = await p.gerar(comPattern());
+    assert.equal(chamadas.length, 2);
+    const enviado = JSON.stringify((chamadas[1]!.responseFormat as { schema: unknown }).schema);
+    assert.equal(/pattern|maximum|minimum/.test(enviado), false);
+    assert.match(enviado, /"id"/);
+    assert.equal(r.ok, false);
+    if (!r.ok) {
+      assert.match(r.error.message, /\[esquema:id:invalid_format,nota:too_big\]$/);
+      assert.equal(r.error.details?.['caminho'], 'estruturado_relaxado');
+      assert.equal(JSON.stringify(r.error).includes('SEGREDO'), false);
+    }
+  });
+
+  it('recusa do completo e relaxado aceito com valor válido: telemetria estruturado_relaxado com a classe da recusa', async () => {
+    let chamada = 0;
+    const { porta: p } = porta(async () => {
+      chamada += 1;
+      if (chamada === 1) throw esquemaRecusado();
+      return texto('{"id":"abc","nota":3}');
+    });
+    const r = await p.gerar(comPattern());
+    assert.deepEqual(r.ok && r.value.telemetria, { caminho: 'estruturado_relaxado', finishReason: 'stop', tokensDeSaida: 5, tetoDeSaida: 100, recusaDoEsquema: 'schema' });
+  });
+
+  it('cache: depois da recusa do completo, a próxima chamada do mesmo esquema vai direto ao relaxado', async () => {
+    let chamada = 0;
+    const { porta: p, chamadas } = porta(async () => {
+      chamada += 1;
+      if (chamada === 1) throw esquemaRecusado();
+      return texto('{"id":"abc","nota":3}');
+    });
+    assert.equal((await p.gerar(comPattern())).ok, true);
+    assert.equal((await p.gerar(comPattern())).ok, true);
+    assert.equal(chamadas.length, 3);
+    assert.equal((chamadas[2]!.responseFormat as { schema?: unknown }).schema !== undefined, true);
+    await p.gerar(pedido());
+    assert.equal(chamadas.length, 4);
+  });
+
+  it('JSON livre: pede JSON nativo ao fornecedor sem esquema e extrai o objeto de prosa e cercas em volta', async () => {
+    let chamada = 0;
+    const { porta: p, chamadas } = porta(async () => {
+      chamada += 1;
+      if (chamada <= 2) throw esquemaRecusado();
+      return texto('Claro, segue o resultado:\n```json\n{"ok":true,"nota":4,"x":"}"}\n```\nEspero ter ajudado.');
+    });
+    const r = await p.gerar(pedido({ saida: z.object({ ok: z.boolean(), nota: z.number().int() }).passthrough() }));
+    assert.deepEqual(r.ok && r.value.saida, { ok: true, nota: 4, x: '}' });
+    const formato = chamadas[2]!.responseFormat as { type?: string; schema?: unknown };
+    assert.equal(formato.type, 'json');
+    assert.equal(formato.schema, undefined);
+  });
+
+  it('JSON livre truncado pelo tamanho vira erro distinto, sem tentar ler o texto', async () => {
+    let chamada = 0;
+    const { porta: p } = porta(async () => {
+      chamada += 1;
+      if (chamada <= 2) throw esquemaRecusado();
+      return { content: [{ type: 'text' as const, text: '{"ok":true,"nota":' }], finishReason: { unified: 'length' as const, raw: 'MAX_TOKENS' }, usage: uso, warnings: [] };
+    });
+    const r = await p.gerar(pedido());
+    assert.equal(r.ok, false);
+    if (!r.ok) {
+      assert.match(r.error.message, /\[saida:truncada\]$/);
+      assert.equal(r.error.details?.['finishReason'], 'length');
+      assert.equal(r.error.details?.['caminho'], 'json_livre');
+      assert.equal(r.error.details?.['recusaDoEsquema'], 'schema');
+      assert.equal(JSON.stringify(r.error).includes('"ok":true'), false);
+    }
+  });
+
+  it('modo estruturado cortado pelo tamanho também vira erro de truncamento', async () => {
+    const { porta: p } = porta(async () => ({ content: [{ type: 'text' as const, text: '{"ok":tr' }], finishReason: { unified: 'length' as const, raw: 'MAX_TOKENS' }, usage: uso, warnings: [] }));
+    const r = await p.gerar(pedido());
+    assert.equal(!r.ok && /\[saida:truncada\]$/.test(r.error.message), true);
+    assert.equal(!r.ok && r.error.details?.['caminho'], 'estruturado');
+  });
+
+  it('telemetria do recuo traz caminho, finishReason, tokens, teto e só a classe da recusa', async () => {
+    let chamada = 0;
+    const { porta: p } = porta(async () => {
+      chamada += 1;
+      if (chamada <= 2) throw esquemaRecusado('A mensagem do fornecedor com SEGREDO-DO-FORNECEDOR: schema muito grande');
+      return texto('{"ok":true,"nota":1}');
+    });
+    const r = await p.gerar(pedido());
+    assert.equal(r.ok && r.value.telemetria?.caminho, 'json_livre');
+    assert.deepEqual(r.ok && r.value.telemetria, { caminho: 'json_livre', finishReason: 'stop', tokensDeSaida: 5, tetoDeSaida: 100, recusaDoEsquema: 'schema' });
+    assert.equal(JSON.stringify(r).includes('SEGREDO'), false);
+  });
+
+  it('extrairJson lê o primeiro objeto balanceado e recusa texto sem objeto fechado', async () => {
+    const { extrairJson } = await import('./portaAiSdk.ts');
+    assert.deepEqual(extrairJson('antes ```json {"a":{"b":"}"}} ``` depois'), { a: { b: '}' } });
+    assert.throws(() => extrairJson('{"a":1'));
+    assert.throws(() => extrairJson('sem objeto'));
   });
 
   it('400 que não é de esquema não é refeito', async () => {
@@ -148,7 +256,7 @@ describe('adaptador do AI SDK (ADR 0063 §3)', () => {
   it('o recuo em JSON livre é uma só vez: segunda recusa do fornecedor vira falha, sem laço', async () => {
     const { porta: p, chamadas } = porta(async () => { throw esquemaRecusado(); });
     const r = await p.gerar(pedido());
-    assert.equal(chamadas.length, 2);
+    assert.equal(chamadas.length, 3);
     assert.equal(r.ok, false);
   });
 
