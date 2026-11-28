@@ -33,15 +33,24 @@ export const INSTRUCAO_DAS_LACUNAS = `Lacuna que a pessoa resolve com limite ou 
 Com evidência a favor de nota A a C no pacote: origem "evidencia", evidencias [{ urn (ref), papel "favor" }] e o valor. Sem evidência, ou só nota D: origem "hipotese", valor null, evidencias []. Nunca invente número. Regra inequívoca: valor só existe com origem "evidencia" e evidencias preenchidas; origem "hipotese" com valor, ou "evidencia" sem evidencias, é recusada.
 Exemplos: { "valor": { "unidade": "brl_centavos", "centavos": "5000" }, "origem": "evidencia", "evidencias": [{ "urn": "e3", "papel": "favor" }] } ou { "valor": null, "origem": "hipotese", "evidencias": [] }.`;
 
-export function instrucaoDoGrupo(tarefa: string, secoes: readonly string[], posicao: number, total: number, comRespostas = false): string {
-  const lacunas = secoes.includes('lacunas') ? `\n${INSTRUCAO_DAS_LACUNAS}` : '';
+function pedidoDoGrupo(tarefa: string, secoes: readonly string[], posicao: number, total: number, comRespostas: boolean): string {
   const saida = comRespostas
     ? `Saída: { secoes, respostas }; "secoes" só com as chaves: ${secoes.join(', ')}.`
     : `Saída: objeto só com as chaves: ${secoes.join(', ')}.`;
+  return `${tarefa}
+Grupo ${posicao}/${total}. ${saida}`;
+}
+
+export function instrucaoDoGrupo(tarefa: string, secoes: readonly string[], posicao: number, total: number, comRespostas = false): string {
+  const lacunas = secoes.includes('lacunas') ? `\n${INSTRUCAO_DAS_LACUNAS}` : '';
   return `${INSTRUCAO_DO_AGENTE_DE_PLANO}${lacunas}
 
-${tarefa}
-Grupo ${posicao}/${total}. ${saida}`;
+${pedidoDoGrupo(tarefa, secoes, posicao, total, comRespostas)}`;
+}
+
+export function instrucaoFinalDoGrupo(tarefa: string, secoes: readonly string[], posicao: number, total: number, comRespostas = false): string {
+  const pedido = pedidoDoGrupo(tarefa, secoes, posicao, total, comRespostas);
+  return secoes.includes('lacunas') ? `${INSTRUCAO_DAS_LACUNAS}\n\n${pedido}` : pedido;
 }
 
 

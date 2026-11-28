@@ -11,4 +11,4 @@ ${REGRAS_COMUNS}
 - custos: valor só como fatia da verba da campanha (origem verba_da_campanha, soma até a verba) ou origem a_confirmar com motivo e lacuna. Nunca preço de mercado.
 - workflow: etapas com papel, entregavel_ids, inicio e fim dentro de "janela" e até o fim da campanha; depende_de só de etapas anteriores, começando depois do fim delas. Todo entregável em alguma etapa.
 - Se vier "erros", corrija só o que eles apontam na "respostaAnterior".
-Entrada em "dados": { campanha, contexto, janela, especificacoes, pacote, erros?, respostaAnterior? }. Saída: o JSON do esquema, campanha_id igual ao da campanha.`;
+Entrada em "dados": { pacote, janela, especificacoes, contexto, campanha, erros?, respostaAnterior? }. Saída: o JSON do esquema, campanha_id igual ao da campanha.`;

@@ -87,6 +87,17 @@ describe('Production Director (motor do plano de produção)', () => {
     assert.ok(dados.especificacoes?.includes('ad_headlines:textox15<=30c'));
   });
 
+  it('os dados de toda campanha começam pelo pacote e levam o mesmo prefixo estável (ADR 0076)', async () => {
+    const { ia, diretor } = await montar();
+    await diretor.avancar({ limite: 5 });
+    assert.equal(ia.pedidos.length, 2);
+    for (const pedido of ia.pedidos) assert.deepEqual(Object.keys(pedido.dados as object), ['pacote', 'janela', 'especificacoes', 'contexto', 'campanha']);
+    const [primeiro, segundo] = ia.pedidos;
+    assert.equal(primeiro!.prefixoEstavelDosDados, segundo!.prefixoEstavelDosDados);
+    const prefixo = primeiro!.prefixoEstavelDosDados ?? 0;
+    assert.equal(JSON.stringify(primeiro!.dados).slice(0, prefixo), JSON.stringify(segundo!.dados).slice(0, prefixo));
+  });
+
   it('reprovada na conferência, faz uma única correção com os erros e aceita a corrigida', async () => {
     let chamadas = 0;
     const roteiro = (pedido: Pedido) => {

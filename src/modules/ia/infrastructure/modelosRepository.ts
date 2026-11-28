@@ -164,6 +164,7 @@ export function createModelosRepository(): ModelosRepository {
       await withTenant(organizationId, (tx) => tx`
         UPDATE core.ai_usage
            SET result = ${desfecho.resultado}, input_tokens = ${desfecho.uso.tokensDeEntrada}, output_tokens = ${desfecho.uso.tokensDeSaida},
+               cached_input_tokens = least(${desfecho.uso.tokensDeEntradaEmCache}::int, ${desfecho.uso.tokensDeEntrada}::int),
                steps = ${desfecho.uso.passos}, duration_ms = ${Math.max(0, Math.trunc(desfecho.duracaoMs))}
          WHERE id = ${reservaId}::bigint AND organization_id = ${organizationId} AND result = 'reservada'`);
     },
