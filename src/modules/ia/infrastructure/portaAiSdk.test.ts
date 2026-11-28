@@ -41,7 +41,7 @@ describe('adaptador do AI SDK (ADR 0063 §3)', () => {
   it('devolve a saída validada pelo esquema e o uso de tokens', async () => {
     const { porta: p, chamadas } = porta(async () => texto('{"ok":true,"nota":7}'));
     const r = await p.gerar(pedido());
-    assert.deepEqual(r, { ok: true, value: { saida: { ok: true, nota: 7 }, uso: { tokensDeEntrada: 11, tokensDeSaida: 5, passos: 1 }, telemetria: { caminho: 'estruturado', finishReason: 'stop', tokensDeSaida: 5, tetoDeSaida: 100 } } });
+    assert.deepEqual(r, { ok: true, value: { saida: { ok: true, nota: 7 }, uso: { tokensDeEntrada: 11, tokensDeEntradaEmCache: 0, tokensDeSaida: 5, passos: 1 }, telemetria: { caminho: 'estruturado', finishReason: 'stop', tokensDeSaida: 5, tetoDeSaida: 100 } } });
     assert.equal(chamadas[0]!.maxOutputTokens, 100);
   });
 
@@ -341,5 +341,57 @@ describe('adaptador do AI SDK (ADR 0063 §3)', () => {
     );
     assert.equal(chamadasAoModelo, 2);
     assert.equal(r.ok, false);
+  });
+
+  describe('prefixo estável e cache do fornecedor (ADR 0076)', () => {
+    const estavel = `<dados>\n{"pacote":{"entradas":[${'{"ref":"e1","texto":"regra"},'.repeat(3)}`;
+    const variavel = '{"ref":"e9"}]},"persona":{"chave":"cetica"}}\n</dados>\n\nPersona: cética.';
+    const comPrefixo = (fornecedor: string) => pedido({ modelo: { ...modelo, fornecedor }, dados: `${estavel}${variavel}`, prefixoEstavel: estavel.length, chaveDeCache: 'c'.repeat(32) });
+    const partesDoUsuario = (chamada: Record<string, unknown>) =>
+      (chamada.prompt as { role: string; content: { text: string; providerOptions?: unknown }[] }[]).find((mensagem) => mensagem.role === 'user')!.content;
+
+    it('conta os tokens de entrada lidos do cache do fornecedor', async () => {
+      const emCache = { ...uso, inputTokens: { total: 11, noCache: 4, cacheRead: 7, cacheWrite: 0 } };
+      const { porta: p } = porta(async () => ({ ...texto('{"ok":true,"nota":7}'), usage: emCache }));
+      const r = await p.gerar(pedido());
+      assert.deepEqual(r.ok && r.value.uso, { tokensDeEntrada: 11, tokensDeEntradaEmCache: 7, tokensDeSaida: 5, passos: 1 });
+    });
+
+    it('na Anthropic o prefixo vira bloco próprio com ponto de cache, e o texto somado é o mesmo', async () => {
+      const { porta: p, chamadas } = porta(async () => texto('{"ok":true,"nota":7}'));
+      assert.equal((await p.gerar(comPrefixo('anthropic'))).ok, true);
+      const partes = partesDoUsuario(chamadas[0]!);
+      assert.equal(partes.length, 2);
+      assert.equal(partes[0]!.text, estavel);
+      assert.deepEqual(partes[0]!.providerOptions, { anthropic: { cacheControl: { type: 'ephemeral' } } });
+      assert.equal(partes[1]!.providerOptions, undefined);
+      assert.equal(partes.map((parte) => parte.text).join(''), `${estavel}${variavel}`);
+    });
+
+    it('na OpenAI o texto vai inteiro e a chave de cache agrupa a coorte', async () => {
+      const { porta: p, chamadas } = porta(async () => texto('{"ok":true,"nota":7}'));
+      assert.equal((await p.gerar(comPrefixo('openai'))).ok, true);
+      assert.deepEqual(partesDoUsuario(chamadas[0]!).map((parte) => parte.text), [`${estavel}${variavel}`]);
+      assert.deepEqual((chamadas[0]!.providerOptions as { openai?: unknown }).openai, { promptCacheKey: 'c'.repeat(32) });
+    });
+
+    it('nos demais fornecedores o texto vai inteiro e sem opção de cache (o cache deles é implícito)', async () => {
+      for (const fornecedor of ['google', 'xai', 'moonshot']) {
+        const { porta: p, chamadas } = porta(async () => texto('{"ok":true,"nota":7}'));
+        assert.equal((await p.gerar(comPrefixo(fornecedor))).ok, true);
+        assert.deepEqual(partesDoUsuario(chamadas[0]!).map((parte) => parte.text), [`${estavel}${variavel}`]);
+        assert.equal(JSON.stringify(chamadas[0]!.providerOptions ?? {}).includes('promptCacheKey'), false);
+      }
+    });
+
+    it('sem prefixo, ou com prefixo do tamanho do texto, o pedido sai como antes', async () => {
+      for (const extra of [{}, { prefixoEstavel: 0 }, { prefixoEstavel: `${estavel}${variavel}`.length }]) {
+        const { porta: p, chamadas } = porta(async () => texto('{"ok":true,"nota":7}'));
+        await p.gerar(pedido({ modelo: { ...modelo, fornecedor: 'anthropic' }, dados: `${estavel}${variavel}`, ...extra }));
+        const partes = partesDoUsuario(chamadas[0]!);
+        assert.equal(partes.length, 1);
+        assert.equal(partes[0]!.providerOptions, undefined);
+      }
+    });
   });
 });

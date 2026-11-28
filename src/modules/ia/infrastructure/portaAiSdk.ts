@@ -195,10 +195,45 @@ function sistemaComEsquema(sistema: string, esquema: z.ZodType<unknown>): string
   }
 }
 
+const CACHE_DO_PREFIXO_NA_ANTHROPIC = { anthropic: { cacheControl: { type: 'ephemeral' as const } } };
+
+export function entradaComPrefixoEstavel<S>(pedido: Pick<PedidoAoModelo<S>, 'modelo' | 'dados' | 'prefixoEstavel' | 'chaveDeCache'>) {
+  const prefixo = pedido.prefixoEstavel ?? 0;
+  if (prefixo <= 0 || prefixo >= pedido.dados.length) return { prompt: pedido.dados };
+  if (pedido.modelo.fornecedor === 'anthropic') {
+    return {
+      messages: [
+        {
+          role: 'user' as const,
+          content: [
+            { type: 'text' as const, text: pedido.dados.slice(0, prefixo), providerOptions: CACHE_DO_PREFIXO_NA_ANTHROPIC },
+            { type: 'text' as const, text: pedido.dados.slice(prefixo) },
+          ],
+        },
+      ],
+    };
+  }
+  if (pedido.modelo.fornecedor === 'openai' && pedido.chaveDeCache !== undefined) {
+    return { prompt: pedido.dados, providerOptions: { openai: { promptCacheKey: pedido.chaveDeCache } } };
+  }
+  return { prompt: pedido.dados };
+}
+
+type UsoDoSdk = { readonly inputTokens?: number; readonly outputTokens?: number; readonly inputTokenDetails?: { readonly cacheReadTokens?: number } };
+
+function usoDaResposta(usage: UsoDoSdk | undefined, passos: number) {
+  return {
+    tokensDeEntrada: usage?.inputTokens ?? 0,
+    tokensDeEntradaEmCache: usage?.inputTokenDetails?.cacheReadTokens ?? 0,
+    tokensDeSaida: usage?.outputTokens ?? 0,
+    passos,
+  };
+}
+
 function opcoesComuns<S>(pedido: PedidoAoModelo<S>, fabricar: FabricaDeModelo) {
   return {
     model: fabricar(pedido.modelo),
-    prompt: pedido.dados,
+    ...entradaComPrefixoEstavel(pedido),
     tools: ferramentasDoSdk(pedido.ferramentas),
     stopWhen: isStepCount(pedido.orcamento.passos),
     ...(pedido.ferramentas.length > 0 && pedido.orcamento.passos > 1
@@ -229,7 +264,7 @@ async function gerarEstruturado<S>(pedido: PedidoAoModelo<S>, fabricar: FabricaD
   const tokensDeSaida = resposta.usage.outputTokens ?? 0;
   return {
     saida: resposta.output,
-    uso: { tokensDeEntrada: resposta.usage.inputTokens ?? 0, tokensDeSaida, passos: resposta.steps.length },
+    uso: usoDaResposta(resposta.usage, resposta.steps.length),
     telemetria: telemetriaDe(caminho, resposta.finishReason, tokensDeSaida, pedido.orcamento.tokensDeSaida, recusa),
   };
 }
@@ -238,7 +273,7 @@ async function gerarEmJsonLivre<S>(pedido: PedidoAoModelo<S>, fabricar: FabricaD
   const teto = pedido.orcamento.tokensDeSaida;
   let texto: string;
   let finishReason: unknown;
-  let usage: { inputTokens?: number; outputTokens?: number } | undefined;
+  let usage: UsoDoSdk | undefined;
   let passos = 1;
   try {
     const resposta = await generateText({ ...opcoesComuns(pedido, fabricar), system: sistema, output: Output.json() });
@@ -265,7 +300,7 @@ async function gerarEmJsonLivre<S>(pedido: PedidoAoModelo<S>, fabricar: FabricaD
   return {
     resposta: {
       saida: validada.data,
-      uso: { tokensDeEntrada: usage?.inputTokens ?? 0, tokensDeSaida: usage?.outputTokens ?? 0, passos },
+      uso: usoDaResposta(usage, passos),
       telemetria,
     },
   };

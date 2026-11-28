@@ -50,10 +50,10 @@ function falso(resposta: unknown) {
 
 describe('iaDaCamada', () => {
   it('manda a tarefa registrada com o esquema e a instrução do pedido, só os dados do pedido, sem clienteId', async () => {
-    const { executor, vistos } = falso(ok({ saida: { a: 'x' }, uso: { tokensDeEntrada: 3, tokensDeSaida: 4, passos: 1 } }));
+    const { executor, vistos } = falso(ok({ saida: { a: 'x' }, uso: { tokensDeEntrada: 3, tokensDeEntradaEmCache: 2, tokensDeSaida: 4, passos: 1 } }));
     const r = await criarIaDaCamada(executor).executar(pedido());
     assert.ok(r.ok);
-    if (r.ok) assert.deepEqual(r.value.uso, { tokensDeEntrada: 3, tokensDeSaida: 4 });
+    if (r.ok) assert.deepEqual(r.value.uso, { tokensDeEntrada: 3, tokensDeEntradaEmCache: 2, tokensDeSaida: 4 });
     const enviado = vistos[0]!;
     assert.equal(enviado.organizationId, 'org-1');
     assert.equal(enviado.tarefa.chave, 'comite');
@@ -66,7 +66,7 @@ describe('iaDaCamada', () => {
   });
 
   it('só a redação do plano leva o escopo de agente: cliente do pedido, as duas ferramentas e a visão da equipe', async () => {
-    const { executor, vistos } = falso(ok({ saida: { a: 'x' }, uso: { tokensDeEntrada: 1, tokensDeSaida: 1, passos: 1 } }));
+    const { executor, vistos } = falso(ok({ saida: { a: 'x' }, uso: { tokensDeEntrada: 1, tokensDeEntradaEmCache: 0, tokensDeSaida: 1, passos: 1 } }));
     await criarIaDaCamada(executor).executar(pedido({ tarefa: 'strategy_plan' }));
     await criarIaDaCamada(executor).executar(pedido({ tarefa: 'comite' }));
     await criarIaDaCamada(executor).executar(pedido({ tarefa: 'gate' }));
@@ -84,7 +84,7 @@ describe('iaDaCamada', () => {
   });
 
   it('o juiz vai pela tarefa própria, sem ferramenta nem escopo de agente, e a falta de modelo vira nao_configurada', async () => {
-    const { executor, vistos } = falso(ok({ saida: { a: 'x' }, uso: { tokensDeEntrada: 1, tokensDeSaida: 1, passos: 1 } }));
+    const { executor, vistos } = falso(ok({ saida: { a: 'x' }, uso: { tokensDeEntrada: 1, tokensDeEntradaEmCache: 0, tokensDeSaida: 1, passos: 1 } }));
     await criarIaDaCamada(executor).executar(pedido({ tarefa: 'juiz', orcamento: { tokensMaximos: 4500, tempoMaximoMs: 60_000 } }));
     assert.equal(vistos[0]!.tarefa.chave, 'juiz');
     assert.equal(vistos[0]!.tarefa.raciocinio, 'low');
@@ -120,7 +120,7 @@ describe('iaDaCamada', () => {
       assert.deepEqual(ORCAMENTO_DA_IA[tarefa.chave as never], { tokensMaximos: 5_000, tempoMaximoMs: 90_000 });
       assert.equal(TAREFAS_CONFIGURAVEIS.find((t) => t.chave === tarefa.chave)?.herdaDe, 'comite');
     }
-    const naoRegistrada = await criarIaDaCamada(falso(ok({ saida: { a: 'x' }, uso: { tokensDeEntrada: 1, tokensDeSaida: 1, passos: 1 } })).executor).executar(pedido({ tarefa: 'comite_inexistente' }));
+    const naoRegistrada = await criarIaDaCamada(falso(ok({ saida: { a: 'x' }, uso: { tokensDeEntrada: 1, tokensDeEntradaEmCache: 0, tokensDeSaida: 1, passos: 1 } })).executor).executar(pedido({ tarefa: 'comite_inexistente' }));
     assert.ok(!naoRegistrada.ok && naoRegistrada.error.codigo === 'nao_configurada');
   });
 

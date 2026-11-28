@@ -707,7 +707,8 @@ describe('motor do plano: Comitê e injeção de instrução', () => {
       for (const membro of comite.membros) {
         const pedido = doComite.find((p) => membroDoPedido(p) === membro.chave);
         assert.ok(pedido, membro.chave);
-        assert.ok(pedido.instrucoes.includes(membro.instrucao));
+        assert.ok(pedido.instrucaoFinal?.includes(membro.instrucao));
+        assert.ok(!pedido.instrucoes.includes(membro.instrucao));
         assert.equal(pedido.chaveDeIdempotencia, `${m.execucaoId}:deliberacao:${comite.chave}:0:${membro.chave}`);
       }
       assert.ok(doComite.some((p) => p.chaveDeIdempotencia === `${m.execucaoId}:deliberacao:${comite.chave}:1`));
