@@ -1,10 +1,10 @@
 ---
-status: proposed
+status: accepted
 date: 2026-11-27
 ---
 # ADR-0072: Comitês do planejador ligados ao motor, ao banco, ao Gate e à Config da IA (24K-134, fase 2b)
 
-Complementa os ADRs 0056 (camada Strategy Plan), 0065 §4 e §6 (cadeia de uma só execução e juiz), 0069 Estratégia §4 e §5 (juiz em lote, repetição por etapa, orçamento por tarefa), 0064 (modelo por tarefa) e 0075 (sinais de cultura). A migração é a 0153. O conflito de tetos entre os 17 comitês, o juiz e o ajuste está resolvido por cota (§6), sem migração; o ADR segue `proposed` até o dono do produto aceitá-lo.
+Complementa os ADRs 0056 (camada Strategy Plan), 0065 §4 e §6 (cadeia de uma só execução e juiz), 0069 Estratégia §4 e §5 (juiz em lote, repetição por etapa, orçamento por tarefa), 0064 (modelo por tarefa) e 0075 (sinais de cultura). A migração é a 0153. O conflito de tetos entre os 17 comitês, o juiz e o ajuste está resolvido por cota (§6), sem migração; aceito pelo dono do produto em 2026-11-28.
 
 ## Contexto
 A fase 2a trouxe o domínio: 17 comitês com 35 membros (`domain/comite/comites.ts`), a mesa em duas rodadas e a síntese do parecer do comitê (`domain/comite/mesa.ts`). Faltava o motor chamar os membros e as mesas, guardar o que cada chamada devolveu para retomar sem pagar de novo, deixar a organização ligar e desligar comitês e escolher modelo por comitê, e o Gate conferir contra os comitês de fato convocados.
