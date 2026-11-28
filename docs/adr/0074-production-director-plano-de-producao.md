@@ -1,10 +1,10 @@
 ---
-status: proposed
+status: accepted
 date: 2026-11-27
 ---
 # ADR-0074: Production Director: plano de produção como etapa própria depois dos Gates (24K-134)
 
-Complementa os ADRs 0056 e 0065 (Strategy Plan e execução no worker), 0066 (raciocínio por tarefa), 0067 e 0068 (pacote do Brain e ref curto), 0069 Estratégia (catálogo de campos por plataforma e princípios), 0070 (página do plano), 0075 (referências criativas) e 0072 (tarefas de IA na Config da IA). Acrescenta uma subpágina à Estratégia (registro exigido pelo ADR 0036). A migração é a 0154. Segue `proposed` até o dono do produto aceitar.
+Complementa os ADRs 0056 e 0065 (Strategy Plan e execução no worker), 0066 (raciocínio por tarefa), 0067 e 0068 (pacote do Brain e ref curto), 0069 Estratégia (catálogo de campos por plataforma e princípios), 0070 (página do plano), 0075 (referências criativas) e 0072 (tarefas de IA na Config da IA). Acrescenta uma subpágina à Estratégia (registro exigido pelo ADR 0036). A migração é a 0154. Aceito pelo dono do produto em 2026-11-28.
 
 ## Contexto
 O plano autorizado diz o quê e onde (campanhas, verba, calendário, plano de mídia), mas não diz como produzir: que peças, em que formato da plataforma, com que roteiro, prompts, referências, ferramentas, custo e prazo. Decisão do dono do produto: a camada "Production Director" é uma etapa própria depois dos Gates, gerada sob demanda, sem mudar o motor do plano.

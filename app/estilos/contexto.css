@@ -203,6 +203,8 @@ select.selo { appearance: none; cursor: pointer; padding-right: 8px; }
 .contexto-mapa__titulo { font-family: var(--font-heading); font-size: var(--fs-md); font-weight: 650; }
 .contexto-mapa__total { display: flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; }
 .contexto-mapa__total strong { font-size: var(--fs-lg); }
+.contexto-mapa__seta { width: 8px; height: 8px; margin-left: 8px; border-right: 2px solid var(--fg-subtle); border-bottom: 2px solid var(--fg-subtle); transform: rotate(-45deg); transition: transform .12s ease; align-self: center; }
+.contexto-mapa[open] .contexto-mapa__seta { transform: rotate(45deg); }
 .contexto-mapa__barra { grid-column: 1 / -1; }
 .contexto-mapa__corpo { padding: 0 20px 20px; }
 .destino-bloco { display: flex; flex-direction: column; gap: 10px; }
