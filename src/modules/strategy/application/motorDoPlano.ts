@@ -111,11 +111,13 @@ import {
   TAREFA_PARA_AJUSTAR_PLANO,
   TAREFA_PARA_ATUALIZAR_AO_BRAIN,
   TAREFA_PARA_CRIAR_PLANO,
-  instrucaoDaMesa1,
-  instrucaoDaMesa2,
+  instrucaoComumDaMesa,
+  instrucaoFinalDaMesa,
   INSTRUCAO_COMUM_DOS_MEMBROS,
+  INSTRUCAO_DO_AGENTE_DE_PLANO,
   instrucaoFinalDoMembro,
   instrucaoDoGrupo,
+  instrucaoFinalDoGrupo,
   instrucaoDoPlanoDeMidia,
 } from '@/modules/strategy/application/instrucoes/index';
 import { MAXIMO_DE_RESERVAS, type TelemetriaDeIA } from '@/modules/strategy/application/portas';
@@ -806,6 +808,39 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     };
   }
 
+  type PedidoDoGrupo = { readonly instrucoes: string; readonly dados: Record<string, unknown>; readonly extras: ExtrasDaChamada };
+
+  function pedidoDoGrupo(
+    pacote: PacoteDeLeitura,
+    indice: number,
+    jaEscrito: unknown,
+    demais: Record<string, unknown>,
+    instrucao: { readonly tarefa: string; readonly comRespostas: boolean },
+    haOutraChamadaComOMesmoPacote: boolean,
+  ): PedidoDoGrupo {
+    const perfil = perfilDoGrupo(indice);
+    const grupo = GRUPOS_DE_REDACAO[indice] ?? [];
+    const total = GRUPOS_DE_REDACAO.length;
+    const pacoteInteiro = perfil === 'completo' && haOutraChamadaComOMesmoPacote ? pacoteParaEntrada(pacote, MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA.redigir) : null;
+    if (pacoteInteiro === null || pacoteInteiro.entradas.length !== pacote.entradas.length) {
+      return {
+        instrucoes: instrucaoDoGrupo(instrucao.tarefa, grupo, indice + 1, total, instrucao.comRespostas),
+        dados: { ...demais, pacote: pacoteDoGrupo(pacote, perfil, jaEscrito) },
+        extras: {},
+      };
+    }
+    const dados = { pacote: pacoteInteiro, ...demais };
+    const prefixoEstavel = executorDeIA.prefixoEstavel?.([dados, { pacote: pacoteInteiro, intencao: demais.intencao }]) ?? 0;
+    return {
+      instrucoes: INSTRUCAO_DO_AGENTE_DE_PLANO,
+      dados,
+      extras: {
+        instrucaoFinal: instrucaoFinalDoGrupo(instrucao.tarefa, grupo, indice + 1, total, instrucao.comRespostas),
+        ...(prefixoEstavel > 0 ? { prefixoEstavelDosDados: prefixoEstavel } : {}),
+      },
+    };
+  }
+
   function secoesParaOPlanoDeMidia(secoes: SecoesRedigidas, plataforma: Plataforma): Record<string, unknown> {
     const escolhidas: Record<string, unknown> = {};
     for (const chave of SECOES_QUE_O_PLANO_DE_MIDIA_USA) {
@@ -897,22 +932,31 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
       }
       const doGrupo = entradaDoGrupo(entrada, indice);
       const tiposDoGrupo = await tiposDeLimiteDoGrupo(execucao, indice);
-      const redigirGrupo = (problemasAnteriores: readonly { readonly caminho: string; readonly mensagem: string }[]) =>
-        executarIA(
-          execucao,
-          contexto,
-          'strategy_plan',
-          instrucaoDoGrupo(problemasAnteriores.length === 0 ? tarefa : `${tarefa}\n${AVISO_DE_CORRECAO_DE_INTEGRIDADE}`, grupo, indice + 1, GRUPOS_DE_REDACAO.length),
+      const redigirGrupo = (problemasAnteriores: readonly { readonly caminho: string; readonly mensagem: string }[]) => {
+        const pedido = pedidoDoGrupo(
+          pacote,
+          indice,
+          { secoes, base: doGrupo },
           {
             ...(abreviarUrnsParaCodigos({ ...doGrupo, secoesJaRedigidas: { ...secoes } }, codigos) as Record<string, unknown>),
             ...(problemasAnteriores.length === 0 ? {} : { problemasDeIntegridade: problemasAnteriores.slice(0, MAXIMO_DE_PROBLEMAS_DEVOLVIDOS) }),
             ...tiposDoGrupo,
-            pacote: pacoteDoGrupo(pacote, perfilDoGrupo(indice), { secoes, base: doGrupo }),
           },
+          { tarefa: problemasAnteriores.length === 0 ? tarefa : `${tarefa}\n${AVISO_DE_CORRECAO_DE_INTEGRIDADE}`, comRespostas: false },
+          true,
+        );
+        return executarIA(
+          execucao,
+          contexto,
+          'strategy_plan',
+          pedido.instrucoes,
+          pedido.dados,
           esquemaDoGrupo(indice),
           problemasAnteriores.length === 0 ? `${execucao.id}:redigir:${execucao.rodada}:g${indice}` : `${execucao.id}:redigir:${execucao.rodada}:corrigir:g${indice}`,
           codigos,
+          pedido.extras,
         );
+      };
       Object.assign(secoes, await redigirGrupo([]));
       let problemas = problemasDoRascunho(secoes);
       if (problemas.length > 0) {
@@ -1130,20 +1174,26 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
       return lerGuardada(esquemaRodadaDaMesa, guardada);
     }
     const citadas = new Set(pareceres.flatMap((parecer) => parecer.pontos.flatMap((ponto) => ponto.fontes)));
-    const dados = abreviarUrnsParaCodigos(
+    const comunsAsDuasRodadas = abreviarUrnsParaCodigos(
       {
         comite: comite.chave,
         membros: comite.membros.map((membro) => ({ chave: membro.chave, nome: membro.nome, foco: membro.foco, relatora: membro.relatora })),
         pareceres,
-        ...(rodada === 2 ? { mesa1: anteriores[0] } : {}),
         plano: secoesDoPlano(plano, comite.secoes),
         pacote: resumoDoPacote(pacoteParaEntrada(pacote, MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA.comite, { somenteUrns: citadas, primeiras: citadas, comCatalogo: false })),
       },
       codigos,
-    );
-    const instrucao = rodada === 1 ? instrucaoDaMesa1(comite) : instrucaoDaMesa2(comite);
+    ) as Record<string, unknown>;
+    const comMesa1 = (mesa1: unknown) => ({ ...comunsAsDuasRodadas, mesa1 });
+    const dados = rodada === 1 ? comunsAsDuasRodadas : comMesa1(abreviarUrnsParaCodigos(anteriores[0], codigos));
+    const prefixoEstavel = executorDeIA.prefixoEstavel?.([comunsAsDuasRodadas, comMesa1(null)]) ?? 0;
     const chave = `${execucao.id}:deliberacao:${comite.chave}:${rodada}`;
-    const mesa = await limitar(() => executarIA(execucao, contexto, comite.tarefa as TarefaDeIA, instrucao, dados, esquemaRodadaDaMesa, chave));
+    const mesa = await limitar(() =>
+      executarIA(execucao, contexto, comite.tarefa as TarefaDeIA, instrucaoComumDaMesa(comite), dados, esquemaRodadaDaMesa, chave, undefined, {
+        instrucaoFinal: instrucaoFinalDaMesa(rodada),
+        ...(prefixoEstavel > 0 ? { prefixoEstavelDosDados: prefixoEstavel } : {}),
+      }),
+    );
     contagem.chamadas += 1;
     const conferida = conferirMesa(comite, pareceres, [...anteriores, mesa]);
     if (!conferida.ok) throw falhaDaMesa(conferida.error.problemas.map((problema) => problema.codigo));
@@ -1331,8 +1381,9 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
     let corrente: Record<string, unknown> = { ...plano };
     const respostas: RespostaDoAjuste[] = [];
     let chamadas = 0;
+    const gruposDePacoteCompleto = [...pontosPorGrupo.keys()].filter((indice) => perfilDoGrupo(indice) === 'completo').length;
 
-    const validarRespostas = (indice: number, plataforma: Plataforma | null, esperadas: ReadonlySet<string>, dadas: readonly RespostaDoAjuste[]) => {
+    const validarRespostas =(indice: number, plataforma: Plataforma | null, esperadas: ReadonlySet<string>, dadas: readonly RespostaDoAjuste[]) => {
       const chaves = dadas.map((r) => `${r.persona}/${r.pontoId}`);
       if (new Set(chaves).size !== chaves.length || chaves.length !== esperadas.size || chaves.some((d) => !esperadas.has(d))) {
         throw falhaDeIA('saida_invalida', `respostas_do_grupo:g${indice}${plataforma ? `:${plataforma}` : ''}:esperadas${esperadas.size}:dadas${chaves.length}`);
@@ -1387,19 +1438,27 @@ function autoria(execucao: Execucao, agentId: string, chave: string, contexto: C
       }
       const planoAtual = secoesDoGrupo(corrente, indice);
       const tiposDoGrupo = await tiposDeLimiteDoGrupo(execucao, indice);
+      const pedido = pedidoDoGrupo(
+        pacote,
+        indice,
+        { planoAtual, argumentos: pontos.argumentos },
+        {
+          ...(abreviarUrnsParaCodigos({ intencao, planoAtual, idsDisponiveis: idsReferenciaveis(corrente), pontos: pontos.argumentos, pendenciasObrigatorias: pontos.obrigatorias, pendenciasDoGate: pontos.doGate }, codigos) as Record<string, unknown>),
+          ...tiposDoGrupo,
+        },
+        { tarefa, comRespostas: true },
+        gruposDePacoteCompleto >= 2,
+      );
       const doGrupo = await executarIA(
         execucao,
         contexto,
         'strategy_plan',
-        instrucaoDoGrupo(tarefa, GRUPOS_DE_REDACAO[indice] ?? [], indice + 1, GRUPOS_DE_REDACAO.length, true),
-        {
-          ...(abreviarUrnsParaCodigos({ intencao, planoAtual, idsDisponiveis: idsReferenciaveis(corrente), pontos: pontos.argumentos, pendenciasObrigatorias: pontos.obrigatorias, pendenciasDoGate: pontos.doGate }, codigos) as Record<string, unknown>),
-          ...tiposDoGrupo,
-          pacote: pacoteDoGrupo(pacote, perfilDoGrupo(indice), { planoAtual, argumentos: pontos.argumentos }),
-        },
+        pedido.instrucoes,
+        pedido.dados,
         esquemaDoAjusteDoGrupo(indice),
         `${execucao.id}:${prefixoDaChave}:${execucao.rodada}:g${indice}`,
         codigos,
+        pedido.extras,
       );
       chamadas += 1;
       validarRespostas(indice, null, esperadasDe(pontos.argumentos), doGrupo.respostas);

@@ -184,6 +184,7 @@ export function createDiretorDeProducao(deps: DependenciasDoDiretor): DiretorDeP
     codigos: CodigosDoPacote,
     chave: string,
     contador: { chamadas: number },
+    prefixoEstavel: number,
   ): Promise<{ readonly ok: true; readonly saida: ProducaoDaCampanha } | { readonly ok: false; readonly codigo: CodigoDeErroDeIA; readonly caminhos: string[] }> {
     await atualizar(registro, ficha, { leaseAte: novoLease() });
     contador.chamadas += 1;
@@ -191,6 +192,7 @@ export function createDiretorDeProducao(deps: DependenciasDoDiretor): DiretorDeP
       tarefa: 'diretor_de_producao',
       instrucoes: INSTRUCAO_DO_DIRETOR_DE_PRODUCAO,
       dados,
+      ...(prefixoEstavel > 0 ? { prefixoEstavelDosDados: prefixoEstavel } : {}),
       esquema: esquemaQueAceitaCodigos(esquemaProducaoDaCampanha, codigos),
       orcamento: orcamentoDaChamada,
       organizacaoId: registro.organizationId,
@@ -210,6 +212,17 @@ export function createDiretorDeProducao(deps: DependenciasDoDiretor): DiretorDeP
     return new FalhaDaProducao(traduzido, `campanha:${campanhaId}:ia:${codigo}`);
   }
 
+  function dadosDaCampanha(plano: Plano, campanha: Campanha, pacote: PacoteDeLeitura, janela: Periodo): Record<string, unknown> {
+    const especificacoes = campanha.plataforma === undefined ? null : especificacoesDaPlataforma(campanha.plataforma, catalogos);
+    return {
+      pacote: pacoteDoModelo(pacote),
+      janela,
+      especificacoes: especificacoes === null ? null : especificacoes.map(especificacaoParaModelo),
+      contexto: contextoDoPlano(plano, campanha),
+      campanha,
+    };
+  }
+
   async function gerarCampanha(
     registro: RegistroDeProducao,
     ficha: number,
@@ -218,20 +231,14 @@ export function createDiretorDeProducao(deps: DependenciasDoDiretor): DiretorDeP
     pacote: PacoteDeLeitura,
     janela: Periodo,
     contador: { chamadas: number },
+    prefixoEstavel: number,
   ): Promise<ProducaoDaCampanha> {
     const codigos = codigosDoPacote(pacote);
-    const especificacoes = campanha.plataforma === undefined ? null : especificacoesDaPlataforma(campanha.plataforma, catalogos);
-    const base = {
-      campanha,
-      contexto: contextoDoPlano(plano, campanha),
-      janela,
-      especificacoes: especificacoes === null ? null : especificacoes.map(especificacaoParaModelo),
-      pacote: pacoteDoModelo(pacote),
-    };
+    const base = dadosDaCampanha(plano, campanha, pacote, janela);
     const contextoDaConferencia = { plano, campanhaId: campanha.id, pacote, janela, catalogos };
     const chave = `${registro.agentRunId}:producao:${campanha.id}`;
 
-    const primeira = await pedirAoModelo(registro, ficha, base, codigos, `${chave}:0`, contador);
+    const primeira = await pedirAoModelo(registro, ficha, base, codigos, `${chave}:0`, contador, prefixoEstavel);
     let erros: readonly { readonly caminho: string; readonly codigo: string }[];
     let anterior: ProducaoDaCampanha | null = null;
     if (primeira.ok) {
@@ -249,7 +256,7 @@ export function createDiretorDeProducao(deps: DependenciasDoDiretor): DiretorDeP
       erros: erros.slice(0, MAXIMO_DE_ERROS_DEVOLVIDOS),
       ...(anterior === null ? {} : { respostaAnterior: abreviarUrnsParaCodigos(anterior, codigos) }),
     };
-    const segunda = await pedirAoModelo(registro, ficha, dadosDaCorrecao, codigos, `${chave}:1`, contador);
+    const segunda = await pedirAoModelo(registro, ficha, dadosDaCorrecao, codigos, `${chave}:1`, contador, prefixoEstavel);
     if (!segunda.ok) {
       if (segunda.codigo === 'saida_invalida') {
         throw new FalhaDaProducao('ia_saida_invalida', `campanha:${campanha.id}:esquema:${segunda.caminhos.slice(0, 3).join(',')}`);
@@ -299,6 +306,7 @@ export function createDiretorDeProducao(deps: DependenciasDoDiretor): DiretorDeP
       const pacote = pacoteLido.value;
       const janela = janelaDoCalendario(plano);
       const prontas = progressoValido(registro, plano, pacote, janela);
+      const prefixoEstavel = deps.executorDeIA.prefixoEstavel?.(plano.campanhas.campanhas.map((campanha) => dadosDaCampanha(plano, campanha, pacote, janela))) ?? 0;
 
       for (const campanha of plano.campanhas.campanhas) {
         if (prontas.has(campanha.id)) continue;
@@ -312,7 +320,7 @@ export function createDiretorDeProducao(deps: DependenciasDoDiretor): DiretorDeP
           await auditar(registro, 'adiada', { campanhasProntas: prontas.size, campanhas: plano.campanhas.campanhas.length });
           return 'adiada';
         }
-        prontas.set(campanha.id, await gerarCampanha(registro, ficha, plano, campanha, pacote, janela, contador));
+        prontas.set(campanha.id, await gerarCampanha(registro, ficha, plano, campanha, pacote, janela, contador, prefixoEstavel));
         await atualizar(registro, ficha, { progresso: Object.fromEntries(prontas), leaseAte: novoLease() });
       }
 

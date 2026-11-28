@@ -17,7 +17,9 @@ Object.assign(process.env, {
 });
 
 const { createMotorDoPlano, COMITES_EM_ANDAMENTO, PARALELISMO_DO_COMITE, PARALELISMO_DO_COMITE_APOS_FALHA } = await import('./motorDoPlano.ts');
-const { INSTRUCAO_COMUM_DOS_MEMBROS, instrucaoDoMembro } = await import('./instrucoes/mesa.ts');
+const { INSTRUCAO_COMUM_DOS_MEMBROS, instrucaoDoMembro, instrucaoDaMesa1, instrucaoDaMesa2 } = await import('./instrucoes/mesa.ts');
+const { INSTRUCAO_DO_AGENTE_DE_PLANO, TAREFA_PARA_CRIAR_PLANO, instrucaoDoGrupo } = await import('./instrucoes/agenteDePlano.ts');
+const { GRUPOS_DE_REDACAO } = await import('../domain/gruposDoPlano.ts');
 const { MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA, pacoteParaEntrada } = await import('../domain/pacote.ts');
 const { textoDosDados } = await import('../../ia/domain/tarefa.ts');
 const { criarRepositorioEmMemoria } = await import('../infrastructure/repositorioEmMemoria.ts');
@@ -287,9 +289,9 @@ describe('motor do plano: comitês com membros e mesas (24K-134)', () => {
 });
 
 describe('motor do plano: custo e velocidade do Comitê (ADR 0076)', () => {
-  const pacoteGrande = () => {
+  const pacoteGrande = (quantidade = 60) => {
     const base = pacoteDeTeste();
-    const extras = Array.from({ length: 60 }, (_, i) => ({
+    const extras = Array.from({ length: quantidade }, (_, i) => ({
       urn: urnDeTeste('conhecimento', `extra-${i}`),
       hash: hashDeTeste(200 + i),
       tipo: 'conhecimento' as const,
@@ -365,15 +367,77 @@ describe('motor do plano: custo e velocidade do Comitê (ADR 0076)', () => {
     assert.ok(prefixo >= 4_000, `prefixo ${prefixo}`);
     const comeco = textoDosDados(membros[0]!.dados).slice(0, prefixo);
     for (const pedido of membros) assert.equal(textoDosDados(pedido.dados).slice(0, prefixo), comeco);
-    for (const mesa of doComite(m).filter((p) => !ehMembro(p))) assert.equal(mesa.prefixoEstavelDosDados, undefined);
   });
 
   it('com pacote pequeno não há prefixo estável e nenhum membro espera aquecimento', async () => {
     const { medida, medir } = roteiroQueMede();
     const m = await montar({ roteiro: medir });
     await ate(m);
-    for (const pedido of doComite(m)) assert.equal(pedido.prefixoEstavelDosDados, undefined);
+    for (const pedido of doComite(m).filter(ehMembro)) assert.equal(pedido.prefixoEstavelDosDados, undefined);
     assert.ok(medida.membrosComOPrimeiroAberto > 0);
+  });
+
+  it('as duas rodadas da mesa têm a mesma instrução de sistema, a rodada no fim, a mesa 1 por último nos dados e o mesmo prefixo estável', async () => {
+    const m = await montar({ brain: brainGrande });
+    await ate(m);
+    let comPrefixo = 0;
+    for (const comite of COMITES) {
+      const daRodada = (rodada: number) => doComite(m).find((p) => p.chaveDeIdempotencia.endsWith(`:deliberacao:${comite.chave}:${rodada}`))!;
+      const mesa1 = daRodada(1);
+      const mesa2 = daRodada(2);
+      assert.equal(mesa1.instrucoes, mesa2.instrucoes);
+      assert.equal(`${mesa1.instrucoes}\n${mesa1.instrucaoFinal}`, instrucaoDaMesa1(comite));
+      assert.equal(`${mesa2.instrucoes}\n${mesa2.instrucaoFinal}`, instrucaoDaMesa2(comite));
+      assert.deepEqual(Object.keys(mesa1.dados as object), ['comite', 'membros', 'pareceres', 'plano', 'pacote']);
+      assert.deepEqual(Object.keys(mesa2.dados as object), ['comite', 'membros', 'pareceres', 'plano', 'pacote', 'mesa1']);
+      assert.equal(mesa1.prefixoEstavelDosDados, mesa2.prefixoEstavelDosDados);
+      const prefixo = mesa1.prefixoEstavelDosDados;
+      if (prefixo === undefined) continue;
+      comPrefixo += 1;
+      assert.ok(prefixo >= 4_000 && prefixo < textoDosDados(mesa1.dados).length, `prefixo ${prefixo}`);
+      assert.equal(textoDosDados(mesa2.dados).slice(0, prefixo), textoDosDados(mesa1.dados).slice(0, prefixo));
+    }
+    assert.ok(comPrefixo > 0);
+  });
+
+  it('redação: os grupos de pacote completo têm a mesma instrução de sistema, o pedido do grupo no fim, o pacote primeiro e o mesmo prefixo estável', async () => {
+    const m = await montar({ brain: brainGrande });
+    await ate(m);
+    const doGrupo = (indice: number) => m.ia.pedidos.find((p) => new RegExp(`:redigir:\\d+:g${indice}$`).test(p.chaveDeIdempotencia))!;
+    const completos = [0, 1, 2].map(doGrupo);
+    const individual = pacoteParaEntrada(pacoteGrande(), MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA.redigir);
+    for (const [indice, pedido] of completos.entries()) {
+      assert.equal(pedido.instrucoes, INSTRUCAO_DO_AGENTE_DE_PLANO);
+      assert.equal(`${pedido.instrucoes}\n\n${pedido.instrucaoFinal}`, instrucaoDoGrupo(TAREFA_PARA_CRIAR_PLANO, GRUPOS_DE_REDACAO[indice]!, indice + 1, GRUPOS_DE_REDACAO.length));
+      const dados = pedido.dados as { pacote: { entradas: { urn: string }[] } };
+      assert.equal(Object.keys(dados)[0], 'pacote');
+      assert.deepEqual(dados.pacote.entradas.map((e) => e.urn).sort(), individual.entradas.map((e) => e.urn).sort());
+    }
+    const prefixos = new Set(completos.map((p) => p.prefixoEstavelDosDados));
+    assert.equal(prefixos.size, 1);
+    const prefixo = [...prefixos][0]!;
+    assert.ok(prefixo >= 4_000, `prefixo ${prefixo}`);
+    const comeco = textoDosDados(completos[0]!.dados).slice(0, prefixo);
+    for (const pedido of completos) assert.equal(textoDosDados(pedido.dados).slice(0, prefixo), comeco);
+    for (const indice of [3, 5]) {
+      const pedido = doGrupo(indice);
+      assert.equal(pedido.instrucaoFinal, undefined);
+      assert.equal(pedido.prefixoEstavelDosDados, undefined);
+      assert.equal(pedido.instrucoes, instrucaoDoGrupo(TAREFA_PARA_CRIAR_PLANO, GRUPOS_DE_REDACAO[indice]!, indice + 1, GRUPOS_DE_REDACAO.length));
+      assert.equal(Object.keys(pedido.dados as object).at(-1), 'pacote');
+    }
+  });
+
+  it('redação: pacote que não cabe inteiro no limite sai como antes, sem instrução final nem prefixo', async () => {
+    const acimaDoLimite = pacoteGrande(700);
+    assert.ok(pacoteParaEntrada(acimaDoLimite, MAXIMO_DE_BYTES_DO_PACOTE_POR_CHAMADA.redigir).entradas.length < acimaDoLimite.entradas.length);
+    const m = await montar({ brain: { async lerPacote() { return ok(acimaDoLimite); } } });
+    await ate(m);
+    const g0 = m.ia.pedidos.find((p) => /:redigir:\d+:g0$/.test(p.chaveDeIdempotencia))!;
+    assert.equal(g0.instrucoes, instrucaoDoGrupo(TAREFA_PARA_CRIAR_PLANO, GRUPOS_DE_REDACAO[0]!, 1, GRUPOS_DE_REDACAO.length));
+    assert.equal(g0.instrucaoFinal, undefined);
+    assert.equal(g0.prefixoEstavelDosDados, undefined);
+    assert.equal(Object.keys(g0.dados as object).at(-1), 'pacote');
   });
 
   it('aquecimento: a primeira chamada de membro termina antes de as outras começarem, e depois o leque abre até o teto', async () => {

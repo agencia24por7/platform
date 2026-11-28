@@ -4,7 +4,7 @@ date: 2026-11-28
 ---
 # ADR-0076: Custo e velocidade do pipeline do Strategy Plan: prefixo estável com cache do fornecedor, agendamento do Comitê e medição (24K-136)
 
-Complementa os ADRs 0063 (§1 e §9: cache é otimização interna do adaptador), 0064, 0066 e 0069. Supera em parte o ADR 0072 §2 (paralelismo e regra de parada por tempo da etapa `comite`). Sem migração. Pedido do dono do produto em 2026-11-28, com a condição de não tirar comitê, membro, mesa, juiz nem Gate e de não baixar modelo, raciocínio ou teto de saída.
+Complementa os ADRs 0063 (§1 e §9: cache é otimização interna do adaptador), 0064, 0066 e 0069. Supera em parte o ADR 0072 §2 (paralelismo e regra de parada por tempo da etapa `comite`). A migração é a 0155 (uma coluna em `core.ai_usage`). Aceito pelo dono do produto em 2026-11-28. Pedido do dono do produto em 2026-11-28, com a condição de não tirar comitê, membro, mesa, juiz nem Gate e de não baixar modelo, raciocínio ou teto de saída.
 
 ## Contexto
 Medido por leitura do código (não havia medição de produção por etapa antes desta entrega):
@@ -26,7 +26,7 @@ Medido por leitura do código (não havia medição de produção por etapa ante
 - Os dados do membro passam a ter o pacote primeiro (`pacote`, `comite`, `persona`, `plano`). `pacotesComPrefixoComum` (`domain/pacote.ts`) calcula o recorte de cada membro com a mesma função de antes e só reordena: as entradas presentes em todos os recortes vêm primeiro, na mesma ordem para todos; as próprias de cada membro vêm depois. O conjunto de entradas de cada membro não muda (teste).
 - A coorte é calculada sobre todos os membros dos comitês convocados, não só sobre os que faltam, para a retomada produzir o mesmo prefixo.
 - **Aquecimento:** com prefixo estável, a primeira chamada de membro do passo roda sozinha e as demais esperam ela terminar, com sucesso ou falha. Sem isso as chamadas simultâneas chegam antes de o cache existir e todas pagam a entrada cheia.
-- Mesas, juiz, redação, ajuste e Gates não mudam.
+- Juiz e Gates não mudam. Mesas e redação: §5.
 
 ### 3. Agendamento do Comitê
 - `PARALELISMO_DO_COMITE` sobe de 3 para 6 chamadas simultâneas na etapa; `COMITES_EM_ANDAMENTO` fica em 3.
@@ -39,6 +39,18 @@ Medido por leitura do código (não havia medição de produção por etapa ante
 - O `uso` é um piso do custo, não a fatura: chamada que falha (saída inválida, truncada, tempo esgotado) conta em `chamadas` e no tempo, mas soma zero token, e a escrita de cache da Anthropic (25% a mais) não vem separada dos tokens de entrada.
 - `scripts/ia-contrato.ts` ganha o caso "prefixo estável": duas chamadas com o mesmo prefixo fictício; na Anthropic a segunda tem de ler do cache, nos demais o resultado é informado.
 
+### 5. Prefixo estável nas mesas, na redação e no Production Director
+A regra geral: só leva prefixo a chamada que tem outra chamada para ler o que ela gravou, porque na Anthropic a escrita do cache custa 25% a mais.
+
+- **Mesas:** as duas rodadas do mesmo comitê têm a mesma instrução de sistema (`instrucaoComumDaMesa`: a base e o cabeçalho do comitê) e a parte da rodada vai em `instrucaoFinal`. Os dados da rodada 2 são os da rodada 1 mais `mesa1` no fim (antes `mesa1` vinha no meio). O prefixo é o que as duas rodadas têm em comum e é calculado do mesmo jeito nas duas, então a retomada chega ao mesmo valor.
+- **Redação e ajuste por grupos:** quando o pacote do Brain cabe inteiro no limite da redação (120 KB), os três grupos de pacote completo passam a ter a instrução de sistema comum (`INSTRUCAO_DO_AGENTE_DE_PLANO`), o pedido do grupo em `instrucaoFinal` e o pacote primeiro nos dados, na ordem do pacote, igual em todos os grupos. O prefixo é o pacote mais a intenção. Pacote que não cabe inteiro: o grupo sai como antes, sem prefixo, porque o recorte muda de um grupo para outro e a escrita do cache não teria leitor. No ajuste, só quando há dois ou mais grupos de pacote completo a ajustar.
+- Os grupos de pacote reduzido (orçamento e regras, plano de mídia por plataforma, lacunas e resumo) não mudam: cada um é uma chamada só com aquele pacote e não teria quem lesse o cache.
+- **Production Director:** os dados de cada campanha passam a ter `pacote`, `janela`, `especificacoes`, `contexto` e `campanha`, nessa ordem; o prefixo é o começo comum às campanhas do plano. A correção de uma campanha reaproveita o mesmo prefixo. Plano de uma campanha só: sem prefixo.
+
+### 6. Tokens em cache em `core.ai_usage`
+- Migração 0155: coluna `cached_input_tokens` (inteiro, padrão 0, não negativo), com `UPDATE` só dessa coluna para o papel do app. A conclusão da reserva grava o menor entre os tokens em cache e os de entrada.
+- O teto diário não muda: continua somando `input_tokens` inteiro. Token lido de cache conta no teto como qualquer outro.
+
 ## Consequências
 - Entrada dos membros: até 35 × 40 KB por rodada passam a ser lidos de cache depois da primeira chamada, no preço de leitura de cache de cada fornecedor. A primeira chamada paga a escrita (na Anthropic, 25% a mais sobre o prefixo).
 - Tempo da etapa `comite`: de um comitê por vez para três, com até seis chamadas simultâneas.
@@ -47,6 +59,9 @@ Medido por leitura do código (não havia medição de produção por etapa ante
 ## O que muda no que o modelo lê
 - A ordem das entradas do pacote do membro: antes vinham primeiro as regras e as citadas nas seções dele; agora vêm primeiro as comuns a todos os membros. O conjunto é o mesmo.
 - A parte da persona sai da instrução de sistema e vai para depois dos dados.
+- Mesas: a parte da rodada vai para depois dos dados e `mesa1` passa a ser o último campo.
+- Redação e ajuste dos grupos de pacote completo: o pedido do grupo vai para depois dos dados, o pacote vem primeiro e as entradas ficam na ordem do pacote (antes, as citadas nas seções já escritas vinham na frente).
+- Production Director: a ordem dos campos dos dados.
 
 ## Não verificado
 - Acerto de cache com fornecedor real e o ganho em reais: não há chave neste ambiente. Verifica-se com `scripts/ia-contrato.ts` e pelo campo `uso` do primeiro plano gerado em produção.
@@ -54,9 +69,9 @@ Medido por leitura do código (não havia medição de produção por etapa ante
 - Limite de taxa do fornecedor com 6 chamadas simultâneas na conta de cada organização.
 
 ## Fora desta entrega
-- Prefixo estável na redação por grupos, no Production Director e nas mesas.
-- Coluna de tokens em cache em `core.ai_usage` (pede migração).
+- Prefixo estável nos grupos de pacote reduzido e no plano de mídia por plataforma (§5).
+- Soma de `uso` na auditoria do Production Director.
 - Batch API: metade do preço, mas com prazo de até 24 horas.
 
 ## Rollback
-Reverter o PR. Sem migração e sem dado gravado em formato novo: deliberações e pareceres têm o mesmo esquema.
+Voltar a imagem anterior. Deliberações e pareceres têm o mesmo esquema. A coluna `cached_input_tokens` fica: a imagem anterior não a escreve e ela vale 0.

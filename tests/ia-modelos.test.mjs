@@ -199,9 +199,9 @@ describe('IA: chave do fornecedor, modelo por tarefa, uso e teto (ADR 0064)', { 
       const html = await testarModelo(cookie);
       assert.equal(html.includes('Olá do modelo de teste.'), true);
       assert.equal(usos(a.org), antes + 1);
-      const linha = query(`select task || '|' || provider || '|' || model || '|' || result || '|' || input_tokens || '|' || output_tokens || '|' || steps || '|' || reserved_tokens
+      const linha = query(`select task || '|' || provider || '|' || model || '|' || result || '|' || input_tokens || '|' || output_tokens || '|' || steps || '|' || reserved_tokens || '|' || cached_input_tokens
                              from core.ai_usage where organization_id = '${a.org}' order by id desc limit 1`);
-      assert.equal(linha, `${TAREFA}|google|modelo-de-teste-a|ok|12|8|1|200`);
+      assert.equal(linha, `${TAREFA}|google|modelo-de-teste-a|ok|12|8|1|200|0`);
       signOut();
     });
 
@@ -297,7 +297,7 @@ describe('IA: chave do fornecedor, modelo por tarefa, uso e teto (ADR 0064)', { 
 
     it('linha de uso concluída não muda: o app não zera tokens nem volta a reserva', () => {
       const concluida = query(`select id from core.ai_usage where organization_id = '${a.org}' and result = 'ok' order by id desc limit 1`);
-      for (const mudanca of [`input_tokens = 0, output_tokens = 0`, `result = 'reservada'`, `result = 'unavailable'`]) {
+      for (const mudanca of [`input_tokens = 0, output_tokens = 0`, `cached_input_tokens = 5`, `result = 'reservada'`, `result = 'unavailable'`]) {
         assert.match(recusado(() => psqlComoApp(`${naOrganizacao(a.org)} update core.ai_usage set ${mudanca} where id = ${concluida}`)) ?? '', /concluida nao muda/);
       }
       assert.equal(query(`select result || '|' || input_tokens || '|' || output_tokens from core.ai_usage where id = ${concluida}`), 'ok|12|8');
@@ -309,6 +309,19 @@ describe('IA: chave do fornecedor, modelo por tarefa, uso e teto (ADR 0064)', { 
       const id = comoApp(`${naOrganizacao(b.org)} insert into core.ai_usage (organization_id, task, provider, model, reserved_tokens) values ('${b.org}', '${TAREFA}', 'google', 'm', 700) returning id`).split('\n')[0].trim();
       comoApp(`${naOrganizacao(b.org)} update core.ai_usage set result = 'validation' where id = ${id}`);
       assert.equal(tokens(), antes + 700);
+    });
+
+    it('tokens lidos de cache: o app grava na conclusão da reserva, nunca negativos, e eles não mudam o teto', () => {
+      const tokens = () => Number(comoApp(`${naOrganizacao(b.org)} select coalesce(sum(case when result = 'ok' then input_tokens + output_tokens else greatest(reserved_tokens, input_tokens + output_tokens) end), 0) from core.ai_usage`));
+      const reservar = () => comoApp(`${naOrganizacao(b.org)} insert into core.ai_usage (organization_id, task, provider, model, reserved_tokens) values ('${b.org}', '${TAREFA}', 'google', 'm', 700) returning id`).split('\n')[0].trim();
+      assert.match(recusado(() => psqlComoApp(`${naOrganizacao(b.org)} insert into core.ai_usage (organization_id, task, provider, model, reserved_tokens, cached_input_tokens) values ('${b.org}', '${TAREFA}', 'google', 'm', 700, 9)`)) ?? '', /permission denied/);
+      const antes = tokens();
+      const id = reservar();
+      comoApp(`${naOrganizacao(b.org)} update core.ai_usage set result = 'ok', input_tokens = 100, output_tokens = 20, cached_input_tokens = least(80, 100) where id = ${id}`);
+      assert.equal(query(`select input_tokens || '|' || cached_input_tokens from core.ai_usage where id = ${id}`), '100|80');
+      assert.equal(tokens(), antes + 120);
+      const outra = reservar();
+      assert.match(recusado(() => psqlComoApp(`${naOrganizacao(b.org)} update core.ai_usage set result = 'ok', cached_input_tokens = -1 where id = ${outra}`)) ?? '', /violates check constraint/);
     });
 
     it('a varredura de versão antiga só é executável pelo worker e só devolve ponteiros', () => {

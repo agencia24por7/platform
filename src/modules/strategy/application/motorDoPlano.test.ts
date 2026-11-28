@@ -518,7 +518,7 @@ describe('motor do plano: erros de IA e do Brain', () => {
       assert.equal(reparo.length, 1);
       const dados = reparo[0]!.dados as { problemasDeIntegridade: { caminho: string; mensagem: string }[] };
       assert.ok(dados.problemasDeIntegridade[0]!.mensagem.includes('Segmento inexistente'));
-      assert.match(reparo[0]!.instrucoes, /problemasDeIntegridade/);
+      assert.match(reparo[0]!.instrucaoFinal ?? '', /problemasDeIntegridade/);
       assert.equal(pedidos.filter((p) => /:redigir:\d+:g0$/.test(p.chaveDeIdempotencia)).length >= 1, true);
     });
 
