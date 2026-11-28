@@ -1,6 +1,5 @@
 import { carregarPainel } from '@/../app/clientes/[id]/_dados';
 import { BotaoDeEnvio } from '@/../app/_components/BotaoDeEnvio';
-import { CabecalhoDeSecao } from '@/../app/clientes/[id]/_componentes/CabecalhoDeSecao';
 import { ConfirmarAcao } from '@/../app/clientes/[id]/_componentes/ConfirmarAcao';
 import { EstadoVazio } from '@/../app/clientes/[id]/_componentes/EstadoVazio';
 import { arquivarSinalDeCulturaAcao, criarSinalDeCulturaAcao } from '@/../app/clientes/[id]/(painel)/contexto/cultura/acoes';
@@ -29,7 +28,7 @@ export async function Cultura({ clienteId }: { readonly clienteId: string }) {
         <span className="card__sub">{visao.contagem}</span>
       </summary>
       <div className="pilha">
-      <CabecalhoDeSecao titulo="Sinais de cultura" descricao="Tendências, memes, conversas, movimentos de comunidade e referências criativas que o planejador usa. Cada sinal vale por no máximo 90 dias." />
+      <p className="subtle small">Tendências, memes, conversas, movimentos de comunidade e referências criativas que o planejador usa. Cada sinal vale por no máximo 90 dias.</p>
 
       {visao.aviso ? (
         <div className="alert" role="status">
