@@ -7,7 +7,6 @@ import type {
   ContextoCompleto,
   Leitura,
   MarcacaoParcial,
-  RevisaoDeContexto,
 } from '@/modules/clients/application/contextoService';
 import { CATALOGO } from '@/modules/clients/domain/contexto/catalogo';
 import type { EntradaDeCampo, ItemDeLista } from '@/modules/clients/domain/contexto/tipos';
@@ -141,12 +140,6 @@ export async function removerArquivoAcao(clientId: string, fileId: string): Prom
   const base = await comando(clientId);
   if (!base || !idValido(fileId)) return NAO_ENCONTRADO;
   return responder(await modules().contexto.removerArquivo({ ...base, fileId }, await atorAtual()));
-}
-
-export async function listarRevisoesAcao(clientId: string, chave: string | null): Promise<Resposta<readonly RevisaoDeContexto[]>> {
-  const base = await comando(clientId);
-  if (!base) return NAO_ENCONTRADO;
-  return responder(await modules().contexto.listarRevisoes({ ...leituraDe(base), limite: 60, chave }));
 }
 
 export async function recarregarContextoAcao(clientId: string): Promise<Resposta<DadosDoEditor>> {
