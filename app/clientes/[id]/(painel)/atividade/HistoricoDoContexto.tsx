@@ -41,7 +41,7 @@ export async function HistoricoDoContexto({ clienteId }: { readonly clienteId: s
                 <ul className="revisao__difs">
                   {revisao.diferencas.map((d, posicao) => (
                     <li key={`${posicao}-${d.chave}`}>
-                      <span className="mono">{d.chave}</span>: <del>{d.antes}</del> → <ins>{d.depois}</ins>
+                      <span className="strong">{d.chave}</span>: <del>{d.antes}</del> → <ins>{d.depois}</ins>
                     </li>
                   ))}
                   {revisao.diferencasOcultas > 0 ? <li className="subtle xsmall">e mais {revisao.diferencasOcultas}</li> : null}

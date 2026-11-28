@@ -100,4 +100,19 @@ describe('atividade: histórico do contexto', () => {
     assert.equal(revisoes[1]?.diferencas[0]?.depois, selecao.campo.opcoes[0]!.rotulo);
     assert.equal(revisoes[2]?.diferencas[0]?.chave, sub!.rotulo);
   });
+
+  it('metadados com rótulo do app, valor primeiro e sem ruído no primeiro preenchimento', () => {
+    const [criada, alterada] = visaoDasRevisoes(
+      [
+        { id: 'c', secao: 'empresa', chave: 'nome_empresa', operacao: 'criar', viaLink: false, em: em(-1), diferencas: [{ chave: 'epistemic', antes: null, depois: 'fato' }, { chave: 'shareable', antes: null, depois: false }, { chave: 'valor', antes: null, depois: 'Credaz' }] },
+        { id: 'a', secao: 'empresa', chave: 'nome_empresa', operacao: 'alterar', viaLink: false, em: em(-1), diferencas: [{ chave: 'shareable', antes: false, depois: true }, { chave: 'epistemic', antes: 'fato', depois: 'hipotese' }, { chave: 'source', antes: 'equipe', depois: 'cliente' }] },
+      ],
+      CATALOGO,
+      AGORA,
+    );
+    assert.deepEqual(criada?.diferencas, [{ chave: 'Valor', antes: '∅', depois: 'Credaz' }]);
+    assert.deepEqual(alterada?.diferencas.map((d) => d.chave), ['Visível ao cliente', 'Natureza', 'Fonte']);
+    assert.deepEqual(alterada?.diferencas[0], { chave: 'Visível ao cliente', antes: 'Não', depois: 'Sim' });
+    assert.equal(alterada?.diferencas[1]?.depois, 'Hipótese');
+  });
 });

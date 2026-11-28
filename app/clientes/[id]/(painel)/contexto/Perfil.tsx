@@ -31,6 +31,7 @@ export async function Perfil({ clienteId, secaoInicial, campoInicial }: Props) {
         <span className="contexto-mapa__total">
           <strong>{contexto.completude.geral}%</strong>
           <span className="subtle xsmall">preenchido</span>
+          <span className="contexto-mapa__seta" aria-hidden="true" />
         </span>
         <span className="contexto-mapa__barra">
           <Barra valor={contexto.completude.geral} rotulo="Mapa de contexto preenchido" />

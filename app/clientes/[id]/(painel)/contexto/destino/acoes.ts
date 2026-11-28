@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation';
 import { escopoDoClienteNaOrganizacao } from '@/../app/clientes/[id]/_escopo';
 import { modules } from '@/composition';
-import { comAviso, rotaDoCliente } from '@/modules/clients/domain/painel/enderecos';
+import { ANCORA_DO_MAPA, comAviso, rotaDoCliente } from '@/modules/clients/domain/painel/enderecos';
 import type { MemberRole } from '@/modules/identity/domain/user';
 import { atorAtual } from '@/shared/http/ator';
 import type { Failure } from '@/shared/result/failure';
@@ -17,7 +17,7 @@ function texto(formData: FormData, campo: string): string {
 }
 
 function voltar(clienteId: string, tipo: 'feito' | 'erro', mensagem: string): never {
-  redirect(comAviso(rotaDoCliente(clienteId, 'contexto', { secao: 'destino' }), tipo, mensagem.slice(0, LIMITE_DA_MENSAGEM)));
+  redirect(`${comAviso(rotaDoCliente(clienteId, 'contexto', { secao: 'destino' }), tipo, mensagem.slice(0, LIMITE_DA_MENSAGEM))}#${ANCORA_DO_MAPA}`);
 }
 
 async function executar<T>(formData: FormData, sucesso: string, chamar: (comando: { organizationId: string; clientId: string; papelDeQuemAge: MemberRole }) => Promise<Result<T, Failure>>): Promise<never> {

@@ -20,9 +20,11 @@ export default async function Contexto({
   return (
     <div className="pilha contexto">
       <AvisoEfemero erro={primeiro(busca['erro'])} feito={primeiro(busca['feito'])} />
-      <BrainView clienteId={cliente.id} />
+      <BrainView
+        clienteId={cliente.id}
+        depoisDoTopo={<Perfil clienteId={cliente.id} secaoInicial={secaoInicialDoMapa(primeiro(busca['secao']))} campoInicial={primeiro(busca['campo']) ?? null} />}
+      />
       <Cultura clienteId={cliente.id} />
-      <Perfil clienteId={cliente.id} secaoInicial={secaoInicialDoMapa(primeiro(busca['secao']))} campoInicial={primeiro(busca['campo']) ?? null} />
     </div>
   );
 }

@@ -75,16 +75,19 @@ function MarkdownDoCatalogo({ texto }: { readonly texto: string }) {
   );
 }
 
-export async function BrainView({ clienteId }: { readonly clienteId: string }) {
+export async function BrainView({ clienteId, depoisDoTopo }: { readonly clienteId: string; readonly depoisDoTopo: ReactNode }) {
   const { ctx, cliente } = await carregarPainel(clienteId);
   const buscado = await buscarBrainDoCliente({ organizationId: ctx.organization.id, clientId: cliente.id, papelDeQuemLe: ctx.role });
   if (!buscado.ok && buscado.motivo === 'nao_encontrado') notFound();
   if (!buscado.ok) {
     return (
-      <EstadoVazio
-        titulo="O Brain não respondeu agora"
-        texto="O índice deste cliente é montado na hora a partir das conexões, coletas e contexto. Tente de novo em instantes; se persistir, avise o time técnico."
-      />
+      <div className="pilha">
+        <EstadoVazio
+          titulo="O Brain não respondeu agora"
+          texto="O índice deste cliente é montado na hora a partir das conexões, coletas e contexto. Tente de novo em instantes; se persistir, avise o time técnico."
+        />
+        {depoisDoTopo}
+      </div>
     );
   }
   const brain = buscado.brain;
@@ -98,7 +101,7 @@ export async function BrainView({ clienteId }: { readonly clienteId: string }) {
 
   const cabecalho = (
     <div className="contexto-hero__topo">
-      <Anel valor={geral} rotulo="Mapa de contexto preenchido" tamanho={72} espessura={7} tom={tomDoPreenchimento(geral)} />
+      <Anel valor={geral} rotulo="Mapa de contexto preenchido" tamanho={72} espessura={7} tom={tomDoPreenchimento(geral)} rotuloVisivel={false} />
       <div className="contexto-hero__textos">
         <h2 className="contexto-hero__titulo" id="t-contexto-hero">
           {geral}% do contexto preenchido
@@ -123,7 +126,7 @@ export async function BrainView({ clienteId }: { readonly clienteId: string }) {
         </p>
       ) : null}
 
-      <ExploradorDoBrain clienteNome={cliente.name} entradas={brain.entradas} mapa={mapa} cabecalho={cabecalho} />
+      <ExploradorDoBrain clienteNome={cliente.name} entradas={brain.entradas} mapa={mapa} cabecalho={cabecalho} depoisDoMapa={depoisDoTopo} />
 
       <details className="card brain-recolhivel">
         <summary className="card__head">
