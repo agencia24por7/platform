@@ -2,7 +2,6 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { CopyButton } from '@/../app/_components/CopyButton';
-import { CabecalhoDeSecao } from '@/../app/clientes/[id]/_componentes/CabecalhoDeSecao';
 import { EstadoVazio } from '@/../app/clientes/[id]/_componentes/EstadoVazio';
 import { Anel } from '@/../app/clientes/[id]/_componentes/Anel';
 import { buscarBrainDoCliente } from '@/../app/clientes/[id]/_brain/fonte';
@@ -11,6 +10,7 @@ import { ExploradorDoBrain } from '@/../app/clientes/[id]/(painel)/contexto/brai
 import { separarPorPreenchimento } from '@/modules/clients/domain/painel/brain/preenchimento';
 import { montarMapa } from '@/modules/clients/domain/painel/brain/mapa';
 import { ROTULO_DO_FRESCOR, type Capacidade } from '@/modules/clients/domain/painel/brain/tipos';
+import { rotaDoMapaDeContexto } from '@/modules/clients/domain/painel/enderecos';
 import { tempoRelativo } from '@/modules/clients/domain/painel/resumo';
 
 const ESTADO: Record<Capacidade['estado'], { readonly rotulo: string; readonly classe: string }> = {
@@ -92,22 +92,29 @@ export async function BrainView({ clienteId }: { readonly clienteId: string }) {
   const agora = new Date();
   const totalPreenchidas = separarPorPreenchimento(brain.entradas).preenchidas.length;
   const tabelas = brain.entradas.filter((e) => e.tipo === 'tabela_de_dados' && e.cobertura.ultimos90Dias);
+  const geral = contexto?.completude.geral ?? brain.pulso.completudeDoContexto;
+  const disponiveis = brain.capacidades.filter((c) => c.estado === 'disponivel').length;
+
+  const cabecalho = (
+    <div className="contexto-hero__topo">
+      <Anel valor={geral} rotulo="Mapa de contexto preenchido" tamanho={72} espessura={7} tom={geral >= 70 ? 'ok' : geral >= 40 ? 'acento' : 'alerta'} />
+      <div className="contexto-hero__textos">
+        <h2 className="contexto-hero__titulo" id="t-contexto-hero">
+          {geral}% do contexto preenchido
+        </h2>
+        <p className="subtle small" title={`Versão ${brain.versao}`}>
+          {totalPreenchidas} {totalPreenchidas === 1 ? 'entrada' : 'entradas'} no Brain · {contexto ? (ROTULO_DO_BRAIN[contexto.brain.situacao] ?? contexto.brain.situacao) : 'situação indisponível'} · atualizado{' '}
+          {tempoRelativo(new Date(brain.atualizadoEm), agora)}
+        </p>
+      </div>
+      <Link className="btn" href={rotaDoMapaDeContexto(cliente.id)}>
+        Editar o mapa
+      </Link>
+    </div>
+  );
 
   return (
     <div className="brain pilha">
-      <CabecalhoDeSecao titulo="Brain" descricao="Só leitura: o que o motor enxerga. Para editar, use o Mapa de contexto." />
-      <dl className="fatos">
-        <div className="fatos__item">
-          <dt className="fatos__rotulo">Brain publicado</dt>
-          <dd>{contexto ? (ROTULO_DO_BRAIN[contexto.brain.situacao] ?? contexto.brain.situacao) : '—'}</dd>
-        </div>
-        {contexto?.brain.exportadoEm ? (
-          <div className="fatos__item">
-            <dt className="fatos__rotulo">Última publicação</dt>
-            <dd>{contexto.brain.exportadoEm.toLocaleString('pt-BR')}</dd>
-          </div>
-        ) : null}
-      </dl>
       {brain.origem === 'exemplo' ? (
         <p className="faixa-de-exemplo" role="note">
           <strong>Prévia.</strong> Conexões e contexto são reais; cobertura, frescor das tabelas e esquemas são de exemplo até o
@@ -115,85 +122,58 @@ export async function BrainView({ clienteId }: { readonly clienteId: string }) {
         </p>
       ) : null}
 
-      <section className="pulso" aria-labelledby="t-pulso">
-        <div className="pulso__anel">
-          <Anel valor={brain.pulso.saude} rotulo="Saúde do Brain" tamanho={72} espessura={7} tom={brain.pulso.saude >= 70 ? 'ok' : brain.pulso.saude >= 40 ? 'acento' : 'alerta'} />
-        </div>
-        <div className="pulso__texto">
-          <div className="pulso__cabeca">
-            <h2 className="pulso__titulo" id="t-pulso">Pulso do Brain</h2>
-            <p className="subtle small" title={`Versão ${brain.versao}`}>
-              {totalPreenchidas} {totalPreenchidas === 1 ? 'entrada preenchida' : 'entradas preenchidas'} · atualizado {tempoRelativo(new Date(brain.atualizadoEm), agora)}
-            </p>
-          </div>
-          <dl className="pulso__medidas">
-            <div className="medida">
-              <dt>Cobertura</dt>
-              <dd>{brain.pulso.cobertura}%</dd>
-              <dd className="medida__ajuda" title="dias com dado nos últimos 90">dias com dado nos últimos 90</dd>
-            </div>
-            <div className="medida">
-              <dt>Frescor</dt>
-              <dd>{brain.pulso.frescor}%</dd>
-              <dd className="medida__ajuda" title="conexões coletando em dia">conexões coletando em dia</dd>
-            </div>
-            <div className="medida">
-              <dt>Contexto</dt>
-              <dd>{brain.pulso.completudeDoContexto}%</dd>
-              <dd className="medida__ajuda" title="mapa de contexto preenchido">mapa de contexto preenchido</dd>
-            </div>
-          </dl>
-        </div>
-      </section>
+      <ExploradorDoBrain clienteNome={cliente.name} entradas={brain.entradas} mapa={mapa} cabecalho={cabecalho} />
 
-      <ExploradorDoBrain clienteNome={cliente.name} entradas={brain.entradas} mapa={mapa} />
+      <details className="card brain-recolhivel">
+        <summary className="card__head">
+          <h2 className="card__title" id="t-capacidades">O que o Brain consegue responder</h2>
+          <span className="card__sub">
+            {disponiveis} de {brain.capacidades.length} disponíveis
+          </span>
+        </summary>
+        <ul className="capacidades">
+          {brain.capacidades.map((c) => (
+            <li key={c.id} className={`capacidade capacidade--${c.estado}`}>
+              <div className="capacidade__topo">
+                <span className="capacidade__pergunta">{c.pergunta}</span>
+                <span className={`pill ${ESTADO[c.estado].classe}`}>{ESTADO[c.estado].rotulo}</span>
+              </div>
+              {c.falta.length > 0 ? <p className="subtle small">Falta: {c.falta.join(' · ')}</p> : <p className="subtle small">Com base em {c.evidencias.length} entrada(s).</p>}
+              {c.acao ? (
+                <Link className="quiet-link capacidade__acao" href={c.acao.href}>
+                  {c.acao.rotulo} →
+                </Link>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </details>
 
-      <div className="brain__grade">
-        <section className="card" aria-labelledby="t-capacidades">
-          <div className="card__head">
-            <h2 className="card__title" id="t-capacidades">O que o Brain consegue responder</h2>
-            <span className="card__sub">{brain.capacidades.filter((c) => c.estado === 'disponivel').length} de {brain.capacidades.length} disponíveis</span>
-          </div>
-          <ul className="capacidades">
-            {brain.capacidades.map((c) => (
-              <li key={c.id} className={`capacidade capacidade--${c.estado}`}>
-                <div className="capacidade__topo">
-                  <span className="capacidade__pergunta">{c.pergunta}</span>
-                  <span className={`pill ${ESTADO[c.estado].classe}`}>{ESTADO[c.estado].rotulo}</span>
+      <details className="card brain-recolhivel">
+        <summary className="card__head">
+          <h2 className="card__title" id="t-fila">Próximas ações</h2>
+          <span className="card__sub">por impacto · {brain.acoes.length}</span>
+        </summary>
+        {brain.acoes.length === 0 ? (
+          <EstadoVazio titulo="Nada pendente" />
+        ) : (
+          <ol className="acoes-lista">
+            {brain.acoes.map((a) => (
+              <li key={a.id} className={`acao acao--${a.impacto === 3 ? 'alta' : 'media'}`}>
+                <div className="acao__texto">
+                  <span className="acao__titulo">{a.titulo}</span>
+                  <span className="acao__porque">
+                    {IMPACTO[a.impacto]} · {a.porque}
+                  </span>
                 </div>
-                {c.falta.length > 0 ? <p className="subtle small">Falta: {c.falta.join(' · ')}</p> : <p className="subtle small">Com base em {c.evidencias.length} entrada(s).</p>}
-                {c.acao ? (
-                  <Link className="quiet-link capacidade__acao" href={c.acao.href}>
-                    {c.acao.rotulo} →
-                  </Link>
-                ) : null}
+                <Link className="btn btn--compacto" href={a.href}>
+                  {a.rotulo}
+                </Link>
               </li>
             ))}
-          </ul>
-        </section>
-
-        <section className="card" aria-labelledby="t-fila">
-          <div className="card__head">
-            <h2 className="card__title" id="t-fila">Próximas ações</h2>
-            <span className="card__sub">por impacto</span>
-          </div>
-          {brain.acoes.length === 0 ? (
-            <EstadoVazio titulo="Nada pendente" />
-          ) : (
-            <ol className="acoes-lista">
-              {brain.acoes.map((a) => (
-                <li key={a.id} className={`acao acao--${a.impacto === 3 ? 'alta' : 'media'}`}>
-                  <div className="acao__texto">
-                    <span className="acao__titulo">{a.titulo}</span>
-                    <span className="acao__porque">{IMPACTO[a.impacto]} · {a.porque}</span>
-                  </div>
-                  <Link className="btn btn--compacto" href={a.href}>{a.rotulo}</Link>
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
-      </div>
+          </ol>
+        )}
+      </details>
 
       <details className="card brain-recolhivel">
         <summary className="card__head">

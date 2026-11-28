@@ -20,4 +20,10 @@ describe('visão do destino do cliente', () => {
     assert.equal(visao.semPaginas, 'Nenhuma landing page cadastrada.');
     assert.match(visaoDoDestino({ whatsapp: null, paginas: [], podeEditar: true }).semPaginas, /Cadastre/);
   });
+
+  it('progresso conta WhatsApp e ao menos uma página ativa, metade cada', () => {
+    assert.deepEqual(visaoDoDestino({ whatsapp: null, paginas: [pagina('c', 'Antiga', new Date())], podeEditar: true }).progresso, { percentual: 0, completo: false, resumo: 'Sem WhatsApp · nenhuma página' });
+    assert.deepEqual(visaoDoDestino({ whatsapp: '+55', paginas: [], podeEditar: true }).progresso, { percentual: 50, completo: false, resumo: 'WhatsApp ok · nenhuma página' });
+    assert.deepEqual(visaoDoDestino({ whatsapp: '+55', paginas: [pagina('a', 'A'), pagina('b', 'B')], podeEditar: true }).progresso, { percentual: 100, completo: true, resumo: 'WhatsApp ok · 2 páginas' });
+  });
 });

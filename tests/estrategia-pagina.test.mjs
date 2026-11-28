@@ -324,7 +324,7 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
     assert.match(texto, /R\$ [\d.]+,\d{2}/);
     const marcas = [...texto.matchAll(/<a class="marca" title="([^"]+)" href="([^"]+)"/g)];
     for (const [, urn, href] of marcas) {
-      assert.equal(href, `/clientes/${clientes.pronto}/contexto?secao=brain`);
+      assert.equal(href, `/clientes/${clientes.pronto}/contexto`);
       assert.ok(urn.startsWith(`orla:${ids.org}:${clientes.pronto}:`), urn);
     }
     assert.ok(habilitado(texto, 'Aplicar o plano'));
@@ -757,7 +757,7 @@ describe('Estratégia: lista de planos e página do plano (ADR 0055 e 0065 §10)
       assert.ok(marca(texto, 'Limite: Teto mensal de investimento'), 'marca do limite do cliente');
       assert.match(semScripts(texto), />\s*hipótese\s*</);
       for (const [, , href] of semScripts(texto).matchAll(/<a class="marca"( title="[^"]*")? href="([^"]+)"/g)) {
-        assert.equal(href, `/clientes/${brain.edicao.cli}/contexto?secao=brain`);
+        assert.equal(href, `/clientes/${brain.edicao.cli}/contexto`);
       }
       const rotulos = [...semScripts(texto).matchAll(/<span class="marca__texto">([^<]+)<\/span>/g)].map((caso) => caso[1]);
       assert.ok(rotulos.every((rotulo) => !/^[a-z_]+$/.test(rotulo)), `nenhuma marca com o tipo cru da URN: ${rotulos.join(' | ')}`);

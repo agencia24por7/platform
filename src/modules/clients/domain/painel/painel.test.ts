@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { ABAS_DO_CLIENTE, ROTULO_DA_ABA, abaComAcaoNoCabecalho, abaDoSegmento, rotaDaAtividade, ROTULO_DA_SECAO_DE_CONTEXTO, SECOES_DE_CONTEXTO, comAviso, destinoSeguro, enderecoDoFormulario, idValido, rotaDoCliente, secaoDeContexto } from './enderecos.ts';
+import { ABAS_DO_CLIENTE, ROTULO_DA_ABA, abaComAcaoNoCabecalho, abaDoSegmento, rotaDaAtividade, comAviso, destinoSeguro, enderecoDoFormulario, idValido, rotaDoCliente, rotaDoMapaDeContexto, secaoInicialDoMapa } from './enderecos.ts';
 import { formatarCentavos, mascararDinheiro, normalizarArrobaDigitado, numeroDeTexto, tamanhoLegivel } from './formato.ts';
 import { mensagemProntaDoLink, minutosEstimados, secoesDoPreset } from './mensagem.ts';
 import { barrasDaSecao, resumirCompletude, saudeDosDados, tempoRelativo } from './resumo.ts';
@@ -39,12 +39,14 @@ describe('endereços do painel do cliente', () => {
     assert.equal(abaDoSegmento('contas'), 'conexoes');
   });
 
-  it('seções do Contexto: Mapa de contexto é o padrão e o Destino é uma seção própria', () => {
-    assert.deepEqual([...SECOES_DE_CONTEXTO], ['perfil', 'brain', 'destino']);
-    assert.deepEqual(SECOES_DE_CONTEXTO.map((s) => ROTULO_DA_SECAO_DE_CONTEXTO[s]), ['Mapa de contexto', 'Brain', 'Destino']);
-    assert.equal(secaoDeContexto('destino'), 'destino');
-    assert.equal(secaoDeContexto('xyz'), 'perfil');
-    assert.equal(secaoDeContexto(undefined), 'perfil');
+  it('o Mapa de contexto abre na seção pedida e ignora as subabas antigas', () => {
+    assert.equal(secaoInicialDoMapa('destino'), 'destino');
+    assert.equal(secaoInicialDoMapa('produtos'), 'produtos');
+    assert.equal(secaoInicialDoMapa('brain'), null);
+    assert.equal(secaoInicialDoMapa('perfil'), null);
+    assert.equal(secaoInicialDoMapa('<script>'), null);
+    assert.equal(secaoInicialDoMapa(undefined), null);
+    assert.equal(rotaDoMapaDeContexto(ID, 'marca', 'logo'), `/clientes/${ID}/contexto?secao=marca&campo=logo#mapa-de-contexto`);
   });
 
   it('só aceita destino dentro do próprio cliente', () => {

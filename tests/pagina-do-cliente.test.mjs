@@ -69,7 +69,7 @@ describe('página do cliente: abas, papéis e formulário público', { concurren
       ['/dados', '/conexoes'],
       ['/acessos', '/atividade'],
       ['/acessos?enviar=contexto', '/conexoes?enviar=contexto'],
-      ['/brain', '/contexto?secao=brain'],
+      ['/brain', '/contexto'],
       ['/configuracoes', '/conexoes'],
       ['/dados?feito=Ok', '/conexoes?feito=Ok'],
     ];
@@ -220,7 +220,7 @@ describe('página do cliente: abas, papéis e formulário público', { concurren
     const internos = [`NOTA-${sufixo}`, `HIPOTESE-${sufixo}`, `SUGESTAO-${sufixo}`, `INTERNO-${sufixo}`, `ANTIGO-INTERNO-${sufixo}`];
 
     signIn(pessoas.viewer);
-    for (const rota of ['/contexto', '/contexto?secao=brain', '/conexoes']) {
+    for (const rota of ['/contexto', '/contexto?secao=marca', '/conexoes', '/atividade']) {
       const { status, texto } = await html(`/clientes/${cliente}${rota}`);
       assert.equal(status, 200, rota);
       for (const interno of internos) assert.ok(!texto.includes(interno), `${interno} vazou para quem só vê em ${rota}`);

@@ -36,17 +36,17 @@ export function rotaDaAtividade(clienteId: string, secao: SecaoDeAtividade, busc
   return `${rotaDoCliente(clienteId, 'atividade', busca)}#${ancoraDaAtividade(secao)}`;
 }
 
-export const SECOES_DE_CONTEXTO = ['perfil', 'brain', 'destino'] as const;
-export type SecaoDeContexto = (typeof SECOES_DE_CONTEXTO)[number];
+const SECOES_ANTIGAS_DO_CONTEXTO = new Set(['perfil', 'brain']);
 
-export const ROTULO_DA_SECAO_DE_CONTEXTO: Record<SecaoDeContexto, string> = {
-  perfil: 'Mapa de contexto',
-  brain: 'Brain',
-  destino: 'Destino',
-};
+export const ANCORA_DO_MAPA = 'mapa-de-contexto';
 
-export function secaoDeContexto(bruto: string | null | undefined): SecaoDeContexto {
-  return bruto === 'brain' || bruto === 'destino' ? bruto : 'perfil';
+export function rotaDoMapaDeContexto(clienteId: string, secao = 'empresa', campo: string | null = null): string {
+  return `${rotaDoCliente(clienteId, 'contexto', { secao, campo })}#${ANCORA_DO_MAPA}`;
+}
+
+export function secaoInicialDoMapa(bruto: string | null | undefined): string | null {
+  if (!bruto || SECOES_ANTIGAS_DO_CONTEXTO.has(bruto) || !/^[a-z_]{1,40}$/.test(bruto)) return null;
+  return bruto;
 }
 
 export const SECOES_DE_ESTRATEGIA = ['plano', 'comite', 'gates', 'historico'] as const;
@@ -71,7 +71,7 @@ const DESTINO_DO_LEGADO: Record<SegmentoLegado, { readonly aba: AbaDoCliente; re
   dados: { aba: 'conexoes', secao: null },
   acessos: { aba: 'atividade', secao: null },
   configuracoes: { aba: 'conexoes', secao: null },
-  brain: { aba: 'contexto', secao: 'brain' },
+  brain: { aba: 'contexto', secao: null },
 };
 
 export function destinoDaRotaLegada(

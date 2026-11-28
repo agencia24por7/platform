@@ -45,7 +45,7 @@ describe('rotas antigas do cliente', () => {
     assert.equal(destinoDaRotaLegada(ID, 'visao'), `/clientes/${ID}/conexoes`);
     assert.equal(destinoDaRotaLegada(ID, 'dados'), `/clientes/${ID}/conexoes`);
     assert.equal(destinoDaRotaLegada(ID, 'acessos'), `/clientes/${ID}/atividade`);
-    assert.equal(destinoDaRotaLegada(ID, 'brain'), `/clientes/${ID}/contexto?secao=brain`);
+    assert.equal(destinoDaRotaLegada(ID, 'brain'), `/clientes/${ID}/contexto`);
     assert.equal(destinoDaRotaLegada(ID, 'configuracoes'), `/clientes/${ID}/conexoes`);
   });
   it('enviar=contexto abre o pedido em Conexões em qualquer rota antiga', () => {

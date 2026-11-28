@@ -1,8 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CampoAutosalvo, type EstadoDoSalvar, type ResultadoDoSalvar } from '@/../app/_components/contexto/CampoAutosalvo';
+import { CampoEmLeitura } from '@/../app/_components/contexto/CampoEmLeitura';
+import { Icone } from '@/../app/clientes/[id]/_componentes/Icones';
 import { EnvioDeArquivo, type ArquivoEnviado } from '@/../app/_components/contexto/EnvioDeArquivo';
 import { ListaEditavel, type ItemDaLista, type RespostaDaLista } from '@/../app/_components/contexto/ListaEditavel';
 import { Barra } from '@/../app/clientes/[id]/_componentes/Anel';
@@ -11,7 +13,6 @@ import {
   alterarItemAcao,
   compartilharSecaoAcao,
   confirmarSugestaoAcao,
-  listarRevisoesAcao,
   marcarAcao,
   recarregarContextoAcao,
   removerArquivoAcao,
@@ -21,7 +22,6 @@ import {
   type DadosDoEditor,
   type Resposta,
 } from '@/../app/clientes/[id]/(painel)/contexto/acoes';
-import type { RevisaoDeContexto } from '@/modules/clients/application/contextoService';
 import {
   EPISTEMICOS,
   ROTULO_EPISTEMICO,
@@ -29,8 +29,8 @@ import {
   type Campo,
   type CampoSimples,
   type Epistemico,
-  type Secao,
 } from '@/modules/clients/domain/contexto/catalogo';
+import { textoDoValor } from '@/modules/clients/domain/contexto/leitura';
 import { calcularCompletude } from '@/modules/clients/domain/contexto/completude';
 import type { ArquivoDeContexto, EntradaDeCampo, ItemDeLista, Marcacao } from '@/modules/clients/domain/contexto/tipos';
 import type { OrganizationType } from '@/modules/organizations/domain/organization';
@@ -39,7 +39,10 @@ import { campoEhHerdado } from '@/modules/clients/domain/contexto/heranca';
 import { traduzirCatalogo } from '@/modules/clients/domain/contexto/vocabulario';
 import { catalogoDaVisao, type VisaoDoContexto } from '@/modules/clients/domain/contexto/visaoDoCliente';
 import { rotaDoCliente } from '@/modules/clients/domain/painel/enderecos';
+import { PASSO_DO_DESTINO, resumoDoMapa, vizinhosDoPasso, type ProgressoDoDestino } from '@/modules/clients/domain/painel/mapaDeContexto';
 import { barrasDaSecao } from '@/modules/clients/domain/painel/resumo';
+
+const ESTADOS_EM_ANDAMENTO: readonly EstadoDoSalvar[] = ['pendente', 'salvando', 'erro', 'conflito'];
 
 type Props = {
   readonly tipo: OrganizationType;
@@ -49,6 +52,7 @@ type Props = {
   readonly podeEditar: boolean;
   readonly secaoInicial: string | null;
   readonly campoInicial: string | null;
+  readonly destino: { readonly conteudo: ReactNode; readonly progresso: ProgressoDoDestino | null };
 };
 
 const DESTAQUES = [
@@ -124,20 +128,20 @@ function IndicadorDoCampo({
   );
 }
 
-export function EditorDeContexto({ tipo, clienteId, dados, visao, podeEditar, secaoInicial, campoInicial }: Props) {
+export function EditorDeContexto({ tipo, clienteId, dados, visao, podeEditar, secaoInicial, campoInicial, destino }: Props) {
   const vocabulario = vocabularioDe(tipo);
   const catalogo = useMemo(() => traduzirCatalogo(catalogoDaVisao(visao), tipo), [visao, tipo]);
   const [entradas, setEntradas] = useState<Record<string, EntradaDeCampo>>({ ...dados.campos });
   const [listas, setListas] = useState<Record<string, readonly ItemDeLista[]>>({ ...dados.listas });
   const [arquivos, setArquivos] = useState<readonly ArquivoDeContexto[]>(dados.arquivos);
-  const [ativa, setAtiva] = useState<string>(catalogo.some((s) => s.key === secaoInicial) ? secaoInicial! : 'empresa');
+  const [ativa, setAtiva] = useState<string>(secaoInicial && (secaoInicial === PASSO_DO_DESTINO || catalogo.some((s) => s.key === secaoInicial)) ? secaoInicial : 'empresa');
   const [realce, setRealce] = useState<string | null>(campoInicial);
   const [estados, setEstados] = useState<Record<string, EstadoDoSalvar>>({});
   const [ultimoSalvo, setUltimoSalvo] = useState<Date | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
-  const [revisoes, setRevisoes] = useState<readonly RevisaoDeContexto[] | null>(null);
   const [geracao, setGeracao] = useState(0);
-  const historico = useRef<HTMLDialogElement>(null);
+  const [editando, setEditando] = useState<ReadonlySet<string>>(() => new Set(campoInicial ? [campoInicial] : []));
+  const fecharAoSalvar = useRef(new Set<string>());
   const topoDaSecao = useRef<HTMLHeadingElement>(null);
 
   const completude = useMemo(
@@ -150,13 +154,43 @@ export function EditorDeContexto({ tipo, clienteId, dados, visao, podeEditar, se
     [entradas, listas, arquivos],
   );
 
+  const mapa = useMemo(() => resumoDoMapa(catalogo, completude, destino.progresso), [catalogo, completude, destino.progresso]);
+  const noDestino = ativa === PASSO_DO_DESTINO && destino.progresso !== null;
   const secao = catalogo.find((s) => s.key === ativa) ?? catalogo[0]!;
-  const indice = catalogo.indexOf(secao);
+  const vizinhos = vizinhosDoPasso(mapa.passos, noDestino ? PASSO_DO_DESTINO : secao.key);
 
-  const aoEstado = useCallback((chave: string, estado: EstadoDoSalvar) => {
-    setEstados((atual) => (atual[chave] === estado ? atual : { ...atual, [chave]: estado }));
-    if (estado === 'salvo') setUltimoSalvo(new Date());
+  const sairDaEdicao = useCallback((chave: string) => {
+    setEditando((atual) => {
+      if (!atual.has(chave)) return atual;
+      const proximo = new Set(atual);
+      proximo.delete(chave);
+      return proximo;
+    });
   }, []);
+
+  const aoEstado = useCallback(
+    (chave: string, estado: EstadoDoSalvar) => {
+      setEstados((atual) => (atual[chave] === estado ? atual : { ...atual, [chave]: estado }));
+      if (estado === 'salvo') setUltimoSalvo(new Date());
+      if (estado === 'salvo' && fecharAoSalvar.current.delete(chave)) sairDaEdicao(chave);
+    },
+    [sairDaEdicao],
+  );
+
+  function editar(chave: string) {
+    fecharAoSalvar.current.delete(chave);
+    setEditando((atual) => new Set(atual).add(chave));
+    setRealce(chave);
+  }
+
+  function concluir(chave: string) {
+    if (realce === chave) setRealce(null);
+    if (ESTADOS_EM_ANDAMENTO.includes(estados[chave] ?? 'ocioso')) {
+      fecharAoSalvar.current.add(chave);
+      return;
+    }
+    sairDaEdicao(chave);
+  }
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -245,13 +279,6 @@ export function EditorDeContexto({ tipo, clienteId, dados, visao, podeEditar, se
     setEntradas({ ...r.valor.campos });
     setListas({ ...r.valor.listas });
     setAviso(valor ? vocabulario.avisoDeCompartilhou : vocabulario.avisoDeDescompartilhou);
-  }
-
-  async function abrirHistorico() {
-    historico.current?.showModal();
-    setRevisoes(null);
-    const r = await listarRevisoesAcao(clienteId, null);
-    setRevisoes(r.ok ? r.valor : []);
   }
 
   async function recarregarTudo() {
@@ -384,6 +411,31 @@ export function EditorDeContexto({ tipo, clienteId, dados, visao, podeEditar, se
       );
     }
     const entrada = entradas[campo.key];
+    const selos = (
+      <IndicadorDoCampo
+        vocabulario={vocabulario}
+        marcacao={entrada && !campoEhHerdado(entrada) ? entrada : null}
+        interno={!campo.visivelAoCliente}
+        herdado={Boolean(entrada && campoEhHerdado(entrada))}
+        podeEditar={podeEditar}
+        aoMarcar={(ep) => void marcarCampo(campo.key, ep)}
+        aoConfirmar={() => void confirmarCampo(campo.key)}
+      />
+    );
+    const texto = textoDoValor(campo, entrada?.valor);
+    if (texto !== null && !editando.has(campo.key)) {
+      return (
+        <CampoEmLeitura
+          key={`${campo.key}-${geracao}`}
+          chave={campo.key}
+          rotulo={campo.rotulo}
+          essencial={campo.nivel === 'essencial'}
+          texto={texto}
+          selos={selos}
+          aoEditar={podeEditar ? () => editar(campo.key) : null}
+        />
+      );
+    }
     return (
       <CampoAutosalvo
         key={`${campo.key}-${geracao}`}
@@ -397,16 +449,13 @@ export function EditorDeContexto({ tipo, clienteId, dados, visao, podeEditar, se
         aoEstado={aoEstado}
         desabilitado={!podeEditar}
         realce={realce === campo.key}
-        selos={
-          <IndicadorDoCampo
-            vocabulario={vocabulario}
-            marcacao={entrada && !campoEhHerdado(entrada) ? entrada : null}
-            interno={!campo.visivelAoCliente}
-            herdado={Boolean(entrada && campoEhHerdado(entrada))}
-            podeEditar={podeEditar}
-            aoMarcar={(ep) => void marcarCampo(campo.key, ep)}
-            aoConfirmar={() => void confirmarCampo(campo.key)}
-          />
+        selos={selos}
+        rodape={
+          editando.has(campo.key) ? (
+            <button type="button" className="btn btn--compacto campo__concluir" onClick={() => concluir(campo.key)}>
+              <Icone nome="ok" tamanho={14} /> Concluir
+            </button>
+          ) : null
         }
       />
     );
@@ -435,10 +484,6 @@ export function EditorDeContexto({ tipo, clienteId, dados, visao, podeEditar, se
             </button>
           ))}
         </div>
-        <span className="spacer" />
-        <button type="button" className="btn btn--compacto" onClick={() => void abrirHistorico()}>
-          Histórico
-        </button>
       </div>
 
       {aviso ? (
@@ -456,155 +501,136 @@ export function EditorDeContexto({ tipo, clienteId, dados, visao, podeEditar, se
 
       <div className="editor__corpo">
         <nav className="passos" aria-label="Seções do mapa de contexto">
+          <div className="passos__geral">
+            <span className="passos__geral-rotulo">Preenchimento geral</span>
+            <span className="passos__geral-valor">{mapa.geral}%</span>
+            <Barra valor={mapa.geral} rotulo="Preenchimento geral do mapa de contexto" />
+            <span className="subtle xsmall">
+              {mapa.concluidos} de {mapa.passos.length} com o essencial
+            </span>
+          </div>
           <label className="passos__seletor">
             <span className="visualmente-oculto">Ir para a seção</span>
-            <select className="select" value={ativa} onChange={(e) => irPara(e.target.value)}>
-              {catalogo.map((s) => {
-                const c = completude.secoes.find((x) => x.secao === s.key);
-                return <option key={s.key} value={s.key}>{s.letra} · {s.titulo} — {c ? barrasDaSecao(c).progresso : 0}%</option>;
-              })}
+            <select className="select" value={noDestino ? PASSO_DO_DESTINO : secao.key} onChange={(e) => irPara(e.target.value)}>
+              {mapa.passos.map((passo) => (
+                <option key={passo.chave} value={passo.chave}>
+                  {passo.marca} · {passo.titulo}
+                </option>
+              ))}
             </select>
           </label>
           <ol className="passos__lista">
-            {catalogo.map((s: Secao) => {
-              const c = completude.secoes.find((x) => x.secao === s.key);
-              const b = c ? barrasDaSecao(c) : null;
-              return (
-                <li key={s.key}>
-                  <button
-                    type="button"
-                    className={`passo passo--${b?.estado ?? 'vazia'}`}
-                    aria-current={s.key === ativa ? 'step' : undefined}
-                    onClick={() => irPara(s.key)}
-                  >
-                    <span className="passo__letra" aria-hidden="true">{b?.estado === 'completa' || b?.estado === 'essencial_ok' ? '✓' : s.letra}</span>
-                    <span className="passo__texto">
-                      <span className="passo__titulo">{s.titulo}</span>
-                      <span className="passo__barras">
-                        <Barra valor={b?.progresso ?? 0} rotulo={`${s.titulo}, progresso`} />
-                      </span>
-                    </span>
-                    <span className="passo__pct">{b?.progresso ?? 0}%</span>
-                  </button>
-                </li>
-              );
-            })}
+            {mapa.passos.map((passo) => (
+              <li key={passo.chave}>
+                <button
+                  type="button"
+                  className={`passo passo--${passo.estado}`}
+                  aria-current={passo.chave === (noDestino ? PASSO_DO_DESTINO : secao.key) ? 'step' : undefined}
+                  onClick={() => irPara(passo.chave)}
+                >
+                  <span className="passo__letra" aria-hidden="true">
+                    {passo.marca}
+                  </span>
+                  <span className="passo__titulo">{passo.titulo}</span>
+                  {passo.concluido ? <span className="visualmente-oculto">, essencial preenchido</span> : null}
+                </button>
+              </li>
+            ))}
           </ol>
         </nav>
 
-        <section className="card secao-editor" aria-labelledby="secao-titulo">
-          <header className="secao-editor__topo">
-            <span className="secao-editor__letra" aria-hidden="true">{secao.letra}</span>
-            <div className="secao-editor__textos">
-              <h2 className="secao-editor__titulo" id="secao-titulo" tabIndex={-1} ref={topoDaSecao}>
-                {secao.titulo}
-              </h2>
-              <p className="subtle small">{secao.descricao}</p>
-              {secao.key === 'objetivos' || secao.key === 'restricoes' ? (
-                <Link className="btn btn--compacto atalho-regras" href={rotaDoCliente(clienteId, 'regras')}>
-                  Ver em Regras
-                </Link>
+        {noDestino ? (
+          <section className="card secao-editor" aria-labelledby="secao-titulo">
+            <header className="secao-editor__topo">
+              <span className="secao-editor__letra" aria-hidden="true">
+                →
+              </span>
+              <div className="secao-editor__textos">
+                <h2 className="secao-editor__titulo" id="secao-titulo" tabIndex={-1} ref={topoDaSecao}>
+                  Destino
+                </h2>
+                <p className="subtle small">WhatsApp e landing pages que os planos de Estratégia usam nos links. {destino.progresso?.resumo}</p>
+              </div>
+            </header>
+            <div className="secao-editor__campos">{destino.conteudo}</div>
+            <footer className="secao-editor__rodape">
+              <button type="button" className="btn" disabled={!vizinhos.anterior} onClick={() => vizinhos.anterior && irPara(vizinhos.anterior.chave)}>
+                ← {vizinhos.anterior?.titulo ?? 'Anterior'}
+              </button>
+            </footer>
+          </section>
+        ) : (
+          <section className="card secao-editor" aria-labelledby="secao-titulo">
+            <header className="secao-editor__topo">
+              <span className="secao-editor__letra" aria-hidden="true">{secao.letra}</span>
+              <div className="secao-editor__textos">
+                <h2 className="secao-editor__titulo" id="secao-titulo" tabIndex={-1} ref={topoDaSecao}>
+                  {secao.titulo}
+                </h2>
+                <p className="subtle small">{secao.descricao}</p>
+                {secao.key === 'objetivos' || secao.key === 'restricoes' ? (
+                  <Link className="btn btn--compacto atalho-regras" href={rotaDoCliente(clienteId, 'regras')}>
+                    Ver em Regras
+                  </Link>
+                ) : null}
+              </div>
+              {podeEditar ? (
+                <label className="interruptor" title={vocabulario.dicaDeCompartilhar}>
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    checked={secaoCompartilhada}
+                    disabled={respostasDaSecao.length === 0}
+                    onChange={(e) => void compartilhar(e.target.checked)}
+                  />
+                  <span className="interruptor__trilho" aria-hidden="true" />
+                  <span className="small">{vocabulario.rotuloDeCompartilhar}</span>
+                </label>
+              ) : null}
+            </header>
+
+            <div className="secao-editor__campos" key={secao.key}>
+              {secao.key === 'empresa' ? (
+                <section className="cadastro-herdado" aria-label={noVocabularioDe(tipo, 'Dados do cadastro do cliente')}>
+                  <dl className="cadastro-herdado__lista">
+                    <div className="cadastro-herdado__item">
+                      <dt>Modelo de negócio</dt>
+                      <dd>{dados.cadastro.modeloDeOperacao === 'ecommerce' ? 'E-commerce' : 'Geração de leads'}</dd>
+                    </div>
+                    <div className="cadastro-herdado__item">
+                      <dt>Pertence a uma rede</dt>
+                      <dd>{dados.cadastro.temRede ? (dados.cadastro.redeNome ? `Sim, filial de ${dados.cadastro.redeNome}` : 'Sim') : 'Não'}</dd>
+                    </div>
+                  </dl>
+                  <p className="cadastro-herdado__nota xsmall subtle">{noVocabularioDe(tipo, 'Vêm do cadastro do cliente e não se editam aqui.')}</p>
+                </section>
+              ) : null}
+              <div className="nivel nivel--essencial">
+                <h3 className="nivel__titulo">Essencial</h3>
+                {essenciais.map(renderizarCampo)}
+              </div>
+              {aprofundar.length > 0 ? (
+                <details className="nivel nivel--aprofundar" open={aprofundarAberto}>
+                  <summary className="nivel__titulo">
+                    Aprofundar <span className="subtle xsmall">opcional, melhora o resultado · {aprofundarFeitos} de {aprofundar.length} campos</span>
+                  </summary>
+                  <Barra valor={barrasAtivas?.aprofundar.percentual ?? 0} rotulo={`${secao.titulo}, aprofundar`} tom="suave" />
+                  {aprofundar.map(renderizarCampo)}
+                </details>
               ) : null}
             </div>
-            {podeEditar ? (
-              <label className="interruptor" title={vocabulario.dicaDeCompartilhar}>
-                <input
-                  type="checkbox"
-                  role="switch"
-                  checked={secaoCompartilhada}
-                  disabled={respostasDaSecao.length === 0}
-                  onChange={(e) => void compartilhar(e.target.checked)}
-                />
-                <span className="interruptor__trilho" aria-hidden="true" />
-                <span className="small">{vocabulario.rotuloDeCompartilhar}</span>
-              </label>
-            ) : null}
-          </header>
 
-          <div className="secao-editor__campos" key={secao.key}>
-            {secao.key === 'empresa' ? (
-              <section className="cadastro-herdado" aria-label={noVocabularioDe(tipo, 'Dados do cadastro do cliente')}>
-                <dl className="cadastro-herdado__lista">
-                  <div className="cadastro-herdado__item">
-                    <dt>Modelo de negócio</dt>
-                    <dd>{dados.cadastro.modeloDeOperacao === 'ecommerce' ? 'E-commerce' : 'Geração de leads'}</dd>
-                  </div>
-                  <div className="cadastro-herdado__item">
-                    <dt>Pertence a uma rede</dt>
-                    <dd>{dados.cadastro.temRede ? (dados.cadastro.redeNome ? `Sim, filial de ${dados.cadastro.redeNome}` : 'Sim') : 'Não'}</dd>
-                  </div>
-                </dl>
-                <p className="cadastro-herdado__nota xsmall subtle">{noVocabularioDe(tipo, 'Vêm do cadastro do cliente e não se editam aqui.')}</p>
-              </section>
-            ) : null}
-            <div className="nivel nivel--essencial">
-              <h3 className="nivel__titulo">Essencial</h3>
-              {essenciais.map(renderizarCampo)}
-            </div>
-            {aprofundar.length > 0 ? (
-              <details className="nivel nivel--aprofundar" open={aprofundarAberto}>
-                <summary className="nivel__titulo">
-                  Aprofundar <span className="subtle xsmall">opcional, melhora o resultado · {aprofundarFeitos} de {aprofundar.length} campos</span>
-                </summary>
-                <Barra valor={barrasAtivas?.aprofundar.percentual ?? 0} rotulo={`${secao.titulo}, aprofundar`} tom="suave" />
-                {aprofundar.map(renderizarCampo)}
-              </details>
-            ) : null}
-          </div>
-
-          <footer className="secao-editor__rodape">
-            <button type="button" className="btn" disabled={indice === 0} onClick={() => irPara(catalogo[indice - 1]!.key)}>
-              ← {indice > 0 ? catalogo[indice - 1]!.titulo : 'Anterior'}
-            </button>
-            <button type="button" className="btn btn--primary" disabled={indice === catalogo.length - 1} onClick={() => irPara(catalogo[indice + 1]!.key)}>
-              {indice < catalogo.length - 1 ? catalogo[indice + 1]!.titulo : 'Próxima'} →
-            </button>
-          </footer>
-        </section>
+            <footer className="secao-editor__rodape">
+              <button type="button" className="btn" disabled={!vizinhos.anterior} onClick={() => vizinhos.anterior && irPara(vizinhos.anterior.chave)}>
+                ← {vizinhos.anterior?.titulo ?? 'Anterior'}
+              </button>
+              <button type="button" className="btn btn--primary" disabled={!vizinhos.proximo} onClick={() => vizinhos.proximo && irPara(vizinhos.proximo.chave)}>
+                {vizinhos.proximo?.titulo ?? 'Próxima'} →
+              </button>
+            </footer>
+          </section>
+        )}
       </div>
-
-      <dialog ref={historico} className="painel-lateral" aria-labelledby="t-historico">
-        <div className="painel-lateral__topo">
-          <h2 className="modal__titulo" id="t-historico">Histórico de revisões</h2>
-          <button type="button" className="menu-botao painel-lateral__fechar" aria-label="Fechar" onClick={() => historico.current?.close()}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
-        </div>
-        <div className="painel-lateral__corpo">
-          {revisoes === null ? (
-            <p className="subtle" role="status">Carregando…</p>
-          ) : revisoes.length === 0 ? (
-            <p className="subtle">Nenhuma revisão ainda.</p>
-          ) : (
-            <ol className="revisoes">
-              {revisoes.map((r) => (
-                <li key={r.id} className="revisao">
-                  <div className="revisao__topo">
-                    <span className="strong small">{catalogo.find((s) => s.key === r.secao)?.letra ?? ''} · {r.chave}</span>
-                    <span className="pill">{r.viaLink ? 'cliente' : 'equipe'}</span>
-                    <time className="subtle xsmall" dateTime={new Date(r.em).toISOString()}>{new Date(r.em).toLocaleString('pt-BR')}</time>
-                  </div>
-                  {r.diferencas.length > 0 ? (
-                    <ul className="revisao__difs">
-                      {r.diferencas.slice(0, 6).map((d) => (
-                        <li key={d.chave}>
-                          <span className="mono">{d.chave}</span>:{' '}
-                          <del>{d.antes === null || d.antes === undefined ? '∅' : JSON.stringify(d.antes).slice(0, 80)}</del>{' '}→{' '}
-                          <ins>{d.depois === null || d.depois === undefined ? '∅' : JSON.stringify(d.depois).slice(0, 80)}</ins>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="subtle xsmall">{r.operacao}</p>
-                  )}
-                </li>
-              ))}
-            </ol>
-          )}
-        </div>
-      </dialog>
     </div>
   );
 }

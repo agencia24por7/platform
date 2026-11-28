@@ -226,11 +226,6 @@
 .prontidao__resumo:hover .prontidao__contagem { color: var(--fg); }
 .prontidao__resumo:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
 
-.subnav__lista { list-style: none; margin: 0; padding: 0; display: flex; gap: 16px; flex-wrap: wrap; }
-.subnav__link { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; font-size: var(--fs-xs); font-weight: 600; color: var(--fg-muted); border-bottom: 2px solid transparent; }
-.subnav__link:hover { color: var(--fg); }
-.subnav__link[aria-current='page'] { color: var(--accent-strong); border-bottom-color: var(--accent); }
-.subnav__link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
 
 .menu-mais { position: relative; }
 .menu-mais__gatilho { list-style: none; cursor: pointer; }
