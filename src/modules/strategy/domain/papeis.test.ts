@@ -14,6 +14,7 @@ const ESPERADO_NO_BANCO: Readonly<Record<AcaoDoPlano, readonly MemberRole[]>> = 
   autorizar: ['owner', 'admin'],
   rejeitar: ['owner', 'admin'],
   revogar: ['owner', 'admin'],
+  remover: ['owner', 'admin'],
 };
 
 describe('quem pode o quê no plano', () => {

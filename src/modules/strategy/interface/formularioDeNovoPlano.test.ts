@@ -17,6 +17,11 @@ const modelo = (sobrescrita: Partial<ModeloDeCriacao> = {}): ModeloDeCriacao => 
     { plataforma: 'meta', rotulo: 'Meta' },
   ],
   landingPages: [{ id: PAGINA, rotulo: 'Oferta', url: 'https://exemplo.com.br/oferta' }],
+  produtos: [
+    { urn: 'orla:p1', rotulo: 'Tênis' },
+    { urn: 'orla:p2', rotulo: 'Camiseta' },
+  ],
+  produtosIndisponiveis: false,
   whatsapp: '+5511999998888',
   whatsappAusente: false,
   podeCriar: true,
@@ -101,5 +106,42 @@ describe('erros do servidor junto do campo', () => {
   it('a chave de idempotência vem do modelo e se mantém quando o formulário volta com erro', () => {
     assert.equal(formularioDeNovoPlano(modelo(), {}, CLIENTE).chaveDeIdempotencia, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
     assert.equal(formularioDeNovoPlano(modelo({ chaveDeIdempotencia: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }), { chaveDeIdempotencia: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' }, CLIENTE).chaveDeIdempotencia, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc');
+  });
+});
+
+describe('foco do plano no formulário', () => {
+  it('lista os produtos do cliente e mantém a escolha depois de Ver links', () => {
+    const vm = formularioDeNovoPlano(modelo(), { produtos: 'orla:p2' }, CLIENTE);
+    assert.deepEqual(vm.foco.produtos.map((p) => [p.rotulo, p.marcada]), [['Tênis', false], ['Camiseta', true]]);
+    assert.equal(vm.foco.marca.marcada, false);
+    assert.equal(vm.foco.marca.rotulo, 'Campanha de marca');
+    assert.equal(vm.foco.semProdutos, null);
+  });
+
+  it('campanha de marca marcada ignora produtos e muda a chave do grupo (remonta o componente)', () => {
+    const marca = formularioDeNovoPlano(modelo(), { focoMarca: '1', produtos: 'orla:p1' }, CLIENTE);
+    assert.equal(marca.foco.marca.marcada, true);
+    assert.ok(marca.foco.produtos.every((p) => !p.marcada));
+    const produtos = formularioDeNovoPlano(modelo(), { produtos: 'orla:p1' }, CLIENTE);
+    assert.notEqual(marca.foco.chave, produtos.foco.chave);
+  });
+
+  it('cliente sem produto: lista vazia com aviso e link para o Contexto, e ainda pode criar campanha de marca', () => {
+    const vm = formularioDeNovoPlano(modelo({ produtos: [] }), {}, CLIENTE);
+    assert.equal(vm.foco.produtos.length, 0);
+    assert.match(vm.foco.semProdutos?.texto ?? '', /ainda não tem produto cadastrado/);
+    assert.equal(vm.foco.semProdutos?.link?.href, `/clientes/${CLIENTE}/contexto`);
+    assert.equal(vm.podeCriar, true);
+  });
+
+  it('leitura dos produtos indisponível avisa e oferece só a marca', () => {
+    const vm = formularioDeNovoPlano(modelo({ produtos: [], produtosIndisponiveis: true }), {}, CLIENTE);
+    assert.match(vm.foco.semProdutos?.texto ?? '', /Não foi possível ler os produtos/);
+    assert.equal(vm.foco.semProdutos?.link, null);
+  });
+
+  it('erro do servidor sobre o foco aparece no campo foco', () => {
+    assert.equal(campoDoFormulario('foco.produtos'), 'foco');
+    assert.deepEqual(errosPorCampo({ 'foco.produtos': 'Produto não encontrado neste cliente.' }), { foco: 'Produto não encontrado neste cliente.' });
   });
 });

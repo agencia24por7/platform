@@ -1,7 +1,7 @@
 import type { MemberRole } from '../../identity/domain/user.ts';
 import type { StatusDaVersao } from './status.ts';
 
-export const ACOES_DO_PLANO = ['ler', 'criar', 'editar', 'aplicar', 'cancelar', 'autorizar', 'rejeitar', 'revogar'] as const;
+export const ACOES_DO_PLANO = ['ler', 'criar', 'editar', 'aplicar', 'cancelar', 'autorizar', 'rejeitar', 'revogar', 'remover'] as const;
 export type AcaoDoPlano = (typeof ACOES_DO_PLANO)[number];
 
 export type AtorDoPlano = { readonly tipo: 'pessoa'; readonly papel: MemberRole } | { readonly tipo: 'agente' };
@@ -18,6 +18,7 @@ export const PAPEIS_POR_ACAO: Readonly<Record<AcaoDoPlano, readonly MemberRole[]
   autorizar: PAPEIS_QUE_DECIDEM,
   rejeitar: PAPEIS_QUE_DECIDEM,
   revogar: PAPEIS_QUE_DECIDEM,
+  remover: PAPEIS_QUE_DECIDEM,
 };
 
 export const ACOES_DO_AGENTE: readonly AcaoDoPlano[] = ['ler', 'criar', 'editar', 'cancelar'];

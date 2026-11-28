@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useActionState, useId, type ReactNode } from 'react';
 import { Icone } from '@/../app/clientes/[id]/_componentes/Icones';
 import { novoPlanoAcao, type EstadoDoFormulario } from '@/../app/clientes/[id]/(painel)/estrategia/acoes';
+import { GrupoDoFoco } from '@/../app/clientes/[id]/(painel)/estrategia/GrupoDoFoco';
 import type { FormularioDeNovoPlano as Modelo, OpcaoDoFormulario } from '@/modules/strategy/interface/formularioDeNovoPlano';
 
 const ESTADO_INICIAL: EstadoDoFormulario = {};
@@ -97,6 +98,8 @@ export function FormularioDeNovoPlano({ clienteId, voltarPara, inicial }: { read
             </span>
           ) : null}
         </fieldset>
+
+        <GrupoDoFoco key={modelo.foco.chave} foco={modelo.foco} idDoErro={id('foco-erro')} erro={erros['foco']} />
 
         {modelo.semLandingPage ? (
           <Aviso texto={modelo.semLandingPage.texto} link={modelo.semLandingPage.link} />

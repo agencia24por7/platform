@@ -114,7 +114,11 @@ describe('ações de Conexões respeitam o recorte, o papel e o cliente informad
     acao = await acoesDeFontes();
   });
 
-  after(() => signOut());
+  after(() => {
+    signOut();
+    dono(`UPDATE integrations.connections SET status = 'revoked' WHERE organization_id = '${ids.org}' AND status IN ('active', 'expiring', 'degraded')`);
+    dono(`DELETE FROM integrations.connection_tokens WHERE organization_id = '${ids.org}'`);
+  });
 
   it('controle positivo: quem vê tudo opera, move e desvincula o que é do cliente informado', async () => {
     signIn(pessoas.owner);

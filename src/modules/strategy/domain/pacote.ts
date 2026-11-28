@@ -23,7 +23,10 @@ export const esquemaEvidenciaDaEntrada = z.strictObject({
 });
 export type EvidenciaDaEntrada = z.infer<typeof esquemaEvidenciaDaEntrada>;
 
+export const TIPO_DA_ENTRADA_DE_PRODUTO = 'contexto_produto';
+
 export const esquemaEntradaDoPacote = z.strictObject({
+  foco: z.literal(true).optional(),
   ref: z.string().regex(/^e[1-9][0-9]{0,4}$/).optional(),
   urn: z.string().max(320).refine((valor) => lerUrn(valor) !== null, 'URN inválida.'),
   hash: z.string().regex(/^[0-9a-f]{64}$/),
@@ -97,8 +100,10 @@ export type OpcoesDoPacoteParaEntrada = {
 
 export function pacoteParaEntrada(pacote: PacoteDeLeitura, maximoDeBytes: number, opcoes: OpcoesDoPacoteParaEntrada = {}): PacoteDeLeitura {
   const primeiras = opcoes.primeiras ?? new Set<string>();
-  const permitidas = opcoes.somenteUrns === undefined ? pacote.entradas : pacote.entradas.filter((e) => opcoes.somenteUrns!.has(e.urn));
-  const ordenadas = [...permitidas.filter((e) => primeiras.has(e.urn)), ...permitidas.filter((e) => !primeiras.has(e.urn))];
+  const permitidas = opcoes.somenteUrns === undefined ? pacote.entradas : pacote.entradas.filter((e) => e.foco === true || opcoes.somenteUrns!.has(e.urn));
+  const doFoco = permitidas.filter((e) => e.foco === true);
+  const demais = permitidas.filter((e) => e.foco !== true);
+  const ordenadas = [...doFoco, ...demais.filter((e) => primeiras.has(e.urn)), ...demais.filter((e) => !primeiras.has(e.urn))];
   const mantidas: EntradaDoPacote[] = [];
   let bytes = 0;
   for (const entrada of ordenadas) {

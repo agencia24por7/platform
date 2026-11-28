@@ -90,6 +90,9 @@ function criarRepositorio(estado: Estado): RepositorioDeEstrategia {
     async buscarPlanoPorId(_org, id) {
       return estado.planos.find((p) => p.id === id) ?? null;
     },
+    async removerPlano(_org, planoId) {
+      return ok({ planoId });
+    },
     async clienteDoRecurso(_org, tipo, recursoId) {
       const lista = tipo === 'plano' ? estado.planos : tipo === 'versao' ? estado.versoes : estado.execucoes;
       return lista.find((item) => item.id === recursoId)?.clientId ?? null;
@@ -103,6 +106,7 @@ function criarRepositorio(estado: Estado): RepositorioDeEstrategia {
         plataformas: novo.plataformas,
         whatsapp: novo.whatsapp,
         landingPageId: novo.landingPageId,
+        foco: novo.foco,
         criadoEm: new Date(),
       };
       estado.planos.push(plano);
@@ -294,8 +298,9 @@ function montar(opcoes: { brain?: LeitorDoBrain; auditFalha?: boolean; destino?:
   return { estado, auditorias, service };
 }
 
-const { plataformas: _p, whatsapp: _w, destino: _d, utm: _u, ...INTENCAO_BASE } = INTENCAO;
+const { plataformas: _p, whatsapp: _w, destino: _d, utm: _u, foco: _f, ...INTENCAO_BASE } = INTENCAO;
 const pedido = {
+  foco: { tipo: 'marca' as const },
   clienteId: CLIENTE_ID,
   tipoDePlano: 'aquisicao' as const,
   plataformas: ['meta' as const],
@@ -323,7 +328,7 @@ function semearVersao(estado: Estado, status: 'rascunho' | 'proposto' | 'vigente
     ...extra,
   };
   if (!estado.planos.some((p) => p.id === PLANO_ID)) {
-    estado.planos.push({ id: PLANO_ID, organizationId: ORGANIZACAO_ID, clientId: CLIENTE_ID, tipo: 'aquisicao', plataformas: ['meta'], whatsapp: '+5511912345678', landingPageId: LANDING_ID, criadoEm: new Date() });
+    estado.planos.push({ id: PLANO_ID, organizationId: ORGANIZACAO_ID, clientId: CLIENTE_ID, tipo: 'aquisicao', plataformas: ['meta'], whatsapp: '+5511912345678', landingPageId: LANDING_ID, foco: null, criadoEm: new Date() });
   }
   estado.versoes.push(versao);
   return versao;
@@ -450,7 +455,7 @@ describe('pedirMudanca', () => {
     assert.equal(!pii.ok && pii.error.code, 'validation');
 
     const vazio = montar();
-    vazio.estado.planos.push({ id: PLANO_ID, organizationId: ORGANIZACAO_ID, clientId: CLIENTE_ID, tipo: 'aquisicao', plataformas: ['meta'], whatsapp: '+5511912345678', landingPageId: '00000000-0000-4000-8000-0000000000aa', criadoEm: new Date() });
+    vazio.estado.planos.push({ id: PLANO_ID, organizationId: ORGANIZACAO_ID, clientId: CLIENTE_ID, tipo: 'aquisicao', plataformas: ['meta'], whatsapp: '+5511912345678', landingPageId: '00000000-0000-4000-8000-0000000000aa', foco: null, criadoEm: new Date() });
     const semVersao = await vazio.service.pedirMudanca(como('operator'), { planoId: PLANO_ID, instrucao: 'mude algo aqui' }, ator);
     assert.equal(!semVersao.ok && semVersao.error.details?.codigo, 'sem_versao');
   });
@@ -896,7 +901,7 @@ function leitorQueConta(): { leitor: LeitorDoBrain; chamadas: () => number } {
 }
 
 function semearSegundoPlano(estado: Estado): void {
-  estado.planos.push({ id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', organizationId: ORGANIZACAO_ID, clientId: CLIENTE_ID, tipo: 'retencao', plataformas: ['meta'], whatsapp: '+5511912345678', landingPageId: LANDING_ID, criadoEm: new Date() });
+  estado.planos.push({ id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', organizationId: ORGANIZACAO_ID, clientId: CLIENTE_ID, tipo: 'retencao', plataformas: ['meta'], whatsapp: '+5511912345678', landingPageId: LANDING_ID, foco: null, criadoEm: new Date() });
 }
 
 describe('painelDoPlano com seleção e catálogo já lido', () => {

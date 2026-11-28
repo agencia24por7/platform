@@ -12,6 +12,7 @@ const card = (planoId: string, minutos: number, sobrescrita: Partial<CardDoPlano
   tipo: 'aquisicao',
   tipoRotulo: 'Aquisição',
   plataformas: [{ plataforma: 'meta', rotulo: 'Meta' }],
+  foco: null,
   estado: 'vigente',
   rotulo: 'Autorizado',
   progresso: null,

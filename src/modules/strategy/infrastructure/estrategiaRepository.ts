@@ -18,7 +18,7 @@ import type {
   VersaoResumo,
 } from '@/modules/strategy/application/portas';
 import { CHAVE_DE_IDEMPOTENCIA_COM_OUTRO_PEDIDO, mesmoPedidoDePlano } from '@/modules/strategy/application/portas';
-import type { Plataforma } from '@/modules/strategy/domain/index';
+import type { FocoDoPlano, Plataforma } from '@/modules/strategy/domain/index';
 import { PAPEL_NO_BANCO } from '@/modules/strategy/domain/referencias';
 import { traduzirErroDoBanco } from '@/modules/strategy/infrastructure/errosDoBanco';
 
@@ -33,10 +33,11 @@ type PlanoRow = {
   plataformas: Plataforma[] | null;
   whatsapp: string | null;
   landing_page_id: string | null;
+  foco: FocoDoPlano | null;
   created_at: Date;
 };
 
-const colunasDoPlano = (tx: Tx) => tx`id, organization_id, client_id, plan_type_key, plataformas, whatsapp, landing_page_id, created_at`;
+const colunasDoPlano = (tx: Tx) => tx`id, organization_id, client_id, plan_type_key, plataformas, whatsapp, landing_page_id, foco, created_at`;
 
 type VersaoRow = {
   id: string;
@@ -121,6 +122,7 @@ function paraPlano(row: PlanoRow): Plano {
     plataformas: row.plataformas,
     whatsapp: row.whatsapp,
     landingPageId: row.landing_page_id,
+    foco: row.foco ?? null,
     criadoEm: row.created_at,
   };
 }
@@ -230,7 +232,9 @@ async function lerReferencias(tx: Tx, versaoId: string): Promise<ReferenciaDaVer
 
 async function lerVersaoNaTx(tx: Tx, organizationId: string, versaoId: string): Promise<Versao | null> {
   const rows = (await tx`
-    SELECT ${colunasDaVersao(tx)}, content FROM core.strategy_plan_versions WHERE id = ${versaoId} AND organization_id = ${organizationId}
+    SELECT ${colunasDaVersao(tx)}, content FROM core.strategy_plan_versions v
+     WHERE id = ${versaoId} AND organization_id = ${organizationId}
+       AND EXISTS (SELECT 1 FROM core.strategy_plans p WHERE p.id = v.plan_id AND p.removido_em IS NULL)
   `) as unknown as VersaoComConteudoRow[];
   const row = rows[0];
   if (!row) return null;
@@ -239,7 +243,9 @@ async function lerVersaoNaTx(tx: Tx, organizationId: string, versaoId: string): 
 
 async function lerExecucaoNaTx(tx: Tx, organizationId: string, execucaoId: string): Promise<Execucao | null> {
   const rows = (await tx`
-    SELECT ${colunasDaExecucao(tx)} FROM core.strategy_plan_runs WHERE id = ${execucaoId} AND organization_id = ${organizationId}
+    SELECT ${colunasDaExecucao(tx)} FROM core.strategy_plan_runs r
+     WHERE id = ${execucaoId} AND organization_id = ${organizationId}
+       AND EXISTS (SELECT 1 FROM core.strategy_plans p WHERE p.id = r.plan_id AND p.removido_em IS NULL)
   `) as unknown as ExecucaoRow[];
   return rows[0] ? paraExecucao(rows[0]) : null;
 }
@@ -283,13 +289,22 @@ async function inserirEvento(tx: Tx, organizationId: string, novo: NovoEvento): 
            ${agente?.chaveDeIdempotencia ?? null}::text, ${novo.requestId.slice(0, LIMITE_DE_REQUEST_ID)}::text
       FROM core.strategy_plan_versions v
      WHERE v.id = ${novo.versaoId} AND v.organization_id = ${organizationId}
+       AND EXISTS (SELECT 1 FROM core.strategy_plans p WHERE p.id = v.plan_id AND p.removido_em IS NULL)
     RETURNING ${colunasDoEvento(tx)}
   `) as unknown as EventoRow[];
   if (!rows[0]) throw new NaoEncontrado();
   return paraEvento(rows[0]);
 }
 
+async function travarPlanoAtivo(tx: Tx, organizationId: string, planoId: string): Promise<void> {
+  const rows = (await tx`
+    SELECT 1 AS ok FROM core.strategy_plans WHERE id = ${planoId}::uuid AND organization_id = ${organizationId}::uuid AND removido_em IS NULL FOR SHARE
+  `) as unknown as unknown[];
+  if (rows.length === 0) throw new NaoEncontrado();
+}
+
 async function inserirVersao(tx: Tx, organizationId: string, nova: NovaVersao): Promise<Versao> {
+  await travarPlanoAtivo(tx, organizationId, nova.planoId);
   await definirFicha(tx, nova.autoria);
   const agente = nova.autoria.tipo === 'agente' ? nova.autoria : null;
   const usuario = nova.autoria.tipo === 'pessoa' ? nova.autoria.userId : null;
@@ -301,7 +316,7 @@ async function inserirVersao(tx: Tx, organizationId: string, nova: NovaVersao): 
              ${nova.supersedesId}::uuid, ${agente ? 'agente' : 'usuario'}::text, ${usuario}::uuid,
              ${agente?.agentId ?? null}::text, ${agente?.agentRunId ?? null}::text, ${agente?.chaveDeIdempotencia ?? null}::text
         FROM core.strategy_plans p
-       WHERE p.id = ${nova.planoId} AND p.organization_id = ${organizationId}
+       WHERE p.id = ${nova.planoId} AND p.organization_id = ${organizationId} AND p.removido_em IS NULL
       RETURNING id, organization_id, client_id
     `) as unknown as { id: string; organization_id: string; client_id: string }[];
   const criada = rows[0];
@@ -326,14 +341,18 @@ async function inserirVersao(tx: Tx, organizationId: string, nova: NovaVersao): 
 }
 
 async function inserirExecucao(tx: Tx, organizationId: string, clientId: string, nova: NovaExecucao): Promise<Execucao> {
+  await travarPlanoAtivo(tx, organizationId, nova.planoId);
   const rows = (await tx`
     INSERT INTO core.strategy_plan_runs
       (organization_id, client_id, plan_id, kind, pedido, base_version_id, agent_run_id, requested_by, requested_kind)
-    VALUES (${organizationId}, ${clientId}, ${nova.planoId}, ${nova.pedido.tipo}, ${tx.json(pedidoParaOBanco(nova.pedido) as Json)},
-            ${nova.versaoBaseId}::uuid, ${nova.agentRunId}, ${nova.solicitadoPor}::uuid, 'usuario')
+    SELECT p.organization_id, p.client_id, p.id, ${nova.pedido.tipo}::text, ${tx.json(pedidoParaOBanco(nova.pedido) as Json)},
+           ${nova.versaoBaseId}::uuid, ${nova.agentRunId}::text, ${nova.solicitadoPor}::uuid, 'usuario'
+      FROM core.strategy_plans p
+     WHERE p.id = ${nova.planoId}::uuid AND p.organization_id = ${organizationId}::uuid AND p.client_id = ${clientId}::uuid AND p.removido_em IS NULL
     RETURNING ${colunasDaExecucao(tx)}
   `) as unknown as ExecucaoRow[];
-  return paraExecucao(rows[0]!);
+  if (!rows[0]) throw new NaoEncontrado();
+  return paraExecucao(rows[0]);
 }
 
 async function estadosDosPlanos(tx: Tx, organizationId: string, clientId: string | null, planoId: string | null): Promise<PlanoDoCliente[]> {
@@ -342,7 +361,7 @@ async function estadosDosPlanos(tx: Tx, organizationId: string, clientId: string
   const planos = (await tx`
     SELECT ${colunasDoPlano(tx)}
       FROM core.strategy_plans
-     WHERE organization_id = ${organizationId} ${porCliente} ${porPlano}
+     WHERE organization_id = ${organizationId} AND removido_em IS NULL ${porCliente} ${porPlano}
      ORDER BY created_at DESC, id DESC
   `) as unknown as PlanoRow[];
   if (planos.length === 0) return [];
@@ -399,7 +418,7 @@ export function createEstrategiaRepository(): RepositorioDeEstrategia {
       return withTenant(organizationId, async (tx) => {
         const rows = (await tx`
           SELECT ${colunasDoPlano(tx)}
-            FROM core.strategy_plans WHERE id = ${planoId} AND organization_id = ${organizationId}
+            FROM core.strategy_plans WHERE id = ${planoId} AND organization_id = ${organizationId} AND removido_em IS NULL
         `) as unknown as PlanoRow[];
         return rows[0] ? paraPlano(rows[0]) : null;
       });
@@ -408,12 +427,35 @@ export function createEstrategiaRepository(): RepositorioDeEstrategia {
     async clienteDoRecurso(organizationId, tipo, id) {
       return withTenant(organizationId, async (tx) => {
         const rows = (await (tipo === 'plano'
-          ? tx`SELECT client_id FROM core.strategy_plans WHERE id = ${id} AND organization_id = ${organizationId}`
+          ? tx`SELECT client_id FROM core.strategy_plans WHERE id = ${id} AND organization_id = ${organizationId} AND removido_em IS NULL`
           : tipo === 'versao'
-            ? tx`SELECT client_id FROM core.strategy_plan_versions WHERE id = ${id} AND organization_id = ${organizationId}`
-            : tx`SELECT client_id FROM core.strategy_plan_runs WHERE id = ${id} AND organization_id = ${organizationId}`)) as unknown as { client_id: string }[];
+            ? tx`SELECT v.client_id FROM core.strategy_plan_versions v JOIN core.strategy_plans p ON p.id = v.plan_id
+                  WHERE v.id = ${id} AND v.organization_id = ${organizationId} AND p.removido_em IS NULL`
+            : tx`SELECT r.client_id FROM core.strategy_plan_runs r JOIN core.strategy_plans p ON p.id = r.plan_id
+                  WHERE r.id = ${id} AND r.organization_id = ${organizationId} AND p.removido_em IS NULL`)) as unknown as { client_id: string }[];
         return rows[0]?.client_id ?? null;
       });
+    },
+
+    async removerPlano(organizationId, planoId, requestId) {
+      return comTraducaoOuAusencia(() =>
+        withTenant(organizationId, async (tx) => {
+          await definirRequestId(tx, requestId);
+          const travados = (await tx`
+            SELECT id FROM core.strategy_plans WHERE id = ${planoId} AND organization_id = ${organizationId} AND removido_em IS NULL FOR UPDATE
+          `) as unknown as { id: string }[];
+          if (!travados[0]) throw new NaoEncontrado();
+          const ativas = (await tx`
+            SELECT 1 AS ok FROM core.strategy_plan_runs WHERE plan_id = ${planoId} AND organization_id = ${organizationId} AND status IN ('pendente', 'rodando') LIMIT 1
+          `) as unknown as unknown[];
+          if (ativas.length > 0) throw Object.assign(new Error('execução ativa'), { code: '23505', constraint_name: 'strategy_plan_runs_uma_ativa' });
+          const atualizadas = await tx`
+            UPDATE core.strategy_plans SET removido_em = now() WHERE id = ${planoId} AND organization_id = ${organizationId} AND removido_em IS NULL
+          `;
+          if (atualizadas.count !== 1) throw new NaoEncontrado();
+          return { planoId };
+        }),
+      );
     },
 
     async criarPlanoComExecucao(escopo, novo, execucao) {
@@ -422,15 +464,15 @@ export function createEstrategiaRepository(): RepositorioDeEstrategia {
           await definirRequestId(tx, execucao.requestId);
           const chave = novo.chaveDeIdempotencia ?? null;
           const rows = (await tx`
-            INSERT INTO core.strategy_plans (organization_id, client_id, plan_type_key, plataformas, whatsapp, landing_page_id, idempotency_key)
-            VALUES (${escopo.organizationId}, ${escopo.clientId}, ${novo.tipo}, ${[...novo.plataformas]}::text[], ${novo.whatsapp}, ${novo.landingPageId}::uuid, ${chave})
+            INSERT INTO core.strategy_plans (organization_id, client_id, plan_type_key, plataformas, whatsapp, landing_page_id, foco, idempotency_key)
+            VALUES (${escopo.organizationId}, ${escopo.clientId}, ${novo.tipo}, ${[...novo.plataformas]}::text[], ${novo.whatsapp}, ${novo.landingPageId}::uuid, ${tx.json(novo.foco as Json)}, ${chave})
             ON CONFLICT (organization_id, client_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
             RETURNING ${colunasDoPlano(tx)}
           `) as unknown as PlanoRow[];
           if (rows.length === 0) {
             const existentes = (await tx`
               SELECT ${colunasDoPlano(tx)} FROM core.strategy_plans
-               WHERE organization_id = ${escopo.organizationId} AND client_id = ${escopo.clientId} AND idempotency_key = ${chave}
+               WHERE organization_id = ${escopo.organizationId} AND client_id = ${escopo.clientId} AND idempotency_key = ${chave} AND removido_em IS NULL
             `) as unknown as PlanoRow[];
             const existente = existentes[0];
             if (!existente) return err(PLANO_DA_CHAVE_NAO_ENCONTRADO);
@@ -500,7 +542,9 @@ export function createEstrategiaRepository(): RepositorioDeEstrategia {
       return withTenant(organizationId, async (tx) => {
         const rows = (await tx`
           SELECT ${colunasDaVersao(tx)} FROM core.strategy_plan_versions
-           WHERE plan_id = ${planoId} AND organization_id = ${organizationId} ORDER BY created_at DESC, id DESC LIMIT ${limite}
+           WHERE plan_id = ${planoId} AND organization_id = ${organizationId}
+             AND EXISTS (SELECT 1 FROM core.strategy_plans p WHERE p.id = plan_id AND p.removido_em IS NULL)
+           ORDER BY created_at DESC, id DESC LIMIT ${limite}
         `) as unknown as VersaoRow[];
         return rows.map(paraVersaoResumo);
       });
@@ -510,14 +554,16 @@ export function createEstrategiaRepository(): RepositorioDeEstrategia {
       return withTenant(organizationId, async (tx) => {
         const rows = (await tx`
           SELECT ${colunasDoEvento(tx)} FROM core.strategy_plan_events
-           WHERE version_id = ${versaoId} AND organization_id = ${organizationId} ORDER BY created_at, id
+           WHERE version_id = ${versaoId} AND organization_id = ${organizationId}
+             AND EXISTS (SELECT 1 FROM core.strategy_plan_versions v JOIN core.strategy_plans p ON p.id = v.plan_id WHERE v.id = version_id AND p.removido_em IS NULL)
+           ORDER BY created_at, id
         `) as unknown as EventoRow[];
         return rows.map(paraEvento);
       });
     },
 
     async criarExecucao(organizationId, clientId, nova: NovaExecucao) {
-      return comTraducao(() =>
+      return comTraducaoOuAusencia(() =>
         withTenant(organizationId, async (tx) => {
           await definirRequestId(tx, nova.requestId);
           return inserirExecucao(tx, organizationId, clientId, nova);
@@ -533,7 +579,9 @@ export function createEstrategiaRepository(): RepositorioDeEstrategia {
       return withTenant(organizationId, async (tx) => {
         const rows = (await tx`
           SELECT ${colunasDaExecucao(tx)} FROM core.strategy_plan_runs
-           WHERE plan_id = ${planoId} AND organization_id = ${organizationId} AND status IN ('pendente', 'rodando') LIMIT 1
+           WHERE plan_id = ${planoId} AND organization_id = ${organizationId} AND status IN ('pendente', 'rodando')
+             AND EXISTS (SELECT 1 FROM core.strategy_plans p WHERE p.id = plan_id AND p.removido_em IS NULL)
+           LIMIT 1
         `) as unknown as ExecucaoRow[];
         return rows[0] ? paraExecucao(rows[0]) : null;
       });
@@ -543,7 +591,9 @@ export function createEstrategiaRepository(): RepositorioDeEstrategia {
       return withTenant(organizationId, async (tx) => {
         const rows = (await tx`
           SELECT ${colunasDaExecucao(tx)} FROM core.strategy_plan_runs
-           WHERE plan_id = ${planoId} AND organization_id = ${organizationId} ORDER BY created_at DESC, id DESC LIMIT ${limite}
+           WHERE plan_id = ${planoId} AND organization_id = ${organizationId}
+             AND EXISTS (SELECT 1 FROM core.strategy_plans p WHERE p.id = plan_id AND p.removido_em IS NULL)
+           ORDER BY created_at DESC, id DESC LIMIT ${limite}
         `) as unknown as ExecucaoRow[];
         return rows.map(paraExecucao);
       });
@@ -553,7 +603,9 @@ export function createEstrategiaRepository(): RepositorioDeEstrategia {
       return withTenant(organizationId, async (tx) => {
         const rows = (await tx`
           SELECT ${colunasDaExecucao(tx)} FROM core.strategy_plan_runs
-           WHERE plan_id = ${planoId} AND organization_id = ${organizationId} ORDER BY created_at DESC, id DESC LIMIT 1
+           WHERE plan_id = ${planoId} AND organization_id = ${organizationId}
+             AND EXISTS (SELECT 1 FROM core.strategy_plans p WHERE p.id = plan_id AND p.removido_em IS NULL)
+           ORDER BY created_at DESC, id DESC LIMIT 1
         `) as unknown as ExecucaoRow[];
         return rows[0] ? paraExecucao(rows[0]) : null;
       });
@@ -589,6 +641,7 @@ export function createEstrategiaRepository(): RepositorioDeEstrategia {
             UPDATE core.strategy_plan_runs SET ${tx(alteracoes as never, ...colunas)}
              WHERE id = ${execucaoId} AND organization_id = ${organizationId}
                AND status = 'rodando' AND tentativas = ${ficha}::int
+             AND EXISTS (SELECT 1 FROM core.strategy_plans p WHERE p.id = plan_id AND p.removido_em IS NULL)
             RETURNING ${colunasDaExecucao(tx)}
           `) as unknown as ExecucaoRow[];
           if (!rows[0]) {
@@ -605,6 +658,7 @@ export function createEstrategiaRepository(): RepositorioDeEstrategia {
           SELECT id FROM core.strategy_plan_runs
            WHERE organization_id = ${organizationId}
              AND (status = 'pendente' OR (status = 'rodando' AND lease_until IS NOT NULL AND lease_until < now()))
+             AND EXISTS (SELECT 1 FROM core.strategy_plans p WHERE p.id = plan_id AND p.removido_em IS NULL)
            ORDER BY created_at, id
            LIMIT 1
            FOR UPDATE SKIP LOCKED
@@ -629,6 +683,7 @@ export function createEstrategiaRepository(): RepositorioDeEstrategia {
           SELECT id FROM core.strategy_plan_runs
            WHERE id = ${execucaoId} AND organization_id = ${organizationId}
              AND (status = 'pendente' OR (status = 'rodando' AND lease_until IS NOT NULL AND lease_until < now()))
+             AND EXISTS (SELECT 1 FROM core.strategy_plans p WHERE p.id = plan_id AND p.removido_em IS NULL)
            FOR UPDATE SKIP LOCKED
         `) as unknown as { id: string }[];
         return candidatas[0] ? reservar(tx, execucaoId, opcoes) : null;

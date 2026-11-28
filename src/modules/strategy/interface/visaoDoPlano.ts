@@ -4,14 +4,18 @@ import { aplicarUtm } from '../../../shared/utm/utm.ts';
 import type { FaltaParaAplicar } from '../domain/aplicacao.ts';
 import { criarPodeRepetir, erroRepetivel } from '../domain/repeticaoDaExecucao.ts';
 import { podeExecutar, type AcaoDoPlano } from '../domain/papeis.ts';
+import { gruposEditaveis, type GrupoDeCampos } from './camposEditaveisDaSecao.ts';
+import { CATALOGOS_DISPONIVEIS } from '../domain/catalogo/disponiveis.ts';
+import type { CatalogoDeCampos } from '../domain/catalogo/tipos.ts';
 import { lerPlano, type Afirmacao, type Evidencia, type Plano, type SecaoDoPlano } from '../domain/plano.ts';
 import { ROTULO_DO_STATUS, type StatusDaVersao } from '../domain/status.ts';
 import { ROTULO_DO_TIPO_DE_PLANO, ehTipoDePlano } from '../domain/tipoDePlano.ts';
 import type { Execucao } from '../application/portas.ts';
 import type { PainelDoPlano } from '../application/estrategiaService.ts';
 import { execucaoSemAvanco } from './agendamentoDaAtualizacao.ts';
-import { tituloDoPlano } from './cardsDePlano.ts';
+import { MOTIVO_DE_APAGAR_COM_EXECUCAO, tituloDoPlano } from './cardsDePlano.ts';
 import type { FalhaDoGate } from './falhaDoGate.ts';
+import { textoDoFocoCompleto } from './focoNaTela.ts';
 import { dataEHoraBr, periodoBr, reais } from './formatosDoPlano.ts';
 import { TEXTO_DO_BOTAO_APROVAR_SUGESTOES, type LacunaDoPlano } from './lacunasDoPlano.ts';
 import { rotaDoPlano } from './rotasDaEstrategia.ts';
@@ -53,6 +57,7 @@ export type EntradaDaVisao = {
   readonly papel: MemberRole;
   readonly clienteId: string;
   readonly entradasDoBrain?: ReadonlyMap<string, EntradaDoBrainConhecida>;
+  readonly catalogos?: readonly CatalogoDeCampos[];
   readonly agora?: Date;
 };
 
@@ -95,7 +100,7 @@ export type PlataformaDeMidiaNaTela = {
 export type BlocoDoPlano<Conteudo> = {
   readonly chave: SecaoDoPlano;
   readonly titulo: string;
-  readonly json: string;
+  readonly grupos: readonly GrupoDeCampos[];
   readonly conteudo: Conteudo;
 };
 
@@ -119,7 +124,8 @@ export type ChaveDeAcao =
   | 'pedir_revisao'
   | 'cancelar_execucao'
   | 'tentar_de_novo'
-  | 'editar_secao';
+  | 'editar_secao'
+  | 'apagar_plano';
 
 export type AcaoDaVisao = {
   readonly chave: ChaveDeAcao;
@@ -160,6 +166,7 @@ export type VisaoDoPlano = {
   readonly titulo: string;
   readonly tipoRotulo: string;
   readonly plataformas: readonly string[];
+  readonly foco: string | null;
   readonly status: StatusDaVersao | null;
   readonly rotuloDoStatus: string;
   readonly icone: NomeDoIconeDaVisao;
@@ -387,11 +394,21 @@ export function podeTentarDeNovo(painel: PainelDoPlano | null, papel: MemberRole
   const ultima = painel?.ultimaExecucao ?? null;
   if (!painel || !ultima || painel.execucaoAtiva || ultima.status !== 'falhou') return false;
   if (ultima.tipo === 'corrigir_gate' || !erroRepetivel(ultima.erroCodigo)) return false;
-  if (ultima.tipo === 'criar' && !criarPodeRepetir(painel.historico.versoes, ultima.criadaEm)) return false;
+  if (ultima.tipo === 'criar' && !criarPodeRepetir(painel.historico.versoes)) return false;
   return podeExecutar(ultima.tipo === 'criar' ? 'criar' : 'editar', { tipo: 'pessoa', papel });
 }
 
+function acaoDeApagar(painel: PainelDoPlano | null, papel: MemberRole): AcaoDaVisao[] {
+  if (painel === null || !podeExecutar('remover', { tipo: 'pessoa', papel })) return [];
+  const motivos = painel.execucaoAtiva ? [MOTIVO_DE_APAGAR_COM_EXECUCAO] : [];
+  return [{ chave: 'apagar_plano', rotulo: 'Apagar plano', habilitada: motivos.length === 0, motivos }];
+}
+
 function acoesDaVisao(painel: PainelDoPlano | null, papel: MemberRole): AcaoDaVisao[] {
+  return [...acoesDeEdicao(painel, papel), ...acaoDeApagar(painel, papel)];
+}
+
+function acoesDeEdicao(painel: PainelDoPlano | null, papel: MemberRole): AcaoDaVisao[] {
   const pode = (acao: AcaoDoPlano) => podeExecutar(acao, { tipo: 'pessoa', papel });
   if (papel === 'viewer') return [];
   const execucaoAtiva = painel?.execucaoAtiva ?? null;
@@ -510,6 +527,7 @@ function rotuloSemVersao(painel: PainelDoPlano): { readonly rotulo: string; read
 export function visaoDoPlano(entrada: EntradaDaVisao): VisaoDoPlano {
   const { painel, papel, clienteId } = entrada;
   const agora = entrada.agora ?? new Date();
+  const catalogos = entrada.catalogos ?? CATALOGOS_DISPONIVEIS;
   const contexto: Contexto = { clienteId, entradas: entrada.entradasDoBrain ?? new Map(), hoje: agora.toISOString().slice(0, 10) };
   const somenteLeitura = papel === 'viewer';
   const acoes = acoesDaVisao(painel, papel);
@@ -528,6 +546,7 @@ export function visaoDoPlano(entrada: EntradaDaVisao): VisaoDoPlano {
       titulo: tituloDoPlano(null, tipo),
       tipoRotulo,
       plataformas,
+      foco: textoDoFocoCompleto(painel?.plano.foco),
       status: null,
       rotuloDoStatus: semVersao.rotulo,
       icone: semVersao.icone,
@@ -556,6 +575,7 @@ export function visaoDoPlano(entrada: EntradaDaVisao): VisaoDoPlano {
     titulo: tituloDoPlano(plano?.intencao.objetivo ?? null, tipo),
     tipoRotulo,
     plataformas,
+    foco: textoDoFocoCompleto(painel.plano.foco),
     status,
     rotuloDoStatus: ROTULO_DO_STATUS[status],
     icone: aparencia.icone,
@@ -564,8 +584,8 @@ export function visaoDoPlano(entrada: EntradaDaVisao): VisaoDoPlano {
     avisos: avisosDaVisao(painel, plano, lida.ok, clienteId, agora, contexto, repetir),
     execucao,
     acoes,
-    resumo: plano ? { chave: 'resumo_executivo', titulo: TITULO_DA_SECAO.resumo_executivo, json: JSON.stringify(plano.resumo_executivo, null, 2), conteudo: blocosDoResumo(plano, contexto) } : null,
-    midia: plano ? { chave: 'plano_de_midia', titulo: TITULO_DA_SECAO.plano_de_midia, json: JSON.stringify(plano.plano_de_midia, null, 2), conteudo: plataformasDeMidia(plano, contexto) } : null,
+    resumo: plano ? { chave: 'resumo_executivo', titulo: TITULO_DA_SECAO.resumo_executivo, grupos: gruposEditaveis('resumo_executivo', plano.resumo_executivo, catalogos), conteudo: blocosDoResumo(plano, contexto) } : null,
+    midia: plano ? { chave: 'plano_de_midia', titulo: TITULO_DA_SECAO.plano_de_midia, grupos: gruposEditaveis('plano_de_midia', plano.plano_de_midia, catalogos), conteudo: plataformasDeMidia(plano, contexto) } : null,
     lacunas: lacunasNaTela(painel, clienteId),
     falhaDoGate: painel.falhaDoGate ?? null,
   };

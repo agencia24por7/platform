@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import '../../../shared/testing/registrarAlias.mjs';
-import { lerEdicaoDeSecao, lerIntencaoDoFormulario, lerPedidoDeMudanca, trocarSecao } from './formulariosDaEstrategia.ts';
+import { lerEdicaoPorCampos, lerFocoDoFormulario, lerIntencaoDoFormulario, lerPedidoDeMudanca, trocarSecao } from './formulariosDaEstrategia.ts';
 import { centavosDeReais, dataBr, periodoBr, reais } from './formatosDoPlano.ts';
 
 const { PedirPlanoSchema } = await import('../application/estrategiaEntradas.ts');
@@ -14,6 +14,7 @@ const VALIDO = {
   tipoDePlano: 'aquisicao',
   plataformas: 'meta',
   landingPageId: CLIENTE,
+  focoMarca: '1',
   objetivo: 'Gerar leads qualificados',
   inicio: '2026-12-01',
   fim: '2027-02-28',
@@ -27,14 +28,14 @@ describe('intenção do formulário', () => {
     const lida = lerIntencaoDoFormulario(VALIDO);
     assert.ok(lida.ok);
     assert.equal(lida.value.intencao.verba.centavos, '1500000');
-    const servico = PedirPlanoSchema.safeParse({ clienteId: CLIENTE, tipoDePlano: lida.value.tipoDePlano, plataformas: lida.value.plataformas, landingPageId: lida.value.landingPageId, intencao: lida.value.intencao });
+    const servico = PedirPlanoSchema.safeParse({ clienteId: CLIENTE, tipoDePlano: lida.value.tipoDePlano, plataformas: lida.value.plataformas, landingPageId: lida.value.landingPageId, foco: lida.value.foco, intencao: lida.value.intencao });
     assert.ok(servico.success);
   });
 
   it('aponta cada campo inválido em linguagem clara', () => {
     const lida = lerIntencaoDoFormulario({ tipoDePlano: 'x', objetivo: 'a', inicio: '2026-12-31', fim: '2026-12-01', ousadia: '', retorno: '', verba: 'abc' });
     assert.ok(!lida.ok);
-    assert.deepEqual(Object.keys(lida.error).sort(), ['fim', 'landingPageId', 'objetivo', 'ousadia', 'plataformas', 'retorno', 'tipoDePlano', 'verba']);
+    assert.deepEqual(Object.keys(lida.error).sort(), ['fim', 'foco', 'landingPageId', 'objetivo', 'ousadia', 'plataformas', 'retorno', 'tipoDePlano', 'verba']);
     assert.equal(lida.error['fim'], 'O fim não pode ser antes do início.');
   });
 
@@ -43,6 +44,28 @@ describe('intenção do formulário', () => {
     assert.ok(!zero.ok && zero.error['verba']);
     const data = lerIntencaoDoFormulario({ ...VALIDO, inicio: '2026-02-31' });
     assert.ok(!data.ok && data.error['inicio']);
+  });
+});
+
+describe('foco do formulário', () => {
+  const PRODUTO = `orla:${CLIENTE}:${CLIENTE}:contexto_produto:p1`;
+  it('marca ou produtos, nunca os dois nem nenhum', () => {
+    assert.deepEqual(lerFocoDoFormulario({ focoMarca: '1' }), { ok: true, value: { tipo: 'marca' } });
+    assert.deepEqual(lerFocoDoFormulario({ produtos: `${PRODUTO},${PRODUTO}` }), { ok: true, value: { tipo: 'produtos', produtos: [PRODUTO] } });
+    const nenhum = lerFocoDoFormulario({});
+    assert.ok(!nenhum.ok && nenhum.error['foco']);
+    const ambos = lerFocoDoFormulario({ focoMarca: '1', produtos: PRODUTO });
+    assert.ok(!ambos.ok && ambos.error['foco']);
+    const demais = lerFocoDoFormulario({ produtos: Array.from({ length: 21 }, (_, i) => `u${i}`).join(',') });
+    assert.ok(!demais.ok && demais.error['foco']);
+  });
+
+  it('a intenção do formulário sem foco é recusada com erro no campo foco', () => {
+    const { focoMarca: _m, ...semFoco } = VALIDO;
+    const lida = lerIntencaoDoFormulario(semFoco);
+    assert.ok(!lida.ok && lida.error['foco']);
+    const comProdutos = lerIntencaoDoFormulario({ ...semFoco, produtos: PRODUTO });
+    assert.ok(comProdutos.ok && comProdutos.value.foco.tipo === 'produtos');
   });
 });
 
@@ -85,7 +108,7 @@ describe('pedido de mudança', () => {
   it('recusa pedido sem a versão que a pessoa estava vendo', () => {
     const lida = lerPedidoDeMudanca({ planoId: ID, instrucao: 'Mudar algo' });
     assert.ok(!lida.ok && lida.error['versaoId']);
-    const edicao = lerEdicaoDeSecao({ planoId: ID, secao: 'lacunas', json: '{}' });
+    const edicao = lerEdicaoPorCampos({ planoId: ID, secao: 'resumo_executivo', 'campo:objetivo': 'x' });
     assert.ok(!edicao.ok && edicao.error['versaoId']);
   });
 
@@ -95,24 +118,30 @@ describe('pedido de mudança', () => {
   });
 });
 
-describe('edição manual de uma seção', () => {
-  it('lê o JSON da seção', () => {
-    const lida = lerEdicaoDeSecao({ planoId: ID, versaoId: VERSAO, secao: 'lacunas', json: '{"itens":[]}' });
+describe('edição manual de uma seção por campos', () => {
+  it('lê só os pares campo:<caminho> e ignora o resto do formulário', () => {
+    const lida = lerEdicaoPorCampos({ planoId: ID, versaoId: VERSAO, secao: 'resumo_executivo', clienteId: CLIENTE, 'campo:objetivo': 'Novo objetivo', 'campo:verba': '1.000,00', qualquer: 'x' });
     assert.ok(lida.ok);
-    assert.deepEqual(lida.value.valor, { itens: [] });
+    assert.deepEqual(lida.value.pares, { objetivo: 'Novo objetivo', verba: '1.000,00' });
+    assert.equal(lida.value.secao, 'resumo_executivo');
   });
 
-  it('JSON inválido volta mensagem sem repetir o texto digitado', () => {
-    const lida = lerEdicaoDeSecao({ planoId: ID, versaoId: VERSAO, secao: 'lacunas', json: '{segredo: 1' });
-    assert.ok(!lida.ok);
-    assert.ok(!JSON.stringify(lida.error).includes('segredo'));
-    assert.match(lida.error['json'] ?? '', /JSON válido/);
+  it('não aceita conteúdo bruto (json), mesmo junto de campos', () => {
+    const lida = lerEdicaoPorCampos({ planoId: ID, versaoId: VERSAO, secao: 'resumo_executivo', json: '{"objetivo":"x"}', 'campo:objetivo': 'ok' });
+    assert.ok(!lida.ok && lida.error['edicao']);
+    const soJson = lerEdicaoPorCampos({ planoId: ID, versaoId: VERSAO, secao: 'plano_de_midia', json: '{"plataformas":[]}' });
+    assert.ok(!soJson.ok);
   });
 
-  it('recusa seção desconhecida, vazio e plano inválido', () => {
-    assert.ok(!lerEdicaoDeSecao({ planoId: ID, versaoId: VERSAO, secao: 'outra', json: '{}' }).ok);
-    assert.ok(!lerEdicaoDeSecao({ planoId: ID, versaoId: VERSAO, secao: 'lacunas', json: '  ' }).ok);
-    assert.ok(!lerEdicaoDeSecao({ planoId: 'x', secao: 'lacunas', json: '{}' }).ok);
+  it('só as seções editáveis; sem campos, caminho vazio, valor grande ou campos demais são recusados', () => {
+    assert.ok(!lerEdicaoPorCampos({ planoId: ID, versaoId: VERSAO, secao: 'lacunas', 'campo:x': 'a' }).ok);
+    assert.ok(!lerEdicaoPorCampos({ planoId: ID, versaoId: VERSAO, secao: 'intencao', 'campo:x': 'a' }).ok);
+    assert.ok(!lerEdicaoPorCampos({ planoId: ID, versaoId: VERSAO, secao: 'resumo_executivo' }).ok);
+    assert.ok(!lerEdicaoPorCampos({ planoId: ID, versaoId: VERSAO, secao: 'resumo_executivo', 'campo:': 'a' }).ok);
+    assert.ok(!lerEdicaoPorCampos({ planoId: ID, versaoId: VERSAO, secao: 'resumo_executivo', 'campo:objetivo': 'x'.repeat(12_001) }).ok);
+    const demais = Object.fromEntries(Array.from({ length: 1001 }, (_, i) => [`campo:c${i}`, 'a']));
+    assert.ok(!lerEdicaoPorCampos({ planoId: ID, versaoId: VERSAO, secao: 'resumo_executivo', ...demais }).ok);
+    assert.ok(!lerEdicaoPorCampos({ planoId: 'x', versaoId: VERSAO, secao: 'resumo_executivo', 'campo:objetivo': 'a' }).ok);
   });
 
   it('troca só a seção escolhida e preserva o resto', () => {

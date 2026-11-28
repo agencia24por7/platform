@@ -59,3 +59,13 @@ Em produção, a redação falhou com `ia_saida_invalida` (canal com plataforma 
 ## Adendo: tentar de novo, tentativas por etapa e loading do plano (PR da UI)
 
 Depois do teste em produção: botão "Tentar de novo" na execução que falhou, até 2 repetições por etapa (teto de 6 por execução), motivo da falha sem corte e com o caminho do erro de formato, instrução do Google com os valores padrão, seletores do formulário que mantêm o valor e til animado no plano em andamento. Sem migração e sem mudança de infra. Depois do deploy: num plano que falhou, usar "Tentar de novo" e conferir `strategy.run.step` e `strategy.run.retry` na auditoria. Reversão: voltar a imagem.
+
+## Adendo: foco do plano, remoção de plano e edição por campos (24K-132, ADR 0070)
+
+Migração nova, a 0151, aditiva e fora do `db/corte-gate.txt`: colunas `foco`, `removido_em` e `removido_por` em `core.strategy_plans`, função de formato do foco, policy e grant de UPDATE só das duas colunas de remoção, gatilho de imutabilidade que passa a aceitar apenas a remoção por owner ou admin, `core.strategy_runs_pendentes` sem plano removido e limite do `pedido` das execuções em 16 KB. Sem mudança de infra, de BigQuery, de segredo ou de variável.
+
+- Antes de mergear: `migrar.sh` em modo `listar` mostra só a 0151 pendente e nenhuma do corte.
+- Depois do deploy, conferir: a 0151 no livro-razão (`public.schema_migrations`); `SELECT count(*) FROM core.strategy_plans WHERE foco IS NULL` igual ao número de planos antigos; o formulário de novo plano com os produtos do Contexto e a campanha de marca; criar um plano de teste, apagá-lo como owner ou admin e conferir que `removido_em` ficou preenchido, que versões e execuções continuam na tabela e que `strategy.plan.removed` entrou na auditoria; "Editar seção" sem caixa de JSON.
+- Plano antigo continua legível, sem foco e sem gate novo. Mudança em produto depois da criação do plano não o marca como desatualizado.
+- Reversão: voltar a imagem basta para o código; as colunas ficam ignoradas. A imagem anterior não tem o gatilho novo, então ela volta a negar a remoção, e os planos já removidos continuam removidos (nenhum caminho antigo os esconde: voltar a imagem os mostraria de novo, pois o filtro é do repositório novo). Desfazer a migração exige o backup do pre-flight (ADR 0034 §6).
+

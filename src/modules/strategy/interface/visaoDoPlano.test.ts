@@ -63,7 +63,7 @@ function execucao(sobrescrita: Partial<Execucao> = {}): Execucao {
 function painel(sobrescrita: Partial<PainelDoPlano> = {}): PainelDoPlano {
   const exibida = sobrescrita.versaoExibida === undefined ? versao() : sobrescrita.versaoExibida;
   return {
-    plano: { id: PLANO_ID, organizationId: 'org', clientId: CLIENTE_ID, tipo: 'aquisicao', plataformas: ['meta'], whatsapp: '+5511912345678', landingPageId: '00000000-0000-4000-8000-0000000000aa', criadoEm: AGORA },
+    plano: { id: PLANO_ID, organizationId: 'org', clientId: CLIENTE_ID, tipo: 'aquisicao', plataformas: ['meta'], whatsapp: '+5511912345678', landingPageId: '00000000-0000-4000-8000-0000000000aa', foco: null, criadoEm: AGORA },
     versaoExibida: exibida,
     status: exibida?.status ?? null,
     rotulo: null,
@@ -339,7 +339,9 @@ describe('visão do plano: resumo executivo', () => {
     assert.match(texto, /R\$ [\d.]+,\d{2}/);
     assert.match(texto, /\d{2}\/\d{2}\/\d{4}/);
     assert.doesNotMatch(texto, /"centavos"/);
-    assert.doesNotThrow(() => JSON.parse(resumoDoPlano?.json ?? ''));
+    assert.ok(resumoDoPlano && !('json' in resumoDoPlano));
+    assert.ok((resumoDoPlano?.grupos.length ?? 0) > 0);
+    assert.doesNotMatch(JSON.stringify(resumoDoPlano?.grupos), /orla:|"urn"|"id"/);
   });
 
   it('evidência vira marca com nota quando o Brain é conhecido e aponta ao Brain', () => {
@@ -491,5 +493,34 @@ describe('visão do plano: tentar de novo', () => {
     assert.equal(temAcao('operator', daPessoa), false);
     const vigente = painel({ versaoExibida: null, ultimaExecucao: falha('ia_falha'), historico: { versoes: [resumo({ status: 'vigente' })], eventos: [] } });
     assert.equal(temAcao('operator', vigente), false);
+  });
+});
+
+describe('visão do plano: foco e apagar', () => {
+  it('mostra o foco do plano e nenhum foco para plano antigo', () => {
+    const base = painel();
+    assert.equal(ver('owner', base).foco, null);
+    const comMarca = painel({ plano: { ...base.plano, foco: { tipo: 'marca' } } });
+    assert.equal(ver('owner', comMarca).foco, 'Campanha de marca');
+    const produtos = painel({
+      plano: { ...base.plano, foco: { tipo: 'produtos', produtos: [{ urn: 'orla:o:c:contexto_produto:a', rotulo: 'Tênis', hash: 'a'.repeat(64) }, { urn: 'orla:o:c:contexto_produto:b', rotulo: 'Camiseta', hash: 'b'.repeat(64) }] } },
+    });
+    assert.equal(ver('admin', produtos).foco, 'Tênis, Camiseta');
+  });
+
+  it('só owner e admin têm Apagar plano; operator e viewer não', () => {
+    for (const papel of ['owner', 'admin'] as const) assert.equal(acao(ver(papel, painel()), 'apagar_plano')?.habilitada, true, papel);
+    for (const papel of ['operator', 'viewer'] as const) assert.equal(acao(ver(papel, painel()), 'apagar_plano'), undefined, papel);
+  });
+
+  it('com execução ativa o Apagar fica desabilitado, com o motivo de cancelar antes', () => {
+    const visao = ver('owner', painel({ execucaoAtiva: execucao() }));
+    assert.equal(acao(visao, 'apagar_plano')?.habilitada, false);
+    assert.deepEqual(acao(visao, 'apagar_plano')?.motivos, ['Cancele a execução antes de apagar o plano.']);
+  });
+
+  it('plano sem versão (falhou) também pode ser apagado por owner', () => {
+    const visao = ver('owner', painel({ versaoExibida: null, ultimaExecucao: null }));
+    assert.equal(acao(visao, 'apagar_plano')?.habilitada, true);
   });
 });

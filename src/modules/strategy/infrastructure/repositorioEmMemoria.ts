@@ -33,8 +33,9 @@ export type RepositorioEmMemoria = RepositorioDeEstrategia & {
     readonly versoes: VersaoInterna[];
     readonly eventos: EventoInterno[];
     readonly execucoes: ExecucaoInterna[];
+    readonly removidos: Set<string>;
   };
-  criarPlano(escopo: { readonly organizationId: string; readonly clientId: string }, tipo: string, destino?: Partial<Pick<Plano, 'plataformas' | 'whatsapp' | 'landingPageId'>>): Promise<Result<Plano, ErroDeEstrategia>>;
+  criarPlano(escopo: { readonly organizationId: string; readonly clientId: string }, tipo: string, destino?: Partial<Pick<Plano, 'plataformas' | 'whatsapp' | 'landingPageId' | 'foco'>>): Promise<Result<Plano, ErroDeEstrategia>>;
   falharProxima(metodo: keyof RepositorioDeEstrategia, erro: ErroDeEstrategia): void;
   contagemDeChamadas(metodo: keyof RepositorioDeEstrategia): number;
 };
@@ -53,6 +54,8 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
   const versoes: VersaoInterna[] = [];
   const eventos: EventoInterno[] = [];
   const execucoes: ExecucaoInterna[] = [];
+  const removidos = new Set<string>();
+  const ativo = (planoId: string) => !removidos.has(planoId);
   const falhas = new Map<string, ErroDeEstrategia[]>();
   const chamadas = new Map<string, number>();
   let contador = 0;
@@ -192,12 +195,23 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
     async clienteVisivel() {
       return true;
     },
-    async buscarPlanoPorId(_org, planoId) {
-      return planos.find((p) => p.id === planoId) ?? null;
+    async buscarPlanoPorId(org, planoId) {
+      return planos.find((p) => p.id === planoId && p.organizationId === org && ativo(p.id)) ?? null;
     },
-    async clienteDoRecurso(_org, tipo, recursoId) {
-      const lista = tipo === 'plano' ? planos : tipo === 'versao' ? versoes : execucoes;
-      return lista.find((item) => item.id === recursoId)?.clientId ?? null;
+    async clienteDoRecurso(org, tipo, recursoId) {
+      if (tipo === 'plano') return planos.find((p) => p.id === recursoId && p.organizationId === org && ativo(p.id))?.clientId ?? null;
+      const lista: readonly { readonly id: string; readonly organizationId: string; readonly planoId: string; readonly clientId: string }[] = tipo === 'versao' ? versoes : execucoes;
+      const item = lista.find((candidato) => candidato.id === recursoId && candidato.organizationId === org);
+      return item !== undefined && ativo(item.planoId) ? item.clientId : null;
+    },
+    async removerPlano(org, planoId) {
+      const falha = entrada('removerPlano');
+      if (falha) return err(falha);
+      const plano = planos.find((p) => p.id === planoId && p.organizationId === org && ativo(p.id));
+      if (!plano) return err(erro('nao_encontrado', 'plano'));
+      if (execucoes.some((e) => e.planoId === planoId && (e.status === 'pendente' || e.status === 'rodando'))) return err(erro('execucao_ativa', 'já há execução ativa'));
+      removidos.add(planoId);
+      return ok({ planoId });
     },
     async criarPlanoComExecucao(escopo, novo, execucao) {
       const falha = entrada('criarPlanoComExecucao');
@@ -216,6 +230,7 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
         plataformas: novo.plataformas,
         whatsapp: novo.whatsapp,
         landingPageId: novo.landingPageId,
+        foco: novo.foco,
         criadoEm: agora(),
       };
       planos.push(plano);
@@ -230,19 +245,19 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
     async listarPlanosDoCliente(escopo) {
       contar('listarPlanosDoCliente');
       return planos
-        .filter((p) => p.clientId === escopo.clientId)
+        .filter((p) => p.clientId === escopo.clientId && ativo(p.id))
         .map(estadoDe)
         .reverse();
     },
     async estadoDoPlano(_org, planoId) {
       contar('estadoDoPlano');
-      const plano = planos.find((p) => p.id === planoId);
+      const plano = planos.find((p) => p.id === planoId && ativo(p.id));
       return plano ? estadoDe(plano) : null;
     },
     async criarVersaoRascunho(org, nova: NovaVersao) {
       const falha = entrada('criarVersaoRascunho');
       if (falha) return err(falha);
-      const plano = planos.find((p) => p.id === nova.planoId && p.organizationId === org);
+      const plano = planos.find((p) => p.id === nova.planoId && p.organizationId === org && ativo(p.id));
       if (!plano) return err(erro('nao_encontrado', 'plano'));
       const agente = nova.autoria.tipo === 'agente' ? nova.autoria : null;
       if (agente && !execucaoAtivaDoAgente(agente.agentRunId, plano.id, agente.ficha)) return err(erro('execucao_perdida', 'execução do agente inativa'));
@@ -304,17 +319,20 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
     },
     async lerVersao(_org, versaoId) {
       contar('lerVersao');
-      return versoes.find((v) => v.id === versaoId) ?? null;
+      return versoes.find((v) => v.id === versaoId && ativo(v.planoId)) ?? null;
     },
     async listarVersoes(_org, planoId, limite) {
       contar('listarVersoes');
-      return versoes.filter((v) => v.planoId === planoId).map(resumo).reverse().slice(0, limite);
+      return versoes.filter((v) => v.planoId === planoId && ativo(planoId)).map(resumo).reverse().slice(0, limite);
     },
     async eventosDaVersao(_org, versaoId) {
       contar('eventosDaVersao');
+      const versao = versoes.find((v) => v.id === versaoId);
+      if (!versao || !ativo(versao.planoId)) return [];
       return eventos.filter((e) => e.versaoId === versaoId).map(({ chave: _c, ...resto }) => resto);
     },
     async criarExecucao(org, clientId, nova: NovaExecucao) {
+      if (!ativo(nova.planoId)) return err(erro('nao_encontrado', 'plano'));
       if (execucoes.some((e) => e.planoId === nova.planoId && (e.status === 'pendente' || e.status === 'rodando'))) {
         return err(erro('execucao_ativa', 'já há execução ativa'));
       }
@@ -344,22 +362,23 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
     },
     async lerExecucao(_org, execucaoId) {
       contar('lerExecucao');
-      const execucao = execucoes.find((e) => e.id === execucaoId);
+      const execucao = execucoes.find((e) => e.id === execucaoId && ativo(e.planoId));
       return execucao ? { ...execucao } : null;
     },
     async execucaoAtiva(_org, planoId) {
+      if (!ativo(planoId)) return null;
       const execucao = execucoes.find((e) => e.planoId === planoId && (e.status === 'pendente' || e.status === 'rodando'));
       return execucao ? { ...execucao } : null;
     },
     async execucoesDoPlano(_org, planoId, limite) {
-      return execucoes.filter((e) => e.planoId === planoId).map((e) => ({ ...e })).reverse().slice(0, limite);
+      return execucoes.filter((e) => e.planoId === planoId && ativo(planoId)).map((e) => ({ ...e })).reverse().slice(0, limite);
     },
     async ultimaExecucao(_org, planoId) {
-      const execucao = execucoes.filter((e) => e.planoId === planoId).at(-1);
+      const execucao = execucoes.filter((e) => e.planoId === planoId && ativo(planoId)).at(-1);
       return execucao ? { ...execucao } : null;
     },
     async cancelarExecucao(_org, execucaoId) {
-      const execucao = execucoes.find((e) => e.id === execucaoId);
+      const execucao = execucoes.find((e) => e.id === execucaoId && ativo(e.planoId));
       if (!execucao) return err(erro('nao_encontrado', 'execução'));
       if (FINAIS.includes(execucao.status)) return err(erro('transicao_invalida', 'estado final'));
       execucao.status = 'cancelada';
@@ -391,7 +410,7 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
     },
     async reservarProximaExecucao(org, opcoes) {
       const alvo = execucoes.find(
-        (e) => e.organizationId === org && (e.status === 'pendente' || (e.status === 'rodando' && e.leaseAte !== null && e.leaseAte < opcoes.agora)),
+        (e) => e.organizationId === org && ativo(e.planoId) && (e.status === 'pendente' || (e.status === 'rodando' && e.leaseAte !== null && e.leaseAte < opcoes.agora)),
       );
       if (!alvo) return null;
       const reservada = reservarNaMemoria(alvo, opcoes);
@@ -399,7 +418,7 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
     },
     async descobrirExecucoesPendentes(limite) {
       return execucoes
-        .filter((e) => e.tentativas <= MAXIMO_DE_RESERVAS)
+        .filter((e) => e.tentativas <= MAXIMO_DE_RESERVAS && ativo(e.planoId))
         .filter((e) => e.status === 'pendente' || (e.status === 'rodando' && e.leaseAte !== null && e.leaseAte.getTime() < relogio))
         .slice(0, Math.min(limite, 50))
         .map((e) => ({ organizationId: e.organizationId, clientId: e.clientId, id: e.id }));
@@ -409,6 +428,7 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
         (e) =>
           e.id === execucaoId &&
           e.organizationId === org &&
+          ativo(e.planoId) &&
           (e.status === 'pendente' || (e.status === 'rodando' && e.leaseAte !== null && e.leaseAte < opcoes.agora)),
       );
       if (!alvo) return null;
@@ -429,7 +449,7 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
 
   return {
     ...repositorio,
-    estado: { planos, versoes, eventos, execucoes },
+    estado: { planos, versoes, eventos, execucoes, removidos },
     async criarPlano(escopo, tipo, destino = {}) {
       const plano: Plano = {
         id: id(),
@@ -439,6 +459,7 @@ export function criarRepositorioEmMemoria(): RepositorioEmMemoria {
         plataformas: destino.plataformas ?? ['meta'],
         whatsapp: destino.whatsapp ?? '+5511912345678',
         landingPageId: destino.landingPageId ?? '00000000-0000-4000-8000-0000000000aa',
+        foco: destino.foco ?? { tipo: 'marca' },
         criadoEm: agora(),
       };
       planos.push(plano);

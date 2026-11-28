@@ -4,6 +4,7 @@ import type { EntradaDoCatalogo } from '@/modules/brain/domain/entrada';
 import type { CatalogoAtual } from '@/modules/strategy/application/catalogoAtual';
 import type {
   EntradaDoPacote,
+  FocoDoPlano,
   Intencao,
   PacoteDeLeitura,
   PapelDaEvidencia,
@@ -23,9 +24,22 @@ export const CHAVE_DE_IDEMPOTENCIA_COM_OUTRO_PEDIDO: ErroDeEstrategia = {
   mensagem: 'Esta chave de idempotência já foi usada para um pedido diferente. Gere uma nova chave para criar outro plano.',
 };
 
-export function mesmoPedidoDePlano(existente: Pick<Plano, 'tipo' | 'plataformas' | 'landingPageId'>, novo: Pick<NovoPlano, 'tipo' | 'plataformas' | 'landingPageId'>): boolean {
+function assinaturaDoFoco(foco: FocoDoPlano | null): string {
+  if (foco === null) return '';
+  return foco.tipo === 'marca' ? 'marca' : `produtos:${foco.produtos.map((produto) => produto.urn).sort().join(',')}`;
+}
+
+export function mesmoPedidoDePlano(
+  existente: Pick<Plano, 'tipo' | 'plataformas' | 'landingPageId' | 'foco'>,
+  novo: Pick<NovoPlano, 'tipo' | 'plataformas' | 'landingPageId' | 'foco'>,
+): boolean {
   const ordenadas = (lista: readonly string[] | null) => (lista === null ? '' : [...lista].sort().join(','));
-  return existente.tipo === novo.tipo && existente.landingPageId === novo.landingPageId && ordenadas(existente.plataformas) === ordenadas(novo.plataformas);
+  return (
+    existente.tipo === novo.tipo &&
+    existente.landingPageId === novo.landingPageId &&
+    ordenadas(existente.plataformas) === ordenadas(novo.plataformas) &&
+    assinaturaDoFoco(existente.foco) === assinaturaDoFoco(novo.foco)
+  );
 }
 
 export type EscopoDoPlano = { readonly organizationId: string; readonly clientId: string };
@@ -78,6 +92,7 @@ export type Plano = {
   readonly plataformas: readonly Plataforma[] | null;
   readonly whatsapp: string | null;
   readonly landingPageId: string | null;
+  readonly foco: FocoDoPlano | null;
   readonly criadoEm: Date;
 };
 
@@ -86,6 +101,7 @@ export type NovoPlano = {
   readonly plataformas: readonly Plataforma[];
   readonly whatsapp: string;
   readonly landingPageId: string;
+  readonly foco: FocoDoPlano;
   readonly chaveDeIdempotencia?: string;
 };
 
@@ -233,6 +249,7 @@ export type RepositorioDeEstrategia = {
   clienteVisivel(organizationId: string, clientId: string): Promise<boolean>;
   buscarPlanoPorId(organizationId: string, planoId: string): Promise<Plano | null>;
   clienteDoRecurso(organizationId: string, tipo: TipoDeRecurso, id: string): Promise<string | null>;
+  removerPlano(organizationId: string, planoId: string, requestId: string): Promise<Result<{ readonly planoId: string }, ErroDeEstrategia>>;
   criarPlanoComExecucao(
     escopo: EscopoDoPlano,
     novo: NovoPlano,
@@ -303,7 +320,15 @@ export type SnapshotDoBrainLido = {
   readonly entradas: readonly EntradaDoCatalogo[];
 };
 
+export type ProdutoDoContexto = {
+  readonly urn: string;
+  readonly rotulo: string;
+  readonly hash: string;
+  readonly entrada: EntradaDoPacote;
+};
+
 export type LeitorDoBrain = {
+  produtosDoContexto?(organizacaoId: string, clienteId: string): Promise<Result<readonly ProdutoDoContexto[], ErroDoBrain>>;
   lerPacote(organizacaoId: string, clienteId: string): Promise<Result<PacoteDeLeitura, ErroDoBrain>>;
   entradasPorUrn?(organizacaoId: string, clienteId: string, urns: readonly string[]): Promise<Result<EntradaDoPacote[], ErroDoBrain>>;
   catalogoDoSnapshot?(organizacaoId: string, clienteId: string, snapshot: SnapshotDoBrainLido): CatalogoAtual | null;

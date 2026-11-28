@@ -1,6 +1,9 @@
+import type { MemberRole } from '../../identity/domain/user.ts';
 import type { EtapaDaExecucao, PlanoDoCliente } from '../application/portas.ts';
+import { podeExecutar } from '../domain/papeis.ts';
 import { ROTULO_DO_STATUS, type StatusDaVersao } from '../domain/status.ts';
 import { ROTULO_DO_TIPO_DE_PLANO, ehTipoDePlano } from '../domain/tipoDePlano.ts';
+import { textoDoFoco } from './focoNaTela.ts';
 import { dataEHoraBr } from './formatosDoPlano.ts';
 import { rotaDoPlano } from './rotasDaEstrategia.ts';
 import { ROTULO_DA_PLATAFORMA_DO_PLANO } from './rotulosDoPlano.ts';
@@ -15,6 +18,7 @@ export type CardDoPlano = {
   readonly tipo: string;
   readonly tipoRotulo: string;
   readonly plataformas: readonly { readonly plataforma: string; readonly rotulo: string }[];
+  readonly foco: string | null;
   readonly estado: EstadoDoCard;
   readonly rotulo: string;
   readonly progresso: ProgressoDoCard | null;
@@ -64,6 +68,7 @@ export function cardDoPlano(estado: PlanoDoCliente): CardDoPlano {
     tipo: plano.tipo,
     tipoRotulo: ehTipoDePlano(plano.tipo) ? ROTULO_DO_TIPO_DE_PLANO[plano.tipo] : plano.tipo,
     plataformas: (plano.plataformas ?? []).map((plataforma) => ({ plataforma, rotulo: ROTULO_DA_PLATAFORMA_DO_PLANO[plataforma] ?? plataforma })),
+    foco: textoDoFoco(plano.foco),
     estado: cardEstado,
     rotulo,
     progresso: ativa ? PROGRESSO_DA_ETAPA[ativa.etapa] : null,
@@ -80,6 +85,8 @@ export type CardNaTela = {
   readonly titulo: string;
   readonly tipoRotulo: string;
   readonly plataformas: readonly string[];
+  readonly foco: string | null;
+  readonly apagar: { readonly habilitado: boolean; readonly motivo: string | null } | null;
   readonly rotulo: string;
   readonly icone: 'ok' | 'atencao' | 'erro' | 'nao' | 'vazio';
   readonly classe: string;
@@ -102,7 +109,10 @@ const APARENCIA_DO_CARD: Readonly<Record<EstadoDoCard, { readonly icone: CardNaT
   sem_versao: { icone: 'vazio', classe: '' },
 };
 
-export function cardsNaTela(cards: readonly CardDoPlano[], clienteId: string): CardNaTela[] {
+export const MOTIVO_DE_APAGAR_COM_EXECUCAO = 'Cancele a execução antes de apagar o plano.';
+
+export function cardsNaTela(cards: readonly CardDoPlano[], clienteId: string, papel?: MemberRole): CardNaTela[] {
+  const podeApagar = papel !== undefined && podeExecutar('remover', { tipo: 'pessoa', papel });
   return [...cards]
     .sort((a, b) => b.atualizadoEm.getTime() - a.atualizadoEm.getTime())
     .map((card) => ({
@@ -111,6 +121,8 @@ export function cardsNaTela(cards: readonly CardDoPlano[], clienteId: string): C
       titulo: card.titulo,
       tipoRotulo: card.tipoRotulo,
       plataformas: card.plataformas.map((p) => p.rotulo),
+      foco: card.foco,
+      apagar: podeApagar ? { habilitado: card.execucaoAtivaId === null, motivo: card.execucaoAtivaId === null ? null : MOTIVO_DE_APAGAR_COM_EXECUCAO } : null,
       rotulo: card.rotulo,
       ...APARENCIA_DO_CARD[card.estado],
       atualizadoEm: card.atualizadoEm,

@@ -24,6 +24,7 @@ import {
   ROTULO_DO_TIPO_DE_PLANO,
   TIPOS_DE_PLANO,
   type CatalogoDeCampos,
+  type FocoDoPlano,
   type Plataforma,
   type TipoDePlano,
   combinarReferencias,
@@ -65,6 +66,7 @@ import {
   PedirMudancaSchema,
   PedirPlanoSchema,
   PedirRevisaoSchema,
+  RemoverPlanoSchema,
   TentarDeNovoSchema,
   VersaoAlvoSchema,
   detalhesDoZod,
@@ -77,6 +79,8 @@ import {
   type EntradaDePedirMudanca,
   type EntradaDePedirPlano,
   type EntradaDePedirRevisao,
+  type EntradaDeRemoverPlano,
+  type FocoDoPedido,
   type EntradaDeTentarDeNovo,
   type EntradaDeVersaoAlvo,
   type EntradaDoPainel,
@@ -134,6 +138,8 @@ export type ModeloDeCriacao = {
   readonly tipos: readonly { readonly tipo: TipoDePlano; readonly rotulo: string }[];
   readonly plataformas: readonly { readonly plataforma: Plataforma; readonly rotulo: string }[];
   readonly landingPages: readonly { readonly id: string; readonly rotulo: string; readonly url: string }[];
+  readonly produtos: readonly { readonly urn: string; readonly rotulo: string }[];
+  readonly produtosIndisponiveis: boolean;
   readonly whatsapp: string | null;
   readonly whatsappAusente: boolean;
   readonly podeCriar: boolean;
@@ -221,6 +227,7 @@ export type EstrategiaService = {
   modeloDeCriacao(comando: ComandoDeEstrategia, entrada: EntradaDoEscopoDoCliente): Promise<Result<ModeloDeCriacao, Failure>>;
   previaDeUtm(comando: ComandoDeEstrategia, entrada: EntradaDaPreviaDeUtm): Promise<Result<PreviaDeUtmDoPedido, Failure>>;
   listarPlanos(comando: ComandoDeEstrategia, entrada: EntradaDoEscopoDoCliente): Promise<Result<PlanosDoCliente, Failure>>;
+  removerPlano(comando: ComandoDeEstrategia, entrada: EntradaDeRemoverPlano, ator: Ator): Promise<Result<{ readonly planoId: string }, Failure>>;
   pedirRevisao(comando: ComandoDeEstrategia, entrada: EntradaDePedirRevisao, ator: Ator): Promise<Result<Execucao, Failure>>;
   pedirMudanca(comando: ComandoDeEstrategia, entrada: EntradaDePedirMudanca, ator: Ator): Promise<Result<Execucao, Failure>>;
   corrigirFalhaDoGate(comando: ComandoDeEstrategia, entrada: EntradaDeCorrigirFalhaDoGate, ator: Ator): Promise<Result<{ readonly execucao: Execucao }, Failure>>;
@@ -254,6 +261,7 @@ const PLANO_SEM_DESTINO = failure(
   'Este plano foi criado antes da página única de planos e não tem plataformas, landing page nem WhatsApp. Crie um plano novo.',
   { codigo: 'plano_sem_destino' },
 );
+const CANCELE_ANTES_DE_APAGAR = failure('conflict', 'Cancele a execução antes de apagar o plano.', { codigo: 'execucao_ativa' });
 const EXECUCAO_EM_ANDAMENTO = failure('conflict', 'Já há uma execução em andamento para este plano. Cancele-a ou aguarde.', {
   codigo: 'execucao_ativa',
 });
@@ -309,14 +317,15 @@ export function falhaDeEstrategia(erro: ErroDeEstrategia): Failure {
 
 function comDestinoDaBase(editado: PlanoLido, base: PlanoLido | null): PlanoLido {
   if (base === null) return editado;
-  const { plataformas, whatsapp, destino, utm } = base.intencao;
-  const { plataformas: _p, whatsapp: _w, destino: _d, utm: _u, ...livres } = editado.intencao;
+  const { plataformas, whatsapp, destino, utm, foco } = base.intencao;
+  const { plataformas: _p, whatsapp: _w, destino: _d, utm: _u, foco: _f, ...livres } = editado.intencao;
   const confiavel: IntencaoDoPlano = {
     ...livres,
     ...(plataformas === undefined ? {} : { plataformas }),
     ...(whatsapp === undefined ? {} : { whatsapp }),
     ...(destino === undefined ? {} : { destino }),
     ...(utm === undefined ? {} : { utm }),
+    ...(foco === undefined ? {} : { foco }),
   };
   return fixarIntencao(editado, confiavel as never).plano;
 }
@@ -414,6 +423,30 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
     return gerarUtmPorPlataforma(plataformas, { tipoDePlano, nomeDaCampanha, periodo: inicio.slice(0, 7) });
   }
 
+  async function produtosDoCliente(comando: ComandoDeEstrategia, clienteId: string) {
+    if (leitorDoBrain.produtosDoContexto === undefined) return err(failure('unavailable', 'A leitura dos produtos do cliente não está disponível.'));
+    const lidos = await leitorDoBrain.produtosDoContexto(comando.organizationId, clienteId);
+    if (!lidos.ok) return err(failure('unavailable', 'Não foi possível ler os produtos do cliente agora. Tente de novo.'));
+    return ok(lidos.value);
+  }
+
+  async function resolverFoco(comando: ComandoDeEstrategia, clienteId: string, pedido: FocoDoPedido): Promise<Result<FocoDoPlano, Failure>> {
+    if (pedido.tipo === 'marca') return ok({ tipo: 'marca' });
+    const lidos = await produtosDoCliente(comando, clienteId);
+    if (!lidos.ok) return lidos;
+    const porUrn = new Map(lidos.value.map((produto) => [produto.urn, produto]));
+    const produtos: { urn: string; rotulo: string; hash: string }[] = [];
+    for (const urn of pedido.produtos) {
+      const produto = porUrn.get(urn);
+      const rotulo = produto === undefined ? '' : textoSeguro(produto.rotulo);
+      if (produto === undefined || produto.urn !== urn || rotulo === '' || rotulo === TEXTO_OMITIDO) {
+        return err(failure('validation', 'Escolha produtos cadastrados neste cliente.', { 'foco.produtos': 'Produto não encontrado neste cliente.' }));
+      }
+      produtos.push({ urn, rotulo, hash: produto.hash });
+    }
+    return ok({ tipo: 'produtos', produtos });
+  }
+
   async function modeloDeCriacao(comando: ComandoDeEstrategia, entrada: EntradaDoEscopoDoCliente): Promise<Result<ModeloDeCriacao, Failure>> {
     const lida = EscopoDoClienteSchema.safeParse(entrada);
     if (!lida.success) return err(failure('validation', 'Dados inválidos.', detalhesDoZod(lida.error)));
@@ -425,10 +458,13 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
     if (!paginas.ok) return paginas;
     if (!whatsapp.ok) return whatsapp;
     const landingPages = paginas.value.map((pagina) => ({ id: pagina.id, rotulo: pagina.rotulo, url: pagina.url }));
+    const produtos = await produtosDoCliente(comando, clienteId);
     return ok({
       tipos: TIPOS_DE_PLANO.map((tipo) => ({ tipo, rotulo: ROTULO_DO_TIPO_DE_PLANO[tipo] })),
       plataformas: plataformasComCatalogo(catalogos).map((plataforma) => ({ plataforma, rotulo: ROTULO_DA_PLATAFORMA_DO_PLANO[plataforma] ?? plataforma })),
       landingPages,
+      produtos: produtos.ok ? produtos.value.map((produto) => ({ urn: produto.urn, rotulo: produto.rotulo })) : [],
+      produtosIndisponiveis: !produtos.ok,
       whatsapp: whatsapp.value,
       whatsappAusente: whatsapp.value === null,
       podeCriar: landingPages.length > 0 && whatsapp.value !== null,
@@ -489,9 +525,12 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
     if (!pagina.ok) return pagina;
     const whatsapp = await whatsappDoCliente(comando, clienteId);
     if (!whatsapp.ok) return whatsapp;
+    const foco = await resolverFoco(comando, clienteId, lida.data.foco);
+    if (!foco.ok) return foco;
 
     const montada = esquemaIntencao.safeParse({
       ...base,
+      foco: foco.value,
       plataformas,
       whatsapp: whatsapp.value,
       destino: { landingPageId: pagina.value.id, url: pagina.value.url },
@@ -506,6 +545,7 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
         plataformas,
         whatsapp: whatsapp.value,
         landingPageId: pagina.value.id,
+        foco: foco.value,
         ...(lida.data.chaveDeIdempotencia === undefined ? {} : { chaveDeIdempotencia: lida.data.chaveDeIdempotencia.toLowerCase() }),
       },
       {
@@ -525,10 +565,26 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
       tipoDePlano,
       plataformas,
       landingPageId: pagina.value.id,
+      foco: foco.value.tipo,
+      produtos: foco.value.tipo === 'produtos' ? foco.value.produtos.length : 0,
       execucaoId: execucao.id,
       kind: 'criar',
     });
     return ok({ plano, execucao });
+  }
+
+  async function removerPlano(comando: ComandoDeEstrategia, entrada: EntradaDeRemoverPlano, ator: Ator) {
+    const lida = RemoverPlanoSchema.safeParse(entrada);
+    if (!lida.success) return err(failure('validation', 'Dados inválidos.', detalhesDoZod(lida.error)));
+    if (!pode('remover', comando.papelDeQuemAge)) return err(SEM_PERMISSAO);
+    if (!ator.userId) return err(SEM_USUARIO);
+    const plano = await planoDoCliente(comando, lida.data.planoId);
+    if (!plano || plano.clientId !== lida.data.clienteId || plano.organizationId !== comando.organizationId) return err(PLANO_NAO_ENCONTRADO);
+    if (await repositorio.execucaoAtiva(comando.organizationId, plano.id)) return err(CANCELE_ANTES_DE_APAGAR);
+    const removido = await repositorio.removerPlano(comando.organizationId, plano.id, ator.requestId);
+    if (!removido.ok) return err(removido.error.codigo === 'execucao_ativa' ? CANCELE_ANTES_DE_APAGAR : falhaDeEstrategia(removido.error));
+    await auditar(comando, ator, 'strategy.plan.removed', 'strategy_plan', plano.id, { clientId: plano.clientId, tipoDePlano: plano.tipo });
+    return ok({ planoId: plano.id });
   }
 
   async function pedirMudanca(comando: ComandoDeEstrategia, entrada: EntradaDePedirMudanca, ator: Ator) {
@@ -645,7 +701,7 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
     let versaoBaseId: string | null = null;
     if (pedido.tipo === 'criar') {
       const versoes = await repositorio.listarVersoes(comando.organizationId, plano.id, 100);
-      if (!criarPodeRepetir(versoes, anterior.criadaEm)) return err(BASE_MUDOU);
+      if (!criarPodeRepetir(versoes)) return err(BASE_MUDOU);
     } else {
       const estado = await estadoDoPlano(plano);
       const base = pedido.tipo === 'revisar' ? (estado?.vigente ?? null) : (estado?.aberta ?? estado?.vigente ?? null);
@@ -1256,6 +1312,7 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
     modeloDeCriacao,
     previaDeUtm,
     listarPlanos,
+    removerPlano,
     pedirRevisao,
     pedirMudanca,
     corrigirFalhaDoGate,

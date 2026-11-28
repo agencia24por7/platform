@@ -183,6 +183,32 @@ function utmSoDasPlataformasEscolhidas(intencao: ComEntradasDeCanal): boolean {
 }
 const MENSAGEM_DE_UTM = 'UTM só para plataforma escolhida.';
 
+export const MAXIMO_DE_PRODUTOS_NO_FOCO = 20;
+
+const esquemaProdutoDoFoco = z.strictObject({
+  urn: esquemaUrn,
+  rotulo: texto(120),
+  hash: z.string().regex(/^[0-9a-f]{64}$/),
+});
+export type ProdutoDoFoco = z.infer<typeof esquemaProdutoDoFoco>;
+
+export const esquemaFoco = z.discriminatedUnion('tipo', [
+  z.strictObject({ tipo: z.literal('marca') }),
+  z.strictObject({
+    tipo: z.literal('produtos'),
+    produtos: z
+      .array(esquemaProdutoDoFoco)
+      .min(1)
+      .max(MAXIMO_DE_PRODUTOS_NO_FOCO)
+      .refine((itens) => new Set(itens.map((item) => item.urn)).size === itens.length, 'Produto repetido.'),
+  }),
+]);
+export type FocoDoPlano = z.infer<typeof esquemaFoco>;
+
+export function urnsDoFoco(foco: FocoDoPlano | undefined): readonly string[] {
+  return foco?.tipo === 'produtos' ? foco.produtos.map((produto) => produto.urn) : [];
+}
+
 export const esquemaIntencao = z
   .strictObject({
     ...formaBaseDaIntencao,
@@ -190,6 +216,7 @@ export const esquemaIntencao = z
     whatsapp: esquemaWhatsapp.optional(),
     destino: esquemaDestino,
     utm: esquemaUtmPorPlataforma,
+    foco: esquemaFoco.optional(),
   })
   .refine(utmSoDasPlataformasEscolhidas, MENSAGEM_DE_UTM);
 export type Intencao = z.infer<typeof esquemaIntencao>;
@@ -201,6 +228,7 @@ export const esquemaIntencaoDoPlano = z
     whatsapp: esquemaWhatsapp.optional(),
     destino: esquemaDestino.optional(),
     utm: esquemaUtmPorPlataforma.optional(),
+    foco: esquemaFoco.optional(),
   })
   .refine(utmSoDasPlataformasEscolhidas, MENSAGEM_DE_UTM);
 export type IntencaoDoPlano = z.infer<typeof esquemaIntencaoDoPlano>;
