@@ -1,6 +1,6 @@
 # Release: custo e velocidade do Comitê do Strategy Plan (24K-136)
 
-Segue `2026-11-comites-cultura-e-producao.md`. A main está em `ee2416a`, igual à `dev` antes do PR #220, com migrações até a 0154. Este roteiro cobre só o que o PR #220 acrescenta (ADR 0076).
+Segue `2026-11-comites-cultura-e-producao.md`. A main está em `fd63108` (merge da `dev` em `ee2416a`), sem diferença de conteúdo para a `dev` antes do PR #220, com migrações até a 0154. Este roteiro cobre só o que o PR #220 acrescenta (ADR 0076).
 
 ## O que entra
 
