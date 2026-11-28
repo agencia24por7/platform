@@ -76,3 +76,7 @@ Depois de um plano Meta+Google que falhou três vezes na redação, cada uma com
 ## Adendo: JSON livre robusto, truncamento e telemetria da IA (24K-132, ADR 0066)
 
 O recuo para JSON livre agora pede JSON nativo ao fornecedor, lê o objeto mesmo com prosa ou cercas em volta e separa o corte por tamanho (`[saida:truncada]`) do JSON inválido; a repetição após corte usa 1,6× o teto de saída (até 12.000) e pede resposta mais concisa. As linhas `strategy.run.step` ganham o campo `ia` (caminho, `finishReason`, tokens de saída, teto, classe da recusa do esquema). Sem migração, sem mudança de infra, de segredo ou de variável. Depois do deploy, conferir no `ia` das linhas `adiada` e de sucesso quais tarefas usam `json_livre` e se algum `finishReason` é `length`. Reversão: voltar a imagem.
+
+## Adendo: ajustes de UI/UX da página do cliente (PR 205, 24K-135) junto com o PR 206
+
+O mesmo release leva o PR 205 (ADR 0071): lista de clientes com arquivados à parte, cabeçalho do cliente com logo, aba Atividade, Conexões e Contexto sem subabas, Regras numa tela só e novo plano em passos com verba por mês ou período. Sem migração e sem mudança de infra. Depois do deploy, conferir à mão: a página de um cliente abre com as abas novas para owner, admin e operator; o leitor continua sem Estratégia; o formulário de novo plano em passos cria o plano com foco, landing page e UTM. Reversão: voltar a imagem.
