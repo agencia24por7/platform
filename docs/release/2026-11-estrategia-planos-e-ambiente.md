@@ -95,3 +95,13 @@ Depois do deploy, conferir:
 Reversão: voltar a imagem basta; não há esquema novo. A logo some do cabeçalho (o arquivo continua no Contexto).
 
 Não verificado antes deste release: a logo servida pelo bucket real (no ambiente local o armazenamento é nulo e o cabeçalho mostra o monograma).
+
+## Adendo: plano sem versão com pedido visível e erro de campo que some (PR 214, 24K-132)
+
+Entra depois do release `2026-11-comites-cultura-e-producao.md` (PR 213) já publicado: este adendo não leva migração e não deve ser mergeado em `main` enquanto houver deploy anterior aguardando aprovação, para um run antigo não publicar por cima do novo.
+
+- O que entra: a página de um plano sem versão mostra o bloco "O que foi pedido" e o objetivo no título; criação cancelada ganha "Tentar de novo"; "Editar e pedir de novo" abre o formulário preenchido e cria um plano novo; no formulário em passos, o erro do campo some quando o campo é alterado (adendo do ADR 0070).
+- Sem migração, sem mudança de infra, de BigQuery, de segredo ou de variável.
+- Depois do deploy, conferir no cliente de teste: abrir um plano cancelado sem versão e ver o bloco do pedido, sem WhatsApp; "Tentar de novo" cria execução nova e `strategy.run.retry` entra na auditoria; "Editar e pedir de novo" abre o formulário com tipo, plataformas, foco, landing page, objetivo, horizonte e verba preenchidos; no formulário, pedir os links sem landing page, escolher a página e ver o erro e o "com erro" do passo sumirem.
+- Não coberto: a redação LGPD do `pedido` de plano que nunca teve versão (lacuna anterior, descrita no adendo do ADR 0070).
+- Reversão: voltar a imagem.

@@ -8,15 +8,25 @@ import { AtualizacaoPeriodica } from '@/../app/clientes/[id]/(painel)/estrategia
 import { CartaoDePlano } from '@/../app/clientes/[id]/(painel)/estrategia/CartaoDePlano';
 import { FormularioDeNovoPlano } from '@/../app/clientes/[id]/(painel)/estrategia/FormularioDeNovoPlano';
 import { modules } from '@/composition';
-import { rotaDoCliente } from '@/modules/clients/domain/painel/enderecos';
+import { idValido, rotaDoCliente } from '@/modules/clients/domain/painel/enderecos';
 import { podeVerAEstrategia } from '@/modules/strategy/domain/papeis';
 import { formularioDeNovoPlano } from '@/modules/strategy/interface/formularioDeNovoPlano';
+import { PARAMETRO_DO_PLANO_DE_ORIGEM, valoresDoPlanoDeOrigem } from '@/modules/strategy/interface/pedidoDoPlano';
+import type { CamposBrutos } from '@/modules/strategy/interface/formulariosDaEstrategia';
 import { visaoDaLista } from '@/modules/strategy/interface/listaDePlanos';
 import { rotaDaListaDePlanos } from '@/modules/strategy/interface/rotasDaEstrategia';
 
 export const dynamic = 'force-dynamic';
 
 const DESCRICAO = 'Um plano por objetivo. Nada aqui gasta verba nem escreve em conta de anúncios.';
+
+type Comando = Parameters<ReturnType<typeof modules>['strategy']['service']['painelDoPlano']>[0];
+
+async function valoresIniciaisDoFormulario(comando: Comando, clienteId: string, planoId: string | undefined): Promise<CamposBrutos> {
+  if (planoId === undefined || !idValido(planoId)) return {};
+  const resultado = await modules().strategy.service.painelDoPlano(comando, { clienteId, planoId }, { snapshotDoBrain: 'indisponivel' });
+  return valoresDoPlanoDeOrigem(resultado.ok ? (resultado.value.planos[0] ?? null) : null);
+}
 
 export default async function Estrategia({ params, searchParams }: { readonly params: Promise<{ id: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const [{ id }, busca] = await Promise.all([params, searchParams]);
@@ -42,12 +52,13 @@ export default async function Estrategia({ params, searchParams }: { readonly pa
 
   if (visao.formularioAberto) {
     const modelo = await modules().strategy.service.modeloDeCriacao(comando, { clienteId: cliente.id });
+    const valoresIniciais = await valoresIniciaisDoFormulario(comando, cliente.id, primeiro(busca[PARAMETRO_DO_PLANO_DE_ORIGEM]));
     return (
       <div className="pilha estrategia">
         {aviso}
         <CabecalhoDeSecao titulo="Novo plano" descricao="Você informa a intenção. O agente lê o contexto do cliente e redige o plano; leva alguns minutos." />
         {modelo.ok ? (
-          <FormularioDeNovoPlano clienteId={cliente.id} voltarPara={rotaDaListaDePlanos(cliente.id)} inicial={formularioDeNovoPlano(modelo.value, {}, cliente.id)} />
+          <FormularioDeNovoPlano clienteId={cliente.id} voltarPara={rotaDaListaDePlanos(cliente.id)} inicial={formularioDeNovoPlano(modelo.value, valoresIniciais, cliente.id)} />
         ) : (
           <div className="alert alert--error" role="alert">
             {modelo.error.message}

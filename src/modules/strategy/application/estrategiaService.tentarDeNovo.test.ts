@@ -24,7 +24,7 @@ const OUTRO_CLIENTE = '44444444-4444-4444-8444-444444444444';
 
 const codigoDe = (r: { ok: boolean; error?: { details?: Record<string, string>; code: string } }) => (r.ok ? 'ok' : (r.error?.details?.['codigo'] ?? r.error?.code));
 
-async function montar(pedido: Record<string, unknown>, tipo: 'criar' | 'ajustar' | 'corrigir_gate', terminarCom: 'falhou' | 'concluida' = 'falhou', erro: 'ia_falha' | 'gate_reprovado' = 'ia_falha') {
+async function montar(pedido: Record<string, unknown>, tipo: 'criar' | 'ajustar' | 'corrigir_gate', terminarCom: 'falhou' | 'concluida' | 'cancelada' = 'falhou', erro: 'ia_falha' | 'gate_reprovado' = 'ia_falha') {
   const repositorio = criarRepositorioEmMemoria();
   const auditorias: AuditEvent[] = [];
   const servico = createEstrategiaService({
@@ -61,7 +61,10 @@ async function montar(pedido: Record<string, unknown>, tipo: 'criar' | 'ajustar'
   assert.ok(criada.ok);
   const reservada = await repositorio.reservarExecucao(ORGANIZACAO_ID, criada.value.id, { leaseMs: 60_000, agora: new Date() });
   assert.ok(reservada);
-  const fim = await repositorio.atualizarExecucao(ORGANIZACAO_ID, criada.value.id, { status: terminarCom, ...(terminarCom === 'falhou' ? { erroCodigo: erro } : { etapa: 'fim' as const }), leaseAte: null }, reservada.tentativas);
+  const fim =
+    terminarCom === 'cancelada'
+      ? await repositorio.cancelarExecucao(ORGANIZACAO_ID, criada.value.id, 'r')
+      : await repositorio.atualizarExecucao(ORGANIZACAO_ID, criada.value.id, { status: terminarCom, ...(terminarCom === 'falhou' ? { erroCodigo: erro } : { etapa: 'fim' as const }), leaseAte: null }, reservada.tentativas);
   assert.ok(fim.ok);
   return { repositorio, servico, auditorias, planoId: plano.value.id, versaoId, anteriorId: criada.value.id, agentRunAnterior: criada.value.agentRunId };
 }
@@ -126,6 +129,21 @@ describe('tentar de novo', () => {
     assert.equal(codigoDe(await m.servico.tentarDeNovo(como('operator'), pedidoDe(m), ator)), 'execucao_ativa');
     const concluida = await montar({ tipo: 'criar', intencao: INTENCAO }, 'criar', 'concluida');
     assert.equal(codigoDe(await concluida.servico.tentarDeNovo(como('operator'), pedidoDe(concluida), ator)), 'sem_falha_para_repetir');
+  });
+
+  it('criar cancelada antes da primeira versão pode ser repetida com o mesmo pedido', async () => {
+    const m = await montar({ tipo: 'criar', intencao: INTENCAO }, 'criar', 'cancelada');
+    assert.equal(codigoDe(await m.servico.tentarDeNovo(como('viewer'), pedidoDe(m), ator)), 'forbidden');
+    const r = await m.servico.tentarDeNovo(como('operator'), pedidoDe(m), ator);
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.equal(r.value.execucao.tipo, 'criar');
+    assert.deepEqual(r.value.execucao.pedido, INTENCAO);
+    assert.equal(m.auditorias.filter((e) => e.action === 'strategy.run.retry').length, 1);
+  });
+
+  it('ajuste cancelado não se repete por aqui', async () => {
+    const m = await montar({ tipo: 'ajustar', instrucao: 'mais verba' }, 'ajustar', 'cancelada');
+    assert.equal(codigoDe(await m.servico.tentarDeNovo(como('operator'), pedidoDe(m), ator)), 'tipo_nao_repetivel');
   });
 
   it('não repete corrigir_gate', async () => {

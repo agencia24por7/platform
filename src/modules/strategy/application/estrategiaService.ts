@@ -38,8 +38,9 @@ import {
   podeCorrigirMais,
   valoresDeSugestaoIguais,
   MAXIMO_DE_CORRECOES_POR_VERSAO_RAIZ,
-  erroRepetivel,
   criarPodeRepetir,
+  execucaoEncerradaSemConcluir,
+  execucaoRepetivel,
   type Lacuna,
   type RegraVigenteParaLacuna,
   type ValorDaSugestao,
@@ -691,8 +692,8 @@ export function createEstrategiaService(deps: DependenciasDeEstrategia): Estrate
     if (!plano || plano.clientId !== lida.data.clienteId || plano.organizationId !== comando.organizationId) return err(PLANO_NAO_ENCONTRADO);
     if (await repositorio.execucaoAtiva(comando.organizationId, plano.id)) return err(EXECUCAO_EM_ANDAMENTO);
     const anterior = await repositorio.ultimaExecucao(comando.organizationId, plano.id);
-    if (anterior?.status !== 'falhou') return err(SEM_FALHA_PARA_REPETIR);
-    if (anterior.tipo === 'corrigir_gate' || !erroRepetivel(anterior.erroCodigo)) return err(TIPO_NAO_REPETIVEL);
+    if (!anterior || !execucaoEncerradaSemConcluir(anterior)) return err(SEM_FALHA_PARA_REPETIR);
+    if (!execucaoRepetivel(anterior)) return err(TIPO_NAO_REPETIVEL);
     const acaoDoPapel: AcaoDoPlano = anterior.tipo === 'criar' ? 'criar' : 'editar';
     if (!pode(acaoDoPapel, comando.papelDeQuemAge)) return err(SEM_PERMISSAO);
 
