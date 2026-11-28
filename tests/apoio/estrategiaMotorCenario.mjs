@@ -68,13 +68,13 @@ const iaFalsa = criarIaFalsa(roteiroBase);
 const destino = createDestinoService(createDestinoRepository(), audit);
 const servico = createEstrategiaService({ repositorio: repo, audit, leitorDoBrain, destino, catalogos: fixtures.CATALOGOS_DE_TESTE });
 const motorCom = (executorDeIA) => createMotorDoPlano({ repositorio: repo, executorDeIA, leitorDoBrain, avaliadorDeLimites, audit, catalogos: fixtures.CATALOGOS_DE_TESTE });
-const { plataformas: _p, whatsapp: _w, destino: _d, utm: _u, ...intencao } = plano.intencao;
+const { plataformas: _p, whatsapp: _w, destino: _d, utm: _u, foco: _f, ...intencao } = plano.intencao;
 
 como(c.operator);
 const landing = await destino.criarLandingPage({ organizationId: c.orgA, clientId: c.cliA, papelDeQuemAge: 'operator', url: plano.intencao.destino.url, rotulo: 'Oferta' }, ator(c.operator));
 assert.ok(landing.ok, JSON.stringify(landing));
 assert.ok((await destino.gravarWhatsapp({ organizationId: c.orgA, clientId: c.cliA, papelDeQuemAge: 'operator', whatsapp: plano.intencao.whatsapp }, ator(c.operator))).ok);
-const novoPedido = (tipoDePlano) => ({ clienteId: c.cliA, tipoDePlano, plataformas: ['google', 'meta'], landingPageId: landing.value.id, intencao });
+const novoPedido = (tipoDePlano) => ({ clienteId: c.cliA, tipoDePlano, plataformas: ['google', 'meta'], landingPageId: landing.value.id, foco: { tipo: 'marca' }, intencao });
 
 const pedido = await servico.pedirPlano(comando('operator'), novoPedido('aquisicao'), ator(c.operator));
 assert.ok(pedido.ok, JSON.stringify(pedido));
